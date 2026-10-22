@@ -24,8 +24,10 @@ function loadPack(i) {
   if (p) return p;
   p = { buf: null, promise: null };
   state.packs.set(i, p);
-  p.promise = fetch(state.index.packs[i]).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
-    .then(b => { p.buf = b; bump(); }, () => { p.error = true; });
+  // a busy host or a dropped connection gets a few more tries, backing off, before the pack is given up on
+  const get = attempt => fetch(state.index.packs[i]).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+    .catch(e => { if (attempt >= 3) throw e; return new Promise(res => setTimeout(res, 1500 * 2 ** attempt)).then(() => get(attempt + 1)); });
+  p.promise = get(0).then(b => { p.buf = b; bump(); }, () => { p.error = true; });
   return p;
 }
 

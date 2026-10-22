@@ -2,7 +2,7 @@
 
 Play Magic: The Gathering **Commander** against AI opponents, or with friends, using any of the **194 preconstructed Commander decks** (Commander 2013 through 2026, including Universes Beyond and Secret Lair precons). 1v1 or up to 4-player free-for-all.
 
-**Play it:** https://stigzmtg.github.io/Stigz-s-MTGA/ (GitHub Pages, served from `docs/`)
+**Play it:** https://stigzmtg.github.io/Stigz-s-MTGA/ (GitHub Pages)
 
 ## How it works
 
@@ -23,7 +23,7 @@ npx serve dist              # any static file server works
 npm run site                # build, then copy the site with its card images into docs/ for GitHub Pages
 ```
 
-`docs/` is the published website (page, app, data and the packed card images, about 240 MB). To update the live site, run `npm run site`, commit `docs/` and push; GitHub Pages serves `main:/docs`.
+`docs/` is the website (page, app, data and the packed card images, about 240 MB). To update the live site: `npm run site`, commit `docs/`, push `main`, then `sh tools/deploy-pages.sh`, which publishes that folder as the `gh-pages` branch GitHub Pages serves (the images are the same files, so this push is tiny).
 
 ### Card images
 
