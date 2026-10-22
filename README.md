@@ -91,6 +91,8 @@ node tools/ptcg/shot.mjs out/ 6      # screenshots: home, lobby, battle
 2. Pick this repository. Framework preset: **None**. Build command: leave empty. Build output directory: **docs**.
 3. **Save and Deploy**.
 
+If Cloudflare sets it up as a Worker instead (an address like `stigz-s-mtga.<account>.workers.dev`), `wrangler.toml` tells it to serve `docs/`; its `name` must match the Worker's name. The live copy is at https://stigz-s-mtga.stigzrblx.workers.dev.
+
 **Netlify** (address like `precon-arena.netlify.app`)
 1. Sign in at app.netlify.com, then **Add new site → Import an existing project → GitHub**, and pick this repository.
 2. The settings come from `netlify.toml` (publish `docs`, no build). **Deploy**, then rename the site under Site configuration if you like.
