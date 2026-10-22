@@ -37,7 +37,8 @@ function DeckName({ decks, id }) {
 
 export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave, onStart, onWatch, session }) {
   const { decks } = data;
-  const [code, setCode] = useState('');
+  // an invite link (or a code typed on the home screen) puts the room code in the address
+  const [code, setCode] = useState(() => (isRoomCode(location.hash.slice(1)) ? location.hash.slice(1) : ''));
   const [nick, setNick] = useState(room ? room.nick : '');
   const [busy, setBusy] = useState(false);
   const sortedDecks = data.sortedDecks;

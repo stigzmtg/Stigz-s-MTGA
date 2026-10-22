@@ -222,9 +222,14 @@ function Root() {
     setGame(g);
     try { history.replaceState(null, '', g ? '#' + g : location.pathname + location.search); } catch { /* sandboxed frame */ }
   };
+  // a room code typed on the home screen: open that game with the code in the address, as an invite link would
+  const join = (g, code) => {
+    try { location.hash = (g === 'pokemon' ? 'pk-' : '') + code; } catch { /* sandboxed frame */ }
+    setGame(g);
+  };
   if (game === 'pokemon') return <PokemonApp onHome={() => pick(null)} />;
   if (game === 'mtg') return <MtgApp onHome={() => pick(null)} />;
-  return <Home onPick={pick} />;
+  return <Home onPick={pick} onJoin={join} />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
