@@ -1,0 +1,222 @@
+// Mode-specific trigger matching against event run-params.
+import { matchValid, ctrlOf, resolveDefined } from './filters.js';
+import { normalizeCounter } from './game.js';
+
+function vc(game, obj, valid, ctx) {
+  if (!valid) return true;
+  if (obj == null) return false;
+  return matchValid(game, obj, valid, ctx);
+}
+
+function zoneIn(spec, zone) {
+  if (!spec || spec === 'Any') return true;
+  return spec.split(',').map(s => s.trim()).includes(zone);
+}
+
+function playerObj(game, id) { return id == null ? null : (typeof id === 'object' ? id : game.players[id]); }
+
+export const SUPPORTED_TRIGGER_MODES = new Set(['ChangesZone', 'ChangesZoneAll', 'Phase', 'Attacks', 'AttackersDeclared', 'AttackersDeclaredOneTarget', 'SpellCast', 'SpellCastOrCopy', 'AbilityCast', 'SpellAbilityCast', 'DamageDone', 'DamageDoneOnce', 'DamageDealtOnce', 'DamageAll', 'Drawn', 'Sacrificed', 'Destroyed', 'LifeGained', 'LifeLost', 'LifeLostAll', 'TapsForMana', 'Cycled', 'Discarded', 'DiscardedAll', 'BecomesTarget', 'BecomesTargetOnce', 'Taps', 'Untaps', 'Blocks', 'AttackerBlocked', 'AttackerBlockedByCreature', 'AttackerUnblocked', 'AttackerUnblockedOnce', 'CounterAdded', 'CounterAddedOnce', 'CounterRemoved', 'LandPlayed', 'Always', 'TokenCreated', 'TokenCreatedOnce', 'TurnBegin', 'Milled', 'MilledAll', 'Exiled', 'LosesGame', 'BecomeMonarch', 'TakesInitiative', 'RoomEntered', 'DungeonCompleted', 'Explores', 'Connives', 'Surveil', 'Scry', 'Investigated', 'Fight', 'Attached', 'Unattached', 'ChangesController', 'Transformed', 'SpellCopy', 'BecomesCrewed', 'TurnFaceUp', 'Mutates', 'BecomeMonstrous', 'Evolved', 'CommitCrime', 'FlippedCoin', 'RolledDie', 'RolledDieOnce', 'Exploited', 'AbilityTriggered', 'AbilityResolves', 'CounterPlayerAddedAll', 'ManaAdded']);
+
+export function triggerMatches(game, p, host, rp, ctx) {
+  const mode = rp.Mode;
+  switch (mode) {
+    case 'ChangesZone': {
+      if (!zoneIn(p.Origin, rp.Origin)) return false;
+      if (!zoneIn(p.Destination, rp.Destination)) return false;
+      if (p.ExcludedDestinations && p.ExcludedDestinations.split(',').includes(rp.Destination)) return false;
+      const obj = rp.Origin === 'Battlefield' && rp.CardLKI ? rp.CardLKI : rp.Card;
+      if (p.ValidCard && !vc(game, obj, p.ValidCard, ctx)) return false;
+      if (p.ValidCause) return false;
+      if (p.Evolve) {
+        const me = game.chars(host), it = obj.lki ? obj.chars : game.chars(obj);
+        if (!(it.power > me.power || it.toughness > me.toughness)) return false;
+      }
+      return true;
+    }
+    case 'ChangesZoneAll': {
+      if (!zoneIn(p.Origin, rp.Origin)) return false;
+      if (!zoneIn(p.Destination, rp.Destination)) return false;
+      const list = (rp.Origin === 'Battlefield' ? rp.CardsLKI : rp.Cards) || [];
+      const matching = list.filter(c => c && vc(game, c, p.ValidCards || p.ValidCard, ctx));
+      if (!matching.length) return false;
+      rp.Amount = matching.length;
+      rp.Cards = matching;
+      return true;
+    }
+    case 'Phase': {
+      const phases = (p.Phase || '').split(',').map(s => s.trim());
+      if (!phases.includes(rp.Phase)) return false;
+      if (p.ValidPlayer && !vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx)) return false;
+      return true;
+    }
+    case 'TurnBegin': return !p.ValidPlayer || vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx);
+    case 'Attacks': {
+      if (!vc(game, rp.Attacker, p.ValidCard, ctx)) return false;
+      if (p.Alone === 'True' && rp.AttackerCount !== 1) return false;
+      if (p.Attacked) {
+        const def = rp.DefenderCard ? rp.DefenderCard : playerObj(game, rp.DefendingPlayer);
+        if (!vc(game, def, p.Attacked.replace('Player.Defending', 'Player'), ctx)) return false;
+      }
+      if (p.ValidDefender && !vc(game, playerObj(game, rp.DefendingPlayer), p.ValidDefender, ctx)) return false;
+      if (p.FirstAttack === 'True' && !rp.FirstAttack) return false;
+      return true;
+    }
+    case 'AttackersDeclared': case 'AttackersDeclaredOneTarget': {
+      if (p.AttackingPlayer && !vc(game, playerObj(game, rp.AttackingPlayer), p.AttackingPlayer, ctx)) return false;
+      if (p.ValidAttackers) {
+        const n = (rp.Attackers || []).filter(a => vc(game, a, p.ValidAttackers, ctx)).length;
+        const need = p.ValidAttackersAmount || 'GE1';
+        const m = need.match(/^(EQ|NE|LT|LE|GT|GE)(\d+)$/);
+        if (m) { const v = +m[2]; if (!({ EQ: n === v, NE: n !== v, LT: n < v, LE: n <= v, GT: n > v, GE: n >= v })[m[1]]) return false; }
+        else if (!n) return false;
+      }
+      if (p.AttackedTarget) {
+        if (mode === 'AttackersDeclaredOneTarget') { if (!vc(game, playerObj(game, rp.DefendingPlayer), p.AttackedTarget, ctx)) return false; }
+        else if (!(rp.Defenders || []).some(d => vc(game, playerObj(game, d), p.AttackedTarget, ctx))) return false;
+      }
+      return true;
+    }
+    case 'SpellCast': case 'SpellCastOrCopy': case 'SpellCopy': case 'AbilityCast': case 'SpellAbilityCast': {
+      const isSpell = !!rp.IsSpell;
+      if ((mode === 'SpellCast' || mode === 'SpellCastOrCopy' || mode === 'SpellCopy') && !isSpell) return false;
+      if (mode === 'AbilityCast' && isSpell) return false;
+      if (p.ValidCard && !vc(game, rp.Card, p.ValidCard, ctx)) return false;
+      if (p.ValidActivatingPlayer && !vc(game, playerObj(game, rp.Player), p.ValidActivatingPlayer, ctx)) return false;
+      if (p.ValidSA && !validSA(game, rp, p.ValidSA, ctx)) return false;
+      if (p.ActivatorThisTurnCast) {
+        const n = game.players[rp.Player].spellsCastThisTurn.length;
+        const m = p.ActivatorThisTurnCast.match(/^(EQ|NE|LT|LE|GT|GE)(\d+)$/);
+        if (m && !({ EQ: n === +m[2], NE: n !== +m[2], LT: n < +m[2], LE: n <= +m[2], GT: n > +m[2], GE: n >= +m[2] })[m[1]]) return false;
+      }
+      if (p.TargetsValid) {
+        const ts = rp.Targets || [];
+        if (!ts.some(t => vc(game, t, p.TargetsValid, ctx))) return false;
+      }
+      if (p.NoResolvingCheck) return true;
+      return true;
+    }
+    case 'DamageDone': case 'DamageDoneOnce': case 'DamageDealtOnce': {
+      if (p.ValidSource) {
+        if (mode === 'DamageDoneOnce') { if (!(rp.Sources || [rp.Source]).some(s => vc(game, s, p.ValidSource, ctx))) return false; }
+        else if (!vc(game, rp.Source, p.ValidSource, ctx)) return false;
+      }
+      if (p.ValidTarget) {
+        if (mode === 'DamageDealtOnce') { if (!(rp.Targets || [rp.Target]).some(t => vc(game, t, p.ValidTarget, ctx))) return false; }
+        else if (!vc(game, rp.Target, p.ValidTarget, ctx)) return false;
+      }
+      if (p.CombatDamage === 'True' && !rp.IsCombatDamage) return false;
+      if (p.CombatDamage === 'False' && rp.IsCombatDamage) return false;
+      if (p.DamageAmount) { const m = p.DamageAmount.match(/^(GE|GT|EQ)(\d+)$/); if (m && !({ GE: rp.DamageAmount >= +m[2], GT: rp.DamageAmount > +m[2], EQ: rp.DamageAmount === +m[2] })[m[1]]) return false; }
+      return true;
+    }
+    case 'DamageAll': return !p.CombatDamage || (p.CombatDamage === 'True') === !!rp.IsCombatDamage;
+    case 'Drawn': {
+      if (!vc(game, rp.Card, p.ValidCard, ctx)) return false;
+      if (p.ValidPlayer && !vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx)) return false;
+      if (p.Number && rp.Number !== +p.Number) return false;
+      if (p.FirstCardInDrawStep === 'True' && !(game.step === 'draw' && rp.Number === 1)) return false;
+      return true;
+    }
+    case 'Sacrificed': case 'Destroyed': case 'Exiled': {
+      const obj = rp.CardLKI || rp.Card;
+      if (!vc(game, obj, p.ValidCard, ctx)) return false;
+      if (p.ValidPlayer && !vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx)) return false;
+      if (p.Origin && mode === 'Exiled' && !zoneIn(p.Origin, rp.Origin)) return false;
+      return true;
+    }
+    case 'LifeGained': case 'LifeLost': case 'LifeLostAll': {
+      if (p.ValidPlayer && !vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx)) return false;
+      if (p.ValidSource && !vc(game, rp.Source, p.ValidSource, ctx)) return false;
+      if (p.FirstTime === 'True') { const pl = game.players[rp.Player]; if (pl && (mode === 'LifeGained' ? pl.lifeGainedThisTurn : pl.lifeLostThisTurn) !== rp.LifeAmount) return false; }
+      return true;
+    }
+    case 'TapsForMana': {
+      if (!vc(game, rp.Card, p.ValidCard, ctx)) return false;
+      if (p.Activator && !vc(game, playerObj(game, rp.Player), p.Activator, ctx)) return false;
+      if (p.Produced && !rp.Produced.split(' ').some(x => p.Produced.includes(x))) return false;
+      return true;
+    }
+    case 'Cycled': case 'Discarded': case 'Milled': case 'Investigated': case 'Explores': case 'Connives': case 'Exploited': case 'TurnFaceUp': case 'Mutates': case 'BecomeMonstrous': case 'Transformed': case 'Evolved': {
+      if (!vc(game, rp.Card, p.ValidCard, ctx)) return false;
+      if (p.ValidPlayer && !vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx)) return false;
+      return true;
+    }
+    case 'DiscardedAll': case 'MilledAll': {
+      if (p.ValidPlayer && !vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx)) return false;
+      const cards = (rp.Cards || []).filter(c => vc(game, c, p.ValidCard || p.ValidCards, ctx));
+      if (!cards.length) return false;
+      rp.Amount = cards.length;
+      return true;
+    }
+    case 'Surveil': case 'Scry': case 'BecomeMonarch': case 'TakesInitiative': case 'RoomEntered': case 'DungeonCompleted': case 'LosesGame': case 'CommitCrime': case 'FlippedCoin': case 'RolledDie': case 'RolledDieOnce':
+      return !p.ValidPlayer || vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx);
+    case 'BecomesTarget': case 'BecomesTargetOnce': {
+      if (!vc(game, rp.Target, p.ValidTarget, ctx)) return false;
+      if (p.ValidSource && !vc(game, rp.Source, p.ValidSource, ctx)) return false;
+      if (p.SourceType === 'Spell' && !(rp.StackItem && rp.StackItem.kind === 'spell')) return false;
+      return true;
+    }
+    case 'Taps': case 'Untaps': return vc(game, rp.Card, p.ValidCard, ctx) && (!p.Attacker || (p.Attacker === 'True') === !!rp.Attacker);
+    case 'Blocks': return vc(game, rp.Blocker, p.ValidCard, ctx) && (!p.ValidBlocked || vc(game, rp.Attacker, p.ValidBlocked, ctx));
+    case 'AttackerBlocked': case 'AttackerBlockedByCreature': return vc(game, rp.Attacker, p.ValidCard, ctx) && (!p.ValidBlocker || (rp.Blockers || [rp.Blocker]).some(b => vc(game, b, p.ValidBlocker, ctx)));
+    case 'AttackerUnblocked': return vc(game, rp.Attacker, p.ValidCard, ctx);
+    case 'AttackerUnblockedOnce': {
+      if (p.ValidAttackingPlayer && !vc(game, playerObj(game, rp.AttackingPlayer), p.ValidAttackingPlayer, ctx)) return false;
+      const list = (rp.Attackers || []).filter(a => vc(game, a, p.ValidCard || 'Creature', ctx));
+      return list.length > 0;
+    }
+    case 'CounterAdded': case 'CounterAddedOnce': {
+      const obj = rp.Card || playerObj(game, rp.Player);
+      if (p.ValidCard && !vc(game, rp.Card, p.ValidCard, ctx)) return false;
+      if (p.ValidPlayer && !vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx)) return false;
+      if (p.ValidObject && !vc(game, obj, p.ValidObject, ctx)) return false;
+      if (p.CounterType && normalizeCounter(p.CounterType) !== rp.CounterType) return false;
+      if (p.ValidSource && !vc(game, rp.Source, p.ValidSource, ctx)) return false;
+      if (p.CounterAmount) { const m = p.CounterAmount.match(/^(EQ|GE)(\d+)$/); if (m && !(m[1] === 'EQ' ? rp.Previous + 1 === +m[2] : rp.Previous + 1 >= +m[2])) return false; }
+      return true;
+    }
+    case 'CounterRemoved': return vc(game, rp.Card, p.ValidCard, ctx) && (!p.CounterType || normalizeCounter(p.CounterType) === rp.CounterType);
+    case 'CounterPlayerAddedAll': return true;
+    case 'LandPlayed': return vc(game, rp.Card, p.ValidCard, ctx);
+    case 'TokenCreated': case 'TokenCreatedOnce': {
+      if (!vc(game, rp.Card, p.ValidToken || p.ValidCard, ctx)) return false;
+      if (p.ValidPlayer && !vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx)) return false;
+      if (p.OnlyFirst) {
+        if (!vc(game, playerObj(game, rp.Player), p.OnlyFirst, ctx)) return false;
+        if ((game.turnState.tokenBatches[rp.Player] || 0) > 1) return false;
+      }
+      return true;
+    }
+    case 'Always': return true;
+    case 'Fight': return vc(game, rp.Fighter, p.ValidCard, ctx);
+    case 'Attached': return vc(game, rp.AttachSource, p.ValidSource, ctx) && vc(game, rp.AttachTarget, p.ValidTarget, ctx);
+    case 'Unattached': return vc(game, rp.AttachSource, p.ValidAttachment, ctx) && vc(game, rp.AttachTarget, p.ValidObject, ctx);
+    case 'ChangesController': return vc(game, rp.Card, p.ValidCard, ctx);
+    case 'BecomesCrewed': return vc(game, rp.Card, p.ValidVehicle || p.ValidCard, ctx);
+    case 'AbilityTriggered': case 'AbilityResolves': return false;
+    case 'ManaAdded': return false;
+    default: return false;
+  }
+}
+
+function validSA(game, rp, spec, ctx) {
+  const parts = spec.split(',');
+  for (const part of parts) {
+    const s = part.trim();
+    if (s === 'Spell' && rp.IsSpell) return true;
+    if (s === 'Activated' && !rp.IsSpell && !rp.IsTrigger) return true;
+    if (s === 'Spell.MayPlaySource' && rp.IsSpell && rp.MayPlay) return true;
+    if (s.startsWith('Spell.') && rp.IsSpell) {
+      const prop = s.slice(6);
+      if (prop === 'Flashback' && rp.AltCost === 'Flashback') return true;
+      if (prop === 'castFromHand' || prop === 'wasCastFromHand') { if (rp.CastFrom === 'hand') return true; continue; }
+      if (prop === 'notCastFromHand') { if (rp.CastFrom !== 'hand') return true; continue; }
+      if (prop === 'MayPlaySource') continue;
+      if (prop === 'isCastFromCommandZone') { if (rp.CastFrom === 'command') return true; continue; }
+      return true;
+    }
+    if (s.startsWith('Activated.') && !rp.IsSpell) return true;
+    if (s === 'SpellAbility') return true;
+  }
+  return false;
+}

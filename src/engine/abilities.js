@@ -1,0 +1,1494 @@
+// Spell abilities: construction, costs, targeting, casting, activation, mana payment and resolution.
+import { parseAbility } from './forge.js';
+import { parseMana, emptyCost, addCosts, cmc, isManaToken, planPayment, payFromPool, manaColorsFromProduced, costString, poolTotal, cloneCost } from './mana.js';
+import { matchValid, resolveDefined, calcCtx, checkConditions, checkPresence, ctxOf, findTargets, zoneMap, ctrlOf } from './filters.js';
+import { COLORS } from './util.js';
+import { runEffect } from './effects.js';
+
+export class Cancelled extends Error { constructor() { super('cancelled'); this.cancelled = true; } }
+
+let saUid = 1;
+export class SA {
+  constructor(game, abil, host, controller, { parent = null, trig = null, depth = 0 } = {}) {
+    this.uid = saUid++;
+    this.abil = abil;
+    this.def = abil.parsed;
+    this.p = abil.parsed.p;
+    this.api = abil.parsed.api;
+    this.kind = abil.parsed.kind;
+    this.svars = abil.svars || {};
+    this.host = host;
+    this.hostZcc = host && host.isCard && !host.lki ? host.zcc : null;
+    this.controller = controller;
+    this.parent = parent;
+    this.trig = trig || (parent && parent.trig) || null;
+    this.targets = [];
+    this.key = abil.key;
+    if (!parent) { this.paid = { Sacrificed: [], Discarded: [], Exiled: [], Tapped: [], Revealed: [] }; this.x = null; }
+    this.sub = null;
+    this.modes = null;
+    const subName = this.p.SubAbility;
+    if (subName && this.svars[subName] && depth < 25) {
+      this.sub = new SA(game, { raw: this.svars[subName], parsed: parseAbility(this.svars[subName]), svars: this.svars, src: abil.src, key: abil.key + '>' + subName }, host, controller, { parent: this, trig: this.trig, depth: depth + 1 });
+    }
+  }
+  root() { let s = this; while (s.parent) s = s.parent; return s; }
+  chain() { const out = []; for (let s = this; s; s = s.sub) { out.push(s); if (s.modes) for (const m of s.modes) out.push(...m.chain()); } return out; }
+  get description() {
+    return this._desc || (this.p.SpellDescription || this.p.StackDescription || this.api || '').replace(/^SpellDescription$/, '');
+  }
+  set description(v) { this._desc = v; }
+}
+
+export function makeSA(game, raw, svars, host, controller, opts = {}) {
+  return new SA(game, { raw, parsed: parseAbility(raw), svars, src: host, key: opts.key || 'x' }, host, controller, opts);
+}
+
+// ---------------------------------------------------------------- refs (for UI / agents)
+export function refOf(o) {
+  if (!o) return null;
+  if (o.isPlayer) return 'p' + o.id;
+  if (o.stackItem) return 's' + o.id;
+  return 'c' + o.id;
+}
+export function fromRef(game, r) {
+  if (r == null) return null;
+  if (typeof r === 'number') return game.cardById(r);
+  const t = r[0], id = +r.slice(1);
+  if (t === 'p') return game.players[id];
+  if (t === 's') return game.stack.find(s => s.id === id) || null;
+  return game.cardById(id);
+}
+
+// ---------------------------------------------------------------- costs
+export function parseCost(str) {
+  const cost = { mana: emptyCost(), hasMana: false, tap: false, untap: false, parts: [], raw: str || '' };
+  if (!str) return cost;
+  const tokens = String(str).match(/\w+<[^>]*>|\S+/g) || [];
+  const manaToks = [];
+  for (const tok of tokens) {
+    if (tok === 'T') { cost.tap = true; continue; }
+    if (tok === 'Q') { cost.untap = true; continue; }
+    const m = tok.match(/^(\w+)<(.*)>$/);
+    if (m) {
+      const args = m[2].split('/');
+      const type = m[1];
+      const part = { type, amount: args[0], args };
+      switch (type) {
+        case 'Sac': part.valid = args[1] || 'CARDNAME'; part.desc = args[2]; break;
+        case 'SubCounter': case 'AddCounter': part.counter = args[1]; part.valid = args[2] || 'CARDNAME'; break;
+        case 'RemoveAnyCounter': part.counter = args[1] || 'Any'; part.valid = args[2] || 'Card.YouCtrl'; break;
+        case 'Discard': part.valid = args[1] || 'Card'; break;
+        case 'Exile': case 'ExileFromGrave': case 'ExileFromHand': case 'ExileFromTop': case 'ExileAnyGrave': case 'ExileSameGrave': part.valid = args[1] || 'Card'; break;
+        case 'tapXType': case 'untapYType': part.valid = args[1] || 'Creature'; break;
+        case 'Return': part.valid = args[1] || 'CARDNAME'; break;
+        case 'Reveal': part.valid = args[1] || 'Card'; break;
+        default: break;
+      }
+      cost.parts.push(part);
+      continue;
+    }
+    if (isManaToken(tok)) { manaToks.push(tok); continue; }
+    // "XMin1", "Mandatory" and other modifiers are ignored
+  }
+  if (manaToks.length) { cost.mana = parseMana(manaToks.join(' ')); cost.hasMana = true; }
+  return cost;
+}
+
+function amountOf(game, sa, amt) {
+  if (amt === 'All') return Infinity;
+  if (amt === 'X' && sa.root().x != null) return sa.root().x;
+  return calcCtx(game, amt, ctxOf(game, sa));
+}
+
+function costCandidates(game, sa, part) {
+  const pid = sa.controller;
+  const host = sa.host;
+  const ctx = ctxOf(game, sa);
+  const valid = (part.valid || '').replace(/CARDNAME|NICKNAME/g, 'Card.Self');
+  switch (part.type) {
+    case 'Sac': case 'Return': case 'Exile':
+      if (valid === 'Card.Self') return host.zone === 'battlefield' ? [host] : [];
+      return game.battlefield.filter(c => c.controller === pid && matchValid(game, c, valid, ctx));
+    case 'tapXType':
+      return game.battlefield.filter(c => c.controller === pid && !c.tapped && matchValid(game, c, valid, ctx) && (valid === 'Card.Self' || c.id !== host.id || true));
+    case 'untapYType':
+      return game.battlefield.filter(c => c.controller === pid && c.tapped && matchValid(game, c, valid, ctx));
+    case 'Discard':
+      if (valid === 'Card.Self') return host.zone === 'hand' ? [host] : [];
+      if (valid === 'Hand') return game.players[pid].hand.slice();
+      return game.players[pid].hand.filter(c => matchValid(game, c, valid === 'Random' ? 'Card' : valid, ctx) && c.id !== host.id);
+    case 'ExileFromGrave':
+      if (valid === 'Card.Self') return host.zone === 'graveyard' ? [host] : [];
+      return game.players[pid].graveyard.filter(c => matchValid(game, c, valid, ctx) && c.id !== host.id);
+    case 'ExileAnyGrave':
+      return game.cardsInZone('graveyard').filter(c => matchValid(game, c, valid, ctx));
+    case 'ExileFromHand':
+      return game.players[pid].hand.filter(c => matchValid(game, c, valid, ctx) && c.id !== host.id);
+    case 'Reveal':
+      return game.players[pid].hand.filter(c => matchValid(game, c, valid, ctx));
+    case 'SubCounter': case 'RemoveAnyCounter':
+      if (valid === 'Card.Self') return [host];
+      return game.battlefield.filter(c => c.controller === pid && matchValid(game, c, valid, ctx));
+    default: return [];
+  }
+}
+
+export function canPayNonMana(game, sa, cost, exclude = new Set()) {
+  const pid = sa.controller;
+  const host = sa.host;
+  const p = game.players[pid];
+  if (cost.tap) {
+    if (host.zone !== 'battlefield' || host.tapped) return false;
+    if (game.chars(host).types.has('Creature') && host.sick && !game.hasKeyword(host, 'Haste') && !hasteActivation(game, host)) return false;
+  }
+  if (cost.untap) {
+    if (host.zone !== 'battlefield' || !host.tapped) return false;
+    if (game.chars(host).types.has('Creature') && host.sick && !game.hasKeyword(host, 'Haste')) return false;
+  }
+  for (const part of cost.parts) {
+    const n = part.amount === 'X' ? (sa.root().x || 0) : amountOf(game, sa, part.amount);
+    switch (part.type) {
+      case 'PayLife': if (p.life < n) return false; break;
+      case 'PayEnergy': if ((p.counters.ENERGY || 0) < n) return false; break;
+      case 'SubCounter': {
+        const ctr = normalizeCounterName(part.counter);
+        const cands = costCandidates(game, sa, part);
+        const total = cands.reduce((a, c) => a + (c.counters[ctr] || 0), 0);
+        if (total < n) return false;
+        break;
+      }
+      case 'RemoveAnyCounter': {
+        const cands = costCandidates(game, sa, part);
+        const total = cands.reduce((a, c) => a + Object.values(c.counters).reduce((x, y) => x + y, 0), 0);
+        if (total < n) return false;
+        break;
+      }
+      case 'AddCounter': break;
+      case 'Mill': if (p.library.length < n) return false; break;
+      case 'Draw': break;
+      case 'Exert': case 'Unattach': break;
+      case 'Crew': {
+        const need = n;
+        const total = game.battlefield.filter(c => c.controller === pid && !c.tapped && c.id !== host.id && game.chars(c).types.has('Creature')).reduce((a, c) => a + Math.max(0, game.chars(c).power), 0);
+        if (total < need) return false;
+        break;
+      }
+      case 'tapXType': {
+        const cands = costCandidates(game, sa, part).filter(c => !exclude.has(c.id));
+        if (/withTotalPowerGE(\d+)/.test(part.valid || '')) {
+          const need = +RegExp.$1;
+          if (cands.reduce((a, c) => a + game.chars(c).power, 0) < need) return false;
+        } else if (cands.length < (part.amount === 'Any' ? 0 : n)) return false;
+        break;
+      }
+      default: {
+        const cands = costCandidates(game, sa, part).filter(c => !exclude.has(c.id));
+        if (n !== Infinity && cands.length < n) return false;
+      }
+    }
+  }
+  return true;
+}
+
+function hasteActivation(game, host) {
+  return game.activeStatics('ActivateAbilityAsIfHaste').some(s => matchValid(game, host, s.p.ValidCard || 'Card.Self', s.ctx));
+}
+
+export function normalizeCounterName(c) {
+  if (!c) return 'P1P1';
+  const u = c.toUpperCase();
+  if (u === 'LOYALTY') return 'LOYALTY';
+  return u.replace(/[^A-Z0-9_]/g, '');
+}
+
+// Gather cost choices (no state change). Returns plan object or throws Cancelled / returns null if impossible.
+async function chooseCostParts(game, sa, cost) {
+  const pid = sa.controller;
+  const choices = [];
+  const used = new Set();
+  for (const part of cost.parts) {
+    const n0 = part.amount === 'X' ? (sa.root().x || 0) : amountOf(game, sa, part.amount);
+    const label = part.desc || part.valid;
+    switch (part.type) {
+      case 'Sac': case 'Discard': case 'ExileFromGrave': case 'ExileFromHand': case 'Return': case 'Exile': case 'tapXType': case 'untapYType': case 'Reveal': case 'ExileAnyGrave': {
+        let cands = costCandidates(game, sa, part).filter(c => !used.has(c.id));
+        let n = n0 === Infinity ? cands.length : n0;
+        if (part.type === 'tapXType' && /withTotalPowerGE(\d+)/.test(part.valid || '')) {
+          const need = +RegExp.$1;
+          cands = costCandidates(game, sa, { ...part, valid: part.valid.replace(/\+?withTotalPowerGE\d+/, '') }).filter(c => !used.has(c.id));
+          const ids = await game.ask(pid, { type: 'cards', prompt: `Tap creatures with total power ${need} or more`, cards: cands.map(c => c.id), min: 1, max: cands.length, purpose: 'crew', need, sa, cancellable: true });
+          if (!ids) throw new Cancelled();
+          const chosen = ids.map(id => game.cardById(id));
+          choices.push({ part, cards: chosen });
+          chosen.forEach(c => used.add(c.id));
+          break;
+        }
+        if (part.valid === 'Random' && part.type === 'Discard') { choices.push({ part, random: n }); break; }
+        if (part.valid === 'Hand' && part.type === 'Discard') { choices.push({ part, cards: cands }); break; }
+        if (cands.length < n) return null;
+        if (n === 0) { choices.push({ part, cards: [] }); break; }
+        let chosen;
+        if (cands.length === n && (part.valid === 'CARDNAME' || part.valid === 'Card.Self')) chosen = cands;
+        else {
+          const verb = { Sac: 'Sacrifice', Discard: 'Discard', ExileFromGrave: 'Exile from your graveyard', ExileFromHand: 'Exile from your hand', Return: 'Return to hand', Exile: 'Exile', tapXType: 'Tap', untapYType: 'Untap', Reveal: 'Reveal', ExileAnyGrave: 'Exile from a graveyard' }[part.type];
+          const ids = await game.ask(pid, { type: 'cards', prompt: `${verb} ${n}: ${part.desc || humanValid(part.valid)}`, cards: cands.map(c => c.id), min: n, max: n, purpose: 'cost' + part.type, sa, cancellable: true });
+          if (!ids) throw new Cancelled();
+          chosen = ids.map(id => game.cardById(id)).filter(Boolean);
+        }
+        chosen.forEach(c => used.add(c.id));
+        choices.push({ part, cards: chosen });
+        break;
+      }
+      case 'SubCounter': case 'RemoveAnyCounter': {
+        const ctr = part.type === 'SubCounter' ? normalizeCounterName(part.counter) : null;
+        const cands = costCandidates(game, sa, part);
+        if (cands.length === 1 || part.valid === 'CARDNAME') { choices.push({ part, cards: [cands[0]], counter: ctr, n: n0 }); break; }
+        const withC = cands.filter(c => ctr ? (c.counters[ctr] || 0) > 0 : Object.values(c.counters).some(x => x > 0));
+        const ids = await game.ask(pid, { type: 'cards', prompt: `Remove ${n0} counter(s) from`, cards: withC.map(c => c.id), min: 1, max: 1, purpose: 'costRemoveCounter', sa, cancellable: true });
+        if (!ids) throw new Cancelled();
+        choices.push({ part, cards: ids.map(id => game.cardById(id)), counter: ctr, n: n0 });
+        break;
+      }
+      case 'Crew': {
+        const need = n0;
+        const cands = game.battlefield.filter(c => c.controller === pid && !c.tapped && c.id !== sa.host.id && game.chars(c).types.has('Creature'));
+        const ids = await game.ask(pid, { type: 'cards', prompt: `Crew ${need}: tap creatures with total power ${need} or more`, cards: cands.map(c => c.id), min: 1, max: cands.length, purpose: 'crew', need, sa, cancellable: true });
+        if (!ids) throw new Cancelled();
+        choices.push({ part, cards: ids.map(id => game.cardById(id)) });
+        break;
+      }
+      default: choices.push({ part, n: n0 });
+    }
+  }
+  return choices;
+}
+
+export function humanValid(v) {
+  if (!v) return '';
+  if (v === 'CARDNAME' || v === 'Card.Self') return 'this';
+  const ADJ = { untapped: 'untapped', tapped: 'tapped', Other: 'other', StrictlyOther: 'other', nonToken: 'nontoken', token: 'token', nonLand: 'nonland', nonCreature: 'noncreature', attacking: 'attacking', Legendary: 'legendary', Basic: 'basic', nonBasic: 'nonbasic' };
+  const TAIL = { YouCtrl: 'you control', YouOwn: 'you own', OppCtrl: 'an opponent controls', YouDontCtrl: "you don't control" };
+  return v.split(',').map(alt => {
+    const [type, ...rest] = alt.split('.');
+    const props = rest.join('.').split('+').filter(Boolean);
+    const adj = [], withs = [], tail = [];
+    for (const pr of props) {
+      if (ADJ[pr]) adj.push(ADJ[pr]);
+      else if (TAIL[pr]) tail.push(TAIL[pr]);
+      else if (/^with/.test(pr)) withs.push('with ' + pr.slice(4).replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase());
+      else if (/^non/.test(pr)) adj.push('non' + pr.slice(3).toLowerCase());
+      else if (/^(cmc|power|toughness)(LE|GE|EQ|LT|GT)(\d+)$/.test(pr)) { const m = pr.match(/^(cmc|power|toughness)(LE|GE|EQ|LT|GT)(\d+)$/); withs.push(`with ${m[1] === 'cmc' ? 'mana value' : m[1]} ${{ LE: '≤', GE: '≥', EQ: '=', LT: '<', GT: '>' }[m[2]]} ${m[3]}`); }
+      else if (/^[A-Z]/.test(pr)) adj.push(pr);
+    }
+    const noun = type === 'Card' ? 'card' : type === 'Permanent' ? 'permanent' : type.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+    return [...adj, noun, ...withs, ...tail].join(' ');
+  }).join(' or ');
+}
+
+async function applyCostParts(game, sa, cost, choices) {
+  const pid = sa.controller;
+  const p = game.players[pid];
+  const host = sa.host;
+  const paid = sa.root().paid;
+  if (cost.tap) { await game.tap(host); }
+  if (cost.untap) { await game.untap(host); }
+  for (const ch of choices) {
+    const part = ch.part;
+    switch (part.type) {
+      case 'Sac': for (const c of ch.cards) { paid.Sacrificed.push(game.makeLKI(c)); await game.sacrifice(c, sa); } break;
+      case 'Discard':
+        if (ch.random) { for (let i = 0; i < ch.random && p.hand.length; i++) { const c = p.hand[game.rng.int(p.hand.length)]; paid.Discarded.push(c); await game.discard(c, sa); } }
+        else for (const c of ch.cards) { paid.Discarded.push(c); await game.discard(c, sa); }
+        break;
+      case 'ExileFromGrave': case 'ExileFromHand': case 'Exile': case 'ExileAnyGrave': for (const c of ch.cards) { paid.Exiled.push(c); await game.moveCard(c, 'exile', { cause: sa }); } break;
+      case 'Return': for (const c of ch.cards) await game.moveCard(c, 'hand', { cause: sa }); break;
+      case 'tapXType': case 'Crew': for (const c of ch.cards) { paid.Tapped.push(c); await game.tap(c); } if (part.type === 'Crew') game.fire('BecomesCrewed', { Card: host, Crew: ch.cards }); break;
+      case 'untapYType': for (const c of ch.cards) await game.untap(c); break;
+      case 'Reveal': for (const c of ch.cards) paid.Revealed.push(c); game.log(`${p.name} reveals ${ch.cards.map(c => game.name(c)).join(', ')}.`); break;
+      case 'SubCounter': {
+        for (const c of ch.cards) await game.removeCounters(c, ch.counter, ch.n);
+        if (ch.counter === 'LOYALTY') sa.root().loyaltyCost = -ch.n;
+        break;
+      }
+      case 'RemoveAnyCounter': {
+        const c = ch.cards[0];
+        let left = ch.n;
+        for (const k of Object.keys(c.counters)) { if (left <= 0) break; const r = await game.removeCounters(c, k, left); left -= r; }
+        break;
+      }
+      case 'AddCounter': { const n = ch.n; await game.addCounters(host, normalizeCounterName(part.counter), n, sa); if (normalizeCounterName(part.counter) === 'LOYALTY') sa.root().loyaltyCost = n; break; }
+      case 'PayLife': { const n = ch.n; p.life -= n; p.lifeLostThisTurn += n; game.touch(); game.log(`${p.name} pays ${n} life.`); game.fire('LifeLost', { Player: pid, LifeAmount: n }); paid.LifePaid = n; break; }
+      case 'PayEnergy': p.counters.ENERGY = (p.counters.ENERGY || 0) - ch.n; game.touch(); break;
+      case 'Mill': await game.mill(p, ch.n, sa); break;
+      case 'Draw': await game.drawCards(p, ch.n, sa); break;
+      case 'Exert': host.exertedTurn = game.turnNumber; break;
+      case 'Unattach': break;
+      default: break;
+    }
+  }
+}
+
+// ---------------------------------------------------------------- mana sources & payment
+export function manaAbilitiesOf(game, card) {
+  return game.chars(card).abilities.filter(a => (a.parsed.api === 'Mana' || a.parsed.api === 'ManaReflected') && a.parsed.kind === 'AB');
+}
+
+function reflectedColors(game, card, abil) {
+  const p = abil.parsed.p;
+  const ctx = { host: card, you: card.controller };
+  const out = new Set();
+  const pool = game.battlefield.filter(c => matchValid(game, c, p.Valid || 'Land.OppCtrl', ctx));
+  for (const c of pool) {
+    for (const a of game.chars(c).abilities) {
+      if (a.parsed.api !== 'Mana') continue;
+      for (const u of producedUnits(game, c, a, true)) for (const col of u) out.add(col);
+    }
+  }
+  if (p.ColorOrType !== 'Type') out.delete('C');
+  return [...out];
+}
+
+export function producedUnits(game, card, abil, noReflect = false) {
+  const p = abil.parsed.p;
+  if (abil.parsed.api === 'ManaReflected') {
+    if (noReflect) return [];
+    const cols = reflectedColors(game, card, abil);
+    return cols.length ? [cols] : [];
+  }
+  let produced = p.Produced || 'C';
+  const pid = card.controller;
+  if (produced.includes('ColorIdentity')) {
+    const ci = game.players[pid].colorIdentity;
+    produced = produced.replace('ColorIdentity', ci.join(' '));
+    if (!ci.length) return [];
+  }
+  if (produced.includes('Chosen')) {
+    const cols = (card.chosen && card.chosen.colors) || [];
+    produced = produced.replace('Chosen', cols.join(' ') || '');
+  }
+  if (produced === 'Combo Any' || produced === 'Any' || produced === 'AnyDifferent') produced = 'Any';
+  let units = manaColorsFromProduced(produced);
+  if (p.Amount) {
+    const ctx = { host: card, you: pid, svars: abil.svars, sa: { svars: abil.svars, host: card, controller: pid, root() { return { x: 0, paid: {} }; } } };
+    const n = calcCtx(game, p.Amount, ctx);
+    if (units.length === 1) units = Array.from({ length: Math.max(0, n) }, () => units[0]);
+    else { const base = units; units = []; for (let i = 0; i < n; i++) units.push(...base); }
+  }
+  return units;
+}
+
+export function manaSourcesFor(game, pid, { exclude = new Set(), spellCard = null } = {}) {
+  const out = [];
+  for (const card of game.battlefield) {
+    if (card.controller !== pid || exclude.has(card.id) || card.phasedOut) continue;
+    const ch = game.chars(card);
+    const isCreature = ch.types.has('Creature');
+    for (const abil of manaAbilitiesOf(game, card)) {
+      const p = abil.parsed.p;
+      const cost = parseCost(p.Cost);
+      if (cost.tap && (card.tapped || (isCreature && card.sick && !game.hasKeywordIn(ch, 'Haste')))) continue;
+      if (cost.untap) continue;
+      // only simple extra costs
+      let penalty = ch.types.has('Land') ? 0 : isCreature ? (card.isCommander ? 8 : 3) : 1;
+      let ok = true;
+      for (const part of cost.parts) {
+        if (part.type === 'Sac' && (part.valid === 'CARDNAME' || part.valid === 'Card.Self')) penalty += 20;
+        else if (part.type === 'PayLife') penalty += 2;
+        else ok = false;
+      }
+      if (!ok) continue;
+      if (p.RestrictValid && spellCard && !matchValid(game, spellCard, p.RestrictValid, { host: card, you: pid })) continue;
+      if (p.RestrictValid && !spellCard) continue;
+      if (p.ActivationLimit && (card.abilityUses[abil.key] || 0) >= +p.ActivationLimit) continue;
+      if (!checkPresence(game, p, { host: card, you: pid, svars: abil.svars, sa: { svars: abil.svars, host: card, controller: pid, root() { return { x: 0, paid: {} }; } } })) continue;
+      if (p.SubAbility) penalty += 1.5;
+      const units = producedUnits(game, card, abil);
+      if (!units.length) continue;
+      const extra = cost.hasMana ? cost.mana : null;
+      if (extra) penalty += 1;
+      if (!cost.tap && !cost.parts.length && !extra) continue; // free mana abilities with no cost: ignore
+      out.push({ key: card.id + ':' + abil.key, card, abil, units, penalty, extraCost: extra, excl: cost.tap ? 'tap' + card.id : null, sig: card.def.name + '|' + abil.key + '|' + units.map(u => u.join('')).join(',') + (card.tapped ? 't' : '') });
+    }
+  }
+  return out;
+}
+
+function surplusPay(pool, cost, reserve, produced = []) {
+  // pay a (filter) cost from the pool while keeping colors the pending main cost needs
+  const need = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+  if (reserve) { for (const k in need) need[k] = reserve.colored[k] || 0; for (const h of reserve.hybrid) for (const k of h) need[k] += 0.5; }
+  for (const c of produced) need[c] = (need[c] || 0) - 1;
+  const p = { ...pool };
+  for (const k of ['W', 'U', 'B', 'R', 'G', 'C']) { const n = cost.colored[k] || 0; if (p[k] < n) return null; p[k] -= n; }
+  for (const h of cost.hybrid) { const c = h.filter(x => p[x] > 0).sort((a, b) => (p[b] - need[b]) - (p[a] - need[a]))[0]; if (!c) return null; p[c]--; }
+  for (let i = 0; i < cost.generic; i++) {
+    const c = ['C', 'W', 'U', 'B', 'R', 'G'].filter(x => p[x] > 0).sort((a, b) => (p[b] - need[b]) - (p[a] - need[a]))[0];
+    if (!c) return null;
+    p[c]--;
+  }
+  return p;
+}
+
+export async function produceMana(game, card, abil, colors, pid, reserve = null) {
+  const p = abil.parsed.p;
+  const cost = parseCost(p.Cost);
+  const player = game.players[pid];
+  if (cost.tap && card.tapped) return false;
+  if (cost.tap) { card.tapped = true; game.touch(); }
+  if (cost.hasMana) {
+    const np = surplusPay(player.pool, cost.mana, reserve, colors);
+    if (!np) return false;
+    player.pool = np;
+  }
+  for (const part of cost.parts) {
+    if (part.type === 'Sac') await game.sacrifice(card, null);
+    if (part.type === 'PayLife') { const n = +part.amount || 1; player.life -= n; player.lifeLostThisTurn += n; }
+  }
+  for (const c of colors) player.pool[c] = (player.pool[c] || 0) + 1;
+  card.abilityUses[abil.key] = (card.abilityUses[abil.key] || 0) + 1;
+  game.touch();
+  // sub-abilities (pain lands, talismans)
+  if (p.SubAbility && abil.svars[p.SubAbility]) {
+    const sub = makeSA(game, abil.svars[p.SubAbility], abil.svars, card, pid);
+    await resolveChain(game, sub);
+  }
+  if (cost.tap) game.fire('Taps', { Card: card, Player: pid });
+  game.fire('TapsForMana', { Card: card, Player: pid, Produced: colors.join(' '), Amount: colors.length });
+  // triggered mana abilities (mana doublers) resolve immediately
+  await resolveManaTriggers(game);
+  return true;
+}
+
+async function resolveManaTriggers(game) {
+  const keep = [];
+  for (const pt of game.pendingTriggers) {
+    if (pt.rp && pt.rp.Mode === 'TapsForMana') {
+      const raw = pt.t.svars && pt.t.svars[pt.t.parsed.p.Execute];
+      if (raw && /Mana(Reflected)?\b/.test(parseAbility(raw).api || '')) {
+        const sa = makeSA(game, raw, pt.t.svars, pt.host, pt.controller, { trig: pt.rp });
+        await resolveChain(game, sa);
+        continue;
+      }
+    }
+    keep.push(pt);
+  }
+  game.pendingTriggers = keep;
+}
+
+export async function activateManaAbility(game, pid, card, abilityKey, color) {
+  if (!card || card.controller !== pid) return false;
+  const abil = manaAbilitiesOf(game, card).find(a => a.key === abilityKey) || manaAbilitiesOf(game, card)[0];
+  if (!abil) return false;
+  const src = manaSourcesFor(game, pid).find(s => s.card === card && s.abil.key === abil.key);
+  if (!src) return false;
+  if (src.extraCost && !payFromPool(src.extraCost, game.players[pid].pool)) return false;
+  let colors = src.units.map(u => u[0]);
+  if (src.units.some(u => u.length > 1)) {
+    colors = [];
+    for (const u of src.units) {
+      if (u.length === 1) { colors.push(u[0]); continue; }
+      let c = color && u.includes(color) ? color : null;
+      if (!c) c = await game.ask(pid, { type: 'color', prompt: `Choose a color of mana to add (${game.name(card)})`, colors: u, purpose: 'mana', cancellable: true });
+      if (!c) throw new Cancelled();
+      colors.push(c);
+    }
+  }
+  await produceMana(game, card, abil, colors, pid);
+  game.log(`${game.players[pid].name} taps ${game.name(card)} for ${colors.map(c => `{${c}}`).join('')}.`, { type: 'mana' });
+  return true;
+}
+
+// Additional payment sources for convoke / improvise
+function alternativeSources(game, pid, card, exclude) {
+  const out = [];
+  const ch = game.chars(card);
+  const convoke = game.hasKeywordIn(ch, 'Convoke');
+  const improvise = game.hasKeywordIn(ch, 'Improvise');
+  if (!convoke && !improvise) return out;
+  for (const c of game.battlefield) {
+    if (c.controller !== pid || c.tapped || exclude.has(c.id)) continue;
+    const cc = game.chars(c);
+    if (convoke && cc.types.has('Creature')) {
+      const cols = [...cc.colors];
+      out.push({ key: 'convoke:' + c.id, card: c, convoke: true, units: [cols.length ? [...cols, 'C'] : ['C']], penalty: 6, sig: 'cv' + c.id, excl: 'tap' + c.id });
+    } else if (improvise && cc.types.has('Artifact')) {
+      out.push({ key: 'improvise:' + c.id, card: c, improvise: true, units: [['C']], penalty: 5, sig: 'im' + c.id, excl: 'tap' + c.id });
+    }
+  }
+  return out;
+}
+
+// Plan + pay a mana cost for player pid. Returns true when paid. No state change when it fails.
+export async function payManaCost(game, pid, manaCost, { exclude = new Set(), spellCard = null, sa = null, dryRun = false } = {}) {
+  const p = game.players[pid];
+  if (cmc(manaCost) === 0 && !manaCost.x) return true;
+  let sources = manaSourcesFor(game, pid, { exclude, spellCard });
+  if (spellCard) sources = sources.concat(alternativeSources(game, pid, spellCard, exclude));
+  const plan = planPayment(manaCost, p.pool, sources, { lifeAvailable: p.life - 1 });
+  if (!plan) return false;
+  if (dryRun) return true;
+  const byKey = new Map(sources.map(s => [s.key, s]));
+  const acts = plan.activations.map(a => ({ a, s: byKey.get(a.key) }));
+  // non-filter sources first
+  acts.sort((x, y) => (x.s.extraCost ? 1 : 0) - (y.s.extraCost ? 1 : 0));
+  const tapped = [];
+  for (const { a, s } of acts) {
+    if (s.convoke || s.improvise) {
+      s.card.tapped = true; game.touch();
+      for (const c of a.colors) p.pool[c] = (p.pool[c] || 0) + 1;
+      if (spellCard) spellCard.convokedBy = [...(spellCard.convokedBy || []), s.card.id];
+      game.fire('Taps', { Card: s.card });
+      continue;
+    }
+    await produceMana(game, s.card, s.abil, a.colors, pid, manaCost);
+    tapped.push(s.card);
+  }
+  const r = payFromPool(manaCost, p.pool, { lifeAvailable: p.life - 1 });
+  if (!r) {
+    // should not happen; leave mana floating
+    game.log('Mana payment failed unexpectedly; mana left in pool.', { type: 'error', detail: JSON.stringify({ cost: manaCost, pool: p.pool, acts: acts.map(x => [x.s.card.def.name, x.a.colors]) }) });
+    if (game.debugMana) console.log('MANA FAIL', JSON.stringify({ cost: manaCost, pool: p.pool, acts: acts.map(x => [x.s.card.def.name, x.a.colors, x.s.key, x.s.excl, x.s.extraCost, x.s.units]) }), JSON.stringify(sources.map(s => [s.key, s.excl, s.units, s.extraCost])));
+    return false;
+  }
+  const spent = {};
+  for (const k of Object.keys(p.pool)) { const d = p.pool[k] - r.pool[k]; if (d > 0) spent[k] = d; }
+  p.pool = r.pool;
+  if (r.life) { p.life -= r.life; p.lifeLostThisTurn += r.life; }
+  if (sa) sa.root().manaSpent = spent;
+  game.touch();
+  if (tapped.length) game.log(`${p.name} taps ${tapped.map(c => game.name(c)).join(', ')}.`, { type: 'mana', quiet: true });
+  return true;
+}
+
+export function canAfford(game, pid, manaCost, opts = {}) {
+  const p = game.players[pid];
+  if (cmc(manaCost) === 0) return true;
+  let sources = manaSourcesFor(game, pid, opts);
+  if (opts.spellCard) sources = sources.concat(alternativeSources(game, pid, opts.spellCard, opts.exclude || new Set()));
+  return !!planPayment(manaCost, p.pool, sources, { lifeAvailable: p.life - 1, maxNodes: 8000 });
+}
+
+export function availableManaCount(game, pid, spellCard = null) {
+  const p = game.players[pid];
+  let n = poolTotal(p.pool);
+  const best = new Map();
+  for (const s of manaSourcesFor(game, pid, { spellCard })) {
+    const v = s.units.length - (s.extraCost ? cmc(s.extraCost) : 0);
+    const k = s.excl || s.key;
+    best.set(k, Math.max(best.get(k) || 0, v));
+  }
+  for (const v of best.values()) n += v;
+  if (spellCard) n += alternativeSources(game, pid, spellCard, new Set()).length;
+  return n;
+}
+
+// ---------------------------------------------------------------- targeting
+function normValidTgts(v) {
+  return String(v).split(',').map(s => s.trim()).flatMap(s => s === 'Any' ? ['Creature', 'Planeswalker', 'Battle', 'Player'] : s.startsWith('Any.') ? ['Creature' + s.slice(3), 'Planeswalker' + s.slice(3), 'Player'] : [s]).join(',');
+}
+
+export function targetSpec(game, sa) {
+  const p = sa.p;
+  if (!p.ValidTgts && !p.TargetType) return null;
+  const ctx = ctxOf(game, sa);
+  const spec = {
+    valid: normValidTgts(p.ValidTgts || 'Card'),
+    min: p.TargetMin != null ? Math.max(0, calcCtx(game, p.TargetMin, ctx)) : 1,
+    max: p.TargetMax != null ? Math.max(0, calcCtx(game, p.TargetMax, ctx)) : 1,
+    stack: !!(p.TargetType && /Spell|Activated|Triggered|SpellAbility/.test(p.TargetType)),
+    stackTypes: p.TargetType || '',
+    zone: p.TgtZone ? p.TgtZone.split(',').map(z => zoneMap[z] || z.toLowerCase())
+      : (sa.api === 'ChangeZone' && p.Origin && !/Battlefield|Any/.test(p.Origin)) ? p.Origin.split(',').map(z => zoneMap[z] || z.toLowerCase()) : ['battlefield'],
+    prompt: p.TgtPrompt || p.SpellDescription || 'Choose targets',
+    unique: p.TargetUnique === 'True',
+    differentControllers: p.TargetsWithDifferentControllers === 'True' || p.TargetsForEachPlayer === 'True',
+    sameController: p.TargetsWithSameController === 'True',
+    divided: p.DividedAsYouChoose,
+  };
+  if (p.TargetMin == null && p.TargetMax != null && spec.max > 1 && p.TargetMax !== '1') spec.min = Math.min(1, spec.max);
+  if (p.TargetMax === 'MaxTgts' || p.TargetMax === 'OneEach') spec.max = game.livingPlayers().length;
+  if (p.TargetsForEachPlayer === 'True' && p.TargetMax == null) spec.max = game.opponents(sa.controller).length;
+  if (spec.max < spec.min) spec.max = spec.min;
+  return spec;
+}
+
+export function canBeTargetedBy(game, obj, sa) {
+  if (!obj) return false;
+  const you = sa.controller;
+  if (obj.isPlayer) {
+    if (obj.lost) return false;
+    const pc = game.playerChars(obj.id);
+    if (pc.keywords.includes('Shroud')) return false;
+    if (pc.keywords.includes('Hexproof') && obj.id !== you) return false;
+    return true;
+  }
+  if (obj.stackItem) return true;
+  if (obj.zone !== 'battlefield') return true;
+  const ch = game.chars(obj);
+  if (game.hasKeywordIn(ch, 'Shroud')) return false;
+  if (obj.controller !== you) {
+    for (const k of ch.keywords) {
+      if (k === 'Hexproof') return false;
+      if (k.startsWith('Hexproof:')) {
+        const v = k.split(':')[1];
+        if (sa.host && matchValid(game, sa.host, v, { host: obj, you: obj.controller })) return false;
+      }
+      if (k === 'Hexproof from everything') return false;
+    }
+  }
+  if (sa.host && game.hasProtectionFrom(obj, sa.host)) return false;
+  for (const s of game.activeStatics('CantTarget')) {
+    if (s.p.ValidCard && !matchValid(game, obj, s.p.ValidCard, s.ctx)) continue;
+    if (s.p.ValidSource && !(sa.host && matchValid(game, sa.host, s.p.ValidSource, s.ctx))) continue;
+    if (s.p.Activator && !matchValid(game, game.players[you], s.p.Activator, s.ctx)) continue;
+    return false;
+  }
+  if (game.hasKeywordIn(ch, "CARDNAME can't be the target of spells or abilities your opponents control.") && obj.controller !== you) return false;
+  return true;
+}
+
+export function targetCandidates(game, sa, spec) {
+  const ctx = ctxOf(game, sa);
+  const out = [];
+  if (spec.stack) {
+    for (const item of game.stack) {
+      if (item.sa === sa || (sa.stackItem && item === sa.stackItem)) continue;
+      const isSpell = item.kind === 'spell';
+      if (isSpell && !/Spell/.test(spec.stackTypes)) continue;
+      if (!isSpell && item.kind === 'ability' && !/Activated|SpellAbility/.test(spec.stackTypes)) continue;
+      if (!isSpell && item.kind === 'trigger' && !/Triggered|SpellAbility/.test(spec.stackTypes)) continue;
+      const card = item.card || item.source;
+      const valid = spec.valid.replace(/\bPlayer\b/g, '');
+      if (card && (valid === 'Card' || matchValid(game, card, valid, { ...ctx, stackController: item.controller }))) out.push(item);
+      else if (!card) out.push(item);
+    }
+    return out;
+  }
+  const hasPlayers = /(^|,)(Player|Opponent|You)/.test(spec.valid);
+  for (const z of spec.zone) {
+    const pool = z === 'battlefield' ? game.battlefield : game.cardsInZone(z);
+    for (const c of pool) {
+      if (c.phasedOut) continue;
+      if (matchValid(game, c, spec.valid, ctx) && canBeTargetedBy(game, c, sa)) out.push(c);
+    }
+  }
+  if (hasPlayers) for (const pl of game.livingPlayers()) if (matchValid(game, pl, spec.valid, ctx) && canBeTargetedBy(game, pl, sa)) out.push(pl);
+  return out;
+}
+
+export async function chooseTargetsForSA(game, root, { optional = false, aiHint = null } = {}) {
+  const chain = root.chain();
+  const chosenAll = [];
+  for (const sa of chain) {
+    const spec = targetSpec(game, sa);
+    if (!spec) continue;
+    let cands = targetCandidates(game, sa, spec);
+    if (spec.unique) cands = cands.filter(c => !chosenAll.includes(c));
+    if (cands.length < spec.min) {
+      if (spec.min === 0) { sa.targets = []; continue; }
+      return false;
+    }
+    if (spec.max === 0) { sa.targets = []; continue; }
+    const max = Math.min(spec.max, cands.length);
+    const ans = await game.ask(sa.controller, { type: 'targets', prompt: (spec.prompt || '').replace(/CARDNAME/g, game.name(sa.host)), cands: cands.map(refOf), min: spec.min, max, sa, spec, cancellable: !sa.isTrigger });
+    if (ans == null) throw new Cancelled();
+    let objs = ans.map(r => fromRef(game, r)).filter(Boolean);
+    if (objs.length < spec.min) { if (sa.isTrigger && spec.min > 0) return false; throw new Cancelled(); }
+    if (spec.differentControllers) {
+      const seen = new Set(); objs = objs.filter(o => { const c = o.isPlayer ? o.id : ctrlOf(game, o); if (seen.has(c)) return false; seen.add(c); return true; });
+    }
+    sa.targets = objs;
+    sa.targetZcc = objs.map(o => (o.isCard ? o.zcc : null));
+    sa.hadTargets = objs.length > 0;
+    chosenAll.push(...objs);
+    if (spec.divided) {
+      const total = calcCtx(game, spec.divided, ctxOf(game, sa));
+      sa.division = divideEvenly(total, objs.length);
+    }
+  }
+  return true;
+}
+
+function divideEvenly(total, n) {
+  if (!n) return [];
+  const base = Math.floor(total / n);
+  const out = Array(n).fill(base);
+  for (let i = 0; i < total - base * n; i++) out[i]++;
+  return out;
+}
+
+// Re-validate targets on resolution; returns false if the whole thing fizzles.
+export function recheckTargets(game, root) {
+  let had = 0, legalAny = 0;
+  for (const sa of root.chain()) {
+    if (!sa.targets || !sa.targets.length) continue;
+    had++;
+    const spec = targetSpec(game, sa);
+    if (!spec) continue;
+    const ctx = ctxOf(game, sa);
+    const kept = [];
+    sa.targets.forEach((t, i) => {
+      if (t.isPlayer) { if (!t.lost && matchValid(game, t, spec.valid, ctx) && canBeTargetedBy(game, t, sa)) kept.push(t); return; }
+      if (t.stackItem) { if (game.stack.includes(t)) kept.push(t); return; }
+      if (sa.targetZcc && sa.targetZcc[i] != null && t.zcc !== sa.targetZcc[i]) return;
+      if (!spec.zone.includes(t.zone)) return;
+      if (!matchValid(game, t, spec.valid, ctx)) return;
+      if (!canBeTargetedBy(game, t, sa)) return;
+      kept.push(t);
+    });
+    if (sa.division && kept.length !== sa.targets.length) sa.division = sa.targets.map((t, i) => kept.includes(t) ? sa.division[i] : 0).filter((_, i) => kept.includes(sa.targets[i]));
+    sa.targets = kept;
+    if (kept.length) legalAny++;
+  }
+  return had === 0 || legalAny > 0;
+}
+
+// ---------------------------------------------------------------- casting
+const PERMANENT = ['Artifact', 'Creature', 'Enchantment', 'Land', 'Planeswalker', 'Battle'];
+
+function faceIsPermanent(face) { return face.types.some(t => PERMANENT.includes(t)); }
+
+function hasFlash(game, card, face) {
+  if (face.types.includes('Instant')) return true;
+  const ch = game.chars(card);
+  if (game.hasKeywordIn(ch, 'Flash') || face.keywords.includes('Flash')) return true;
+  return game.activeStatics('CastWithFlash').some(s => matchValid(game, card, s.p.ValidCard || 'Card', s.ctx) && (!s.p.Caster || matchValid(game, game.players[card.owner], s.p.Caster, s.ctx)));
+}
+
+function mayPlayFrom(game, pid, card) {
+  // Continuous statics with MayPlay$ that let you play this card from its current zone
+  for (const { st, ctx } of game._activeStatics || []) {
+    const p = st.parsed.p;
+    if (!p.MayPlay) continue;
+    const zones = (p.AffectedZone || 'Battlefield').split(',').map(z => zoneMap[z] || z.toLowerCase());
+    if (!zones.includes(card.zone)) continue;
+    const who = ctx.you;
+    if (p.Affected && !matchValid(game, card, p.Affected, ctx)) continue;
+    if (p.AffectedDefined && !resolveDefined(game, p.AffectedDefined, ctx).some(x => x && x.id === card.id)) continue;
+    const player = st.host.isEffect ? st.host.controller : who;
+    if (player !== pid && !/Player|Opponent/.test(p.MayPlayPlayer || '')) continue;
+    if (p.MayPlayLimit && (st.host.mayPlayUses || 0) >= +p.MayPlayLimit) continue;
+    return { st, without: p.MayPlayWithoutManaCost === 'True', ignoreType: p.MayPlayIgnoreType === 'True' };
+  }
+  return null;
+}
+
+export function spellOptions(game, pid, card, { anyZone = false } = {}) {
+  const opts = [];
+  if (!card) return opts;
+  const def = card.def;
+  const zone = card.zone;
+  let from = null;
+  let mayPlay = null;
+  if (anyZone && zone !== 'battlefield' && zone !== 'stack') from = zone;
+  else if (zone === 'hand' && card.owner === pid) from = 'hand';
+  else if (zone === 'command' && card.owner === pid && card.isCommander) from = 'command';
+  else if (zone === 'exile' && card.onAdventure && card.owner === pid) from = 'adventure';
+  else if (zone === 'exile' && card.foretold && card.owner === pid) from = 'foretold';
+  else if (zone === 'graveyard' || zone === 'exile' || zone === 'library' || zone === 'hand') {
+    game.ensureChars();
+    mayPlay = mayPlayFrom(game, pid, card);
+    if (mayPlay) from = zone;
+  }
+  const faces = def.faces;
+  const pushFace = (fi, extra = {}) => {
+    const face = faces[fi];
+    if (!face) return;
+    if (face.types.includes('Land')) {
+      if (from === 'hand' || mayPlay) opts.push({ key: `land${fi}`, label: `Play ${face.name}`, land: true, face: fi, from });
+      return;
+    }
+    const spAbils = face.abilities.map((raw, i) => ({ raw, i })).filter(a => /^SP\$/.test(a.raw));
+    if (spAbils.length && !faceIsPermanent(face)) {
+      for (const a of spAbils) opts.push({ key: `f${fi}a${a.i}`, label: `Cast ${face.name}${spAbils.length > 1 ? ' (' + (parseAbility(a.raw).p.SpellDescription || '').slice(0, 40) + ')' : ''}`, face: fi, abilIdx: a.i, from, ...extra });
+    } else if (spAbils.length && face.subtypes.includes('Aura')) {
+      opts.push({ key: `f${fi}a${spAbils[0].i}`, label: `Cast ${face.name}`, face: fi, abilIdx: spAbils[0].i, from, permanent: true, ...extra });
+    } else {
+      opts.push({ key: `f${fi}`, label: `Cast ${face.name}`, face: fi, permanent: true, from, ...extra });
+    }
+  };
+  if (!from) {
+    // flashback / escape / retrace from graveyard
+    if (zone === 'graveyard' && card.owner === pid) {
+      const f = faces[0];
+      for (const k of f.keywords) {
+        let m;
+        if ((m = k.match(/^Flashback:?(.*)$/))) { const raw = (m[1] || '').split(':')[0]; pushFace(0, { altCost: 'Flashback', altManaStr: raw || f.manaCostStr, from: 'graveyard', label: `Flashback ${f.name}` }); }
+        if ((m = k.match(/^Escape:(.*)$/))) pushFace(0, { altCost: 'Escape', altManaStr: m[1].split(':')[0], from: 'graveyard', label: `Escape ${f.name}` });
+        if (k === 'Retrace') pushFace(0, { altCost: 'Retrace', from: 'graveyard', extraCostStr: 'Discard<1/Land>', label: `Retrace ${f.name}` });
+        if ((m = k.match(/^Jump-start$/))) pushFace(0, { altCost: 'Flashback', from: 'graveyard', extraCostStr: 'Discard<1/Card>', label: `Jump-start ${f.name}` });
+      }
+      for (const o of opts) o.key = (o.altCost || 'g') + o.key;
+    }
+    return opts.map(o => ({ ...o, from: o.from || 'graveyard' }));
+  }
+  if (from === 'adventure') { pushFace(0); return opts; }
+  if (from === 'foretold') {
+    const fk = faces[0].keywords.find(k => k.startsWith('Foretell:'));
+    if (fk && card.foretoldTurn !== game.turnNumber) pushFace(0, { altCost: 'Foretell', altManaStr: fk.split(':').slice(1).join(':'), label: `Cast ${faces[0].name} (foretold)` });
+    return opts;
+  }
+  const aftermath = def.altMode === 'Split' && faces[1] && faces[1].keywords.includes('Aftermath');
+  if (aftermath) {
+    if (from === 'hand') pushFace(0);
+    return opts;
+  }
+  if (def.altMode === 'Split' || def.altMode === 'Adventure' || def.altMode === 'Modal' || def.altMode === 'Omen' || def.altMode === 'Prepare') {
+    pushFace(0);
+    if (from !== 'command') pushFace(1, def.altMode === 'Adventure' ? { adventure: true } : {});
+  } else {
+    pushFace(card.face && card.zone !== 'hand' ? card.face : 0);
+  }
+  // alternative costs from hand
+  if (from === 'hand' || from === 'command') {
+    const f = faces[0];
+    for (const k of f.keywords) {
+      let m;
+      if ((m = k.match(/^Evoke:(.*)$/))) pushFace(0, { altCost: 'Evoke', altManaStr: m[1].split(':')[0], label: `Evoke ${f.name}` });
+      if ((m = k.match(/^Dash:(.*)$/))) pushFace(0, { altCost: 'Dash', altManaStr: m[1].split(':')[0], label: `Dash ${f.name}` });
+      if ((m = k.match(/^Blitz:(.*)$/))) pushFace(0, { altCost: 'Blitz', altManaStr: m[1].split(':')[0], label: `Blitz ${f.name}` });
+      if ((m = k.match(/^Overload:(.*)$/))) pushFace(0, { altCost: 'Overload', altManaStr: m[1].split(':')[0], label: `Overload ${f.name}` });
+      if ((m = k.match(/^(Morph|Megamorph|Disguise):(.*)$/))) opts.push({ key: 'morph', label: `Cast ${f.name} face down (${m[1]})`, face: 0, permanent: true, faceDown: true, altManaStr: '3', altCost: 'Morph', from });
+      if ((m = k.match(/^Spectacle:(.*)$/)) && game.opponents(pid).some(o => o.lifeLostThisTurn > 0)) pushFace(0, { altCost: 'Spectacle', altManaStr: m[1], label: `Spectacle ${f.name}` });
+      if ((m = k.match(/^Surge:(.*)$/)) && game.players[pid].spellsCastThisTurn.length > 0) pushFace(0, { altCost: 'Surge', altManaStr: m[1], label: `Surge ${f.name}` });
+    }
+    // "You may pay X rather than pay this spell's mana cost"
+    for (const st of f.statics) {
+      const sp = parseAbility(st).p;
+      if (sp.Mode !== 'AlternativeCost' || !sp.Cost) continue;
+      if (sp.ValidSA && !/Spell(\.Self)?$/.test(sp.ValidSA)) continue;
+      const ctx = { host: card, you: pid };
+      if (!checkPresence(game, sp, ctx)) continue;
+      pushFace(0, { altCost: 'Alternative', altManaStr: sp.Cost, label: `Cast ${f.name} (${(sp.Description || 'alternative cost').slice(0, 50)})` });
+    }
+  }
+  // aftermath half from the graveyard
+  if (zone === 'graveyard' && card.owner === pid && def.altMode === 'Split' && faces[1] && faces[1].keywords.includes('Aftermath')) {
+    pushFace(1, { from: 'graveyard', altCost: 'Flashback', label: `Cast ${faces[1].name} (aftermath)` });
+  }
+  const seenKeys = new Set();
+  for (const o of opts) { let k = (o.altCost ? o.altCost + ':' : '') + o.key; while (seenKeys.has(k)) k += "'"; seenKeys.add(k); o.key = k; }
+  if (mayPlay && mayPlay.without) for (const o of opts) o.withoutMana = true;
+  for (const o of opts) if (mayPlay) o.mayPlay = mayPlay;
+  return opts;
+}
+
+function timingOk(game, pid, card, opt) {
+  const face = card.def.faces[opt.face] || card.def.faces[0];
+  if (opt.land) return game.canSorcery(pid);
+  if (game.stack.some(s => s.splitSecond)) return false;
+  if (hasFlash(game, card, face)) return true;
+  if (opt.altCost === 'Morph') return game.canSorcery(pid);
+  return game.canSorcery(pid);
+}
+
+function cantBeCast(game, pid, card) {
+  for (const s of game.activeStatics('CantBeCast')) {
+    if (s.p.ValidCard && !matchValid(game, card, s.p.ValidCard, s.ctx)) continue;
+    if (s.p.Caster && !matchValid(game, game.players[pid], s.p.Caster, s.ctx)) continue;
+    if (s.p.Origin && !s.p.Origin.split(',').map(z => zoneMap[z] || z.toLowerCase()).includes(card.zone)) continue;
+    return true;
+  }
+  return false;
+}
+
+// Build the spell SA for an option (no state change).
+function buildSpellSA(game, pid, card, opt) {
+  const face = card.def.faces[opt.face] || card.def.faces[0];
+  let raw;
+  if (opt.abilIdx != null) raw = face.abilities[opt.abilIdx];
+  else if (opt.faceDown) raw = 'SP$ PermanentCreature | SpellDescription$ Face-down creature';
+  else if (face.subtypes.includes('Aura') && face.keywords.some(k => k.startsWith('Enchant'))) {
+    const ek = face.keywords.find(k => k.startsWith('Enchant'));
+    const valid = ek.startsWith('Enchant:') ? ek.split(':')[1] : ek.replace(/^Enchant /, '').replace(/^creature$/i, 'Creature').replace(/^land$/i, 'Land').replace(/^player$/i, 'Player').replace(/^permanent$/i, 'Permanent').replace(/^artifact$/i, 'Artifact');
+    const zm = valid.match(/inZone(\w+)/);
+    raw = `SP$ Attach | ValidTgts$ ${valid}${zm ? ' | TgtZone$ ' + zm[1] : ''} | AILogic$ ${face.svars.AttachAILogic || 'Pump'} | SpellDescription$ Enchant ${valid}`;
+  } else raw = `SP$ Permanent${face.types.join('')} | SpellDescription$ ${face.name}`;
+  const abil = { raw, parsed: parseAbility(raw), svars: face.svars, src: card, key: `cast:${opt.key}` };
+  const sa = new SA(game, abil, card, pid);
+  sa.isSpell = true;
+  sa.permanent = !!opt.permanent || /^SP\$ Permanent/.test(raw) || (abil.parsed.api === 'Attach' && face.subtypes.includes('Aura'));
+  sa.face = opt.face;
+  sa.opt = opt;
+  return sa;
+}
+
+function spellCost(game, pid, card, opt, sa) {
+  const face = card.def.faces[opt.face] || card.def.faces[0];
+  let mana, extra = parseCost('');
+  if (opt.withoutMana) mana = emptyCost();
+  else if (opt.altManaStr != null) {
+    const c = parseCost(opt.altManaStr);
+    mana = c.mana; extra = c;
+  } else if (sa.p.Cost) {
+    const c = parseCost(sa.p.Cost);
+    mana = c.hasMana ? c.mana : (face.manaCost ? cloneCost(face.manaCost) : emptyCost());
+    extra = c;
+  } else mana = face.manaCost ? cloneCost(face.manaCost) : emptyCost();
+  if (opt.extraCostStr) { const c = parseCost(opt.extraCostStr); extra = { ...extra, parts: [...(extra.parts || []), ...c.parts] }; }
+  if (opt.from === 'command' && card.isCommander) { mana = addCosts(mana, parseMana(String(game.commanderTax(card)))); }
+  // cost modifiers
+  const ctxCard = card;
+  let reduce = 0, raise = 0;
+  const colorReduce = [];
+  for (const s of game.activeStatics('ReduceCost')) {
+    const p = s.p;
+    if (p.Type && !/Spell/.test(p.Type) && p.Type !== 'Any') continue;
+    if (p.ValidCard && !matchValid(game, ctxCard, p.ValidCard.replace(/CARDNAME/g, 'Card.Self'), { ...s.ctx, host: s.host })) continue;
+    if (p.Activator && !matchValid(game, game.players[pid], p.Activator, s.ctx)) continue;
+    if (p.ValidSpell && !matchValid(game, ctxCard, p.ValidSpell, s.ctx)) continue;
+    if (p.OnlyFirstSpell === 'True' && game.players[pid].spellsCastThisTurn.length > 0) continue;
+    const amt = p.Amount ? calcCtx(game, p.Amount, { ...s.ctx, sa: { ...s.ctx.sa, svars: s.st.svars } }) : 1;
+    if (p.Color) { for (let i = 0; i < amt; i++) colorReduce.push(...p.Color.split(' ')); }
+    else reduce += amt;
+  }
+  for (const s of game.activeStatics('RaiseCost')) {
+    const p = s.p;
+    if (p.Type && !/Spell/.test(p.Type)) continue;
+    if (p.ValidCard && !matchValid(game, ctxCard, p.ValidCard, s.ctx)) continue;
+    if (p.Activator && !matchValid(game, game.players[pid], p.Activator, s.ctx)) continue;
+    raise += p.Amount ? calcCtx(game, p.Amount, s.ctx) : 1;
+  }
+  const ch = game.chars(card);
+  for (const k of ch.keywords) {
+    const m = k.match(/^Affinity:(.+)$/);
+    if (m) reduce += game.battlefield.filter(c => c.controller === pid && matchValid(game, c, m[1], { host: card, you: pid })).length;
+  }
+  if (game.hasKeywordIn(ch, 'Delve')) sa.delve = true;
+  if (game.hasKeywordIn(ch, 'Undaunted')) reduce += game.opponents(pid).length;
+  mana = cloneCost(mana);
+  mana.generic += raise;
+  for (const col of colorReduce) { if (mana.colored[col] > 0) mana.colored[col]--; else if (mana.generic > 0) mana.generic--; }
+  mana.generic = Math.max(0, mana.generic - reduce);
+  return { mana, extra };
+}
+
+export function castableOptions(game, pid, card, { ignoreTiming = false, freeCast = false } = {}) {
+  const out = [];
+  if (!card) return out;
+  if (game.priority !== pid && !ignoreTiming) return out;
+  for (const opt of spellOptions(game, pid, card)) {
+    if (opt.land) {
+      if (!ignoreTiming && !canPlayLandNow(game, pid)) continue;
+      out.push(opt);
+      continue;
+    }
+    if (!ignoreTiming && !timingOk(game, pid, card, opt)) continue;
+    if (cantBeCast(game, pid, card)) continue;
+    const sa = buildSpellSA(game, pid, card, opt);
+    const { mana, extra } = spellCost(game, pid, card, freeCast ? { ...opt, withoutMana: true } : opt, sa);
+    const xFree = mana.x ? { ...mana, x: 0 } : mana;
+    if (!canPayNonMana(game, sa, extra)) continue;
+    if (!canAfford(game, pid, xFree, { spellCard: card, exclude: new Set([card.id]) })) continue;
+    if (!targetsPossible(game, sa)) continue;
+    out.push({ ...opt, manaCost: mana });
+  }
+  return out;
+}
+
+function targetsPossible(game, root) {
+  if (root.api === 'Charm') return true;
+  for (const sa of root.chain()) {
+    const spec = targetSpec(game, sa);
+    if (!spec || spec.min === 0) continue;
+    const c = targetCandidates(game, sa, spec);
+    if (c.length < spec.min) return false;
+  }
+  return true;
+}
+
+function canPlayLandNow(game, pid) {
+  if (!game.canSorcery(pid)) return false;
+  const p = game.players[pid];
+  return p.landsPlayed < 1 + game.playerChars(pid).extraLands;
+}
+
+export async function playLand(game, pid, card, action) {
+  if (!card || !canPlayLandNow(game, pid)) return false;
+  const opts = spellOptions(game, pid, card).filter(o => o.land);
+  const opt = opts.find(o => o.key === action.optionKey) || opts[0];
+  if (!opt) return false;
+  const p = game.players[pid];
+  p.landsPlayed++;
+  if (opt.mayPlay && opt.mayPlay.st) opt.mayPlay.st.host.mayPlayUses = (opt.mayPlay.st.host.mayPlayUses || 0) + 1;
+  game.log(`${p.name} plays ${card.def.faces[opt.face].name}.`, { type: 'land', cardId: card.id });
+  await game.moveCard(card, 'battlefield', { controller: pid, face: opt.face, silent: true });
+  game.fire('LandPlayed', { Card: card, Player: pid });
+  return true;
+}
+
+export async function castSpell(game, pid, card, action = {}, { free = false, fromEffect = false, effectSA = null, altOpt = null } = {}) {
+  if (!card) return false;
+  const all = altOpt ? [altOpt] : spellOptions(game, pid, card, { anyZone: fromEffect }).filter(o => !o.land);
+  let opt = all.find(o => o.key === action.optionKey) || null;
+  if (!opt) {
+    const cands = fromEffect ? all : castableOptions(game, pid, card).filter(o => !o.land);
+    if (!cands.length) return false;
+    if (cands.length === 1) opt = cands[0];
+    else {
+      const k = await game.ask(pid, { type: 'option', prompt: `How do you want to cast ${game.name(card)}?`, options: cands.map(o => ({ label: o.label, value: o.key })), cancellable: true, purpose: 'castMode', cardId: card.id });
+      if (k == null) throw new Cancelled();
+      opt = cands.find(o => o.key === k);
+    }
+  }
+  if (!opt) return false;
+  if (free) opt = { ...opt, withoutMana: true };
+  if (!fromEffect && !timingOk(game, pid, card, opt)) return false;
+  const sa = buildSpellSA(game, pid, card, opt);
+  sa.castFrom = opt.from;
+  if (opt.altCost) sa.altCost = opt.altCost;
+  if (opt.faceDown) sa.faceDown = true;
+  const face = card.def.faces[opt.face] || card.def.faces[0];
+  // modes
+  if (sa.api === 'Charm') { const ok = await chooseModes(game, sa); if (!ok) throw new Cancelled(); }
+  // costs
+  let { mana, extra } = spellCost(game, pid, card, opt, sa);
+  // kicker / multikicker / optional costs
+  const ch = game.chars(card);
+  for (const k of face.keywords) {
+    let m;
+    if ((m = k.match(/^(Kicker|Multikicker):(.+)$/))) {
+      const costs = m[2].split(':').filter(x => x && !/^(Generic|ValidSA)/.test(x));
+      for (const kc of costs.slice(0, 2)) {
+        const kcost = parseCost(kc);
+        const test = addCosts(mana.x ? { ...mana, x: 0 } : mana, kcost.mana);
+        if (!canAfford(game, pid, test, { spellCard: card, exclude: new Set([card.id]) }) || !canPayNonMana(game, sa, kcost)) continue;
+        if (m[1] === 'Multikicker') {
+          let n = 0;
+          const max = maxRepeat(game, pid, mana, kcost.mana, card);
+          if (max > 0) n = await game.ask(pid, { type: 'number', prompt: `Multikicker ${costString(kcost.mana)}: how many times?`, min: 0, max, purpose: 'multikicker', sa, cancellable: true });
+          if (n == null) throw new Cancelled();
+          for (let i = 0; i < n; i++) mana = addCosts(mana, kcost.mana);
+          sa.kicked = n;
+        } else {
+          const yes = await game.ask(pid, { type: 'confirm', prompt: `Pay kicker ${kc.replace(/</g, ' ').replace(/>/g, '')} for ${face.name}?`, purpose: 'kicker', sa, cancellable: true });
+          if (yes == null) throw new Cancelled();
+          if (yes) { mana = addCosts(mana, kcost.mana); extra = { ...extra, parts: [...extra.parts, ...kcost.parts] }; sa.kicked = (sa.kicked || 0) + 1; }
+        }
+      }
+    }
+    if ((m = k.match(/^Squad:(.+)$/))) {
+      const kcost = parseCost(m[1]);
+      const max = maxRepeat(game, pid, mana, kcost.mana, card);
+      if (max > 0) {
+        const n = await game.ask(pid, { type: 'number', prompt: `Squad ${costString(kcost.mana)}: how many times?`, min: 0, max, purpose: 'squad', sa, cancellable: true });
+        if (n == null) throw new Cancelled();
+        for (let i = 0; i < n; i++) mana = addCosts(mana, kcost.mana);
+        sa.squad = n;
+      }
+    }
+  }
+  // X that only appears in non-mana costs (e.g. "pay X life")
+  const xPart = extra.parts.find(pt => pt.amount === 'X');
+  if (!mana.x && xPart) {
+    const p0 = game.players[pid];
+    const max = xPart.type === 'PayLife' ? Math.max(0, p0.life - 1) : xPart.type === 'Discard' ? p0.hand.length - 1 : xPart.type === 'Sac' ? game.battlefield.filter(c => c.controller === pid).length : 20;
+    const x = await game.ask(pid, { type: 'number', prompt: `Choose X for ${face.name}`, min: 0, max, purpose: 'xValue', sa, cancellable: true, xCost: xPart.type });
+    if (x == null) throw new Cancelled();
+    sa.x = x;
+  }
+  // X
+  if (mana.x) {
+    const fixed = sa.p.XChoice || null;
+    const max = maxX(game, pid, mana, card);
+    if (max < 0) return false;
+    const minX = /XMin1/.test(sa.p.Cost || '') ? 1 : 0;
+    const x = await game.ask(pid, { type: 'number', prompt: `Choose X for ${face.name}`, min: minX, max, purpose: 'xValue', sa, cancellable: true });
+    if (x == null) throw new Cancelled();
+    sa.x = x;
+    const m2 = cloneCost(mana); m2.generic += m2.x * x; m2.x = 0; mana = m2;
+  } else if (sa.x == null) sa.x = 0;
+  // targets
+  const ok = await chooseTargetsForSA(game, sa);
+  if (!ok) return false;
+  // non-mana cost choices
+  const choices = await chooseCostParts(game, sa, extra);
+  if (!choices) return false;
+  const exclude = new Set([card.id, ...choices.flatMap(c => (c.cards || []).map(x => x.id))]);
+  // delve: exile cards from graveyard to pay generic
+  if (sa.delve && mana.generic > 0) {
+    const gy = game.players[pid].graveyard.filter(c => c.id !== card.id);
+    const need = mana.generic;
+    let n = 0;
+    if (gy.length && !canAfford(game, pid, mana, { spellCard: card, exclude })) n = Math.min(gy.length, need);
+    else if (gy.length) n = await game.ask(pid, { type: 'number', prompt: `Delve: exile how many cards from your graveyard?`, min: 0, max: Math.min(gy.length, need), purpose: 'delve', sa });
+    if (n) { sa.delveCards = gy.slice(0, n); const m2 = cloneCost(mana); m2.generic -= n; mana = m2; }
+  }
+  if (!canAfford(game, pid, mana, { spellCard: card, exclude })) {
+    if (!game.players[pid].isHuman) return false;
+    game.log(`Not enough mana to cast ${face.name}.`, { type: 'info' });
+    return false;
+  }
+  // pay
+  const paidOk = await payManaCost(game, pid, mana, { exclude, spellCard: card, sa });
+  if (!paidOk) return false;
+  if (sa.delveCards) for (const c of sa.delveCards) await game.moveCard(c, 'exile');
+  await applyCostParts(game, sa, extra, choices);
+  // move to stack
+  const fromZone = card.zone;
+  if (opt.from === 'command') game.players[pid].commanderCasts[card.id] = (game.players[pid].commanderCasts[card.id] || 0) + 1;
+  if (opt.mayPlay && opt.mayPlay.st) opt.mayPlay.st.host.mayPlayUses = (opt.mayPlay.st.host.mayPlayUses || 0) + 1;
+  await game.moveCard(card, 'stack', { silent: true, noReplace: true });
+  card.zone = 'stack';
+  card.controller = pid;
+  card.face = opt.face || 0;
+  card.castFrom = fromZone;
+  if (opt.faceDown) card.faceDown = true;
+  if (opt.altCost === 'Flashback' || (opt.altCost === 'Escape' && !faceIsPermanent(face))) card.mustBeExiled = true;
+  if (opt.altCost === 'Suspend') sa.fromSuspend = true;
+  const item = { id: game.uid++, kind: 'spell', card, sa, controller: pid, description: face.name, stackItem: true, opt, fromZone };
+  if (game.hasKeywordIn(ch, 'Split second')) item.splitSecond = true;
+  sa.stackItem = item;
+  game.stack.push(item);
+  game.touch();
+  const tdesc = describeTargets(game, sa);
+  game.log(`${game.players[pid].name} casts ${opt.faceDown ? 'a face-down creature' : face.name}${tdesc ? ' targeting ' + tdesc : ''}.`, { type: 'cast', cardId: card.id, player: pid });
+  const rec = { lki: game.makeLKI(card), controller: pid };
+  game.turnState.spellsCast.push(rec);
+  game.players[pid].spellsCastThisTurn.push(rec);
+  game.fire('SpellCast', { Card: card, Player: pid, IsSpell: true, StackItem: item, CastFrom: fromZone === 'hand' ? 'hand' : fromZone, AltCost: opt.altCost, MayPlay: !!opt.mayPlay, Targets: sa.chain().flatMap(s => s.targets), SpellAbility: sa });
+  game.notifyTargets(sa, item);
+  return true;
+}
+
+function maxX(game, pid, mana, card) {
+  const avail = availableManaCount(game, pid, card);
+  const base = cmc({ ...mana, x: 0 });
+  if (base > avail) return -1;
+  const perX = mana.x || 1;
+  let hi = Math.floor((avail - base) / perX);
+  // verify with planner, decreasing
+  while (hi > 0) {
+    const m = cloneCost(mana); m.generic += m.x * hi; m.x = 0;
+    if (canAfford(game, pid, m, { spellCard: card, exclude: new Set([card.id]) })) break;
+    hi--;
+  }
+  return Math.max(0, hi);
+}
+
+function maxRepeat(game, pid, base, add, card) {
+  let n = 0;
+  let m = base.x ? { ...base, x: 0 } : base;
+  for (let i = 0; i < 10; i++) {
+    m = addCosts(m, add);
+    if (!canAfford(game, pid, m, { spellCard: card, exclude: new Set([card.id]) })) break;
+    n++;
+  }
+  return n;
+}
+
+export async function chooseModes(game, sa) {
+  const p = sa.p;
+  const names = (p.Choices || '').split(',').map(s => s.trim()).filter(Boolean);
+  const ctx = ctxOf(game, sa);
+  const num = p.CharmNum ? calcCtx(game, p.CharmNum, ctx) : 1;
+  const min = p.MinCharmNum != null ? calcCtx(game, p.MinCharmNum, ctx) : num;
+  const options = names.map(n => {
+    const raw = sa.svars[n];
+    const parsed = raw ? parseAbility(raw) : null;
+    return { label: (parsed && (parsed.p.SpellDescription || parsed.api)) || n, value: n };
+  }).filter(o => sa.svars[o.value]);
+  const usable = options.filter(o => {
+    const m = makeSA(game, sa.svars[o.value], sa.svars, sa.host, sa.controller, { parent: sa });
+    return targetsPossible(game, m);
+  });
+  if (!usable.length) return false;
+  const repeat = p.CanRepeatModes === 'True';
+  const ans = await game.ask(sa.controller, { type: 'modes', prompt: p.ChoiceDesc || `Choose ${num === min ? num : min + '-' + num} mode${num > 1 ? 's' : ''}`, options: usable, min: Math.min(min, usable.length), max: repeat ? num : Math.min(num, usable.length), repeat, sa, cancellable: !sa.isTrigger });
+  if (!ans) return false;
+  sa.modes = ans.map(n => {
+    const m = new SA(game, { raw: sa.svars[n], parsed: parseAbility(sa.svars[n]), svars: sa.svars, src: sa.abil.src, key: sa.key + '#' + n }, sa.host, sa.controller, { parent: sa, trig: sa.trig });
+    return m;
+  });
+  return true;
+}
+
+export function describeTargets(game, sa) {
+  const ts = sa.chain().flatMap(s => s.targets || []);
+  if (!ts.length) return '';
+  return ts.map(t => game.name(t)).join(', ');
+}
+
+// ---------------------------------------------------------------- activated abilities
+export function activatedAbilities(game, pid, card) {
+  const out = [];
+  if (!card) return out;
+  const ch = game.chars(card);
+  for (const abil of ch.abilities) {
+    const p = abil.parsed.p;
+    if (abil.parsed.kind !== 'AB') continue;
+    if (abil.parsed.api === 'Mana' || abil.parsed.api === 'ManaReflected') continue;
+    const zone = p.ActivationZone ? (zoneMap[p.ActivationZone] || p.ActivationZone.toLowerCase()) : 'battlefield';
+    if (card.zone !== zone) continue;
+    const controller = card.zone === 'battlefield' ? card.controller : card.owner;
+    if (controller !== pid && !(p.AnyPlayer === 'True' || /Player|Opponent/.test(p.Activator || ''))) continue;
+    out.push(abil);
+  }
+  return out;
+}
+
+export function canActivate(game, pid, card, abil, { ignoreTiming = false } = {}) {
+  const p = abil.parsed.p;
+  if (card.zone === 'battlefield' && card.phasedOut) return false;
+  if (!ignoreTiming && game.priority !== pid) return false;
+  if (game.stack.some(s => s.splitSecond)) return false;
+  if (p.SorcerySpeed === 'True' || p.Planeswalker === 'True' || p.IsEquip === 'True') { if (!game.canSorcery(pid)) return false; }
+  if (p.Planeswalker === 'True') {
+    const limit = 1 + game.activeStatics('NumLoyaltyAct').filter(s => matchValid(game, card, s.p.ValidCard || 'Planeswalker', s.ctx)).length;
+    if ((card.abilityUses.__pw || 0) >= limit) return false;
+  }
+  if (p.ActivationLimit && (card.abilityUses[abil.key] || 0) >= calcCtx(game, p.ActivationLimit, { host: card, you: pid })) return false;
+  if (p.GameActivationLimit && (card.gameUses && card.gameUses[abil.key] || 0) >= +p.GameActivationLimit) return false;
+  if (p.PlayerTurn === 'True' && game.activePlayer !== pid) return false;
+  if (p.OpponentTurn === 'True' && game.activePlayer === pid) return false;
+  if (p.ActivationPhases && !phaseOk(game, p.ActivationPhases)) return false;
+  const ctx = { host: card, you: pid, svars: abil.svars, sa: { svars: abil.svars, host: card, controller: pid, root() { return { x: 0, paid: {} }; } } };
+  if (!checkPresence(game, p, ctx)) return false;
+  if (game.activeStatics('CantBeActivated').some(s => matchValid(game, card, s.p.ValidCard || 'Card', s.ctx) && (!s.p.AffectedZone || true))) return false;
+  const sa = new SA(game, abil, card, pid);
+  const cost = parseCost(p.Cost);
+  if (!canPayNonMana(game, sa, cost)) return false;
+  if (cost.hasMana) {
+    const m = cost.mana.x ? { ...cost.mana, x: 0 } : cost.mana;
+    const exclude = new Set(cost.tap ? [card.id] : []);
+    for (const part of cost.parts) if (part.type === 'Sac' && (part.valid === 'CARDNAME' || part.valid === 'Card.Self')) exclude.add(card.id);
+    if (!canAfford(game, pid, m, { exclude })) return false;
+  }
+  if (!targetsPossible(game, sa)) return false;
+  return true;
+}
+
+function phaseOk(game, spec) {
+  const names = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main1', beginCombat: 'BeginCombat', declareAttackers: 'Declare Attackers', declareBlockers: 'Declare Blockers', combatDamage: 'Combat Damage', firstStrikeDamage: 'First Strike Damage', endCombat: 'EndCombat', main2: 'Main2', end: 'End of Turn', cleanup: 'Cleanup' };
+  const order = ['Untap', 'Upkeep', 'Draw', 'Main1', 'BeginCombat', 'Declare Attackers', 'Declare Blockers', 'First Strike Damage', 'Combat Damage', 'EndCombat', 'Main2', 'End of Turn', 'Cleanup'];
+  const cur = names[game.step];
+  for (const part of spec.split(',')) {
+    if (part.includes('->')) {
+      const [a, b] = part.split('->');
+      const ia = order.indexOf(a), ib = order.indexOf(b), ic = order.indexOf(cur);
+      if (ic >= ia && ic <= ib) return true;
+    } else if (part.trim() === cur) return true;
+  }
+  return false;
+}
+
+export async function activateAbility(game, pid, card, abilityKey, action = {}) {
+  if (!card) return false;
+  const abil = game.chars(card).abilities.find(a => a.key === abilityKey);
+  if (!abil) return false;
+  if (!canActivate(game, pid, card, abil, { ignoreTiming: !!action.ignoreTiming })) return false;
+  const p = abil.parsed.p;
+  const sa = new SA(game, abil, card, pid);
+  sa.isActivated = true;
+  if (sa.api === 'Charm') { const ok = await chooseModes(game, sa); if (!ok) throw new Cancelled(); }
+  const cost = parseCost(p.Cost);
+  let mana = cost.mana;
+  if (mana.x || /\bX\b/.test(p.Cost || '') && cost.parts.some(pt => pt.amount === 'X')) {
+    const exclude = new Set(cost.tap ? [card.id] : []);
+    let max;
+    if (mana.x) max = Math.max(0, Math.floor((availableManaCount(game, pid) - cmc({ ...mana, x: 0 }) - (cost.tap && manaSourcesFor(game, pid).some(s => s.card === card) ? 1 : 0)) / mana.x));
+    else {
+      const part = cost.parts.find(pt => pt.amount === 'X');
+      max = part.type === 'SubCounter' ? ((card.counters[normalizeCounterName(part.counter)]) || 0) : part.type === 'PayLife' ? game.players[pid].life - 1 : 10;
+    }
+    const x = await game.ask(pid, { type: 'number', prompt: `Choose X for ${game.name(card)}`, min: 0, max: Math.max(0, max), purpose: 'xValue', sa, cancellable: true });
+    if (x == null) throw new Cancelled();
+    sa.x = x;
+    if (mana.x) { const m2 = cloneCost(mana); m2.generic += m2.x * x; m2.x = 0; mana = m2; }
+  } else sa.x = 0;
+  const ok = await chooseTargetsForSA(game, sa);
+  if (!ok) return false;
+  const choices = await chooseCostParts(game, sa, cost);
+  if (!choices) return false;
+  const exclude = new Set(cost.tap ? [card.id] : []);
+  for (const c of choices) for (const x of c.cards || []) exclude.add(x.id);
+  if (cost.hasMana && !canAfford(game, pid, mana, { exclude })) return false;
+  if (cost.hasMana) { const paidOk = await payManaCost(game, pid, mana, { exclude, sa }); if (!paidOk) return false; }
+  await applyCostParts(game, sa, cost, choices);
+  card.abilityUses[abil.key] = (card.abilityUses[abil.key] || 0) + 1;
+  if (p.Planeswalker === 'True') card.abilityUses.__pw = (card.abilityUses.__pw || 0) + 1;
+  if (p.GameActivationLimit) { card.gameUses = card.gameUses || {}; card.gameUses[abil.key] = (card.gameUses[abil.key] || 0) + 1; }
+  const desc = (p.SpellDescription || p.StackDescription || abil.parsed.api || '').replace(/CARDNAME|NICKNAME/g, game.name(card));
+  const tdesc = describeTargets(game, sa);
+  game.log(`${game.players[pid].name} activates ${game.name(card)}: ${desc}${tdesc ? ' (targeting ' + tdesc + ')' : ''}`, { type: 'activate', cardId: card.id, player: pid });
+  if (p.IsCycling === 'True') game.fire('Cycled', { Card: card, Player: pid });
+  if (p.Static === 'True') { await resolveChain(game, sa); return true; }
+  const item = { id: game.uid++, kind: 'ability', sa, card: null, source: card, controller: pid, description: `${game.name(card)}: ${desc}`, stackItem: true };
+  sa.stackItem = item;
+  game.stack.push(item);
+  game.touch();
+  game.fire('AbilityCast', { Card: card, Player: pid, IsSpell: false, StackItem: item, SpellAbility: sa });
+  game.notifyTargets(sa, item);
+  return true;
+}
+
+// ---------------------------------------------------------------- resolution
+export async function resolveStackItem(game, item) {
+  const sa = item.sa;
+  if (item.kind === 'spell') {
+    const card = item.card;
+    if (!recheckTargets(game, sa)) {
+      game.log(`${game.name(card)} fizzles (all targets are illegal).`);
+      if (card.zone === 'stack') await game.moveCard(card, 'graveyard');
+      return;
+    }
+    if (sa.permanent) {
+      const opts = { controller: item.controller, cast: { from: item.fromZone, x: sa.x || 0, kicked: sa.kicked || 0, sa, manaSpent: sa.manaSpent, altCost: sa.altCost, squad: sa.squad || 0 }, silent: true, face: sa.face || 0, faceDown: sa.faceDown };
+      if (sa.api === 'Attach') {
+        const t = sa.targets[0];
+        if (!t) { await game.moveCard(card, 'graveyard'); return; }
+        opts.attachTo = t.isPlayer ? 'p' + t.id : t.id;
+      }
+      const wasFaceDown = card.faceDown;
+      const moved = await game.moveCard(card, 'battlefield', opts);
+      if (moved) {
+        if (wasFaceDown || sa.faceDown) moved.faceDown = true;
+        game.log(`${game.name(moved)} enters the battlefield.`, { type: 'resolve', cardId: moved.id });
+        if (sa.altCost === 'Dash' || sa.altCost === 'Blitz') {
+          moved.temp.push({ keywords: ['Haste'], until: 'Permanent' });
+          game.delayed.push({ id: game.uid++, p: { Mode: 'Phase', Phase: 'End of Turn', Execute: 'DashReturn' }, svars: { DashReturn: sa.altCost === 'Dash' ? 'DB$ ChangeZone | Defined$ DelayTriggerRemembered | Origin$ Battlefield | Destination$ Hand' : 'DB$ Sacrifice | Defined$ DelayTriggerRemembered' }, host: moved, controller: item.controller, remembered: [moved], turn: game.turnNumber, thisTurnOnly: true });
+          if (sa.altCost === 'Blitz') moved.blitzed = true;
+          game.touch();
+        }
+        if (sa.altCost === 'Evoke') moved.evoked = true;
+        if (sa.squad) moved.squad = sa.squad;
+        if (sa.kicked) moved.kicked = sa.kicked;
+      }
+      return;
+    }
+    await resolveChain(game, sa);
+    if (card.zone === 'stack') {
+      if (sa.opt && sa.opt.adventure) { await game.moveCard(card, 'exile', { silent: true }); card.onAdventure = true; game.log(`${game.name(card)} goes on an adventure.`); }
+      else if (card.reboundPending) { await game.moveCard(card, 'exile'); }
+      else await game.moveCard(card, 'graveyard', { silent: true });
+    }
+    return;
+  }
+  // abilities & triggers
+  if (!recheckTargets(game, sa)) { game.log(`${item.description} fizzles.`); return; }
+  if (sa.isTrigger) {
+    const tp = sa.triggerParams || {};
+    const ctx = { host: sa.host, you: sa.controller, trig: sa.trig, svars: sa.svars, sa };
+    if ((tp.IsPresent || tp.CheckSVar) && tp.NoResolvingCheck !== 'True' && !checkPresence(game, tp, ctx)) return;
+    if (tp.OptionalDecider) {
+      const decider = resolveDefined(game, tp.OptionalDecider, ctx)[0];
+      const pid = decider && decider.isPlayer ? decider.id : sa.controller;
+      const yes = await game.ask(pid, { type: 'confirm', prompt: `Use ${game.name(sa.host)}'s ability? ${item.description}`, purpose: 'optionalTrigger', sa });
+      if (!yes) return;
+    }
+  }
+  await resolveChain(game, sa);
+}
+
+export async function resolveChain(game, sa) {
+  for (let s = sa; s; s = s.sub) {
+    if (game.over) return;
+    if (s.api === 'Charm') {
+      if (!s.modes) { const ok = await chooseModes(game, s); if (!ok) continue; if (s.isTrigger || s.parent) await chooseTargetsForSA(game, s); }
+      for (const m of s.modes || []) await resolveChain(game, m);
+      continue;
+    }
+    const ctx = ctxOf(game, s);
+    if (!checkConditions(game, s.p, ctx)) continue;
+    if (s.hadTargets && s.targets.length === 0) continue;
+    if (s.p.UnlessCost) {
+      const paid = await payUnless(game, s);
+      const switched = s.p.UnlessSwitched === 'True';
+      if (paid !== switched) continue;
+    }
+    if (s.p.Optional === 'True' && s.api !== 'ChangeZone' && s.api !== 'Dig' && s.api !== 'Play') {
+      const decider = s.p.OptionalDecider ? resolveDefined(game, s.p.OptionalDecider, ctx)[0] : game.players[s.controller];
+      const pid = decider && decider.isPlayer ? decider.id : s.controller;
+      const yes = await game.ask(pid, { type: 'confirm', prompt: (s.p.OptionQuestion || `${s.description}?`).replace(/CARDNAME/g, game.name(s.host)), purpose: 'optional', sa: s });
+      if (!yes) continue;
+    }
+    try {
+      await runEffect(game, s);
+    } catch (e) {
+      if (e && (e.cancelled || e.message === 'game over')) throw e;
+      game.log(`Effect error (${s.api}): ${e.message}`, { type: 'error' });
+      if (game.throwErrors) throw e;
+      console.error(e);
+    }
+    if (s.p.RememberCostCards) { /* handled via paid */ }
+  }
+}
+
+async function payUnless(game, sa) {
+  const ctx = ctxOf(game, sa);
+  const payerSpec = sa.p.UnlessPayer || 'TargetedController';
+  const payers = resolveDefined(game, payerSpec, ctx).filter(x => x && x.isPlayer);
+  const costStr = sa.p.UnlessCost;
+  for (const payer of payers) {
+    let costStr2 = costStr;
+    if (/^[A-Z]\w*$/.test(costStr) && sa.svars[costStr] && !isManaToken(costStr)) costStr2 = String(calcCtx(game, costStr, ctx));
+    const cost = parseCost(costStr2);
+    if (!cost.hasMana && /^\d+$/.test(costStr2)) cost.mana = parseMana(costStr2), cost.hasMana = true;
+    const tmp = new SA(game, sa.abil, sa.host, payer.id);
+    tmp.root().x = sa.root().x;
+    if (!canPayNonMana(game, tmp, cost)) continue;
+    if (cost.hasMana && !canAfford(game, payer.id, cost.mana)) continue;
+    const yes = await game.ask(payer.id, { type: 'confirm', prompt: `Pay ${costStr2.replace(/<|>/g, ' ')} ${sa.p.UnlessSwitched === 'True' ? 'to' : 'to prevent'}: ${sa.description.replace(/CARDNAME/g, game.name(sa.host))}?`, purpose: 'unlessCost', sa, cost: cost.mana, payer: payer.id });
+    if (!yes) continue;
+    const choices = await chooseCostParts(game, tmp, cost).catch(() => null);
+    if (!choices) continue;
+    if (cost.hasMana && !(await payManaCost(game, payer.id, cost.mana))) continue;
+    await applyCostParts(game, tmp, cost, choices);
+    game.log(`${payer.name} pays ${costStr2}.`);
+    return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------- legal actions
+export function getActions(game, pid) {
+  const out = [];
+  const p = game.players[pid];
+  if (game.priority !== pid || game.over) return out;
+  game.ensureChars();
+  const seen = new Set();
+  const consider = (card) => {
+    if (seen.has(card.id)) return;
+    seen.add(card.id);
+    for (const o of castableOptions(game, pid, card)) {
+      if (o.land) out.push({ type: 'land', cardId: card.id, optionKey: o.key, label: o.label });
+      else out.push({ type: 'cast', cardId: card.id, optionKey: o.key, label: o.label, manaCost: o.manaCost });
+    }
+  };
+  for (const c of p.hand) consider(c);
+  for (const c of p.command) consider(c);
+  for (const c of p.graveyard) consider(c);
+  for (const c of p.exile) consider(c);
+  if (p.library.length) consider(p.library[0]);
+  for (const q of game.players) if (q.id !== pid) for (const c of q.exile) if (mayPlayFrom(game, pid, c)) consider(c);
+  // activated abilities
+  const abilityCards = [...game.battlefield, ...p.hand, ...p.graveyard, ...p.exile, ...p.command];
+  for (const c of abilityCards) {
+    for (const abil of activatedAbilities(game, pid, c)) {
+      if (!canActivate(game, pid, c, abil)) continue;
+      out.push({ type: 'activate', cardId: c.id, abilityKey: abil.key, label: (abil.parsed.p.SpellDescription || abil.parsed.api).replace(/CARDNAME|NICKNAME/g, game.name(c)), api: abil.parsed.api });
+    }
+  }
+  return out;
+}
+
+// Offer to cast a card for an alternative cost (madness, miracle). Returns true if cast.
+export async function castAlternative(game, pid, card, costStr, kind, fromExile) {
+  const face = card.def.faces[0];
+  const opt = { key: kind.toLowerCase(), label: `${kind} ${face.name}`, face: 0, from: card.zone, altCost: kind, altManaStr: costStr, permanent: faceIsPermanent(face) };
+  if (opt.permanent && !face.types.includes('Creature') && false) opt.permanent = true;
+  let cast = false;
+  const sa = buildSpellSA(game, pid, card, opt);
+  const { mana } = spellCost(game, pid, card, opt, sa);
+  if (canAfford(game, pid, mana.x ? { ...mana, x: 0 } : mana, { spellCard: card, exclude: new Set([card.id]) }) && targetsPossible(game, sa)) {
+    const yes = await game.ask(pid, { type: 'confirm', prompt: `${kind}: cast ${face.name} for ${costString(parseCost(costStr).mana)}?`, purpose: 'castFree', cards: [card.id] });
+    if (yes) {
+      try { cast = await castSpell(game, pid, card, { optionKey: opt.key }, { fromEffect: true, altOpt: opt }); } catch (e) { if (!e.cancelled) throw e; }
+    }
+  }
+  if (!cast && fromExile && card.zone === 'exile') await game.moveCard(card, 'graveyard', { silent: true });
+  return cast;
+}
+
+export { buildSpellSA, spellCost };
