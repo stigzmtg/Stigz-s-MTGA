@@ -41,7 +41,7 @@ const body = `<div id="root"></div>
 <script src="${react}"></script>
 <script src="${reactDom}"></script>
 <script src="app.js"></script>`;
-const head = `<title>Precon Arena</title>
+const head = `<title>Stigz’s TCG Arena</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

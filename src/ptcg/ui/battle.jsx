@@ -357,7 +357,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby }) {
   return (
     <div className="app table pk">
       <header className="topbar">
-        <button className="brand linklike" onClick={onExit} title="Leave the battle">Precon Arena</button>
+        <button className="brand linklike" onClick={onExit} title="Leave the battle">Stigz’s<span className="brand-rest"> TCG Arena</span></button>
         <span className="chip pk-chip">Pokémon TCG</span>
         <span className="turninfo">Turn <b>{game.turn}</b> · <b>{game.players[game.current].name}</b></span>
         <RoomStatus session={session} />

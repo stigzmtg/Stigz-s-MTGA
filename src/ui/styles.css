@@ -1,4 +1,4 @@
-/* Precon Arena — a felt-table look. Layout: board (opponents / prompt / you) + side rail (preview, stack, log). */
+/* Stigz’s TCG Arena — a felt-table look. Layout: board (opponents / prompt / you) + side rail (preview, stack, log). */
 :root {
   --felt: #12291f;
   --felt-2: #183627;
@@ -633,3 +633,5 @@ kbd { font: 600 12px/1 'Alegreya Sans', sans-serif; padding: 2px 6px; border-rad
   .ph { padding: 4px 4px; letter-spacing: 0.04em; }
 }
 @media (max-width: 1600px) { .topbar.online .brand { display: none; } .topbar.online .ph { padding: 4px 4px; letter-spacing: 0.04em; } }
+/* in a game on a phone, the corner name shortens to keep the top bar to as few rows as possible */
+@media (max-width: 600px) { .app.table .brand-rest { display: none; } }

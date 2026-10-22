@@ -89,7 +89,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome }) {
 
   return (
     <div className="app">
-      <header className="topbar">{onHome ? <button className="brand linklike" onClick={onHome} title="Choose a game">Precon Arena<small>Commander</small></button> : <span className="brand">Precon Arena<small>Commander vs AI</small></span>}<span className="spacer" /><span className="chip">{decks.length} preconstructed decks</span>{onHome ? <button className="btn sm" onClick={onHome}>Switch game</button> : null}<button className="btn sm" onClick={() => setHelp(true)}>How to play</button></header>
+      <header className="topbar">{onHome ? <button className="brand linklike" onClick={onHome} title="Choose a game">Stigz’s TCG Arena<small>Commander</small></button> : <span className="brand">Stigz’s TCG Arena<small>Commander vs AI</small></span>}<span className="spacer" /><span className="chip">{decks.length} preconstructed decks</span>{onHome ? <button className="btn sm" onClick={onHome}>Switch game</button> : null}<button className="btn sm" onClick={() => setHelp(true)}>How to play</button></header>
       {help ? <HelpDialog onClose={() => setHelp(false)} /> : null}
       <div className="lobby">
         <div className="intro">

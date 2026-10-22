@@ -1,4 +1,4 @@
-# Precon Arena
+# Stigz’s TCG Arena
 
 Two card battle simulators in one site:
 
