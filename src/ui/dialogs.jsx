@@ -214,7 +214,7 @@ export function SettingsDialog({ settings, onChange, onClose }) {
       <div className="settings">
         <label htmlFor="set-speed"><span style={{ minWidth: 90 }}>AI speed</span>
           <select id="set-speed" className="input" value={settings.aiSpeed} onChange={e => set('aiSpeed', e.target.value)}>
-            <option value="slow">Slow</option><option value="normal">Normal</option><option value="fast">Fast</option><option value="instant">Instant</option>
+            <option value="slow">Relaxed</option><option value="normal">Like a real player</option><option value="fast">Quick</option><option value="instant">Instant</option>
           </select>
         </label>
         <Toggle k="stopOppEnd" title="Stop at opponents' end steps" note="Only when you have instant-speed plays." />

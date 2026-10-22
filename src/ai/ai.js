@@ -9,8 +9,10 @@ const HARMFUL = new Set(['Destroy', 'DestroyAll', 'DealDamage', 'DamageAll', 'Co
 const BENEFICIAL = new Set(['Pump', 'PumpAll', 'PutCounter', 'PutCounterAll', 'GainLife', 'Draw', 'Untap', 'UntapAll', 'Attach', 'Regenerate', 'Animate', 'Token', 'CopyPermanent', 'Clone', 'Investigate', 'Scry', 'Surveil', 'Proliferate', 'Dig', 'BecomeMonarch', 'Explore', 'Connive', 'Amass', 'MultiplyCounter', 'Mana']);
 
 export class AIAgent {
-  constructor({ delay = 0, name = 'AI' } = {}) {
-    this.delay = delay;
+  // pace(kind) -> milliseconds to wait before acting ('think', 'land', 'attack', 'block', 'choose', 'respond'),
+  // so a computer opponent plays at a person's tempo; none for headless games
+  constructor({ pace = null, name = 'AI' } = {}) {
+    this.pace = pace;
     this.name = name;
     this.uses = new Map();
     this.passedWindow = null;
@@ -20,25 +22,41 @@ export class AIAgent {
     this.game = game; this.pid = pid;
     try {
       switch (req.type) {
-        case 'mulligan': return this.mulligan(game, pid);
         case 'priority': return await this.priority(game, pid);
-        case 'targets': return this.targets(game, pid, req);
-        case 'cards': return this.cards(game, pid, req);
-        case 'option': return this.option(game, pid, req);
-        case 'modes': return this.modes(game, pid, req);
-        case 'confirm': return this.confirm(game, pid, req);
-        case 'number': return this.number(game, pid, req);
-        case 'color': return this.color(game, pid, req);
-        case 'player': return this.player(game, pid, req);
-        case 'attackers': { const r = this.attackers(game, pid, req); if (r.length && this.delay) await sleep(this.delay); return r; }
-        case 'blockers': { const r = this.blockers(game, pid, req); if (r.length && this.delay) await sleep(this.delay * 0.6); return r; }
-        default: return null;
+        case 'attackers': { const r = this.attackers(game, pid, req); if (r.length) await this.pause('attack'); return r; }
+        case 'blockers': { const r = this.blockers(game, pid, req); if (r.length) await this.pause('block'); return r; }
+        default: {
+          const r = this.choose(game, pid, req);
+          if (r !== undefined) { await this.pause('choose'); return r; }
+          return null;
+        }
       }
     } catch (e) {
       if (game.throwErrors) throw e;
       console.error('AI error', e);
       return defaultAnswer(req);
     }
+  }
+
+  // every other choice: mulligans, targets, cards, modes, options, numbers, colors, players
+  choose(game, pid, req) {
+    switch (req.type) {
+      case 'mulligan': return this.mulligan(game, pid);
+      case 'targets': return this.targets(game, pid, req);
+      case 'cards': return this.cards(game, pid, req);
+      case 'option': return this.option(game, pid, req);
+      case 'modes': return this.modes(game, pid, req);
+      case 'confirm': return this.confirm(game, pid, req);
+      case 'number': return this.number(game, pid, req);
+      case 'color': return this.color(game, pid, req);
+      case 'player': return this.player(game, pid, req);
+      default: return undefined;
+    }
+  }
+
+  async pause(kind) {
+    const ms = this.pace ? this.pace(kind) : 0;
+    if (ms > 0) await sleep(ms);
   }
 
   // ------------------------------------------------------------ evaluation
@@ -120,7 +138,9 @@ export class AIAgent {
     const stackTop = game.stack[game.stack.length - 1];
     // quick exit: nothing castable at all
     const actions = getActions(game, pid);
-    if (!actions.length) return { type: 'pass' };
+    // something of someone else's on the stack: take a moment, as a person would, before letting it resolve
+    const pass = async () => { if (stackTop && stackTop.kind === 'spell' && stackTop.controller !== pid) await this.pause('respond'); return { type: 'pass' }; };
+    if (!actions.length) return pass();
     let best = null, bestScore = 0;
     const consider = (a, s) => { if (s > bestScore) { best = a; bestScore = s; } };
     const main = myTurn && game.isMainPhase() && game.stack.length === 0;
@@ -129,7 +149,7 @@ export class AIAgent {
       const lands = actions.filter(a => a.type === 'land');
       if (lands.length) {
         const pick = this.bestLand(game, pid, lands);
-        if (pick) { if (this.delay) await sleep(this.delay * 0.5); return pick; }
+        if (pick) { await this.pause('land'); return pick; }
       }
     }
     for (const a of actions) {
@@ -146,10 +166,10 @@ export class AIAgent {
       const k = `${turnKey}:${best.cardId}:${best.abilityKey || best.optionKey}`;
       this.uses.set(k, (this.uses.get(k) || 0) + 1);
       if (this.uses.size > 3000) this.uses.clear();
-      if (this.delay) await sleep(this.delay);
+      await this.pause('think');
       return best;
     }
-    return { type: 'pass' };
+    return pass();
   }
 
   bestLand(game, pid, lands) {

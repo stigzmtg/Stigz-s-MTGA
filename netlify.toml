@@ -1,0 +1,4 @@
+# Netlify: serve the built site in docs/ as is (no build step; the site is built and committed with `npm run site`).
+[build]
+  publish = "docs"
+  command = ""

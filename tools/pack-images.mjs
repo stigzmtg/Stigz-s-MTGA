@@ -20,7 +20,8 @@ const manifest = JSON.parse(fs.readFileSync(path.join(CACHE, 'manifest.json'), '
 const decks = JSON.parse(fs.readFileSync('data/decks.json', 'utf8'));
 const db = new CardDB(JSON.parse(fs.readFileSync('data/cards.json', 'utf8')), JSON.parse(fs.readFileSync('data/tokens.json', 'utf8')));
 const OUT = 'dist/img';
-if (!DRY) { fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(OUT, { recursive: true }); }
+// replace the Commander packs (the Pokémon side's ptcg-*.avif packs stay)
+if (!DRY) { fs.mkdirSync(OUT, { recursive: true }); for (const f of fs.readdirSync(OUT)) if (!/^ptcg-/.test(f)) fs.rmSync(path.join(OUT, f)); }
 
 const faceFiles = id => (manifest.cards[id] ? manifest.cards[id].urls : []).map((_, f) => path.join(CACHE, 'img', `${id}-${f}.avif`)).filter(f => fs.existsSync(f));
 const identity = name => { const d = db.get(name); const ci = d ? d.colorIdentity() : []; return ci.length === 0 ? 'C' : ci.length > 1 ? 'M' : ci[0]; };

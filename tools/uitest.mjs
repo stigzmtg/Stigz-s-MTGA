@@ -10,7 +10,7 @@ const page = await browser.newPage({ viewport: { width, height } });
 const errors = [];
 page.on('pageerror', e => errors.push('pageerror: ' + e.message));
 page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
-await page.goto('http://localhost:8765/');
+await page.goto('http://localhost:8765/#mtg');
 await page.waitForSelector('text=Pick a precon', { timeout: 60000 });
 await page.screenshot({ path: `${OUT}/01-lobby.png` });
 if (process.argv[6]) { await page.click(`.seg button:has-text("${process.argv[6]}")`); }

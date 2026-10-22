@@ -28,7 +28,7 @@ function PhaseTracker({ game }) {
 }
 
 const IRREG = { has: 'have', is: 'are', was: 'were', does: 'do', goes: 'go' };
-function secondPerson(text) {
+export function secondPerson(text) {
   const verb = v => IRREG[v] || (/(ches|shes|sses|xes|zzes)$/.test(v) ? v.slice(0, -2) : /ies$/.test(v) ? v.slice(0, -3) + 'y' : /s$/.test(v) && !/ss$/.test(v) ? v.slice(0, -1) : v);
   return text
     .replace(/(^|[.:!]\s+|\()You (\w+)/g, (m, pre, v) => `${pre}You ${verb(v)}`)

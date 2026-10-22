@@ -9,29 +9,12 @@ import { initImages, preloadDecks } from './images.js';
 import { Lockstep, LocalSeatAgent, RemoteSeatAgent, HostAIAgent } from '../net/lockstep.js';
 import { RoomClient, roomApi, isRoomCode } from '../net/roomclient.js';
 import { applyOp } from './manual.js';
+import { makePace, gamePacer } from './pacing.js';
+import { createStore, loadSettings, saveSettings, safeStorage, fetchJSON } from './common.js';
+import { Home } from './home.jsx';
+import { PokemonApp } from '../ptcg/ui/app.jsx';
 
 const { useState, useEffect, useSyncExternalStore } = React;
-
-const DEFAULT_SETTINGS = { aiSpeed: 'normal', stopOppEnd: true, stopOppCombat: true, stopOwnCombat: false, stopForOpponentSpells: true, fullControl: false, autoCommander: true, images: true };
-const SPEED = { slow: 900, normal: 450, fast: 160, instant: 0 };
-
-function loadSettings() { try { return { ...DEFAULT_SETTINGS, ...(JSON.parse(localStorage.getItem('pa-settings') || '{}')) }; } catch { return { ...DEFAULT_SETTINGS }; } }
-function saveSettings(s) { try { localStorage.setItem('pa-settings', JSON.stringify(s)); } catch { /* storage unavailable */ } }
-
-function createStore() {
-  let v = 0, scheduled = false;
-  const subs = new Set();
-  const tick = () => { scheduled = false; v++; subs.forEach(f => f()); };
-  return {
-    get: () => v,
-    subscribe: f => { subs.add(f); return () => subs.delete(f); },
-    bump() {
-      if (scheduled) return;
-      scheduled = true;
-      if (typeof requestAnimationFrame === 'function' && !document.hidden) requestAnimationFrame(tick); else setTimeout(tick, 16);
-    },
-  };
-}
 
 function shortName(n) { return n.split(',')[0].split(' // ')[0]; }
 
@@ -39,7 +22,8 @@ function newSession(data, cfg) {
   const store = createStore();
   const settings = loadSettings();
   const human = new HumanAgent(() => store.bump(), settings);
-  const ais = cfg.opps.map(() => new AIAgent({ delay: SPEED[settings.aiSpeed] ?? 450 }));
+  const pace = makePace(settings);
+  const ais = cfg.opps.map(() => new AIAgent({ pace }));
   const used = new Set();
   const players = [{ name: 'You', deck: cfg.mine, agent: human, human: true }, ...cfg.opps.map((d, i) => {
     let nm = shortName(d.commanders[0]);
@@ -50,13 +34,14 @@ function newSession(data, cfg) {
   const game = new Game({ db: data.db, players, onUpdate: () => store.bump(), maxTurns: 400 });
   game.continueAfterHumanLoss = false;
   human.pid = 0;
+  game.pace = gamePacer(game, pace, () => (window.__paAutoplay && game.turnNumber < window.__paAutoplay ? -1 : human.pid));
   const session = {
     game, human, store, settings, ais, cfg,
-    setSettings(s) { Object.assign(settings, s); human.settings = settings; for (const a of ais) a.delay = SPEED[s.aiSpeed] ?? 450; saveSettings(settings); },
+    setSettings(s) { Object.assign(settings, s); human.settings = settings; saveSettings(settings); },
   };
   // browser tests: let an AI play your seat for the first N turns (set window.__paAutoplay before load)
   if (typeof window !== 'undefined' && window.__paAutoplay) {
-    const bot = new AIAgent({ delay: 0 });
+    const bot = new AIAgent();
     const humanTypes = window.__paHumanTypes;
     game.agents[0] = { ask: (g, pid, req) => (g.turnNumber < window.__paAutoplay || (humanTypes && !humanTypes.includes(req.type)) ? bot.ask(g, pid, req) : human.ask(g, pid, req)) };
   }
@@ -72,10 +57,6 @@ function endSession(session) {
   if (session.online) session.online.net.close();
 }
 
-const safeStorage = {
-  getItem(k) { try { return localStorage.getItem(k); } catch { return null; } },
-  setItem(k, v) { try { localStorage.setItem(k, v); } catch { /* storage full or blocked */ } },
-};
 function storedId() {
   let id = safeStorage.getItem('pa-cid');
   if (!id) { id = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6); safeStorage.setItem('pa-cid', id); }
@@ -107,12 +88,12 @@ function newOnlineSession(data, room, cfg) {
   const online = { net, code: cfg.code, game: cfg.game, pendingOps: [] };
   const takeOps = () => { const o = online.pendingOps; online.pendingOps = []; return o; };
   const isHost = cfg.host === room.cid;
-  const delay = () => SPEED[settings.aiSpeed] ?? 450;
+  const pace = makePace(settings);
   const ais = [];
-  const mkAI = () => { const a = new AIAgent({ delay: delay() }); ais.push(a); return a; };
+  const mkAI = () => { const a = new AIAgent({ pace }); ais.push(a); return a; };
   // browser tests: an AI makes your decisions for the first N turns (window.__paAutoplay)
   const localInner = typeof window !== 'undefined' && window.__paAutoplay
-    ? (() => { const bot = new AIAgent({ delay: 0 }); return { ask: (g, pid, req) => (g.turnNumber < window.__paAutoplay ? bot.ask(g, pid, req) : human.ask(g, pid, req)) }; })()
+    ? (() => { const bot = new AIAgent(); return { ask: (g, pid, req) => (g.turnNumber < window.__paAutoplay ? bot.ask(g, pid, req) : human.ask(g, pid, req)) }; })()
     : human;
   const agents = cfg.seats.map((s, pid) => {
     if (pid === me) return new LocalSeatAgent(net, localInner, applyOp, takeOps);
@@ -125,7 +106,7 @@ function newOnlineSession(data, room, cfg) {
   human.pid = me != null ? me : 0;
   const session = {
     game, human, store, settings, ais, cfg, online, spectator: me == null,
-    setSettings(s) { Object.assign(settings, s); human.settings = settings; for (const a of ais) a.delay = SPEED[s.aiSpeed] ?? 450; saveSettings(settings); },
+    setSettings(s) { Object.assign(settings, s); human.settings = settings; saveSettings(settings); },
   };
   preloadDecks(cfg.seats.map(s => s.d));
   game.start().then(() => store.bump());
@@ -147,27 +128,7 @@ function Loading({ progress, error }) {
   );
 }
 
-async function fetchJSON(url, onProgress) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-  const len = +res.headers.get('content-length') || 0;
-  if (!res.body || !len || !onProgress) return res.json();
-  const reader = res.body.getReader();
-  const chunks = [];
-  let got = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value); got += value.length;
-    onProgress(Math.min(1, got / len));
-  }
-  const all = new Uint8Array(got);
-  let o = 0;
-  for (const c of chunks) { all.set(c, o); o += c.length; }
-  return JSON.parse(new TextDecoder().decode(all));
-}
-
-function App() {
+function MtgApp({ onHome }) {
   const [data, setData] = useState(null);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState(null);
@@ -230,7 +191,7 @@ function App() {
     onDeck: id => room && room.setDeck(id),
   };
   if (!session) return <>
-    <Lobby data={data} imagesOk={imagesOk} onStart={cfg => setSession(newSession(data, cfg))} online={onlineProps} />
+    <Lobby data={data} imagesOk={imagesOk} onStart={cfg => setSession(newSession(data, cfg))} online={onlineProps} onHome={onHome} />
     {toast ? <div className="toast" role="status">{toast}</div> : null}
   </>;
   return <GameView key={`${session.game.seed}:${session.online ? session.online.game : ''}`} session={session} support={data.support} imagesOk={imagesOk}
@@ -242,4 +203,27 @@ function App() {
     onRematch={() => { endSession(session); setSession(newSession(data, session.cfg)); }} />;
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+// which game: the address says (#pokemon, #mtg, or an MTG room invite), else the home screen
+function gameFromHash() {
+  const h = location.hash.slice(1);
+  if (isRoomCode(h) || h === 'mtg') return 'mtg';
+  if (h === 'pokemon') return 'pokemon';
+  return null;
+}
+function Root() {
+  const [game, setGame] = useState(gameFromHash);
+  useEffect(() => {
+    const f = () => { const g = gameFromHash(); if (g) setGame(g); };
+    window.addEventListener('hashchange', f);
+    return () => window.removeEventListener('hashchange', f);
+  }, []);
+  const pick = g => {
+    setGame(g);
+    try { history.replaceState(null, '', g ? '#' + g : location.pathname + location.search); } catch { /* sandboxed frame */ }
+  };
+  if (game === 'pokemon') return <PokemonApp onHome={() => pick(null)} />;
+  if (game === 'mtg') return <MtgApp onHome={() => pick(null)} />;
+  return <Home onPick={pick} />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Root />);

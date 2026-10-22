@@ -30,7 +30,7 @@ async function newPlayer(label) {
 }
 const host = await newPlayer('host');
 const guest = await newPlayer('guest');
-for (const p of [host, guest]) { await p.goto('http://localhost:8765/'); await p.waitForSelector('text=Pick a precon', { timeout: 60000 }); }
+for (const p of [host, guest]) { await p.goto('http://localhost:8765/#mtg'); await p.waitForSelector('text=Pick a precon', { timeout: 60000 }); }
 
 await host.click('button:has-text("Play with friends")');
 await host.fill('#nick', 'Hana');
@@ -76,7 +76,7 @@ console.log(JSON.stringify(sa) === JSON.stringify(sb) ? 'boards match' : 'BOARDS
 const LATER = TURNS + 6;
 await guest.context().addInitScript(t => { window.__paAutoplay = t; }, LATER);
 await host.evaluate(t => { window.__paAutoplay = t; }, LATER);
-await guest.goto(link.replace('https://claude.ai/artifact/8rchJZPk18aNQxnKKrsKts', 'http://localhost:8765/'));
+await guest.goto(link.replace('https://claude.ai/artifact/8rchJZPk18aNQxnKKrsKts', 'http://localhost:8765/#mtg'));
 // the host's own pending choice is still on screen: answer it so its AI stand-in takes over again
 const nudge = async (p) => {
   const dlg = await p.$('.overlay .dialog .btn.primary:not([disabled])');
@@ -85,7 +85,7 @@ const nudge = async (p) => {
   if (b) return b.click().catch(() => {});
 };
 const watcher = await newPlayer('watcher');
-await watcher.goto('http://localhost:8765/');
+await watcher.goto('http://localhost:8765/#mtg');
 await watcher.waitForSelector('text=Pick a precon', { timeout: 60000 });
 await watcher.click('button:has-text("Play with friends")');
 await watcher.fill('#nick', 'Wren');

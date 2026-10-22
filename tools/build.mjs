@@ -13,6 +13,10 @@ const support = {};
 for (const [name, text] of Object.entries(cards)) { const issues = analyzeCard(text); if (issues.length) support[name] = issues; }
 fs.writeFileSync('data/support.json', JSON.stringify(support));
 for (const f of ['cards.json', 'tokens.json', 'decks.json', 'support.json', 'images.json']) if (fs.existsSync(path.join('data', f))) fs.copyFileSync(path.join('data', f), path.join(DIST, 'data', f));
+// the Pokémon side's data
+fs.mkdirSync(path.join(DIST, 'data', 'ptcg'), { recursive: true });
+for (const f of ['cards.json', 'decks.json', 'images.json']) if (fs.existsSync(path.join('data', 'ptcg', f))) fs.copyFileSync(path.join('data', 'ptcg', f), path.join(DIST, 'data', 'ptcg', f));
+if (!fs.existsSync('data/ptcg/images.json')) fs.writeFileSync(path.join(DIST, 'data', 'ptcg', 'images.json'), JSON.stringify({ v: 1, type: 'image/avif', packs: [], cards: {} }));
 // no packed card images yet: an empty index keeps the page from requesting a missing file
 if (!fs.existsSync('data/images.json')) fs.writeFileSync(path.join(DIST, 'data', 'images.json'), JSON.stringify({ v: 2, type: 'image/avif', packs: [], images: [], decks: {}, lobby: {}, tokens: {} }));
 
@@ -29,7 +33,7 @@ await build({
   legalComments: 'none',
 });
 
-const css = fs.readFileSync('src/ui/generated/symbols.css', 'utf8') + '\n' + fs.readFileSync('src/ui/styles.css', 'utf8');
+const css = fs.readFileSync('src/ui/generated/symbols.css', 'utf8') + '\n' + fs.readFileSync('src/ui/styles.css', 'utf8') + '\n' + fs.readFileSync('src/ptcg/ui/ptcg.css', 'utf8');
 const fonts = 'https://fonts.googleapis.com/css2?family=Alegreya+Sans+SC:wght@500;700;800&family=Alegreya+Sans:wght@400;600;700;800&family=Alegreya:ital,wght@0,400;0,500;1,400&family=Cinzel:wght@600;700&display=swap';
 const react = 'https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js';
 const reactDom = 'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js';
@@ -52,7 +56,7 @@ fs.writeFileSync(path.join(DIST, 'index.html'), `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Play any Magic: The Gathering Commander precon against AI opponents or with friends, right in your browser.">
+<meta name="description" content="Play Magic: The Gathering Commander precons and popular Pokémon TCG decks against the computer or with friends, right in your browser.">
 <meta name="theme-color" content="#0b1a14">
 <link rel="icon" href="${icon}">
 ${head}

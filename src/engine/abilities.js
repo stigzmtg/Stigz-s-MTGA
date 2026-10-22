@@ -543,6 +543,8 @@ export async function payManaCost(game, pid, manaCost, { exclude = new Set(), sp
     }
     await produceMana(game, s.card, s.abil, a.colors, pid, manaCost);
     tapped.push(s.card);
+    // the table can pace a computer player's taps one at a time (never changes the game)
+    if (game.pace) await game.pace('tap', pid);
   }
   const r = payFromPool(manaCost, p.pool, { lifeAvailable: p.life - 1 });
   if (!r) {
