@@ -1,0 +1,104 @@
+/* ================================================================ home: the arena's entrance
+   Layout: a title under drifting card art, then two arched gates (one per game) with a fan of cards inside each,
+   then a quiet row of what you get. Uses the site's felt, brass and Cinzel; each gate adds its game's light. */
+.app.home {
+  --gate-card: clamp(100px, 12vw, 172px);
+  --mtg-light: 243, 190, 96;      /* candlelight on the Commander gate */
+  --mtg-line: rgba(243, 212, 136, 0.5);
+  --mtg-deep: #140d05;
+  --pk-light: 255, 214, 70;       /* lightning on the Pokémon gate */
+  --pk-line: rgba(132, 176, 255, 0.55);
+  --pk-deep: #07122b;
+  --pk-sky: #1d4bb0;
+  --volt: #ffd23f;
+  position: relative;
+  overflow-x: clip;
+  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(243, 212, 136, 0.12), transparent 70%);
+}
+.linklike { background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.home .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ---- title and drifting art */
+.home .hero { position: relative; isolation: isolate; text-align: center; padding-block: clamp(36px, 7vh, 72px) clamp(20px, 3.5vh, 34px); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.home .drift { position: absolute; inset: -30px -5% auto; height: 470px; z-index: -1; opacity: 0.2; transform: rotate(-5deg); pointer-events: none;
+  -webkit-mask-image: radial-gradient(ellipse 62% 78% at 50% 42%, #000 22%, transparent 74%); mask-image: radial-gradient(ellipse 62% 78% at 50% 42%, #000 22%, transparent 74%); }
+.home .band { overflow: visible; margin-bottom: 18px; }
+.home .track { display: flex; gap: 18px; width: max-content; animation: homedrift 110s linear infinite; }
+.home .band.b1 .track { animation-direction: reverse; animation-duration: 130s; margin-left: -80px; }
+.home .dc { flex: none; width: 128px; aspect-ratio: 63 / 88; border-radius: 6px; overflow: hidden; background: rgba(255, 255, 255, 0.05); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6); }
+.home .dc img, .home .fc img { display: block; width: 100%; height: 100%; object-fit: cover; }
+@keyframes homedrift { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.home .hero-copy { position: relative; max-width: 860px; margin: 0 auto; display: grid; gap: 12px; justify-items: center; animation: homerise 0.7s ease-out both; }
+.home .eyebrow { font: 700 12.5px/1 var(--font-ui); letter-spacing: 0.34em; text-transform: uppercase; color: var(--brass); }
+.home .title {
+  margin: 0; font: 700 clamp(44px, 8.6vw, 116px)/0.95 var(--font-display); letter-spacing: 0.045em; text-wrap: balance;
+  background: linear-gradient(180deg, #fff7dc 0%, #f6dc96 34%, #d7a648 60%, #8f6122 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 6px 22px rgba(0, 0, 0, 0.75)) drop-shadow(0 0 30px rgba(243, 212, 136, 0.18));
+}
+.home .lede { margin: 0; max-width: 54ch; font-size: clamp(16px, 1.5vw, 19px); color: var(--ink-dim); text-wrap: balance; }
+
+/* ---- the gates */
+.home .gates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(18px, 3vw, 44px); width: 100%; max-width: 1160px; margin: 0 auto; padding-block: 6px 30px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.home .gate { display: grid; grid-template-rows: auto auto; padding: 0; border: 0; background: none; color: var(--ink); text-align: center; cursor: pointer; border-radius: 18px; transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); animation: homerise 0.8s ease-out both; }
+.home .gate.pk { animation-delay: 0.12s; }
+.home .gate:hover { transform: translateY(-4px); }
+.home .gate:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 6px; }
+.home .arch { position: relative; display: block; height: clamp(250px, 28vw, 346px); overflow: hidden; border: 1px solid var(--line-c); border-bottom: 0; border-radius: 50% 50% 0 0 / 44% 44% 0 0; background: var(--arch-bg); box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.55); transition: box-shadow 0.35s; }
+.home .arch::before { content: ""; position: absolute; inset: 11px 11px -1px; border: 1px solid var(--line-c); border-bottom: 0; border-radius: inherit; opacity: 0.45; pointer-events: none; }
+.home .arch::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse 55% 60% at 50% 92%, rgba(var(--light), 0.5), transparent 70%); opacity: 0.85; transition: opacity 0.35s; pointer-events: none; }
+.home .gate:hover .arch { box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.45), 0 0 46px rgba(var(--light), 0.28); }
+.home .gate:hover .arch::after { opacity: 1; }
+.home .gate.mtg { --line-c: var(--mtg-line); --light: var(--mtg-light); --arch-bg: linear-gradient(180deg, #2e1f0d 0%, var(--mtg-deep) 72%); }
+.home .gate.pk { --line-c: var(--pk-line); --light: var(--pk-light); --arch-bg: linear-gradient(180deg, var(--pk-sky) 0%, #0e2559 38%, var(--pk-deep) 78%); }
+.home .keystone { position: absolute; z-index: 3; left: 50%; top: 4px; width: 34px; height: 34px; transform: translateX(-50%) rotate(45deg); display: grid; place-items: center; background: linear-gradient(135deg, #f6dc96, #a8792c); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.6); color: #2a1c08; font-size: 17px; line-height: 1; }
+.home .keystone > * { transform: rotate(-45deg); }
+.home .gate.mtg .keystone { font: 22px/1 system-ui, sans-serif; }
+.home .keystone .ball { width: 18px; height: 18px; border-radius: 50%; background: linear-gradient(180deg, #e04a3b 0 45%, #1a1a1a 45% 55%, #f4f1ea 55%); box-shadow: 0 0 0 1.5px #1a1a1a; position: relative; }
+.home .keystone .ball::after { content: ""; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; transform: translate(-50%, -50%); border-radius: 50%; background: #f4f1ea; box-shadow: 0 0 0 1.5px #1a1a1a; }
+
+/* a fan of cards standing in the doorway; it opens up when you point at the gate */
+.home .fan { position: absolute; left: 50%; bottom: calc(var(--gate-card) * -0.2); width: 0; height: 0; z-index: 2; }
+.home .fc { position: absolute; bottom: 0; left: calc(var(--gate-card) / -2); width: var(--gate-card); aspect-ratio: 63 / 88; border-radius: 6% / 4.3%; overflow: hidden; background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 0, 0, 0.5); transform-origin: 50% 130%;
+  transform: translateX(calc(var(--k) * var(--gate-card) * 0.4)) rotate(calc(var(--k) * 8deg)) translateY(calc(var(--a) * var(--a) * 5px));
+  z-index: calc(10 - var(--a)); transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.home .gate:hover .fc, .home .gate:focus-visible .fc { transform: translateX(calc(var(--k) * var(--gate-card) * 0.5)) rotate(calc(var(--k) * 10deg)) translateY(calc(var(--a) * var(--a) * 7px - 18px)); }
+
+.home .plaque { display: grid; gap: 10px; justify-items: center; padding: 18px 20px 24px; border: 1px solid var(--line-c); border-radius: 0 0 18px 18px; background: linear-gradient(180deg, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.2)), var(--panel); box-shadow: inset 0 1px 0 rgba(var(--light), 0.35), 0 18px 40px rgba(0, 0, 0, 0.45); }
+.home .pips { display: flex; gap: 6px; font-size: 21px; min-height: 22px; align-items: center; }
+.home .name { font: 700 clamp(22px, 2.4vw, 31px)/1.1 var(--font-display); letter-spacing: 0.03em; text-wrap: balance; }
+.home .kind { font: 700 12px/1 var(--font-ui); letter-spacing: 0.28em; text-transform: uppercase; color: rgba(var(--light), 0.95); }
+.home .facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 26px; font-size: 13px; color: var(--ink-dim); }
+.home .facts span { display: grid; gap: 2px; }
+.home .facts b { font: 800 21px/1 var(--font-ui); color: var(--ink); font-variant-numeric: tabular-nums; }
+.home .cta { display: inline-flex; align-items: center; gap: 10px; margin-top: 4px; padding: 11px 26px; border-radius: 999px; font: 800 16px/1 var(--font-ui); letter-spacing: 0.02em; transition: filter 0.2s, box-shadow 0.2s; }
+.home .cta::after { content: "→"; transition: transform 0.25s; }
+.home .gate:hover .cta::after { transform: translateX(4px); }
+.home .gate.mtg .cta { color: #1c1407; background: linear-gradient(180deg, #f0cd7c, #c08f3b); box-shadow: 0 0 0 1px #f6dc96 inset, 0 6px 18px rgba(var(--mtg-light), 0.25); }
+.home .gate.pk .cta { color: #0b1633; background: linear-gradient(180deg, #ffe066, #f2b705); box-shadow: 0 0 0 1px #fff0a8 inset, 0 6px 18px rgba(var(--pk-light), 0.28); }
+.home .gate:hover .cta { filter: brightness(1.08); }
+
+/* ---- what you get */
+.home .features { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 26px; width: 100%; max-width: 1160px; margin: 0 auto; padding-block: 4px 18px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.home .feature { display: flex; gap: 12px; align-items: flex-start; padding-top: 14px; border-top: 1px solid var(--line); min-width: 0; }
+.home .feature svg { flex: none; width: 26px; height: 26px; fill: var(--brass); margin-top: 1px; }
+.home .feature div { display: grid; gap: 3px; min-width: 0; }
+.home .feature b { font-size: 15px; }
+.home .feature span { font-size: 13.5px; color: var(--ink-dim); }
+.home .home-foot { margin-top: auto; text-align: center; font-size: 12px; color: var(--ink-faint); padding-block: 14px 26px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+@keyframes homerise { from { opacity: 0.001; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 980px) { .home .features { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .app.home { --gate-card: clamp(90px, 25vw, 132px); }
+  .home .gates { grid-template-columns: minmax(0, 1fr); }
+  .home .arch { height: clamp(210px, 60vw, 290px); }
+  .home .drift { height: 380px; }
+  .home .dc { width: 100px; }
+}
+@media (max-width: 480px) { .home .features { grid-template-columns: minmax(0, 1fr); } .home .facts { gap: 6px 18px; } }
+@media (prefers-reduced-motion: reduce) {
+  .home .track, .home .hero-copy, .home .gate { animation: none; }
+  .home .fc, .home .gate { transition: none; }
+}
