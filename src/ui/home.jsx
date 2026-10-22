@@ -44,7 +44,7 @@ const ICONS = {
 };
 const FEATURES = [
   ['ai', 'Opponents that think', 'Computer players take a moment before each play, put lands down and tap them one at a time.'],
-  ['friends', 'Rooms for friends', 'Make a Commander room and send the link. Nobody needs an account.'],
+  ['friends', 'Rooms for friends', 'Make a room for either game and send the link. Nobody needs an account.'],
   ['art', 'Real card art', 'Every card shows its real printed picture, so the table looks like the real thing.'],
   ['rules', 'Rules handled for you', 'Attacks, triggers, Abilities and Prize cards resolve by the rules while you play.'],
 ];
@@ -92,7 +92,7 @@ export function Home({ onPick }) {
             <span className="kind">Tournament decks</span>
             <span className="facts">
               <span><b>10</b> top decks</span>
-              <span><b>1v1</b> against the computer</span>
+              <span><b>1v1</b> vs computer or a friend</span>
               <span><b>148</b> cards coded</span>
             </span>
             <span className="cta">Play Pokémon</span>

@@ -77,6 +77,7 @@ const LATER = TURNS + 6;
 await guest.context().addInitScript(t => { window.__paAutoplay = t; }, LATER);
 await host.evaluate(t => { window.__paAutoplay = t; }, LATER);
 await guest.goto(link.replace('https://claude.ai/artifact/8rchJZPk18aNQxnKKrsKts', 'http://localhost:8765/#mtg'));
+await guest.reload(); // the link may differ from the current address only by its #, which doesn't reload the page
 // the host's own pending choice is still on screen: answer it so its AI stand-in takes over again
 const nudge = async (p) => {
   const dlg = await p.$('.overlay .dialog .btn.primary:not([disabled])');

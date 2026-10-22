@@ -18,11 +18,14 @@ export async function roomApi() {
 }
 
 export class RoomClient {
-  constructor(api, { cid, nick, deck }) {
+  // kind: '' for Commander rooms, 'pk' for Pokémon rooms (a separate set of room names)
+  constructor(api, { cid, nick, deck, kind = '', storage = null }) {
     this.api = api;
     this.cid = cid;
     this.nick = nick;
     this.deck = deck;
+    this.kind = kind;
+    this.storage = storage;
     this.want = null;
     this.room = null;
     this.code = null;
@@ -42,14 +45,16 @@ export class RoomClient {
   async enter(code, asHost) {
     this.error = null;
     try {
-      this.room = await this.api.join('pa-' + code);
+      this.room = await this.api.join((this.kind ? this.kind + '-' : 'pa-') + code);
     } catch (e) {
       this.error = e && e.code === 'not_permitted' ? 'not_permitted' : 'join_failed';
       this.bump();
       return false;
     }
     this.code = code;
-    if (asHost) this.cfg = { code, game: 0, seed: 0, host: this.cid, started: false, subs: {}, seats: [{ k: 'h', c: this.cid, n: this.nick, d: this.deck }, { k: 'h', c: null, n: '', d: null }] };
+    if (asHost) this.cfg = { code, kind: this.kind, game: 0, seed: 0, host: this.cid, started: false, subs: {}, seats: [{ k: 'h', c: this.cid, n: this.nick, d: this.deck }, { k: 'h', c: null, n: '', d: null }] };
+    // a host coming back to its own room (a reload): pick its config up again, games and seats included
+    else { const saved = this.savedCfg(code); if (saved && saved.host === this.cid) this.cfg = saved; }
     this.unsub = this.room.onPeers(() => this.sync());
     await this.announce();
     this.sync();
@@ -65,8 +70,12 @@ export class RoomClient {
     this.bump();
   }
 
+  cfgKey(code) { return `pa-roomcfg-${this.kind ? this.kind + '-' : ''}${code}`; }
+  savedCfg(code) { try { return JSON.parse(this.storage && this.storage.getItem(this.cfgKey(code)) || 'null'); } catch { return null; } }
+
   announce(extra = {}) {
     if (!this.room) return Promise.resolve();
+    if (this.isHost && this.storage) { try { this.storage.setItem(this.cfgKey(this.code), JSON.stringify(this.cfg)); } catch { /* storage blocked */ } }
     const patch = { pa: PROTOCOL, code: this.code, cid: this.cid, nick: this.nick, deck: this.deck, want: this.want, ...extra };
     if (this.isHost) patch.cfg = this.cfg;
     return Promise.resolve(this.room.presence(patch)).catch(() => {});

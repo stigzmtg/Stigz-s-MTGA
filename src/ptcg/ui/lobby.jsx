@@ -1,8 +1,9 @@
 // Pokémon lobby: pick one of the tournament decks, pick (or randomize) the opponent's, start the battle.
 import { Energy } from './energy.jsx';
 import { pkImage, subscribePk, pkImagesVersion } from './images.js';
+import { PkFriendsPanel } from './friends.jsx';
 
-const { useState, useSyncExternalStore } = React;
+const { useState, useEffect, useSyncExternalStore } = React;
 
 function DeckTile({ deck, cards, selected, onClick }) {
   const img = pkImage(deck.featured);
@@ -40,13 +41,19 @@ function DeckList({ deck, cards, onHover }) {
   );
 }
 
-export function PkLobby({ data, onStart, onHome, onHelp }) {
+export function PkLobby({ data, online, onStart, onHome, onHelp }) {
   useSyncExternalStore(subscribePk, pkImagesVersion);
   const saved = (() => { try { return JSON.parse(localStorage.getItem('pk-lobby') || '{}'); } catch { return {}; } })();
   const [mine, setMine] = useState(data.decks.some(d => d.id === saved.mine) ? saved.mine : data.decks[0].id);
   const [opp, setOpp] = useState(saved.opp || 'random');
   const [hover, setHover] = useState(null);
   const deck = data.decks.find(d => d.id === mine);
+  const friends = online.mode === 'friends';
+  // in a room, the deck picked here is the one you bring
+  useEffect(() => {
+    try { localStorage.setItem('pk-lobby', JSON.stringify({ mine, opp })); } catch { /* storage unavailable */ }
+    online.onDeck(mine);
+  }, [mine, online.room]);
   const start = () => {
     try { localStorage.setItem('pk-lobby', JSON.stringify({ mine, opp })); } catch { /* storage unavailable */ }
     const pool = data.decks.filter(d => d.id !== mine);
@@ -66,7 +73,7 @@ export function PkLobby({ data, onStart, onHome, onHelp }) {
       <main className="lobby pk-lobby">
         <section className="intro">
           <h1>Pick a deck, start a battle</h1>
-          <p>Ten of the most-played decks from top Pokémon TCG tournaments, card for card as their players built them. Battle the computer with every attack, Ability and Trainer working by the rules.</p>
+          <p>Ten of the most-played decks from top Pokémon TCG tournaments, card for card as their players built them. Battle the computer or a friend, with every attack, Ability and Trainer working by the rules.</p>
         </section>
         <div className="pk-lobby-grid">
           <section className="panel" aria-label="Your deck">
@@ -87,15 +94,21 @@ export function PkLobby({ data, onStart, onHome, onHelp }) {
                 </div>
               </div>
             </section>
-            <section className="panel" aria-label="Opponent">
-              <h2>Opponent</h2>
-              <label className="label" htmlFor="pk-opp">Computer's deck</label>
-              <select id="pk-opp" className="input" value={opp} onChange={e => setOpp(e.target.value)}>
-                <option value="random">Random deck</option>
-                {data.decks.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-              <button className="btn primary big" onClick={start}>Battle!</button>
-            </section>
+            <div className="seg modeswitch" role="tablist" aria-label="Game mode">
+              <button role="tab" aria-selected={!friends} className={!friends ? 'on' : ''} onClick={() => online.setMode('solo')}>Vs the computer</button>
+              <button role="tab" aria-selected={friends} className={friends ? 'on' : ''} onClick={() => online.setMode('friends')}>Play with friends</button>
+            </div>
+            {friends ? <PkFriendsPanel data={data} online={online} deck={deck} /> : (
+              <section className="panel" aria-label="Opponent">
+                <h2>Opponent</h2>
+                <label className="label" htmlFor="pk-opp">Computer's deck</label>
+                <select id="pk-opp" className="input" value={opp} onChange={e => setOpp(e.target.value)}>
+                  <option value="random">Random deck</option>
+                  {data.decks.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+                <button className="btn primary big" onClick={start}>Battle!</button>
+              </section>
+            )}
           </div>
         </div>
         <p className="foot">Unofficial fan project. Pokémon and the Pokémon TCG are trademarks of Nintendo, Creatures and GAME FREAK. Card data from TCGdex, decklists from Limitless.</p>

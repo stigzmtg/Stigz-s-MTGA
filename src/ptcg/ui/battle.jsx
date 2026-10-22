@@ -5,6 +5,7 @@ import { Energy, Cost, TYPE_COLORS } from './energy.jsx';
 import { pkImage, subscribePk, pkImagesVersion } from './images.js';
 import { Modal } from '../../ui/dialogs.jsx';
 import { secondPerson } from '../../ui/table.jsx';
+import { RoomStatus } from '../../ui/online.jsx';
 
 const { useState, useEffect, useRef, useSyncExternalStore } = React;
 const COND_LABEL = { asleep: 'Asleep', confused: 'Confused', paralyzed: 'Paralyzed' };
@@ -33,7 +34,7 @@ function MonView({ game, mon, big, state, fx, onClick, onHover }) {
   const max = game.maxHp(mon), left = Math.max(0, max - mon.damage);
   const pct = Math.max(0, Math.min(100, (left / max) * 100));
   const hit = fx.hits.get(mon.id);
-  const cls = ['pk-mon', big ? 'big' : '', state || '', hit ? 'hit' : '', fx.lunge === mon.id ? (mon.owner === 0 ? 'lunge-up' : 'lunge-down') : '', fx.entered.has(mon.id) ? 'enter' : ''].filter(Boolean).join(' ');
+  const cls = ['pk-mon', big ? 'big' : '', state || '', hit ? 'hit' : '', fx.lunge === mon.id ? (mon.owner === fx.me ? 'lunge-up' : 'lunge-down') : '', fx.entered.has(mon.id) ? 'enter' : ''].filter(Boolean).join(' ');
   const conds = [mon.special && COND_LABEL[mon.special], mon.poisoned && 'Poisoned', mon.burned && 'Burned'].filter(Boolean);
   return (
     <div className={cls} data-mon={mon.id}>
@@ -73,10 +74,11 @@ function Piles({ game, p, onOpen }) {
 }
 
 // ---------------------------------------------------------------- animations driven by the engine's events
-function useFx(game, me) {
+function useFx(game, me, watching) {
   const [, force] = useState(0);
   const st = useRef({ last: 0, hits: new Map(), lunge: null, entered: new Set(), coin: null, banner: null, timers: [] });
   const s = st.current;
+  s.me = me;
   const later = (ms, f) => { const t = setTimeout(() => { f(); force(x => x + 1); }, ms); s.timers.push(t); };
   useEffect(() => () => s.timers.forEach(clearTimeout), []);
   const fresh = game.events.filter(e => e.id > s.last);
@@ -93,7 +95,7 @@ function useFx(game, me) {
         later(at + 1500, () => { if (s.coin && s.coin.key === e.id) s.coin = null; });
       }
       if (e.kind === 'ko') { s.banner = { text: `${e.name} is Knocked Out!`, key: e.id, kind: 'ko' }; later(1600, () => { if (s.banner && s.banner.key === e.id) s.banner = null; }); }
-      if (e.kind === 'turn') { s.banner = { text: e.pid === me ? 'Your turn' : `${game.players[e.pid].name}'s turn`, key: e.id, kind: 'turn' }; later(1200, () => { if (s.banner && s.banner.key === e.id) s.banner = null; }); }
+      if (e.kind === 'turn') { s.banner = { text: e.pid === me && !watching ? 'Your turn' : `${game.players[e.pid].name}'s turn`, key: e.id, kind: 'turn' }; later(1200, () => { if (s.banner && s.banner.key === e.id) s.banner = null; }); }
     }
   }
   return s;
@@ -160,11 +162,11 @@ function DistributeDialog({ game, req, respond, onHover }) {
   );
 }
 
-function ZoneDialog({ game, p, zone, onClose, onHover }) {
+function ZoneDialog({ game, p, mine, zone, onClose, onHover }) {
   const cards = p[zone];
   return (
     <Modal label={zone} onClose={onClose}>
-      <h2>{p.id === 0 ? 'Your' : `${p.name}'s`} {zone === 'lost' ? 'Lost Zone' : 'discard pile'} · {cards.length}</h2>
+      <h2>{mine ? 'Your' : `${p.name}'s`} {zone === 'lost' ? 'Lost Zone' : 'discard pile'} · {cards.length}</h2>
       <div className="pk-picks">{[...cards].reverse().map(c => <div key={c.id} className="pk-pick"><CardArt def={c.def} onEnter={() => onHover({ card: c.id })} onLeave={() => onHover(null)} /></div>)}</div>
       <div className="row"><button className="btn" onClick={onClose}>Close</button></div>
     </Modal>
@@ -194,22 +196,28 @@ function Preview({ game, hover }) {
   );
 }
 
-function Log({ game }) {
+// engine text names your player "You": make it read as English ("You has" -> "You have", "their" -> "your")
+const youText = t => secondPerson(t).replace(/^You (\w+) (all of )?their /, 'You $1 $2your ').replace(/ into You's /, ' into your ');
+
+function Log({ game, me }) {
   const ref = useRef(null);
   useEffect(() => { const el = ref.current; if (el) el.scrollTop = el.scrollHeight; }, [game.logs.length]);
   return (
     <div className="log pk-log" ref={ref}>
-      {game.logs.slice(-200).map((l, i) => { const t = secondPerson(l.text).replace(/\bthey (\w+) their\b/, 'they $1 their').replace(/^You (\w+) their /, 'You $1 your ').replace(/ into You's /, ' into your '); return <div key={i} className={`e ${l.type || ''} ${l.pid === 0 ? 'mine' : ''}`}>{l.type === 'turn' ? <b>{t}</b> : t}</div>; })}
+      {game.logs.slice(-200).map((l, i) => { const t = youText(l.text); return <div key={i} className={`e ${l.type || ''} ${me != null && l.pid === me ? 'mine' : ''}`}>{l.type === 'turn' ? <b>{t}</b> : t}</div>; })}
     </div>
   );
 }
 
 // ---------------------------------------------------------------- the battle
-export function Battle({ session, onExit, onRematch, onLobby }) {
+// session.me is your seat (the bottom of the table); watchers of a friends' battle see the host's seat at the bottom
+export function Battle({ session, host, onExit, onRematch, onLobby }) {
   const { game, human, store } = session;
   useSyncExternalStore(store.subscribe, store.get);
   useSyncExternalStore(subscribePk, pkImagesVersion);
-  const me = 0, opp = 1;
+  const me = session.me || 0, opp = 1 - me;
+  const watching = !!session.spectator, online = !!session.online;
+  const whose = p => (!watching && p.id === me ? 'Your' : `${p.name}'s`);
   const P = game.players[me], O = game.players[opp];
   const pend = human.pending;
   const req = pend ? pend.req : null;
@@ -219,7 +227,7 @@ export function Battle({ session, onExit, onRematch, onLobby }) {
   const [zone, setZone] = useState(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [flash, setFlash] = useState(null);
-  const fx = useFx(game, me);
+  const fx = useFx(game, me, watching);
   useEffect(() => { setMode(null); setSel([]); setConfirmEnd(false); }, [pend && pend.id]);
   useEffect(() => { if (!flash) return; const t = setTimeout(() => setFlash(null), 2200); return () => clearTimeout(t); }, [flash]);
   useEffect(() => {
@@ -230,7 +238,7 @@ export function Battle({ session, onExit, onRematch, onLobby }) {
 
   const respond = v => { setMode(null); setSel([]); human.respond(v); };
   const actions = req && req.type === 'main' ? req.actions : [];
-  const myTurn = game.current === me && !game.over;
+  const myTurn = game.current === me && !game.over && !watching;
   const monReq = req && req.type === 'mon' ? req : null;
   const targets = new Set(monReq ? monReq.options : mode ? mode.options : []);
 
@@ -277,7 +285,8 @@ export function Battle({ session, onExit, onRematch, onLobby }) {
   const canAttack = attackRows.some(r => r.act);
 
   const stateOf = mon => (targets.has(mon.id) ? (sel.includes(mon.id) ? 'selected' : 'targetable') : '');
-  const side = (p, isMe) => {
+  const side = (p, bottom) => {
+    const isMe = bottom && !watching;
     const limit = game.benchLimit(p.id);
     const bench = (
       <div className="pk-bench" style={{ '--slots': Math.max(5, limit) }}>
@@ -287,23 +296,24 @@ export function Battle({ session, onExit, onRematch, onLobby }) {
     );
     const act = <div className="pk-activespot">{p.active ? <MonView game={game} mon={p.active} big state={stateOf(p.active)} fx={fx} onClick={() => onMon(p.active)} onHover={setHover} /> : <EmptySlot big />}</div>;
     return (
-      <section className={`pk-side ${isMe ? 'me' : 'opp'} ${game.current === p.id && !game.over ? 'turn' : ''}`} aria-label={isMe ? 'Your side' : `${p.name}'s side`}>
+      <section className={`pk-side ${bottom ? 'me' : 'opp'} ${game.current === p.id && !game.over ? 'turn' : ''}`} aria-label={`${whose(p)} side`}>
         <div className="pk-plate">
-          <div className="who"><b>{isMe ? 'You' : p.name}</b>{game.current === p.id && !game.over ? <span className="turnmark">turn</span> : null}</div>
+          <div className="who"><b>{p.name}</b>{game.current === p.id && !game.over ? <span className="turnmark">turn</span> : null}</div>
           <div className="deck">{p.deckName}</div>
-          <Prizes n={p.prizes.length} label={isMe ? 'You' : p.name} />
-          {!isMe ? <div className="opphand" title={`${p.hand.length} cards in hand`}><span className="fan">{Array.from({ length: Math.min(p.hand.length, 8) }, (_, i) => <CardBack key={i} cls="micro" />)}</span><b>{p.hand.length}</b> in hand</div> : null}
+          <Prizes n={p.prizes.length} label={p.name} />
+          {!bottom ? <div className="opphand" title={`${p.hand.length} cards in hand`}><span className="fan">{Array.from({ length: Math.min(p.hand.length, 8) }, (_, i) => <CardBack key={i} cls="micro" />)}</span><b>{p.hand.length}</b> in hand</div> : null}
         </div>
         <div className="pk-field">{act}{bench}</div>
-        <Piles game={game} p={p} onOpen={z => setZone({ p, z })} />
+        <Piles game={game} p={p} onOpen={z => setZone({ p, z, mine: isMe })} />
       </section>
     );
   };
 
   // the bar between the two sides: what to do now
   let bar;
+  const result = game.over ? (game.winner == null ? 'Draw' : game.winner === me && !watching ? 'You win!' : `${game.players[game.winner].name} wins`) : null;
   if (game.over) {
-    bar = <div className="msg"><div className="step">Game over</div><div className="txt">{game.winner === me ? 'You win! ' : game.winner == null ? 'Draw. ' : `${O.name} wins. `}{game.result}</div></div>;
+    bar = <div className="msg"><div className="step">Game over</div><div className="txt">{result}{result === 'You win!' ? ' ' : '. '}{youText(game.result || '')}</div></div>;
   } else if (req && req.type === 'confirm') {
     bar = <><div className="msg"><div className="txt">{req.prompt}</div></div><div className="acts"><button className="btn primary" onClick={() => respond(true)}>Yes</button><button className="btn" onClick={() => respond(false)}>No</button></div></>;
   } else if (req && req.type === 'option' && req.options.length <= 6) {
@@ -336,20 +346,23 @@ export function Battle({ session, onExit, onRematch, onLobby }) {
       </div>
     </>;
   } else {
-    bar = <div className="msg waiting"><div className="step">{game.players[game.current].name}'s turn</div><div className="txt thinking">{game.turn ? 'Thinking' : 'Setting up'}</div></div>;
+    // someone else decides: the player whose turn it is, or whoever an effect asked
+    const asked = game.players[game.pendingAsk ? game.pendingAsk.pid : game.current];
+    const doing = !game.turn ? 'Setting up' : online && asked && (watching || asked.id !== me) ? `${asked.name} ${asked.id === game.current ? 'is playing' : 'is choosing'}` : 'Thinking';
+    bar = <div className="msg waiting"><div className="step">{game.turn ? `${whose(game.players[game.current])} turn` : 'Getting ready'}</div><div className="txt thinking">{doing}</div></div>;
   }
 
   const handActs = new Set(actions.filter(a => a.card != null).map(a => a.card));
-  const result = game.over ? (game.winner === me ? 'You win!' : game.winner == null ? 'Draw' : `${O.name} wins`) : null;
   const [dismissed, setDismissed] = useState(false);
   return (
     <div className="app table pk">
       <header className="topbar">
         <button className="brand linklike" onClick={onExit} title="Leave the battle">Precon Arena</button>
         <span className="chip pk-chip">Pokémon TCG</span>
-        <span className="turninfo">Turn <b>{game.turn}</b> · <b>{game.current === me ? 'You' : O.name}</b></span>
+        <span className="turninfo">Turn <b>{game.turn}</b> · <b>{game.players[game.current].name}</b></span>
+        <RoomStatus session={session} />
         <span className="spacer" />
-        <button className="btn sm danger" onClick={onExit}>{game.over ? 'New battle' : 'Leave battle'}</button>
+        <button className="btn sm danger" onClick={onExit} title={online && host && !game.over ? 'Ends the battle for both players' : undefined}>{game.over ? (online ? 'Back to room' : 'New battle') : online ? (host ? 'End battle' : watching ? 'Stop watching' : 'Leave battle') : 'Leave battle'}</button>
       </header>
       <div className="game pk-game">
         <main className="pk-board" onClick={e => { if (e.target === e.currentTarget) setMode(null); }}>
@@ -362,19 +375,19 @@ export function Battle({ session, onExit, onRematch, onLobby }) {
             <div className="pk-coinbox">{fx.coin ? <div key={fx.coin.key} className={`pk-coin ${fx.coin.heads ? 'heads' : 'tails'}`}><span className="face">{fx.coin.heads ? 'H' : 'T'}</span><span className="lbl">{fx.coin.heads ? 'Heads' : 'Tails'}{fx.coin.reason ? <small>{fx.coin.reason}</small> : null}</span></div> : null}</div>
           </div>
           {side(P, true)}
-          <div className="pk-hand" aria-label="Your hand" style={{ '--n': P.hand.length }}>
-            {P.hand.map(c => (
+          <div className="pk-hand" aria-label={`${whose(P)} hand`} style={{ '--n': P.hand.length }}>
+            {watching ? P.hand.map(c => <div key={c.id} className="pk-handslot"><CardBack /></div>) : P.hand.map(c => (
               <div key={c.id} className={`pk-handslot ${handActs.has(c.id) ? 'playable' : ''} ${mode && mode.card === c.id ? 'chosen' : ''}`}>
                 <CardArt def={c.def} onClick={() => onHand(c)} onEnter={() => setHover({ card: c.id })} onLeave={() => setHover(null)} />
               </div>
             ))}
-            {!P.hand.length ? <span className="empty">Your hand is empty</span> : null}
+            {!P.hand.length ? <span className="empty">{whose(P)} hand is empty</span> : null}
           </div>
           {fx.banner ? <div key={fx.banner.key} className={`pk-banner ${fx.banner.kind}`}>{fx.banner.text}</div> : null}
         </main>
         <aside className="rail">
           <section className="preview-sec"><Preview game={game} hover={hover || (P.active ? { mon: P.active.id } : null)} /></section>
-          <section className="log-sec"><h3>Battle log</h3><Log game={game} /></section>
+          <section className="log-sec"><h3>Battle log</h3><Log game={game} me={watching ? null : me} /></section>
         </aside>
       </div>
       {req && req.type === 'cards' ? <CardsDialog key={pend.id} game={game} req={req} respond={respond} onHover={setHover} /> : null}
@@ -382,15 +395,15 @@ export function Battle({ session, onExit, onRematch, onLobby }) {
       {req && req.type === 'option' && req.options.length > 6 ? (
         <Modal label={req.prompt}><h2>{req.prompt}</h2><div className="pk-optlist">{req.options.map(o => <button key={String(o.value)} className="btn" onClick={() => respond(o.value)}>{o.label}</button>)}</div></Modal>
       ) : null}
-      {zone ? <ZoneDialog game={game} p={zone.p} zone={zone.z} onClose={() => setZone(null)} onHover={setHover} /> : null}
+      {zone ? <ZoneDialog game={game} p={zone.p} mine={zone.mine} zone={zone.z} onClose={() => setZone(null)} onHover={setHover} /> : null}
       {result && !dismissed ? (
         <Modal narrow label="Game over">
-          <h2 className={game.winner === me ? 'win' : ''}>{result}</h2>
-          <p className="sub">{game.result}. {game.turn} turns.</p>
+          <h2 className={result === 'You win!' ? 'win' : ''}>{result}</h2>
+          <p className="sub">{youText(game.result || '')}. {game.turn} turns.{online && !host ? ' The host can start a rematch from here.' : ''}</p>
           <div className="row">
             <button className="btn" onClick={() => setDismissed(true)}>View board</button>
-            <button className="btn" onClick={onLobby}>New battle</button>
-            <button className="btn primary" onClick={onRematch}>Rematch</button>
+            <button className="btn" onClick={onLobby}>{online ? 'Back to room' : 'New battle'}</button>
+            {!online || host ? <button className="btn primary" onClick={onRematch}>Rematch</button> : null}
           </div>
         </Modal>
       ) : null}

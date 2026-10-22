@@ -6,11 +6,12 @@ const { useState } = React;
 
 // on claude.ai, the page's own link (the page can't read it from inside its frame); on the website, this page
 export const ARTIFACT_URL = 'https://claude.ai/artifact/8rchJZPk18aNQxnKKrsKts';
-export const inviteLink = code => `${onClaude() ? ARTIFACT_URL : location.origin + location.pathname}#${code}`;
+// kind 'pk' links to a Pokémon room (#pk-abc123); Commander rooms are the bare code
+export const inviteLink = (code, kind = '') => `${onClaude() ? ARTIFACT_URL : location.origin + location.pathname}#${kind ? kind + '-' : ''}${code}`;
 
-function CopyLink({ code }) {
+export function CopyLink({ code, kind = '' }) {
   const [state, setState] = useState('');
-  const link = inviteLink(code);
+  const link = inviteLink(code, kind);
   const copy = (e) => {
     const sel = () => { const el = document.getElementById('invite-link'); if (el) { el.focus(); el.select(); } };
     try {

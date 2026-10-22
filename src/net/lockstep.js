@@ -12,8 +12,14 @@ const PRESENCE_BUDGET = 3900; // presence objects are capped at 4 KiB of JSON
 
 // ---- compact decision encoding
 const ACTION_KEYS = ['type', 'cardId', 'optionKey', 'abilityKey', 'color'];
+const PK_ACTION_KEYS = ['t', 'card', 'target', 'mon', 'name', 'to', 'src']; // a Pokémon main-phase move (what matchAction compares)
 export function packValue(v, type) {
   if (v === undefined) return null;
+  if (type === 'main' && v && typeof v === 'object' && !Array.isArray(v) && typeof v.t === 'string') {
+    const o = {};
+    for (const k of PK_ACTION_KEYS) if (v[k] !== undefined) o[k] = v[k];
+    return o;
+  }
   if (type === 'priority' && v && typeof v === 'object' && !Array.isArray(v) && typeof v.type === 'string') {
     if (v.type === 'pass') return 0;
     const o = {};
@@ -55,7 +61,8 @@ export class Lockstep {
   }
 
   get isHost() { return this.cfg.host === this.cid; }
-  close() { if (this.unsub) this.unsub(); clearInterval(this.timer); this.persist(); }
+  // after closing, nothing more goes out: leaving cancels the open prompt, and that answer must not become a move
+  close() { this.closed = true; if (this.unsub) this.unsub(); clearInterval(this.timer); this.persist(); }
 
   // who produces the decision for `pid` at `seq`
   producerOf(pid, seq) {
@@ -72,6 +79,7 @@ export class Lockstep {
 
   // a decision this peer made (its human seat, or an AI seat / takeover on the host)
   publish(seq, pid, value, ops, type) {
+    if (this.closed) return;
     const e = ops && ops.length ? [seq, pid, packValue(value, type), ops] : [seq, pid, packValue(value, type)];
     this.log.set(seq, e);
     this.mine.push(e);
@@ -153,6 +161,7 @@ export class Lockstep {
 
   // build and send our presence within the size budget
   flush(extra = {}) {
+    if (this.closed) return;
     const base = { pa: PROTOCOL, code: this.cfg.code, cid: this.cid, nick: this.nick, seat: this.seat, g: this.cfg.game, a: this.seq - 1, n: this.need, ...extra };
     if (this.isHost) base.cfg = this.cfg;
     let size = jsonSize(base);
@@ -199,7 +208,7 @@ export class Lockstep {
   }
 
   // ---- local persistence so a reload can replay the game
-  key() { return `pa-room-${this.cfg.code}-${this.cfg.game}`; }
+  key() { return `pa-room-${this.cfg.kind ? this.cfg.kind + '-' : ''}${this.cfg.code}-${this.cfg.game}`; }
   schedulePersist() {
     if (!this.storage || this.saveTimer) return;
     this.saveTimer = setTimeout(() => { this.saveTimer = null; this.persist(); }, 800);

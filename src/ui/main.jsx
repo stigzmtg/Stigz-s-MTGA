@@ -12,7 +12,7 @@ import { applyOp } from './manual.js';
 import { makePace, gamePacer } from './pacing.js';
 import { createStore, loadSettings, saveSettings, safeStorage, fetchJSON } from './common.js';
 import { Home } from './home.jsx';
-import { PokemonApp } from '../ptcg/ui/app.jsx';
+import { PokemonApp, pkRoomFromHash } from '../ptcg/ui/app.jsx';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -158,7 +158,7 @@ function MtgApp({ onHome }) {
   const ensureRoom = (nick) => {
     safeStorage.setItem('pa-nick', nick);
     if (room) { room.setNick(nick); return room; }
-    const r = new RoomClient(api, { cid: storedId(), nick, deck: lobbyDeck() || data.decks[0].id });
+    const r = new RoomClient(api, { cid: storedId(), nick, deck: lobbyDeck() || data.decks[0].id, storage: safeStorage });
     setRoom(r);
     return r;
   };
@@ -203,11 +203,12 @@ function MtgApp({ onHome }) {
     onRematch={() => { endSession(session); setSession(newSession(data, session.cfg)); }} />;
 }
 
-// which game: the address says (#pokemon, #mtg, or an MTG room invite), else the home screen
+// which game: the address says (#pokemon, #mtg, or a room invite: #abc123 for Commander, #pk-abc123 for Pokémon),
+// else the home screen
 function gameFromHash() {
   const h = location.hash.slice(1);
   if (isRoomCode(h) || h === 'mtg') return 'mtg';
-  if (h === 'pokemon') return 'pokemon';
+  if (h === 'pokemon' || pkRoomFromHash()) return 'pokemon';
   return null;
 }
 function Root() {
