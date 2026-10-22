@@ -1,12 +1,12 @@
 // "Play with friends": create or join a room, share the invite link, take seats, pick decks, start.
 import { Pip } from './cardview.jsx';
-import { isRoomCode } from '../net/roomclient.js';
+import { isRoomCode, onClaude } from '../net/roomclient.js';
 
 const { useState } = React;
 
-// the page's own claude.ai link (the page can't read it from inside its frame)
+// on claude.ai, the page's own link (the page can't read it from inside its frame); on the website, this page
 export const ARTIFACT_URL = 'https://claude.ai/artifact/8rchJZPk18aNQxnKKrsKts';
-export const inviteLink = code => `${ARTIFACT_URL}#${code}`;
+export const inviteLink = code => `${onClaude() ? ARTIFACT_URL : location.origin + location.pathname}#${code}`;
 
 function CopyLink({ code }) {
   const [state, setState] = useState('');
@@ -46,7 +46,7 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
     return (
       <section className="panel" aria-label="Play with friends">
         <h2>Play with friends</h2>
-        <p className="note">Rooms need the page opened on claude.ai, signed in. Open this game's claude.ai link (not a downloaded copy) to create or join a room.</p>
+        <p className="note">{onClaude() ? 'Rooms need the page opened on claude.ai, signed in. Open this game’s claude.ai link (not a downloaded copy) to create or join a room.' : 'This browser can’t open peer-to-peer connections, so rooms aren’t available here. Try an up-to-date Chrome, Edge, Firefox or Safari.'}</p>
       </section>
     );
   }
@@ -71,7 +71,9 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
             <button className="btn" disabled={busy || !isRoomCode(code) || !nick.trim()} onClick={() => go(() => onJoin(code, nick.trim()))}>Join</button>
           </div>
           {err ? <p className="warnline">{err === 'not_permitted' ? 'This page can’t open rooms for you. Ask the owner to share it with you by email from the Share menu.' : 'Couldn’t reach the room. Check your connection and try again.'}</p> : null}
-          <p className="note">Everyone plays in their own browser on claude.ai. Friends must be signed in and invited to this page from its Share menu (by email; a public link can’t join rooms). Each person picks their own deck from the list.</p>
+          {onClaude()
+            ? <p className="note">Everyone plays in their own browser on claude.ai. Friends must be signed in and invited to this page from its Share menu (by email; a public link can’t join rooms). Each person picks their own deck from the list.</p>
+            : <p className="note">Everyone plays in their own browser; no account needed. Send friends the invite link and each picks their own deck. Browsers connect to each other directly, so a few very strict networks (some school or office Wi-Fi) may block it.</p>}
         </div>
       </section>
     );

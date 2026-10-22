@@ -1,6 +1,7 @@
 // Modal dialogs for engine prompts and app-level panels.
 import { CardFace, viewOf, Pip, RulesText } from './cardview.jsx';
 import { fromRef } from '../engine/abilities.js';
+import { onClaude } from '../net/roomclient.js';
 
 const { useState, useEffect, useRef } = React;
 
@@ -259,7 +260,7 @@ export function HelpDialog({ onClose }) {
         <section>
           <h3>Playing with friends</h3>
           <p>Choose <b>Play with friends</b>, enter your name and create a room. Send your friends the invite link. Each friend opens it, takes an open seat and picks a deck, then the host presses <b>Start game</b>. Empty seats can be filled by AI players.</p>
-          <p>Friends need to be signed in to claude.ai and invited to this page from its Share menu. If someone's connection drops, they can reopen the link to rejoin, and the host can let the AI play their seat meanwhile.</p>
+          <p>{onClaude() ? 'Friends need to be signed in to claude.ai and invited to this page from its Share menu. ' : 'No accounts needed: browsers connect to each other directly. '}If someone's connection drops, they can reopen the link to rejoin, and the host can let the AI play their seat meanwhile.</p>
         </section>
         <section>
           <h3>Winning</h3>

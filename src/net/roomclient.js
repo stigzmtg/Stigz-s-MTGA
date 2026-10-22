@@ -6,10 +6,15 @@ const CODE_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789';
 export function newRoomCode() { let s = ''; for (let i = 0; i < 6; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]; return s; }
 export const isRoomCode = s => /^[a-z0-9]{6}$/.test(s || '');
 
-// the artifact room API: the real capability, or a test double injected before the page loads
+// running inside the claude.ai page (rooms through its room capability) or as a standalone website (peer-to-peer)
+export const onClaude = () => typeof window !== 'undefined' && !!(window.claude && window.claude.use);
+
+// the room API: a test double injected before the page loads, the claude.ai capability, or peer-to-peer rooms
 export async function roomApi() {
   if (typeof window !== 'undefined' && window.__paRoomMock) return window.__paRoomMock;
-  try { return window.claude && window.claude.use ? await window.claude.use('room') : null; } catch { return null; }
+  if (onClaude()) { try { return await window.claude.use('room'); } catch { return null; } }
+  if (typeof RTCPeerConnection === 'undefined') return null;
+  try { return (await import('./p2proom.js')).p2pRoomApi; } catch { return null; }
 }
 
 export class RoomClient {

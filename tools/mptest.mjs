@@ -8,15 +8,19 @@ const OUT = process.argv[2] || '/tmp/mptest';
 const TURNS = +(process.argv[3] || 10);
 fs.mkdirSync(OUT, { recursive: true });
 const mock = fs.readFileSync(new URL('./lib/mockroom-browser.js', import.meta.url), 'utf8');
-const browser = await chromium.launch();
+// P2P=1: no stand-in; the website's real peer-to-peer rooms (public Nostr relays through the proxy, WebRTC between profiles)
+const P2P = !!process.env.P2P;
+const browser = await chromium.launch(P2P ? { args: ['--proxy-server=' + process.env.HTTPS_PROXY, '--disable-features=WebRtcHideLocalIpsWithMdns'] } : {});
 const pages = [];
 const errors = [];
 async function newPlayer(label) {
   const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 } });
-  await ctx.exposeBinding('__relay', async (src, name, msg) => {
-    for (const p of pages) if (p !== src.page) p.evaluate(([n, m]) => window.__relayIn && window.__relayIn(n, m), [name, msg]).catch(() => {});
-  });
-  await ctx.addInitScript(mock);
+  if (!P2P) {
+    await ctx.exposeBinding('__relay', async (src, name, msg) => {
+      for (const p of pages) if (p !== src.page) p.evaluate(([n, m]) => window.__relayIn && window.__relayIn(n, m), [name, msg]).catch(() => {});
+    });
+    await ctx.addInitScript(mock);
+  }
   await ctx.addInitScript(t => { window.__paAutoplay = t; try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'fast' })); } catch {} }, TURNS);
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(`${label}: ${e.message}`));
