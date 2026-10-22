@@ -10,7 +10,7 @@ const TURNS = +(process.argv[3] || 8);
 fs.mkdirSync(OUT, { recursive: true });
 const mock = fs.readFileSync(new URL('../lib/mockroom-browser.js', import.meta.url), 'utf8');
 const P2P = !!process.env.P2P;
-const BASE = 'http://localhost:8765/';
+const BASE = process.env.BASE || 'http://localhost:8765/'; // BASE=https://... to test a live copy of the site
 const browser = await chromium.launch(P2P ? { args: ['--proxy-server=' + process.env.HTTPS_PROXY, '--disable-features=WebRtcHideLocalIpsWithMdns'] } : {});
 const pages = [];
 const errors = [];
