@@ -3,7 +3,7 @@
 // Like the Commander engine it is deterministic for a seed and the answers its agents give (agent.ask(game, pid, req)),
 // so every browser in an online game can run the same game.
 import { RNG } from '../engine/util.js';
-import { ATTACKS, ABILITIES, TRAINERS } from './cards.js';
+import { ATTACKS, ABILITIES, TRAINERS, ENERGIES } from './cards.js';
 
 export const TYPES = ['Grass', 'Fire', 'Water', 'Lightning', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Colorless'];
 
@@ -26,6 +26,7 @@ export class Mon {
     this.playedTurn = game.turn;
     this.evolvedTurn = -1;
     this.movedActiveTurn = -1;    // moved from the Bench to the Active Spot this turn (Gale Thrust)
+    this.noEvolveTurn = -1;       // devolved this turn by Strange Timepiece: it can't evolve again this turn
     this.used = {};               // ability name -> turn used
   }
   get card() { return this.stack[this.stack.length - 1]; }
@@ -64,8 +65,8 @@ export class PokemonGame {
       return {
         id: i, name: p.name, deckId: p.deck.id, deckName: p.deck.name, human: !!p.human,
         deck, hand: [], discard: [], lost: [], prizes: [], active: null, bench: [],
-        turns: 0, supporter: false, energyDone: false, retreated: false, stadiumDone: false,
-        once: {}, koTurn: -99, mulligans: 0, inPlay: null,
+        turns: 0, supporter: false, supporterName: null, energyDone: false, retreated: false, stadiumDone: false,
+        once: {}, koTurn: -99, mulligans: 0, inPlay: null, legacyUsed: false,
       };
     });
   }
@@ -204,13 +205,17 @@ export class PokemonGame {
   typeOf(mon) { return mon.def.type; }
   prizesLeft(pid) { return this.players[pid].prizes.length; }
   prizesTaken(pid) { return 6 - this.players[pid].prizes.length; }
+  // a Pokémon's Tool, unless Jamming Tower switches Tools off
+  toolName(mon) { return mon.tool && this.stadiumName() !== 'Jamming Tower' ? mon.tool.name : null; }
   maxHp(mon) {
     let hp = mon.def.hp;
-    const t = mon.tool && mon.tool.name;
+    const t = this.toolName(mon);
     const basic = mon.def.stage === 'Basic';
     if (t === 'Bravery Charm' && basic) hp += 50;
     if (t === 'Luxurious Cape' && !this.ruleBox(mon.def)) hp += 100;
     if (t === 'Ancient Booster Energy Capsule' && mon.def.ancient) hp += 60;
+    if (t === "Hero's Cape") hp += 100;
+    if (mon.def.type === 'Grass') hp += 20 * mon.energy.filter(c => c.name === 'Growing Grass Energy').length;
     if (this.stadium && this.stadium.card.name === 'Lively Stadium' && basic) hp += 30;
     return hp;
   }
@@ -234,14 +239,23 @@ export class PokemonGame {
     if (mon.def.type === 'Dragon' && this.anyInPlayHasAbility('Fairy Zone', this.opp(mon.owner))) return 'Psychic';
     return mon.def.weak;
   }
-  // the Energy a Pokémon has, as types; Special Energy provides Colorless here
-  energyTypes(mon) { return mon.energy.map(c => c.def.provides || 'Colorless'); }
+  // the Energy a Pokémon has, as a list of types, one entry per Energy it provides: Special Energy provides its
+  // printed type (Colorless for most), Legacy Energy 'Any' type, and with Meganium's Wild Growth each Basic {G}
+  // Energy provides {G}{G}
+  energyTypes(mon) {
+    const out = [];
+    for (const c of mon.energy) for (let k = this.energyUnits(mon, c); k > 0; k--) out.push(c.def.anyType ? 'Any' : c.def.provides || 'Colorless');
+    return out;
+  }
+  energyUnits(mon, card) { return card.def.energy === 'Basic' && card.def.provides === 'Grass' && this.wildGrowth(mon.owner) ? 2 : 1; }
+  wildGrowth(pid) { return this.inPlay(pid).some(m => this.hasAbility(m, 'Wild Growth')); }
   retreatCost(mon) {
     const p = mon.owner;
     if (mon.def.stage === 'Basic' && this.anyInPlayHasAbility('Skyliner', p)) return 0;
     if (this.hasAbility(mon, 'Agile') && !mon.energy.length) return 0;
+    if (this.stadiumName() === "N's Castle" && /^N's /.test(mon.name)) return 0;
     let n = mon.def.retreat;
-    const t = mon.tool && mon.tool.name;
+    const t = this.toolName(mon);
     if (t === 'Air Balloon') n -= 2;
     if (t === 'Rescue Board') { if (this.hpLeft(mon) <= 30) return 0; n -= 1; }
     return Math.max(0, n);
@@ -250,6 +264,8 @@ export class PokemonGame {
   attackCost(mon, atk) {
     let cost = [...atk.cost];
     if (this.hasAbility(mon, 'Lost Provisions') && this.players[mon.owner].lost.length >= 4) return [];
+    // Kyurem's Plasma Bane: Trifrost costs {C} once the opponent has discarded a Colress card
+    if (atk.name === 'Trifrost' && this.hasAbility(mon, 'Plasma Bane') && this.players[this.opp(mon.owner)].discard.some(c => /Colress/.test(c.name))) return ['Colorless'];
     if (atk.name === 'Blood Moon' && this.hasAbility(mon, 'Seasoned Skill')) {
       for (let k = 0; k < this.prizesTaken(this.opp(mon.owner)) && cost.length; k++) { const i = cost.lastIndexOf('Colorless'); if (i < 0) break; cost.splice(i, 1); }
     }
@@ -260,7 +276,8 @@ export class PokemonGame {
     const tryPay = (c) => {
       const pool = [...have];
       const typed = c.filter(t => t !== 'Colorless');
-      for (const t of typed) { const i = pool.indexOf(t); if (i < 0) return false; pool.splice(i, 1); }
+      // the exact type first; Energy that provides any type covers what's left
+      for (const t of typed) { let i = pool.indexOf(t); if (i < 0) i = pool.indexOf('Any'); if (i < 0) return false; pool.splice(i, 1); }
       return pool.length >= c.length - typed.length;
     };
     if (!minus) return tryPay(cost);
@@ -268,14 +285,25 @@ export class PokemonGame {
     for (let i = 0; i < cost.length; i++) { const c = cost.slice(0, i).concat(cost.slice(i + 1)); if (tryPay(c)) return true; }
     return tryPay(cost);
   }
-  costMinus(mon) { return mon.tool && mon.tool.name === 'Sparkling Crystal' && this.isTera(mon) ? 1 : 0; }
+  costMinus(mon) { return this.toolName(mon) === 'Sparkling Crystal' && this.isTera(mon) ? 1 : 0; }
 
   // every attack a Pokémon can use: printed, from a Technical Machine, or copied by Genome Hacking
   attacksOf(mon) {
     const out = (mon.def.attacks || []).map(a => ({ ...a, src: 'own' }));
-    if (mon.tool && mon.tool.def.attacks) for (const a of mon.tool.def.attacks) out.push({ ...a, src: 'tm' });
+    if (this.toolName(mon) && mon.tool.def.attacks) for (const a of mon.tool.def.attacks) out.push({ ...a, src: 'tm' });
     return out;
   }
+  // Festival Lead: with Festival Grounds in play, this Pokémon may attack twice each turn
+  festivalLead(mon) { return this.stadiumName() === 'Festival Grounds' && this.hasAbility(mon, 'Festival Lead'); }
+  // can this Pokémon evolve now? Not the turn it came into play or evolved, unless Forest of Vitality lets a {G}
+  // Pokémon evolve into a {G} Pokémon; never right after Strange Timepiece devolved it
+  canEvolveNow(mon, def) {
+    if (mon.noEvolveTurn === this.turn) return false;
+    if (mon.playedTurn !== this.turn && mon.evolvedTurn !== this.turn) return true;
+    return this.stadiumName() === 'Forest of Vitality' && mon.def.type === 'Grass' && def.type === 'Grass';
+  }
+  // Bronzong's Evolution Jammer: no evolving from the hand this turn
+  evolutionJammed(pid) { return this.hasEffect('evoLock', { pid }); }
   attackBlock(mon, atk) {
     const pid = mon.owner;
     const p = this.players[pid];
@@ -354,7 +382,7 @@ export class PokemonGame {
     const pid = this.current;
     const p = this.players[pid];
     p.turns++;
-    p.supporter = false; p.energyDone = false; p.retreated = false; p.stadiumDone = false; p.briar = false;
+    p.supporter = false; p.supporterName = null; p.energyDone = false; p.retreated = false; p.stadiumDone = false; p.briar = false;
     this.effects = this.effects.filter(e => e.turn >= this.turn);
     this.log(`Turn ${this.turn}: ${p.name}`, { type: 'turn', pid });
     this.event('turn', { pid });
@@ -369,13 +397,33 @@ export class PokemonGame {
       if (this.over) return;
       const act = this.matchAction(actions, a);
       if (!act || act.t === 'end') break;
-      if (act.t === 'attack') { await this.attack(pid, act); break; }
+      if (act.t === 'attack') {
+        const mon = p.active;
+        await this.attack(pid, act);
+        if (!this.over) await this.attackAgain(pid, mon);
+        break;
+      }
       await this.doAction(pid, act);
       await this.checkKOs();
       if (this.over) return;
     }
     if (this.over) return;
     await this.endTurn(pid);
+  }
+
+  // Festival Lead: a second attack by the same Pokémon, if it is still Active (after the opponent replaces a
+  // Knocked Out Active Pokémon)
+  async attackAgain(pid, mon) {
+    const p = this.players[pid];
+    if (!mon || p.active !== mon || !mon.stack.length || !this.festivalLead(mon) || !this.players[this.opp(pid)].active) return;
+    const actions = this.attacksOf(mon).filter(atk => !this.attackBlock(mon, atk)).map(atk => ({ t: 'attack', mon: mon.id, name: atk.name, src: atk.src }));
+    if (!actions.length) return;
+    actions.push({ t: 'end' });
+    this.log(`Festival Lead: ${mon.name} may attack again.`, { pid });
+    const a = await this.ask(pid, { type: 'main', actions, again: true });
+    if (this.over) return;
+    const act = this.matchAction(actions, a);
+    if (act && act.t === 'attack') await this.attack(pid, act);
   }
 
   matchAction(actions, a) {
@@ -391,11 +439,12 @@ export class PokemonGame {
     const firstTurn = p.turns === 1;
     const mons = this.inPlay(pid);
     const itemLock = this.hasEffect('itemLock', { pid });
+    const evoLock = this.evolutionJammed(pid);
     for (const c of p.hand) {
       const d = c.def;
       if (d.cat === 'P' && d.stage === 'Basic' && p.bench.length < this.benchLimit(pid)) out.push({ t: 'bench', card: c.id });
-      if (d.cat === 'P' && d.stage !== 'Basic' && !firstTurn) {
-        for (const m of mons) if (m.name === d.from && m.playedTurn !== this.turn && m.evolvedTurn !== this.turn) out.push({ t: 'evolve', card: c.id, target: m.id });
+      if (d.cat === 'P' && d.stage !== 'Basic' && !firstTurn && !evoLock) {
+        for (const m of mons) if (m.name === d.from && this.canEvolveNow(m, d)) out.push({ t: 'evolve', card: c.id, target: m.id });
       }
       if (d.cat === 'E' && !p.energyDone) for (const m of mons) out.push({ t: 'energy', card: c.id, target: m.id });
       if (d.cat === 'T') {
@@ -432,7 +481,7 @@ export class PokemonGame {
     }
     // retreat
     const a = p.active;
-    if (a && p.bench.length && !p.retreated && a.special !== 'asleep' && a.special !== 'paralyzed' && !this.hasEffect('cantRetreat', { mon: a }) && a.energy.length >= this.retreatCost(a)) {
+    if (a && p.bench.length && !p.retreated && a.special !== 'asleep' && a.special !== 'paralyzed' && !this.hasEffect('cantRetreat', { mon: a }) && this.energyTypes(a).length >= this.retreatCost(a)) {
       for (const b of p.bench) out.push({ t: 'retreat', to: b.id });
     }
     // attacks
@@ -490,17 +539,36 @@ export class PokemonGame {
         const a = p.active;
         const to = this.monById(act.to);
         const n = this.retreatCost(a);
-        if (n > 0) {
-          const pay = await this.chooseCards(pid, a.energy, { min: n, max: n, prompt: `Discard ${n} Energy to retreat ${a.name}`, from: 'energy', hint: 'retreat-cost' });
-          for (const c of pay) this.discard(c);
-        }
+        if (n > 0) for (const c of await this.chooseEnergyToPay(pid, a, n, `Discard ${n} Energy to retreat ${a.name}`)) this.discard(c);
         p.retreated = true;
         this.log(`${p.name} retreats ${a.name}${to ? ` and sends out ${to.name}` : ''}.`, { pid });
         this.switchActive(pid, to);
         break;
       }
     }
+    this.festivalSweep();
     this.notify();
+  }
+
+  // Festival Grounds: each Pokémon with Energy attached recovers from all Special Conditions
+  festivalSweep() {
+    if (this.stadiumName() !== 'Festival Grounds') return;
+    for (const p of this.players) for (const m of this.inPlay(p.id)) {
+      if (!m.energy.length || !(m.special || m.poisoned || m.burned)) continue;
+      this.clearConditions(m);
+      this.log(`${m.name} recovers from its Special Conditions (Festival Grounds).`);
+    }
+  }
+
+  // Energy cards that pay `n` Energy (a Retreat Cost): one card each, or fewer when Wild Growth makes a card provide 2
+  async chooseEnergyToPay(pid, mon, n, prompt) {
+    const units = c => this.energyUnits(mon, c);
+    if (mon.energy.every(c => units(c) === 1)) return this.chooseCards(pid, mon.energy, { min: n, max: n, prompt, from: 'energy', hint: 'retreat-cost' });
+    const pay = await this.chooseCards(pid, mon.energy, { min: 1, max: Math.min(n, mon.energy.length), prompt, from: 'energy', hint: 'retreat-cost' });
+    const sum = list => list.reduce((s, c) => s + units(c), 0);
+    for (const c of mon.energy) if (sum(pay) < n && !pay.includes(c)) pay.push(c);
+    while (pay.length > 1 && sum(pay) - units(pay[pay.length - 1]) >= n) pay.pop();
+    return pay;
   }
 
   // ------------------------------------------------------------ actions
@@ -552,6 +620,9 @@ export class PokemonGame {
       this.log(`Jet Energy switches ${mon.name} into the Active Spot.`);
       this.switchActive(pid, mon);
     }
+    // Special Energy that does something when attached from hand (Enriching Energy, Telepathic Psychic Energy)
+    const fx = ENERGIES[card.name];
+    if (fromHand && fx && fx.onAttach && (!fx.can || fx.can(this, mon, pid))) await fx.onAttach(this, mon, pid);
   }
 
   async playTrainer(pid, card) {
@@ -559,7 +630,7 @@ export class PokemonGame {
     const d = card.def;
     const fx = TRAINERS[d.name] || {};
     p.hand.splice(p.hand.indexOf(card), 1);
-    if (d.trainer === 'Supporter') p.supporter = true;
+    if (d.trainer === 'Supporter') { p.supporter = true; p.supporterName = d.name; }
     if (d.trainer === 'Stadium') {
       p.stadiumDone = true;
       const old = this.stadium;
@@ -613,7 +684,8 @@ export class PokemonGame {
   clearConditions(mon) { mon.special = null; mon.poisoned = false; mon.burned = false; }
   // special conditions: Ancient Booster Energy Capsule, Flare Veil and Dig keep them off
   setCondition(mon, cond, ctx = null) {
-    if (mon.tool && mon.tool.name === 'Ancient Booster Energy Capsule' && mon.def.ancient) return false;
+    if (this.toolName(mon) === 'Ancient Booster Energy Capsule' && mon.def.ancient) return false;
+    if (this.stadiumName() === 'Festival Grounds' && mon.energy.length) return false;
     if (ctx && this.effectsBlocked(ctx, mon)) return false;
     if (cond === 'poisoned') mon.poisoned = true;
     else if (cond === 'burned') mon.burned = true;
@@ -622,13 +694,17 @@ export class PokemonGame {
     this.event('condition', { mon: mon.id, cond });
     return true;
   }
-  // effects of an opponent's attack can be stopped (Charmeleon's Flare Veil, Dunsparce's Dig)
+  // effects of an opponent's attack can be stopped (Charmeleon's Flare Veil, Dunsparce's Dig, Hide 'n' Sneak,
+  // Mist Energy); damage is not an effect
   effectsBlocked(ctx, mon) {
     if (!ctx || mon.owner === ctx.pid) return false;
-    if (this.hasAbility(mon, 'Flare Veil')) return true;
+    if (this.hasAbility(mon, 'Flare Veil') || this.hasAbility(mon, "Hide 'n' Sneak")) return true;
     if (this.hasEffect('dig', { mon })) return true;
+    if (mon.energy.some(c => c.name === 'Mist Energy')) return true;
     return false;
   }
+  // effects of the opponent's Abilities can be stopped too (Hide 'n' Sneak)
+  abilityBlocked(pid, mon) { return mon.owner !== pid && this.hasAbility(mon, "Hide 'n' Sneak"); }
 
   addCounters(mon, n, { ctx = null } = {}) {
     if (n <= 0 || !mon.stack.length) return 0;
@@ -675,7 +751,11 @@ export class PokemonGame {
       this.log(`${mon.name} copies ${use.name}.`);
     }
     const ctx = this.attackContext(pid, mon, use);
+    const boomerang = mon.energy.filter(c => c.name === 'Boomerang Energy');
     await this.runAttack(ctx);
+    // Boomerang Energy discarded by this Pokémon's own attack comes back after attacking
+    for (const c of boomerang) if (mon.stack.length && p.discard.includes(c)) { p.discard.splice(p.discard.indexOf(c), 1); mon.energy.push(c); this.log(`Boomerang Energy returns to ${mon.name}.`); }
+    this.festivalSweep();
     await this.checkKOs(ctx);
   }
 
@@ -708,9 +788,7 @@ export class PokemonGame {
     const active = this.isActive(target) && target.owner === ctx.opp;
     let dmg = amount;
     if (active) {
-      const t = attacker.tool && attacker.tool.name;
-      if (t === 'Vitality Band') dmg += 10;
-      if (t === 'Defiance Band' && this.prizesLeft(ctx.pid) > this.prizesLeft(ctx.opp)) dmg += 30;
+      dmg += this.attackBonus(ctx, attacker, target);
       if (this.hasEffect('charm', { mon: attacker })) dmg -= 20;
       dmg = Math.max(0, dmg);
       if (!noWeakness && this.weaknessOf(target) === attacker.def.type) dmg *= 2;
@@ -719,11 +797,15 @@ export class PokemonGame {
         if (this.hasEffect('protect', { mon: target })) dmg -= 30;
         if (this.hasEffect('dig', { mon: target })) dmg = 0;
         if (this.hasAbility(target, 'Cornerstone Stance') && this.abilitiesOf(attacker).length) dmg = 0;
+        dmg = this.damageGuard(target, attacker, dmg);
       }
     } else if (target.owner !== ctx.pid) {
       // Tera Pokémon ex on the Bench take no damage from attacks
       if (this.isTera(target) && target.def.ex) dmg = 0;
       if (this.hasEffect('dig', { mon: target })) dmg = 0;
+      // Shaymin's Flower Curtain: Benched Pokémon without a Rule Box take no damage
+      if (!this.ruleBox(target.def) && this.anyInPlayHasAbility('Flower Curtain', target.owner)) dmg = 0;
+      dmg = this.damageGuard(target, attacker, dmg);
     }
     dmg = Math.max(0, dmg);
     if (!dmg) { if (amount > 0 && active) this.log(`${target.name} takes no damage.`); return 0; }
@@ -732,11 +814,51 @@ export class PokemonGame {
       dmg = this.maxHp(target) - 10;
       this.log(`${target.name}'s Resolute Heart keeps it in the fight.`);
     }
+    // Annihilape's Durable Body: a coin flip to survive with 10 HP
+    if (dmg >= this.hpLeft(target) && this.hasAbility(target, 'Durable Body') && this.flip(`${target.name}'s Durable Body`)) {
+      dmg = Math.max(0, this.hpLeft(target) - 10);
+      this.log(`${target.name}'s Durable Body keeps it in the fight with 10 HP.`);
+    }
     target.damage += dmg;
     ctx.dealt.set(target, (ctx.dealt.get(target) || 0) + dmg);
     this.log(`${target.name} takes ${dmg} damage.`, { type: 'damage' });
     this.event('damage', { mon: target.id, amount: dmg });
+    if (dmg > 0 && target.owner === ctx.opp) this.afterDamaged(ctx, target, active);
     return dmg;
+  }
+  // more damage to the opponent's Active Pokémon, before Weakness and Resistance: the attacker's Tool, Supporters
+  attackBonus(ctx, attacker, target) {
+    let n = 0;
+    const t = this.toolName(attacker);
+    const plain = !this.ruleBox(attacker.def);
+    if (t === 'Vitality Band') n += 10;
+    if (t === 'Defiance Band' && this.prizesLeft(ctx.pid) > this.prizesLeft(ctx.opp)) n += 30;
+    if (t === 'Brave Bangle' && plain && target.def.ex) n += 30;
+    if (t === 'Binding Mochi' && attacker.poisoned) n += 40;
+    if (target.def.ex && this.hasEffect('blackBelt', { pid: ctx.pid })) n += 40;
+    if (plain && this.hasEffect('gladion', { pid: ctx.pid })) n += 80;
+    return n;
+  }
+  // the defender's own protection, after Weakness and Resistance: Crustle's Mysterious Rock Inn, Bouffalant's Curly Wall
+  damageGuard(target, attacker, dmg) {
+    if (attacker.def.ex && this.hasAbility(target, 'Mysterious Rock Inn')) return 0;
+    if (target.def.stage === 'Basic' && target.def.type === 'Colorless' && this.curlyWall(target.owner)) dmg -= 60;
+    return Math.max(0, dmg);
+  }
+  curlyWall(pid) { const bs = this.inPlay(pid).filter(m => m.name === 'Bouffalant'); return bs.length >= 2 && bs.some(m => this.hasAbility(m, 'Curly Wall')); }
+  // the opponent's Pokémon was damaged by this attack: Lucky Helmet, Spiky Energy, Ready to Ram (once per attack)
+  afterDamaged(ctx, target, active) {
+    ctx.hit = ctx.hit || new Set();
+    if (ctx.hit.has(target)) return;
+    ctx.hit.add(target);
+    const owner = target.owner, attacker = ctx.attacker;
+    if (active && this.toolName(target) === 'Lucky Helmet') {
+      const got = this.draw(owner, 2);
+      this.log(`Lucky Helmet: ${this.players[owner].name} draws ${got.length} card${got.length === 1 ? '' : 's'}.`, { pid: owner });
+    }
+    const spiky = active ? target.energy.filter(c => c.name === 'Spiky Energy').length : 0;
+    if (spiky && attacker.stack.length && this.addCounters(attacker, 2 * spiky)) this.log(`Spiky Energy puts ${2 * spiky} damage counters on ${attacker.name}.`);
+    if (this.hasEffect('readyToRam', { mon: target }) && attacker.stack.length && this.addCounters(attacker, 6, { ctx: { pid: owner } })) this.log(`Ready to Ram puts 6 damage counters on ${attacker.name}.`);
   }
 
   // ------------------------------------------------------------ Knock Outs and Prizes
@@ -750,9 +872,15 @@ export class PokemonGame {
         const owner = m.owner, taker = this.opp(owner);
         let n = this.prizeValue(m);
         const byAttack = ctx && ctx.dealt.has(m) && owner === ctx.opp;
-        if (byAttack && m.tool && m.tool.name === 'Luxurious Cape' && !this.ruleBox(m.def)) n += 1;
+        if (byAttack && this.toolName(m) === 'Luxurious Cape' && !this.ruleBox(m.def)) n += 1;
         if (byAttack && ctx.extraPrize.has(m)) n += 1;
         if (byAttack && this.players[ctx.pid].briar && this.isActive(m) && this.isTera(ctx.attacker)) n += 1;
+        // Legacy Energy: one fewer Prize card, once per game
+        if (byAttack && !this.players[owner].legacyUsed && m.energy.some(c => c.name === 'Legacy Energy')) {
+          n = Math.max(0, n - 1);
+          this.players[owner].legacyUsed = true;
+          this.log(`Legacy Energy: ${this.players[taker].name} takes 1 fewer Prize card.`);
+        }
         this.log(`${m.name} is Knocked Out!`, { type: 'ko', pid: owner });
         this.event('ko', { mon: m.id, name: m.name, pid: owner });
         if (this.current !== owner) this.players[owner].koTurn = this.turn;
@@ -815,9 +943,10 @@ export class PokemonGame {
   // ------------------------------------------------------------ end of turn and the Pokémon Checkup
   async endTurn(pid) {
     const p = this.players[pid];
-    // Technical Machines are discarded at the end of the turn they were used on
-    for (const m of this.inPlay(pid)) if (m.tool && /^Technical Machine/.test(m.tool.name)) { this.log(`${m.tool.name} is discarded.`); this.discard(m.tool); }
+    // Technical Machines are discarded at the end of the turn (unless Jamming Tower switches Tools off)
+    for (const m of this.inPlay(pid)) if (/^Technical Machine/.test(this.toolName(m) || '')) { this.log(`${m.tool.name} is discarded.`); this.discard(m.tool); }
     p.briar = false;
+    this.festivalSweep();
     // checkup: both Active Pokémon
     for (const q of [this.players[pid], this.players[this.opp(pid)]]) {
       const m = q.active;

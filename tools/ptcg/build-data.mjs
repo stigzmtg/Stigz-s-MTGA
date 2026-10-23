@@ -20,13 +20,24 @@ const DECKS = [
   { name: 'Chien-Pao Baxcalibur', id: 'chien-pao', featured: 'PAL-61', blurb: 'Baxcalibur attaches any number of Water Energy from your hand, then Hail Blade discards them for 60 damage each.' },
   { name: 'Roaring Moon ex', id: 'roaring-moon', featured: 'PAR-124', blurb: 'Frenzied Gouging knocks out any Active Pokémon outright. Dudunsparce draws cards and Professor Sada’s Vitality fuels the Ancient attackers.' },
   { name: 'Lost Zone Box', id: 'lost-zone', featured: 'LOR-79', blurb: 'Comfey and Colress’s Experiment fill the Lost Zone, then Cramorant attacks for free and Sableye’s Lost Mine places 12 damage counters.' },
+  { name: 'Slowking', id: 'slowking', featured: 'SCR-58', blurb: 'Seek Inspiration discards the top card of the deck and uses that Pokémon’s attack. Academy at Night and Ciphermaniac’s Codebreaking line up Kyurem, Metagross and Zeraora on top.' },
+  { name: "N's Zoroark ex", id: 'ns-zoroark', featured: 'JTG-98', blurb: 'Trade draws two cards every turn, and Night Joker copies the attacks of N’s Zekrom and N’s Reshiram on the Bench. Munkidori moves damage around.' },
+  { name: 'Festival Lead', id: 'festival-lead', featured: 'PRE-21', blurb: 'With Festival Grounds in play Seaking attacks twice a turn. Thwackey’s Boom Boom Groove finds any card, and Gladion’s Final Battle adds 80 damage to every hit.' },
+  { name: 'Alakazam Dusknoir', id: 'alakazam', featured: 'MEG-56', blurb: 'Kadabra and Alakazam draw cards as they evolve, then Powerful Hand places 2 damage counters for each card in your hand. Dusknoir’s Cursed Blast finishes the job.' },
+  { name: 'Hydrapple ex', id: 'hydrapple', featured: 'SCR-14', blurb: 'Meganium’s Wild Growth makes every Grass Energy count twice, so Hydrapple ex’s Syrup Storm grows fast. Ripening Charge and Teal Mask Ogerpon ex pile on the Energy.' },
+  { name: 'Dhelmise', id: 'dhelmise', featured: 'PBL-39', blurb: 'Shuppet, Banette, Poltchageist and Sinistcha ignore attack effects with Hide ’n’ Sneak. Once four of them are in the discard pile, Vengeful Anchor hits for 170.' },
+  { name: 'Mega Lopunny ex', id: 'mega-lopunny', featured: 'PFL-84', blurb: 'Gale Thrust hits for 230 when Mega Lopunny ex comes off the Bench. Dusknoir’s Cursed Blast and Mega Kangaskhan ex add damage and cards, and Bronzong jams evolutions.' },
+  { name: 'Crustle', id: 'crustle', featured: 'DRI-12', blurb: 'Crustle takes no damage from Pokémon ex. Mist Energy and Spiky Energy protect it, Pokémon Center Lady and Jumbo Ice Cream heal it, and Eri strips Items from the opponent’s hand.' },
 ];
 
 // trait lists the card records don't carry
-const TERA = new Set(['OBF-125', 'TWM-130', 'TWM-25', 'TWM-64', 'TWM-112', 'SSP-76', 'SSP-57']);
+const TERA = new Set(['OBF-125', 'TWM-130', 'TWM-25', 'TWM-64', 'TWM-112', 'SSP-57']);
 const ANCIENT = new Set(['Roaring Moon', 'Roaring Moon ex', 'Raging Bolt ex', 'Scream Tail', "Explorer's Guidance", "Professor Sada's Vitality", 'Ancient Booster Energy Capsule', 'Earthen Vessel']);
 const FUTURE = new Set(['Iron Hands ex', 'Iron Bundle', 'Iron Leaves ex', 'Miraidon ex']);
-const ACE_SPEC = new Set(['Unfair Stamp', 'Secret Box', 'Prime Catcher', 'Sparkling Crystal']);
+const ACE_SPEC = new Set(['Unfair Stamp', 'Secret Box', 'Prime Catcher', 'Sparkling Crystal', "Hero's Cape", 'Legacy Energy', 'Enriching Energy']);
+// Special Energy that provides a type (Legacy Energy provides every type, one at a time)
+const SPECIAL_PROVIDES = { 'Telepathic Psychic Energy': 'Psychic', 'Growing Grass Energy': 'Grass' };
+const ANY_TYPE = new Set(['Legacy Energy']);
 const BASIC_TYPES = ['Grass', 'Fire', 'Water', 'Lightning', 'Psychic', 'Fighting', 'Darkness', 'Metal'];
 // basic Energy pictures: the Mega Evolution Energies printings (numbers 9-16 in type order)
 const ENERGY_IMAGE = t => `https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpci/MEE/MEE_${String(9 + BASIC_TYPES.indexOf(t)).padStart(3, '0')}_R_EN_LG.png`;
@@ -61,7 +72,9 @@ function def(entry) {
     cards[key] = { key, name: c.name, cat: 'T', trainer: c.trainerType, text: clean(c.effect), ancient: ANCIENT.has(c.name), ace: ACE_SPEC.has(c.name), img };
     if (c.attacks) cards[key].attacks = c.attacks.map(a => ({ name: a.name, cost: a.cost || [], damage: a.damage == null ? '' : String(a.damage), text: clean(a.effect) }));
   } else {
-    cards[key] = { key, name: c.name, cat: 'E', energy: 'Special', provides: 'Colorless', text: clean(c.effect), img };
+    cards[key] = { key, name: c.name, cat: 'E', energy: 'Special', provides: SPECIAL_PROVIDES[c.name] || 'Colorless', text: clean(c.effect), img };
+    if (ANY_TYPE.has(c.name)) cards[key].anyType = true;
+    if (ACE_SPEC.has(c.name)) cards[key].ace = true;
   }
   return key;
 }
@@ -75,7 +88,8 @@ for (const d of DECKS) {
   const total = [...counts.values()].reduce((a, b) => a + b, 0);
   if (total !== 60) throw new Error(`${d.name}: ${total} cards`);
   const [, archetype, player] = /^(.*?) by (.*?) – Limitless$/.exec(l.title) || [];
-  const energyTypes = [...new Set([...counts.keys()].map(k => cards[k]).filter(c => c.cat === 'E' && c.energy === 'Basic').map(c => c.provides))];
+  // the deck's Energy types: Basic Energy, then Special Energy that provides a type
+  const energyTypes = [...new Set([...counts.keys()].map(k => cards[k]).filter(c => c.cat === 'E' && (c.energy === 'Basic' || (c.provides !== 'Colorless' && !c.anyType))).sort((a, b) => (a.energy !== 'Basic') - (b.energy !== 'Basic')).map(c => c.provides))];
   decks.push({ id: d.id, name: d.name, featured: d.featured, blurb: d.blurb, list: archetype || d.name, player: player || '', source: `https://limitlesstcg.com/decks/list/${l.list}`, energy: energyTypes, cards: [...counts] });
 }
 if (!cards[DECKS[0].featured]) throw new Error('featured card missing');
