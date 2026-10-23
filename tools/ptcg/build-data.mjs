@@ -28,12 +28,13 @@ const DECKS = [
   { name: 'Dhelmise', id: 'dhelmise', featured: 'PBL-39', blurb: 'Shuppet, Banette, Poltchageist and Sinistcha ignore attack effects with Hide ’n’ Sneak. Once four of them are in the discard pile, Vengeful Anchor hits for 170.' },
   { name: 'Mega Lopunny ex', id: 'mega-lopunny', featured: 'PFL-84', blurb: 'Gale Thrust hits for 230 when Mega Lopunny ex comes off the Bench. Dusknoir’s Cursed Blast and Mega Kangaskhan ex add damage and cards, and Bronzong jams evolutions.' },
   { name: 'Crustle', id: 'crustle', featured: 'DRI-12', blurb: 'Crustle takes no damage from Pokémon ex. Mist Energy and Spiky Energy protect it, Pokémon Center Lady and Jumbo Ice Cream heal it, and Eri strips Items from the opponent’s hand.' },
+  { name: 'Basic Box', id: 'basic-box', featured: 'MEG-104', blurb: 'All Basic Pokémon ex: Mega Kangaskhan ex draws cards and hits for 200 and up, Teal Mask Ogerpon ex and Crispin pile on the Energy, and Iron Crown ex’s Twin Shotels picks off the Bench.' },
 ];
 
 // trait lists the card records don't carry
 const TERA = new Set(['OBF-125', 'TWM-130', 'TWM-25', 'TWM-64', 'TWM-112', 'SSP-57']);
 const ANCIENT = new Set(['Roaring Moon', 'Roaring Moon ex', 'Raging Bolt ex', 'Scream Tail', "Explorer's Guidance", "Professor Sada's Vitality", 'Ancient Booster Energy Capsule', 'Earthen Vessel']);
-const FUTURE = new Set(['Iron Hands ex', 'Iron Bundle', 'Iron Leaves ex', 'Miraidon ex']);
+const FUTURE = new Set(['Iron Hands ex', 'Iron Bundle', 'Iron Leaves ex', 'Miraidon ex', 'Iron Crown ex']);
 const ACE_SPEC = new Set(['Unfair Stamp', 'Secret Box', 'Prime Catcher', 'Sparkling Crystal', "Hero's Cape", 'Legacy Energy', 'Enriching Energy']);
 // Special Energy that provides a type (Legacy Energy provides every type, one at a time)
 const SPECIAL_PROVIDES = { 'Telepathic Psychic Energy': 'Psychic', 'Growing Grass Energy': 'Grass' };

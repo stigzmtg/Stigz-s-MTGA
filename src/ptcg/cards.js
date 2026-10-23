@@ -5,7 +5,7 @@
 //   TRAINERS[name]  = { can(game, pid, card), play(game, pid, card), canAttach(game, mon), stadiumUse(game, pid), stadiumCan }
 //   ENERGIES[name]  = { onAttach(game, mon, pid) when attached from the hand, can(game, mon, pid) }
 // Passive Abilities, Tools, Stadiums and Special Energy (Skyliner, Festival Lead, Wild Growth, Hide 'n' Sneak,
-// Mysterious Rock Inn, Jamming Tower, Mist Energy, Legacy Energy...) are read by the engine in game.js.
+// Mysterious Rock Inn, Cobalt Command, Jamming Tower, Mist Energy, Legacy Energy...) are read by the engine in game.js.
 export const ATTACKS = {};
 export const ABILITIES = {};
 export const TRAINERS = {};
@@ -531,6 +531,15 @@ Object.assign(ATTACKS, {
   'Boundless Power': { after: nextTurnNoAttack },
   'Ready to Ram': { after: ctx => ctx.game.addEffect({ kind: 'readyToRam', mon: ctx.attacker.id, turn: ctx.game.turn + 1 }) },
   'Smashing Headbutt': { after: ctx => discardEnergyFrom(ctx.game, ctx.pid, ctx.attacker, 2) },
+  // ---- Basic Box
+  'Twin Shotels': {
+    async run(ctx) {
+      const g = ctx.game;
+      const ts = await g.chooseMon(ctx.pid, g.inPlay(ctx.opp), { min: 2, max: 2, prompt: "Choose 2 of your opponent's Pokémon to take 50 damage each", hint: 'opp-damage-pierce:50' });
+      for (const t of ts) ctx.damageTo(t, 50, { noWeakness: true, noResistance: true, ignoreEffects: true });
+    },
+  },
+  'Coordinated Throwing': { base: ctx => 20 * ctx.game.inPlay(ctx.pid).filter(m => m.def.stage === 'Basic').length },
 });
 
 // ---------------------------------------------------------------- abilities
