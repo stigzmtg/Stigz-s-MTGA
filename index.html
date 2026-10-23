@@ -1019,6 +1019,29 @@ kbd { font: 600 calc(12px * var(--s))/1 'Alegreya Sans', sans-serif; padding: 2p
 .helper-focus { display: flex; flex-wrap: wrap; gap: calc(6px * var(--s)); align-items: center; }
 .helper-focus .chip { cursor: pointer; }
 @media (max-width: 900px) { .helper-thread { max-height: 60vh; } }
+/* ---- sleeves and deck boxes */
+.card.back.sleeved, .pk-card.back.sleeved { background: none; border: 0; overflow: hidden; }
+.card.back.sleeved .sleeve, .pk-card.back.sleeved .sleeve { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.deckbox { display: block; flex: none; overflow: visible; filter: drop-shadow(0 calc(4px * var(--s)) calc(8px * var(--s)) rgba(0, 0, 0, 0.45)); }
+.ds-lobby { display: flex; align-items: center; gap: calc(12px * var(--s)); margin: calc(4px * var(--s)) 0 calc(8px * var(--s)); }
+.ds-lobby-side { display: grid; gap: calc(4px * var(--s)); justify-items: start; }
+.ds-lobby-side .note { margin: 0; font-size: calc(13px * var(--s)); }
+.ds-boxbtn { padding: 0; border: 0; background: none; cursor: pointer; transition: transform 0.15s; }
+.ds-boxbtn:hover { transform: translateY(-2px) rotate(-1.5deg); }
+.ds-editor { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: calc(22px * var(--s)); align-items: start; }
+.ds-preview { display: grid; gap: calc(14px * var(--s)); justify-items: center; width: calc(230px * var(--s)); }
+.ds-fan { position: relative; width: calc(200px * var(--s)); height: calc(118px * var(--s)); }
+.ds-back { position: absolute; left: 50%; top: calc(8px * var(--s)); width: calc(74px * var(--s)); aspect-ratio: 63 / 88; margin-left: -calc(37px * var(--s)); transform: translateX(var(--x)) rotate(var(--r)); transform-origin: 50% 120%; border-radius: calc(6px * var(--s)); overflow: hidden; box-shadow: 0 calc(4px * var(--s)) calc(10px * var(--s)) rgba(0, 0, 0, 0.55); }
+.ds-back .sleeve { width: 100%; height: 100%; display: block; }
+.ds-back .card.back, .ds-back .pk-card.back { position: absolute; inset: 0; width: 100%; height: 100%; --cw: calc(74px * var(--s)); border-radius: calc(6px * var(--s)); }
+.ds-options { display: grid; gap: calc(12px * var(--s)); min-width: 0; align-content: start; }
+.ds-tabs { justify-self: start; }
+.ds-emblems { display: flex; flex-wrap: wrap; gap: calc(6px * var(--s)); }
+.ds-emblems button { width: calc(38px * var(--s)); height: calc(38px * var(--s)); padding: 2px; display: grid; place-items: center; border-radius: 50%; border: 2px solid transparent; background: rgba(255, 255, 255, 0.04); cursor: pointer; color: var(--ink-dim); font-size: calc(11px * var(--s)); }
+.ds-emblems button.on { border-color: var(--brass-hi); }
+.ds-match { justify-self: start; }
+.seat-deck .deckbox { display: inline-block; vertical-align: middle; margin-right: calc(4px * var(--s)); filter: none; }
+@media (max-width: 640px) { .ds-editor { grid-template-columns: minmax(0, 1fr); } .ds-preview { width: 100%; } }
 
 /* ================================================================ Pokémon: shared */
 .app.pk {
