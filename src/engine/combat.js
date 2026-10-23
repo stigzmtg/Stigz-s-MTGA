@@ -104,7 +104,8 @@ export async function declareAttackers(game) {
   }
   // requirements: goaded creatures, "attacks each combat if able"
   for (const c of cands) {
-    let must = (c.goadedBy && c.goadedBy.length > 0) || c.mustAttack != null;
+    const goaders = game.goaders(c);
+    let must = goaders.length > 0 || c.mustAttack != null;
     let forced = null;
     for (const s of game.activeStatics('MustAttack')) {
       if (!matchValid(game, c, s.p.ValidCreature || s.p.ValidCard || 'Card.Self', s.ctx)) continue;
@@ -117,7 +118,7 @@ export async function declareAttackers(game) {
     let d = null;
     if (c.mustAttack != null) d = defenders.find(x => x.player === c.mustAttack && !x.card);
     if (!d && forced != null) d = defenders.find(x => x.player === forced && !x.card);
-    if (!d && c.goadedBy && c.goadedBy.length) d = defenders.find(x => !x.card && !c.goadedBy.includes(x.player));
+    if (!d && goaders.length) d = defenders.find(x => !x.card && !goaders.includes(x.player) && canAttackDefender(game, c, x.player, null));
     if (!d) d = defenders.find(x => !x.card && canAttackDefender(game, c, x.player, null)) || defenders.find(x => !x.card);
     if (d && canAttackDefender(game, c, d.player, null)) { used.add(c.id); decl.push({ c, d, forced: true }); }
   }

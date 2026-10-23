@@ -974,8 +974,9 @@ export class AIAgent {
     // mandatory attackers (goad / encore)
     for (const c of cands) {
       if (c.mustAttack != null && game.players[c.mustAttack] && !game.players[c.mustAttack].lost) { out.push({ attacker: c.id, defender: 'p' + c.mustAttack }); used.add(c.id); }
-      else if (c.goadedBy && c.goadedBy.length) {
-        const t = opps.find(o => !c.goadedBy.includes(o.id)) || opps[0];
+      else if (game.goaders(c).length) {
+        const g = game.goaders(c);
+        const t = opps.find(o => !g.includes(o.id)) || opps[0];
         out.push({ attacker: c.id, defender: 'p' + t.id }); used.add(c.id);
       }
     }

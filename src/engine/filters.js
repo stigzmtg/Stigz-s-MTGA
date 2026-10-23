@@ -273,7 +273,7 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'AttackingPlayerCtrl': return ctrl === game.activePlayer;
     case 'ActivePlayerCtrl': return ctrl === game.activePlayer;
     case 'NonActivePlayerCtrl': return ctrl !== game.activePlayer;
-    case 'IsGoaded': case 'goaded': return (card.goadedBy || []).length > 0;
+    case 'IsGoaded': case 'goaded': return card.lki ? (card.goadedBy || []).length > 0 || ((card.chars && card.chars.goadedBy) || []).length > 0 : game.goaders(card).length > 0;
     case 'kicked': case 'Kicked': return card.kicked > 0;
     case 'Transformed': return !!card.transformed;
     case 'Monstrous': return !!card.monstrous;

@@ -1700,6 +1700,59 @@ test('Serra Paragon: only the land played from the graveyard gets "exile it and 
   await T.game.sacrifice(f2, null); await T.resolve();
   expect(f2.zone === 'exile' && T.A.life === life + 2, `played from graveyard, sacrificed: exiled, +2 life (${f2.zone}, ${T.A.life - life})`);
 });
+test("Court Hussar stays when {W} was spent to cast it, and is sacrificed when it wasn't", async T => {
+  for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
+  T.game.players[0].pool = { W: 1, U: 2, B: 0, R: 0, G: 0, C: 0 }; T.game.priority = 0;
+  const h1 = await T.put(0, 'Court Hussar', 'hand');
+  let ok = await castSpell(T.game, 0, h1, {}); await T.resolve();
+  expect(ok && h1.zone === 'battlefield', `{W} spent: stays (${ok}, ${h1.zone}, ${JSON.stringify(h1.manaSpent)})`);
+  const h2 = await T.put(0, 'Court Hussar', 'hand');
+  T.game.players[0].pool = { W: 0, U: 3, B: 0, R: 0, G: 0, C: 0 };
+  const opt = castableOptions(T.game, 0, h2).find(o => !o.altCost);
+  ok = !!opt && await castSpell(T.game, 0, h2, { optionKey: opt.key }); await T.resolve();
+  expect(h2.zone === 'graveyard', `no {W} spent: sacrificed (${ok}, ${h2.zone})`);
+});
+test('Coin flips: "whenever you win a coin flip" ignores lost flips', async T => {
+  const ok = await T.put(0, 'Okaun, Eye of Chaos');
+  T.game.fire('FlippedCoin', { Player: 0, Result: false }); await T.resolve();
+  const before = T.game.chars(ok).power;
+  T.game.fire('FlippedCoin', { Player: 0, Result: true }); await T.resolve();
+  expect(before === 3 && T.game.chars(ok).power === 6, `Okaun's power ${before} after a lost flip, ${T.game.chars(ok).power} after a won one`);
+});
+test('Coercive Impetus: the enchanted creature is goaded (attacks, and not the goader)', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  const aura = await T.put(1, 'Coercive Impetus'); aura.attachedTo = elf.id; T.game.touch();
+  expect(T.game.goaders(elf).includes(1), `goaded by B (${JSON.stringify(T.game.goaders(elf))})`);
+  T.game.combat = { attackers: [], blockers: new Map(), firstStrikeDone: new Set() };
+  T.a.on('attackers', () => []);
+  await combat.declareAttackers(T.game); await T.resolve();
+  const atk = T.game.combat.attackers.find(a => a.card === elf.id);
+  expect(atk && atk.defenderPlayer === 2, `the Elves attack C (${JSON.stringify(atk)})`);
+}, { players: 3 });
+test('Doubling: Unleash Fury doubles power', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  elf.counters.P1P1 = 2; T.game.touch();
+  T.a.on('targets', req => [req.cands.find(r => r === refOf(elf))].filter(Boolean));
+  await T.cast('Unleash Fury');
+  expect(T.game.chars(elf).power === 6, `3 power doubled to ${T.game.chars(elf).power}`);
+});
+test("Basandra: no spells during combat, but spells are fine outside it", async T => {
+  await T.put(1, 'Basandra, Battle Seraph');
+  T.mana(0); T.game.priority = 0;
+  const bolt = await T.put(0, 'Lightning Bolt', 'hand');
+  expect(castableOptions(T.game, 0, bolt).length > 0, 'Lightning Bolt castable in the main phase');
+  T.game.step = 'declareAttackers';
+  expect(castableOptions(T.game, 0, bolt).length === 0, 'not castable during combat');
+});
+test("Notion Thief: an opponent's draw-step draw isn't stolen, their other draws are", async T => {
+  await T.put(0, 'Notion Thief');
+  T.game.activePlayer = 1; T.game.step = 'draw';
+  const a0 = T.A.hand.length, b0 = T.B.hand.length;
+  T.game.turnDrawFor = 1; await T.game.drawCards(T.B, 1, null); T.game.turnDrawFor = null; await T.resolve();
+  expect(T.B.hand.length === b0 + 1 && T.A.hand.length === a0, `draw-step draw: B ${T.B.hand.length - b0}, A ${T.A.hand.length - a0}`);
+  await T.game.drawCards(T.B, 1, null); await T.resolve();
+  expect(T.B.hand.length === b0 + 1 && T.A.hand.length === a0 + 1, `second draw: B ${T.B.hand.length - b0}, A ${T.A.hand.length - a0}`);
+});
 test("Nexos: basic lands' {C}{C} pays for {X} costs only", async T => {
   for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
   await T.put(0, 'Nexos');

@@ -1096,7 +1096,14 @@ function hasFlash(game, card, face) {
   if (face.types.includes('Instant')) return true;
   const ch = game.chars(card);
   if (game.hasKeywordIn(ch, 'Flash') || face.keywords.includes('Flash')) return true;
-  return game.activeStatics('CastWithFlash').some(s => matchValid(game, card, s.p.ValidCard || 'Card', s.ctx) && (!s.p.Caster || matchValid(game, game.players[card.owner], s.p.Caster, s.ctx)));
+  return game.activeStatics('CastWithFlash').some(s => matchValid(game, card, s.p.ValidCard || 'Card', s.ctx) && (!s.p.Caster || matchValid(game, game.players[card.owner], s.p.Caster, s.ctx)) && staticTimeOk(game, s));
+}
+
+// "during combat" (Basandra), "during each opponent's end step" (Final-Word Phantom)
+function staticTimeOk(game, s) {
+  if (s.p.Phases && !phaseOk(game, s.p.Phases)) return false;
+  if (s.p.PlayerTurn === 'Opponent' && !game.isOpponent(game.activePlayer, s.ctx.you)) return false;
+  return true;
 }
 
 function mayPlayFrom(game, pid, card) {
@@ -1257,6 +1264,7 @@ function cantBeCast(game, pid, card) {
     if (s.p.ValidCard && !matchValid(game, card, s.p.ValidCard, s.ctx)) continue;
     if (s.p.Caster && !matchValid(game, game.players[pid], s.p.Caster, s.ctx)) continue;
     if (s.p.Origin && !s.p.Origin.split(',').map(z => zoneMap[z] || z.toLowerCase()).includes(card.zone)) continue;
+    if (!staticTimeOk(game, s)) continue;
     return true;
   }
   return false;

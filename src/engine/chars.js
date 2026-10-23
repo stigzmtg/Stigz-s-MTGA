@@ -321,6 +321,11 @@ export function computeAll(game) {
       if (p.AddColor) for (const x of parseColors(p.AddColor)) ch.colors.add(x);
     }
   }
+  // "equipped / enchanted creature is goaded" (Bloodthirsty Blade, Coercive Impetus, Baeloth Barrityl)
+  for (const { st, ctx } of active) {
+    if (st.parsed.p.Goad !== 'True') continue;
+    for (const c of affectedCards(game, st, ctx, map)) { const ch = map.get(c.id) || lazy(game, c); ch.goadedBy = [...(ch.goadedBy || []), ctx.you]; }
+  }
   // layer 6: abilities
   for (const c of all) applyOwnMods(game, c, map.get(c.id), 6);
   for (const { st, ctx } of active) {

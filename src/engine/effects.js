@@ -495,8 +495,10 @@ export const E = {
     const p = sa.p;
     let list = objs(game, sa, 'Self');
     if (sa.etbCard && (!p.Defined || p.Defined === 'Self') && !hasTgtSpec(sa)) list = [sa.etbCard];
-    const a = p.NumAtt != null ? calc(game, p.NumAtt, sa) : 0;
-    const d = p.NumDef != null ? calc(game, p.NumDef, sa) : 0;
+    // "double its power and toughness" (Okaun, Unnatural Growth): +X/+X where X is what it has now
+    const dblA = /^\+?Double$/.test(p.NumAtt || ''), dblD = /^\+?Double$/.test(p.NumDef || '');
+    const a0 = p.NumAtt != null && !dblA ? calc(game, p.NumAtt, sa) : 0;
+    const d0 = p.NumDef != null && !dblD ? calc(game, p.NumDef, sa) : 0;
     let kws = kwList(p.KW);
     if (p.KWChoice || p.Choices && p.KWChoice !== undefined) { /* ignore */ }
     // "Protection:Player.PlayerUID_ChosenPlayerUID:ChosenPlayerName" with DefinedKW$ <player>: fill in that player
@@ -513,6 +515,8 @@ export const E = {
       if (o.zone !== 'battlefield' && !o.lki) continue;
       const c = o.lki ? o.card : o;
       if (!c || c.zone !== 'battlefield') continue;
+      const cch = game.chars(c);
+      const a = dblA ? cch.power : a0, d = dblD ? cch.toughness : d0;
       const rec = { power: a, toughness: d, keywords: kws.filter(k => k !== 'HIDDEN'), removeKeywords: p.KWRemove ? kwList(p.KWRemove) : null };
       applyDuration(game, sa, c, rec);
       c.temp.push(rec);

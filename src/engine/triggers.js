@@ -28,6 +28,8 @@ export function triggerMatches(game, p, host, rp, ctx) {
       const obj = rp.Origin === 'Battlefield' && rp.CardLKI ? rp.CardLKI : rp.Card;
       if (p.ValidCard && !vc(game, obj, p.ValidCard, ctx)) return false;
       if (p.ValidCause) return false;
+      // "sacrifice it unless {W} was spent to cast it" (Court Hussar, Patagia Viper, Plaxmanta)
+      if (p.ManaNotSpent && p.ManaNotSpent.split(/\s+/).every(c => ((obj && obj.manaSpent) || {})[c] > 0)) return false;
       if (p.Evolve) {
         const me = game.chars(host), it = obj.lki ? obj.chars : game.chars(obj);
         if (!(it.power > me.power || it.toughness > me.toughness)) return false;
@@ -60,6 +62,8 @@ export function triggerMatches(game, p, host, rp, ctx) {
       }
       if (p.ValidDefender && !vc(game, playerObj(game, rp.DefendingPlayer), p.ValidDefender, ctx)) return false;
       if (p.FirstAttack === 'True' && !rp.FirstAttack) return false;
+      // "if it's the first combat phase of the turn" (Finest Hour, Hexplate Wallbreaker: else endless combats)
+      if (p.FirstCombat === 'True' && (game.combatsThisTurn || 1) > 1) return false;
       return true;
     }
     case 'AttackersDeclared': case 'AttackersDeclaredOneTarget': {
@@ -149,7 +153,18 @@ export function triggerMatches(game, p, host, rp, ctx) {
       rp.Amount = cards.length;
       return true;
     }
-    case 'GiveGift': case 'Surveil': case 'Scry': case 'BecomeMonarch': case 'TakesInitiative': case 'RoomEntered': case 'DungeonCompleted': case 'LosesGame': case 'CommitCrime': case 'FlippedCoin': case 'RolledDie': case 'RolledDieOnce':
+    case 'FlippedCoin':
+      // "whenever you win a coin flip" / "lose a coin flip"
+      if (p.ValidResult && (p.ValidResult === 'Win') !== !!rp.Result) return false;
+      return !p.ValidPlayer || vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx);
+    case 'RolledDie': case 'RolledDieOnce': {
+      // "whenever you roll a 4 or higher" / "a die's highest natural result"
+      const m = (p.ValidResult || '').match(/^(EQ|NE|LT|LE|GT|GE)(\d+)$/);
+      if (m && !({ EQ: rp.Result === +m[2], NE: rp.Result !== +m[2], LT: rp.Result < +m[2], LE: rp.Result <= +m[2], GT: rp.Result > +m[2], GE: rp.Result >= +m[2] })[m[1]]) return false;
+      if (p.ValidResult === 'Highest' && rp.Result !== rp.Sides) return false;
+      return !p.ValidPlayer || vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx);
+    }
+    case 'GiveGift': case 'Surveil': case 'Scry': case 'BecomeMonarch': case 'TakesInitiative': case 'RoomEntered': case 'DungeonCompleted': case 'LosesGame': case 'CommitCrime':
       return !p.ValidPlayer || vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx);
     case 'BecomesTarget': case 'BecomesTargetOnce': {
       if (!vc(game, rp.Target, p.ValidTarget, ctx)) return false;
