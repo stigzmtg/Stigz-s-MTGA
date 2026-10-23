@@ -4,6 +4,7 @@ import { setup, expect, run, db } from './lib/testkit.mjs';
 import { castSpell, getActions, refOf, activatedAbilities, castableOptions, activateAbility } from '../src/engine/abilities.js';
 import * as combat from '../src/engine/combat.js';
 import { calcCtx } from '../src/engine/filters.js';
+import { sanitizeAnswer } from '../src/engine/game.js';
 
 const tests = [];
 const test = (name, fn, opts) => tests.push({ name, fn, opts });
@@ -1447,6 +1448,143 @@ test('Treasure and Gold tokens pay for spells', async T => {
   T.game.priority = 0;
   const ok = await castSpell(T.game, 0, c, {}); await T.resolve();
   expect(ok && c.zone === 'battlefield' && T.tokens(0).length === 1, `cast with one token sacrificed (${ok}, ${c.zone}, tokens left ${T.tokens(0).length})`);
+});
+
+// ------------------------------------------------------------ found by tools/fuzz.mjs and tools/manacheck.mjs
+const manaTools = await import('../src/engine/abilities.js');
+test('Auto-payment leaves Treasures and Spawn alone when lands suffice, and uses them when needed', async T => {
+  await T.put(0, 'Forest'); await T.put(0, 'Forest');
+  const tr = await T.game.createToken(db.token('c_a_treasure_sac'), 0, null);
+  const sp = await T.game.createToken(db.token('c_0_1_eldrazi_spawn_sac'), 0, null); sp.sick = false;
+  T.noMana(0); T.game.priority = 0;
+  const elf = await T.put(0, 'Llanowar Elves', 'hand');
+  await castSpell(T.game, 0, elf, {}); await T.resolve();
+  expect(elf.zone === 'battlefield' && tr.zone === 'battlefield' && sp.zone === 'battlefield', 'paid with a Forest');
+  const wall = await T.put(0, 'Wall of Omens', 'hand');
+  await castSpell(T.game, 0, wall, {}); await T.resolve();
+  expect(wall.zone === 'battlefield' && tr.zone !== 'battlefield', `{1}{W}: Forest + Treasure (${wall.zone}, treasure ${tr.zone})`);
+});
+test('Signets and filter lands can be tapped by hand with nothing floating', async T => {
+  const signet = await T.put(0, 'Izzet Signet');
+  const land = await T.put(0, 'Forest');
+  T.noMana(0);
+  expect(manaTools.manaSourcesFor(T.game, 0).some(s => s.card === signet), 'offered');
+  const ok = await manaTools.activateManaAbility(T.game, 0, signet, manaTools.manaAbilitiesOf(T.game, signet)[0].key);
+  expect(ok && signet.tapped && land.tapped && T.A.pool.U === 1 && T.A.pool.R === 1, `the Forest paid the {1} (${JSON.stringify(T.A.pool)})`);
+  const s2 = await T.put(0, 'Izzet Signet');
+  expect(!manaTools.manaSourcesFor(T.game, 0).some(s => s.card === s2 && !T.A.pool.U && !T.A.pool.R), 'not offered when nothing can pay its {1}');
+});
+test("A filter source pays its {1} with mana the spell doesn't need (Atraxa with Opal Palace and a Signet)", async T => {
+  for (const n of ['Murmuring Bosk', 'Opal Palace', 'Swamp', 'Island']) { const c = await T.put(0, n); c.tapped = false; }
+  await T.put(0, 'Golgari Signet');
+  T.noMana(0); T.game.priority = 0;
+  const a = await T.put(0, "Atraxa, Praetors' Voice", 'hand');
+  const ok = await castSpell(T.game, 0, a, {});
+  expect(ok && !T.game.logs.some(l => /payment failed/i.test(l.text)), `cast and paid (${ok})`);
+});
+test('Mana abilities that sacrifice another permanent can be used by hand (Skirk Prospector, Gilded Goose)', async T => {
+  const sk = await T.put(0, 'Skirk Prospector');
+  T.noMana(0);
+  const src = manaTools.manaSourcesFor(T.game, 0).find(s => s.card === sk);
+  expect(src && src.manualOnly, 'offered by hand, never used automatically');
+  const ok = await manaTools.activateManaAbility(T.game, 0, sk, src.abil.key);
+  expect(ok && sk.zone === 'graveyard' && T.A.pool.R === 1, 'sacrificed a Goblin (itself) for {R}');
+  const goose = await T.put(0, 'Gilded Goose'); await T.resolve(); goose.sick = false;
+  const foods = T.tokens(0).filter(t => T.game.chars(t).subtypes.has('Food'));
+  expect(foods.length >= 1, 'Goose came with a Food');
+  T.noMana(0);
+  const ok2 = await manaTools.activateManaAbility(T.game, 0, goose, manaTools.manaAbilitiesOf(T.game, goose).find(a => /Food/.test(a.parsed.p.Cost)).key, 'B');
+  expect(ok2 && goose.zone === 'battlefield' && foods[0].zone !== 'battlefield' && T.A.pool.B === 1, 'a Food was sacrificed, the Goose stayed');
+  const wall = await T.put(0, 'Wall of Omens', 'hand');
+  T.noMana(0); for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
+  expect(!castableOptions(T.game, 0, wall).length, "automatic payment never sacrifices another permanent");
+});
+test("Crew needs the tapped creatures' total power; costs can't be paid with nothing", async T => {
+  const v = await T.put(0, 'Filigree Racer'); await T.resolve();
+  const z = await T.put(0, 'Wall of Omens'); // 0 power
+  const elf = await T.put(0, 'Llanowar Elves');
+  let asked = 0;
+  T.a.on('crew', req => { asked++; return asked === 1 ? [z.id] : [elf.id]; });
+  await T.activate(v, 0, a => /Crew/.test(a.parsed.p.SpellDescription || ''));
+  expect(asked === 2 && elf.tapped && !z.tapped && T.isCreature(v), `the 0-power Wall wasn't enough; asked again (${asked})`);
+});
+test('Counter costs come from several permanents when needed (Tekuthal)', async T => {
+  const t = await T.put(0, 'Tekuthal, Inquiry Dominus');
+  const a = await T.put(0, 'Llanowar Elves'), b = await T.put(0, 'Serra Angel');
+  await T.game.addCounters(a, 'P1P1', 2, null); await T.game.addCounters(b, 'P1P1', 1, null);
+  T.a.on('costRemoveCounter', req => [req.cards[0]]);
+  await T.activate(t, 0, x => /Indestructible/.test(x.parsed.p.CounterType || ''));
+  expect(!a.counters.P1P1 && !b.counters.P1P1 && t.counters.INDESTRUCTIBLE === 1, `three counters removed from two creatures (${a.counters.P1P1}, ${b.counters.P1P1})`);
+});
+test("Modal spells aren't offered without a usable mode; spree modes must be affordable together", async T => {
+  const vs = await T.put(0, 'Valorous Stance', 'hand'); T.mana(0);
+  expect(!castableOptions(T.game, 0, vs).length, 'no creatures: no mode can be chosen');
+  const angel = await T.put(1, 'Serra Angel');
+  expect(castableOptions(T.game, 0, vs).length > 0, 'with a creature it can be cast');
+  const raid = await T.put(0, 'Requisition Raid', 'hand');
+  await T.put(1, 'Sol Ring'); await T.put(1, 'Wall of Omens');
+  T.noMana(0); T.A.pool.W = 2;
+  let tries = 0;
+  T.a.on('modes', req => (++tries === 1 ? req.options.map(o => o.value) : [req.options[0].value]));
+  T.game.priority = 0;
+  const ok = await castSpell(T.game, 0, raid, {});
+  expect(ok && tries === 2, `asked again after an unaffordable combination (${ok}, ${tries})`);
+});
+test('Another target creature: not offered with only one creature (Fall of the Hammer)', async T => {
+  await T.put(0, 'Llanowar Elves');
+  const f = await T.put(0, 'Fall of the Hammer', 'hand'); T.mana(0);
+  expect(!castableOptions(T.game, 0, f).length, 'needs two different creatures');
+  await T.put(1, 'Serra Angel');
+  expect(castableOptions(T.game, 0, f).length > 0, 'two creatures: castable');
+});
+test('X is capped by the targets and cards it needs (Disorder in the Court, Skeletal Scrying)', async T => {
+  await T.put(1, 'Serra Angel');
+  const d = await T.put(0, 'Disorder in the Court', 'hand'); T.mana(0);
+  let max = null;
+  T.a.on('xValue', req => { max = req.max; return req.max; });
+  T.a.on('targets', req => req.cands.slice(0, req.max));
+  T.game.priority = 0;
+  const ok = await castSpell(T.game, 0, d, {});
+  expect(ok && max === 1, `X at most 1 with one creature (${max})`);
+  await T.resolve();
+  const s = await T.put(0, 'Skeletal Scrying', 'hand'); T.mana(0);
+  T.A.graveyard.splice(0); await T.put(0, 'Forest', 'graveyard'); await T.put(0, 'Forest', 'graveyard');
+  max = null; T.game.priority = 0;
+  await castSpell(T.game, 0, s, {});
+  expect(max === 2, `X at most the 2 cards in the graveyard (${max})`);
+});
+test("Targets of a trigger's later sub-ability can't be cancelled out of the trigger", async T => {
+  const ans = sanitizeAnswer({ type: 'targets', cands: ['c1', 'c2'], min: 1, max: 1, cancellable: false }, null);
+  expect(Array.isArray(ans) && ans.length === 1, 'a non-cancellable prompt answered with nothing picks the minimum');
+  expect(sanitizeAnswer({ type: 'cards', cards: [1, 2, 3], min: 2, max: 2 }, [9, 1, 1]).join() === '1,2', 'only offered, no duplicates, padded to the minimum');
+  expect(sanitizeAnswer({ type: 'number', min: 1, max: 4 }, 99) === 4 && sanitizeAnswer({ type: 'number', min: 1, max: 4, cancellable: true }, null) === null, 'numbers clamped; cancel kept where allowed');
+  expect(sanitizeAnswer({ type: 'option', options: [{ value: 'a' }, { value: 'b' }] }, 'zz') === 'a', 'unknown option falls back to the first');
+});
+test('Gift is only offered when the spell can still be cast with it (Sazacap\'s Brew)', async T => {
+  const b = await T.put(0, "Sazacap's Brew", 'hand'); await T.put(0, 'Forest', 'hand'); T.mana(0);
+  let asked = false;
+  T.a.on('gift', () => { asked = true; return -1; });
+  T.game.priority = 0;
+  const ok = await castSpell(T.game, 0, b, {});
+  expect(ok && !asked, `no creature to pump: no gift prompt (${ok}, ${asked})`);
+});
+
+test('Ninjutsu only with an unblocked attacker after blocks; commander ninjutsu from the command zone', async T => {
+  const ninja = await T.put(0, 'Ninja of the Deep Hours', 'hand');
+  const out = await T.put(0, 'Changeling Outcast');
+  T.mana(0);
+  const ninjutsuOffered = () => getActions(T.game, 0).some(a => a.type === 'activate' && a.api === 'Ninjutsu');
+  expect(!ninjutsuOffered(), 'not in the main phase');
+  T.combatWith([[out, 1]]);
+  T.game.step = 'declareBlockers'; T.game.priority = 0;
+  expect(ninjutsuOffered(), 'offered with an unblocked attacker');
+  const y = await T.put(0, "Yuriko, the Tiger's Shadow", 'command'); y.isCommander = true;
+  T.mana(0);
+  expect(getActions(T.game, 0).some(a => a.cardId === y.id && a.api === 'Ninjutsu'), 'Yuriko from the command zone');
+  T.a.on('ninjutsu', req => [out.id]);
+  const act = getActions(T.game, 0).find(a => a.cardId === y.id && a.api === 'Ninjutsu');
+  await T.game.performAction(0, act); await T.resolve();
+  expect(y.zone === 'battlefield' && out.zone === 'hand' && T.game.isAttacking(y), 'Yuriko is attacking, the Outcast returned');
 });
 
 process.exit(await run(tests) ? 1 : 0);

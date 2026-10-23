@@ -993,6 +993,12 @@ function countExpr(game, rest, ctx, depth) {
   }
   if ((m = rest.match(/^CardCounters\.(\w+)$/))) return host ? ((host.counters || {})[m[1]] || 0) : 0;
   if ((m = rest.match(/^Initiative\.(\d+)\.(\d+)$/))) return game.initiative === youId ? +m[1] : +m[2];
+  // Urza's Mine / Power-Plant / Tower: more mana with the full set
+  if ((m = rest.match(/^UrzaLands\.(\d+)\.(\d+)$/))) {
+    const mine = game.battlefield.filter(c => c.controller === youId && game.chars(c).subtypes.has("Urza's"));
+    const has = t => mine.some(c => game.chars(c).subtypes.has(t));
+    return has('Mine') && has('Power-Plant') && has('Tower') ? +m[1] : +m[2];
+  }
   if ((m = rest.match(/^Kicked\.(\d+)\.(\d+)$/))) return host && host.kicked ? +m[1] : +m[2];
   // "<flag>.A.B": A if the flag holds for this spell (or the permanent it became), else B (values may be SVars)
   if ((m = rest.match(/^(PromisedGift|OptionalGenericCostPaid|Emerged|Presence_(\w+))\.([-\w]+)\.([-\w]+)$/))) {

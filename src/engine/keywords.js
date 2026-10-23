@@ -54,7 +54,10 @@ function defFor(kw, face) {
     case 'Outlast': A.push(`AB$ PutCounter | Cost$ ${a} T | Defined$ Self | CounterType$ P1P1 | CounterNum$ 1 | SorcerySpeed$ True | SpellDescription$ Outlast ${costText(a)}`); break;
     case 'Scavenge': A.push(`AB$ PutCounter | Cost$ ${a} ExileFromGrave<1/CARDNAME> | ActivationZone$ Graveyard | SorcerySpeed$ True | ValidTgts$ Creature | CounterType$ P1P1 | CounterNum$ KWScavX | SpellDescription$ Scavenge ${costText(a)}`); S.KWScavX = 'Count$CardPower'; break;
     case 'Transmute': A.push(`AB$ ChangeZone | Cost$ ${a} Discard<1/CARDNAME> | ActivationZone$ Hand | SorcerySpeed$ True | Origin$ Library | Destination$ Hand | ChangeType$ Card.cmcEQKWTransX | ChangeNum$ 1 | SpellDescription$ Transmute ${costText(a)}`); S.KWTransX = 'Count$CardManaCost'; break;
-    case 'Ninjutsu': case 'CommanderNinjutsu': A.push(`AB$ Ninjutsu | Cost$ ${a} | ActivationZone$ Hand | SpellDescription$ Ninjutsu ${costText(a)}`); break;
+    // "Ninjutsu:U B:Commander" is commander ninjutsu (Yuriko): also from the command zone
+    case 'Ninjutsu': A.push(b === 'Commander' ? `AB$ Ninjutsu | Cost$ ${a} | ActivationZone$ Hand,Command | SpellDescription$ Commander ninjutsu ${costText(a)}` : `AB$ Ninjutsu | Cost$ ${a} | ActivationZone$ Hand | SpellDescription$ Ninjutsu ${costText(a)}`); break;
+    // commander ninjutsu also works from the command zone
+    case 'CommanderNinjutsu': A.push(`AB$ Ninjutsu | Cost$ ${a} | ActivationZone$ Hand,Command | SpellDescription$ Commander ninjutsu ${costText(a)}`); break;
     case 'Prowess':
       T.push('Mode$ SpellCast | ValidCard$ Card.nonCreature | ValidActivatingPlayer$ You | TriggerZones$ Battlefield | Execute$ KWProwess | TriggerDescription$ Prowess (+1/+1 until end of turn)');
       S.KWProwess = 'DB$ Pump | Defined$ Self | NumAtt$ +1 | NumDef$ +1';

@@ -412,13 +412,13 @@ export const E = {
     }
     // a choice between counter kinds ("a +1/+1, first strike, or vigilance counter")
     if (p.CounterType && p.CounterType.includes(',') && !p.CounterTypes) {
-      const opts = p.CounterType.split(',').map(normalizeCounter);
+      const opts = [...new Set(p.CounterType.split(',').map(normalizeCounter))];
       type = await game.ask(sa.controller, { type: 'option', prompt: 'Choose a counter', options: opts.map(o => ({ label: counterLabel(o), value: o })), purpose: 'counterType', sa });
       if (!opts.includes(type)) type = opts[0];
     }
     if (p.CounterType === 'ExistingCounter' || p.CounterTypes) {
-      const opts = p.CounterTypes ? p.CounterTypes.split(',').map(normalizeCounter) : Object.keys(list[0] && list[0].counters || {}).filter(k => list[0].counters[k] > 0);
-      if (opts.length) type = opts.length === 1 ? opts[0] : await game.ask(sa.controller, { type: 'option', prompt: 'Choose a counter type', options: opts.map(o => ({ label: o, value: o })), purpose: 'counterType', sa });
+      const opts = [...new Set(p.CounterTypes ? p.CounterTypes.split(',').map(normalizeCounter) : Object.keys(list[0] && list[0].counters || {}).filter(k => list[0].counters[k] > 0))];
+      if (opts.length) type = opts.length === 1 ? opts[0] : await game.ask(sa.controller, { type: 'option', prompt: 'Choose a counter type', options: opts.map(o => ({ label: counterLabel(o), value: o })), purpose: 'counterType', sa });
     }
     const n = num(game, sa, 'CounterNum', 1);
     if (p.Monstrosity) {
@@ -1708,7 +1708,7 @@ export const E = {
 
   async Ninjutsu(game, sa) {
     const card = sa.host;
-    if (!game.combat || card.zone !== 'hand') return;
+    if (!game.combat || (card.zone !== 'hand' && card.zone !== 'command')) return;
     const unblocked = game.combat.attackers.filter(a => !a.blocked).map(a => ({ a, c: game.cardById(a.card) })).filter(x => x.c && x.c.controller === sa.controller);
     if (!unblocked.length) return;
     const pick = await chooseCards(game, sa.controller, unblocked.map(x => x.c), 1, 1, 'Ninjutsu: return an unblocked attacker', sa, 'ninjutsu');
@@ -1717,7 +1717,7 @@ export const E = {
     const def = rec.defenderPlayer;
     await game.moveCard(pick[0], 'hand');
     const n = await game.moveCard(card, 'battlefield', { controller: sa.controller, tapped: true });
-    if (n) game.combat.attackers.push({ card: n.id, defenderPlayer: def, defenderCard: null, blockers: [], blocked: false });
+    if (n) game.combat.attackers.push({ card: n.id, defenderPlayer: def, defenderCard: rec.defenderCard && game.cardById(rec.defenderCard) && game.cardById(rec.defenderCard).zone === 'battlefield' ? rec.defenderCard : null, blockers: [], blocked: false });
   },
 
   async AlterAttribute(game, sa) {
@@ -1855,8 +1855,8 @@ export const E = {
     for (const c of cardsOf(objs(game, sa, 'Self'))) {
       const types = Object.keys(c.counters).filter(k => c.counters[k] > 0);
       if (!types.length) continue;
-      const t = types.length === 1 ? types[0] : await game.ask(sa.controller, { type: 'option', prompt: 'Choose a counter type', options: types.map(x => ({ label: x, value: x })), purpose: 'counterType', sa });
-      const add = await game.ask(sa.controller, { type: 'option', prompt: `Add or remove a ${t} counter on ${game.name(c)}?`, options: [{ label: 'Add', value: 'add' }, { label: 'Remove', value: 'remove' }], purpose: 'addOrRemove', sa, cardId: c.id });
+      const t = types.length === 1 ? types[0] : await game.ask(sa.controller, { type: 'option', prompt: 'Choose a counter type', options: types.map(x => ({ label: counterLabel(x), value: x })), purpose: 'counterType', sa });
+      const add = await game.ask(sa.controller, { type: 'option', prompt: `Add or remove a ${counterName(t)} counter on ${game.name(c)}?`, options: [{ label: 'Add', value: 'add' }, { label: 'Remove', value: 'remove' }], purpose: 'addOrRemove', sa, cardId: c.id });
       if (add === 'remove') await game.removeCounters(c, t, num(game, sa, 'CounterNum', 1)); else await game.addCounters(c, t, num(game, sa, 'CounterNum', 1), sa, { anyZone: true });
     }
   },

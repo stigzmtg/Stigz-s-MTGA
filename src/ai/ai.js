@@ -200,7 +200,7 @@ export class AIAgent {
     const p = game.players[pid];
     const need = { W: 0, U: 0, B: 0, R: 0, G: 0 };
     const have = { W: 0, U: 0, B: 0, R: 0, G: 0 };
-    for (const s of manaSourcesFor(game, pid)) for (const u of s.units) for (const c of u) if (have[c] != null) have[c]++;
+    for (const s of manaSourcesFor(game, pid)) if (!s.manualOnly) for (const u of s.units) for (const c of u) if (have[c] != null) have[c]++;
     for (const c of [...p.hand, ...p.command]) {
       const mc = c.faceDef.manaCost;
       if (!mc) continue;
@@ -894,6 +894,20 @@ export class AIAgent {
           }).length;
           return Math.max(req.min, Math.min(req.max, good));
         }
+      }
+      // "target creature with mana value X" and the like: the largest X that still has a target worth taking
+      const xTargets = req.sa.chain().filter(s => /X\b/.test(String(s.p.ValidTgts || '')) && targetSpec(game, s));
+      if (xTargets.length) {
+        const root = req.sa.root ? req.sa.root() : req.sa;
+        const saved = root.x;
+        let pickX = null;
+        try {
+          for (let x = req.max; x >= req.min && pickX == null; x--) {
+            root.x = x;
+            if (xTargets.every(s => { const spec = targetSpec(game, s); const sent = this.sentiment(s); return spec.min === 0 || targetCandidates(game, s, spec).some(c => { const mine = c.isPlayer ? c.id === pid : ctrlOf(game, c) === pid; return sent === 'harm' ? !mine : mine; }); })) pickX = x;
+          }
+        } finally { root.x = saved; }
+        if (pickX != null) return pickX;
       }
     }
     if (req.purpose === 'xValue' || req.purpose === 'multikicker' || req.purpose === 'squad' || req.purpose === 'delve' || req.purpose === 'drawUpTo') return req.max;

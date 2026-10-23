@@ -254,7 +254,7 @@ export class Game {
       ans = await agent.ask(this, pid, req);
     } finally { this.pendingAsk = null; }
     if (this.over) throw new GameOver();
-    return ans;
+    return sanitizeAnswer(req, ans);
   }
 
   // ---------------------------------------------------------------- game start
@@ -1994,6 +1994,50 @@ export class Game {
   }
 
   noteTokenBatch(pid) { this.turnState.tokenBatches[pid] = (this.turnState.tokenBatches[pid] || 0) + 1;
+  }
+}
+
+// Answers from any seat (a person, the AI, a peer online) are held to the prompt: only offered choices,
+// no duplicates, within min/max (padded with the first offered choices when short), a cancel only where
+// the prompt allows one. Deterministic, so every peer reaches the same answer.
+export function sanitizeAnswer(req, ans) {
+  const pad = (picked, offered, min, max) => {
+    const out = [];
+    for (const x of Array.isArray(picked) ? picked : []) if (offered.includes(x) && !out.includes(x)) out.push(x);
+    out.splice(Math.max(0, max));
+    for (const x of offered) { if (out.length >= Math.min(min, offered.length)) break; if (!out.includes(x)) out.push(x); }
+    return out;
+  };
+  switch (req.type) {
+    case 'cards': if (ans == null && req.cancellable) return null; return pad(ans, req.cards || [], req.min || 0, req.max ?? (req.cards || []).length);
+    case 'targets': if (ans == null && req.cancellable) return null; return pad(ans, req.cands || [], req.min || 0, req.max ?? (req.cands || []).length);
+    case 'option': {
+      if (ans == null && req.cancellable) return null;
+      const opts = req.options || [];
+      return opts.some(o => o.value === ans) ? ans : (opts[0] ? opts[0].value : null);
+    }
+    case 'modes': {
+      if (ans == null && req.cancellable) return null;
+      const vals = (req.options || []).map(o => o.value);
+      let out = (Array.isArray(ans) ? ans : []).filter(v => vals.includes(v));
+      if (!req.repeat) out = out.filter((v, i) => out.indexOf(v) === i);
+      out = out.slice(0, req.max ?? out.length);
+      for (const v of vals) { if (out.length >= (req.min || 0)) break; if (req.repeat || !out.includes(v)) out.push(v); }
+      return out;
+    }
+    case 'number': {
+      if (ans == null && req.cancellable) return null;
+      const lo = req.min ?? 0, hi = req.max ?? lo;
+      const n = Math.floor(Number(ans));
+      return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : lo;
+    }
+    case 'color': if (ans == null && req.cancellable) return null; return (req.colors || []).includes(ans) ? ans : (req.colors || [])[0] ?? null;
+    case 'player': if (ans == null && req.cancellable) return null; return (req.players || []).includes(ans) ? ans : (req.players || [])[0] ?? null;
+    case 'confirm': if (ans == null && req.cancellable) return null; return !!ans;
+    case 'mulligan': return ans !== false;
+    case 'priority': return ans && typeof ans === 'object' && typeof ans.type === 'string' ? ans : { type: 'pass' };
+    case 'attackers': case 'blockers': return Array.isArray(ans) ? ans : [];
+    default: return ans;
   }
 }
 
