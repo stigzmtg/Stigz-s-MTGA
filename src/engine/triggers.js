@@ -48,7 +48,9 @@ export function triggerMatches(game, p, host, rp, ctx) {
     }
     case 'Phase': {
       const phases = (p.Phase || '').split(',').map(s => s.trim());
-      if (!phases.includes(rp.Phase)) return false;
+      // "at the beginning of your second main phase" (Phase$ Main | PhaseCount$ 2)
+      const mainN = rp.Phase === 'Main1' ? 1 : rp.Phase === 'Main2' ? 2 : 0;
+      if (!phases.includes(rp.Phase) && !(phases.includes('Main') && mainN && (!p.PhaseCount || +p.PhaseCount === mainN))) return false;
       if (p.ValidPlayer && !vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx)) return false;
       return true;
     }

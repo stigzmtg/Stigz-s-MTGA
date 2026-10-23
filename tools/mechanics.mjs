@@ -1753,6 +1753,24 @@ test("Notion Thief: an opponent's draw-step draw isn't stolen, their other draws
   await T.game.drawCards(T.B, 1, null); await T.resolve();
   expect(T.B.hand.length === b0 + 1 && T.A.hand.length === a0 + 1, `second draw: B ${T.B.hand.length - b0}, A ${T.A.hand.length - a0}`);
 });
+test('Faramir: "if you\'re the monarch" end-step tokens only for the monarch', async T => {
+  await T.put(0, 'Faramir, Steward of Gondor');
+  T.game.monarch = 1;
+  const n0 = T.tokens(0).length;
+  T.game.fire('Phase', { Phase: 'End of Turn', Player: 0 }); await T.resolve();
+  expect(T.tokens(0).length === n0, `not the monarch: no tokens (${T.tokens(0).length - n0})`);
+  T.game.monarch = 0;
+  T.game.fire('Phase', { Phase: 'End of Turn', Player: 0 }); await T.resolve();
+  expect(T.tokens(0).length === n0 + 2, `the monarch: two tokens (${T.tokens(0).length - n0})`);
+});
+test('Ninja Pizza: "at the beginning of your second main phase" triggers in main 2 only', async T => {
+  await T.put(0, 'Ninja Pizza');
+  const n0 = T.tokens(0).length;
+  T.game.fire('Phase', { Phase: 'Main1', Player: 0 }); await T.resolve();
+  expect(T.tokens(0).length === n0, `main 1: nothing (${T.tokens(0).length - n0})`);
+  T.game.fire('Phase', { Phase: 'Main2', Player: 0 }); await T.resolve();
+  expect(T.tokens(0).length === n0 + 1, `main 2: a Food (${T.tokens(0).length - n0})`);
+});
 test("Nexos: basic lands' {C}{C} pays for {X} costs only", async T => {
   for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
   await T.put(0, 'Nexos');

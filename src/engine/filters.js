@@ -1191,6 +1191,8 @@ export function checkPresence(game, p, ctx) {
   }
   if (p.PlayerTurn === 'True' && game.activePlayer !== ctx.you) return false;
   if (p.OpponentTurn === 'True' && !game.isOpponent(game.activePlayer, ctx.you)) return false;
+  // "if you're the monarch" (Faramir, Champions of Minas Tirith)
+  if (p.CheckDefinedPlayer && !resolveDefined(game, p.CheckDefinedPlayer, ctx).length) return false;
   if (p.NotPlayerTurn === 'True' && game.activePlayer === ctx.you) return false;
   if (p.Condition) {
     switch (p.Condition) {
