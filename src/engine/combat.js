@@ -1,5 +1,5 @@
 // Combat: attacker/blocker legality, declarations and combat damage.
-import { matchValid } from './filters.js';
+import { matchValid, calcCtx } from './filters.js';
 import { refOf, fromRef, payManaCost, canAfford } from './abilities.js';
 import { parseMana } from './mana.js';
 import { BASIC_LAND_TYPES } from './util.js';
@@ -22,9 +22,22 @@ export function canAttack(game, c, { ignoreTapped = false } = {}) {
   return true;
 }
 
+// nearest living opponent of pid to the left (turn order) or right
+export function playerInDirection(game, pid, dir) {
+  const n = game.players.length, step = dir === 'Right' ? -1 : 1;
+  for (let k = 1; k < n; k++) { const q = game.players[(pid + step * k + n * 4) % n]; if (!q.lost && q.id !== pid) return q.id; }
+  return null;
+}
+
 // Restrictions for attacking a specific defender (player or planeswalker)
-function canAttackDefender(game, c, defPid, defCard) {
+export function canAttackDefender(game, c, defPid, defCard) {
   for (const s of game.activeStatics('CantAttack')) {
+    if (s.p.DefenderNotNearestToYouInChosenDirection === 'True') {
+      // "each player may attack only the nearest opponent in the chosen direction and planeswalkers controlled by that opponent"
+      const dir = s.host.chosen && s.host.chosen.direction;
+      if (dir && playerInDirection(game, c.controller, dir) !== defPid) return false;
+      continue;
+    }
     if (!s.p.Target) continue;
     if (s.p.ValidCard && !matchValid(game, c, s.p.ValidCard, s.ctx)) continue;
     const tgt = defCard || game.players[defPid];
@@ -98,8 +111,18 @@ export async function declareAttackers(game) {
     if (c.mustAttack != null) d = defenders.find(x => x.player === c.mustAttack && !x.card);
     if (!d && forced != null) d = defenders.find(x => x.player === forced && !x.card);
     if (!d && c.goadedBy && c.goadedBy.length) d = defenders.find(x => !x.card && !c.goadedBy.includes(x.player));
-    if (!d) d = defenders.find(x => !x.card);
-    if (d && canAttackDefender(game, c, d.player, null)) { used.add(c.id); decl.push({ c, d }); }
+    if (!d) d = defenders.find(x => !x.card && canAttackDefender(game, c, x.player, null)) || defenders.find(x => !x.card);
+    if (d && canAttackDefender(game, c, d.player, null)) { used.add(c.id); decl.push({ c, d, forced: true }); }
+  }
+  // "no more than N creatures can attack [you / this planeswalker] each combat"
+  for (const s of game.activeStatics('AttackRestrict')) {
+    const max = s.p.MaxAttackers != null ? calcCtx(game, s.p.MaxAttackers, s.ctx) : 99;
+    const hits = decl.filter(({ d }) => !s.p.ValidDefender || matchValid(game, d.card ? game.cardById(d.card) : game.players[d.player], s.p.ValidDefender, s.ctx));
+    if (hits.length <= max) continue;
+    const keep = [...hits.filter(x => x.forced), ...hits.filter(x => !x.forced)].slice(0, Math.max(0, max));
+    const drop = hits.filter(x => !keep.includes(x));
+    for (let i = decl.length - 1; i >= 0; i--) if (drop.includes(decl[i])) decl.splice(i, 1);
+    game.log(`${game.name(s.host)}: no more than ${max} creature${max === 1 ? '' : 's'} can attack${s.p.ValidDefender ? ' ' + (s.p.ValidDefender === 'Card.Self' ? game.name(s.host) : game.players[s.ctx.you].name) : ''} (${drop.map(x => game.name(x.c)).join(', ')} won't attack).`);
   }
   // attack taxes (Propaganda-style)
   let tax = 0;
@@ -203,11 +226,39 @@ export async function declareBlockers(game) {
       usedB.add(b.id);
       pairs.push({ b, a });
     }
+    applyBlockRequirements(game, atks, cands, pairs);
     // menace / max blockers validation
-    for (const a of atks) {
-      const mine = pairs.filter(p => p.a === a);
-      const { min, max } = blockRules(game, a);
-      if (mine.length && (mine.length < min || mine.length > max)) for (const p of mine) pairs.splice(pairs.indexOf(p), 1);
+    const validate = () => {
+      for (const a of atks) {
+        const mine = pairs.filter(p => p.a === a);
+        const { min, max } = blockRules(game, a);
+        if (mine.length && (mine.length < min || mine.length > max)) for (const p of mine) pairs.splice(pairs.indexOf(p), 1);
+      }
+    };
+    validate();
+    // "no more than N creatures can block each combat" (per defending player when it names one)
+    for (const s of game.activeStatics('BlockRestrict')) {
+      if (s.p.ValidDefender && !matchValid(game, game.players[dp], s.p.ValidDefender, s.ctx)) continue;
+      const max = s.p.MaxBlockers != null ? calcCtx(game, s.p.MaxBlockers, s.ctx) : 99;
+      const key = `${s.host.id}:${s.st.key}${s.p.ValidDefender ? ':' + dp : ''}`;
+      combat.blockCounts = combat.blockCounts || {};
+      const room = Math.max(0, max - (combat.blockCounts[key] || 0));
+      if (pairs.length > room) {
+        const drop = pairs.splice(room);
+        game.log(`${game.name(s.host)}: no more than ${max} creature${max === 1 ? '' : 's'} can block (${drop.map(p => game.name(p.b)).join(', ')} won't block).`);
+        validate();
+      }
+      combat.blockCounts[key] = (combat.blockCounts[key] || 0) + pairs.length;
+    }
+    // "creatures can't block unless their controller pays {N} for each of those creatures"
+    for (const pr of [...pairs]) {
+      const tax = blockTax(game, pr.b, pr.a);
+      if (tax <= 0) continue;
+      const cost = parseMana(String(tax));
+      if (canAfford(game, dp, cost) && await payManaCost(game, dp, cost)) { game.log(`${game.players[dp].name} pays {${tax}} to block with ${game.name(pr.b)}.`); continue; }
+      pairs.splice(pairs.indexOf(pr), 1);
+      game.log(`${game.players[dp].name} can't pay {${tax}} to block with ${game.name(pr.b)}.`);
+      validate();
     }
     for (const { b, a } of pairs) {
       combat.blockers.set(b.id, a.id);
@@ -232,6 +283,53 @@ export async function declareBlockers(game) {
   }
   const unb = combat.attackers.filter(r => !r.blocked).map(r => game.cardById(r.card)).filter(Boolean);
   if (unb.length) game.fire('AttackerUnblockedOnce', { Attackers: unb, AttackingPlayer: game.activePlayer });
+}
+
+const LURE = 'All creatures able to block CARDNAME do so.';
+function mustBlockNow(game, b) { return game.activeStatics('MustBlock').some(s => matchValid(game, b, s.p.ValidCreature || s.p.ValidCard || 'Card.Self', s.ctx)); }
+
+// Blocking requirements ("blocks each combat if able", "target creature blocks it this turn if able", lure,
+// "must be blocked if able"): extend the declared blocks so as many requirements as possible are obeyed.
+export function applyBlockRequirements(game, atks, cands, pairs) {
+  const byBlocker = () => new Map(pairs.map(p => [p.b.id, p]));
+  const assign = (b, a) => { const ex = byBlocker().get(b.id); if (ex) ex.a = a; else pairs.push({ b, a }); };
+  const lure = a => hidden(game, a, LURE);
+  for (const a of atks) {
+    if (!lure(a)) continue;
+    for (const b of cands) { const cur = byBlocker().get(b.id); if ((!cur || !lure(cur.a)) && canBlock(game, b, a)) assign(b, a); }
+  }
+  for (const b of cands) {
+    const req = b.mustBlock;
+    if (!req || req.turn !== game.turnNumber) continue;
+    const a = atks.find(x => x.id === req.attacker);
+    const cur = byBlocker().get(b.id);
+    if (a && canBlock(game, b, a) && !(cur && (cur.a === a || lure(cur.a)))) assign(b, a);
+  }
+  for (const b of cands) {
+    if (byBlocker().has(b.id) || !mustBlockNow(game, b)) continue;
+    const a = atks.find(x => canBlock(game, b, x));
+    if (a) assign(b, a);
+  }
+  for (const a of atks) {
+    if (pairs.some(p => p.a === a)) continue;
+    const ach = game.chars(a);
+    if (!ach.keywords.some(k => /^(HIDDEN )?CARDNAME must be blocked (if able|by exactly one creature if able)\.$/.test(k))) continue;
+    const taken = byBlocker();
+    const b = cands.find(x => !taken.has(x.id) && canBlock(game, x, a));
+    if (b) assign(b, a);
+  }
+  return pairs;
+}
+
+function blockTax(game, b, a) {
+  let tax = 0;
+  for (const s of game.activeStatics('CantBlockUnless')) {
+    if (!matchValid(game, b, s.p.ValidCard || 'Creature', s.ctx)) continue;
+    if (s.p.ValidAttacker && !matchValid(game, a, s.p.ValidAttacker, s.ctx)) continue;
+    const cost = s.p.Cost || '0';
+    tax += /^\d+$/.test(cost) ? +cost : Math.max(0, calcCtx(game, cost, s.ctx));
+  }
+  return tax;
 }
 
 export function needsFirstStrike(game) {

@@ -6,7 +6,7 @@ import { normalizeCounter, counterName } from './game.js';
 const counterLabel = k => `${counterName(k)} counter`;
 import { COLORS, COLOR_NAMES, NAME_TO_COLOR, BASIC_LAND_TYPES } from './util.js';
 import { cmc, parseMana } from './mana.js';
-import { canAttack, defendersFor } from './combat.js';
+import { canAttack, defendersFor, playerInDirection } from './combat.js';
 
 const Z = z => (z ? (zoneMap[z] || z.toLowerCase()) : z);
 
@@ -982,6 +982,7 @@ export const E = {
     };
     const mk = (raw, i, kind) => ({ raw, parsed: parseAbility(raw), svars, src: e, key: `e${e.id}${kind}${i}` });
     e.effectChars = { name: e.effectName, types: new Set(['Effect']), subtypes: new Set(), supertypes: new Set(), colors: new Set(), keywords: [], abilities: [], triggers: triggers.map((r, i) => mk(r, i, 'T')), statics: statics.map((r, i) => mk(r, i, 'S')), replacements: repls.map((r, i) => mk(r, i, 'R')), svars, power: 0, toughness: 0, cmc: 0 };
+    if (p.SetChosenNumber) e.chosen.number = calc(game, p.SetChosenNumber, sa);
     if (p.RememberObjects) e.remembered = resolveDefined(game, p.RememberObjects, ctx).map(o => o.lki ? liveOrLki(game, o) : o).filter(Boolean);
     if (p.ImprintCards) e.imprinted = resolveDefined(game, p.ImprintCards, ctx);
     if (p.RememberLKI === 'True') e.remembered = e.remembered.map(o => o.isCard ? game.makeLKI(o) : o);
@@ -1051,9 +1052,10 @@ export const E = {
       c.sick = true;
       if (p.LoseControl) {
         const lc = p.LoseControl;
-        c.tempControl = { prev, owner: sa.controller, until: /EOT/.test(lc) ? 'EOT' : 'Permanent', untilHostLeaves: /LeavesPlay|LoseControl/.test(lc) ? sa.host.id : null };
+        c.tempControl = { prev, owner: sa.controller, until: /EOT/.test(lc) ? 'EOT' : /EndOfCombat/.test(lc) ? 'UntilEndOfCombat' : 'Permanent', untilHostLeaves: /LeavesPlay|LoseControl/.test(lc) ? sa.host.id : null };
       }
       if (p.Untap === 'True') c.tapped = false;
+      if (p.RememberControlled === 'True') remember(sa, [c]);
       if (p.AddKWs) c.temp.push({ keywords: kwList(p.AddKWs), until: p.LoseControl && /EOT/.test(p.LoseControl) ? 'EOT' : 'Permanent', owner: sa.controller });
       if (game.combat) { game.combat.attackers = game.combat.attackers.filter(a => a.card !== c.id); game.combat.blockers.delete(c.id); }
       game.touch();
@@ -1302,8 +1304,11 @@ export const E = {
   async RollDice(game, sa) {
     const sides = num(game, sa, 'Sides', 6);
     const amount = num(game, sa, 'Amount', 1);
-    let total = 0;
-    for (let i = 0; i < amount; i++) total += 1 + game.rng.int(sides);
+    const rolls = [];
+    for (let i = 0; i < amount; i++) rolls.push(1 + game.rng.int(sides));
+    // "roll two d20 and ignore the lower roll"
+    if (sa.p.IgnoreLower) { rolls.sort((a, b) => b - a); rolls.splice(Math.max(1, rolls.length - num(game, sa, 'IgnoreLower', 1))); }
+    let total = rolls.reduce((a, b) => a + b, 0);
     total += num(game, sa, 'Modifier', 0);
     game.log(`${game.players[sa.controller].name} rolls a d${sides}: ${total}.`);
     sa.host.chosen = { ...(sa.host.chosen || {}), number: total };
@@ -1744,12 +1749,89 @@ export const E = {
   async GainControlVariant(game, sa) {
     const ctx = ctxOf(game, sa);
     const list = sa.p.AllValid ? game.battlefield.filter(c => matchValid(game, c, sa.p.AllValid, ctx)) : cardsOf(objs(game, sa, 'Self'));
-    for (const c of list) {
-      const to = sa.p.ChangeController === 'CardOwner' ? c.owner : sa.controller;
-      if (c.controller !== to) { c.controller = to; c.sick = true; }
+    const mode = sa.p.ChangeController;
+    const dir = (sa.host.chosen && sa.host.chosen.direction) || 'Left';
+    const back = dir === 'Left' ? 'Right' : 'Left';
+    const moves = [];
+    if (mode === 'ChooseNextPlayerInChosenDirection' || mode === 'ChooseFromPlayerToTheirRight') {
+      // starting with you and proceeding in the direction, each player chooses one of the next player's permanents
+      const order = [];
+      const d = mode === 'ChooseFromPlayerToTheirRight' ? 'Right' : dir;
+      for (let pid = sa.controller, k = 0; k < game.players.length && pid != null && !order.includes(pid); k++) { order.push(pid); pid = playerInDirection(game, pid, d); }
+      for (const pid of order) {
+        const from = playerInDirection(game, pid, d);
+        const pool = list.filter(c => c.controller === from);
+        const pick = (await chooseCards(game, pid, pool, 1, 1, `Choose a permanent ${game.players[from].name} controls to gain control of`, sa, 'gainControlChoice'))[0];
+        if (pick) moves.push([pick, pid]);
+      }
+    } else for (const c of list) {
+      // each player gains control of what the next player in the chosen direction controls
+      const to = mode === 'CardOwner' ? c.owner : mode === 'NextPlayerInChosenDirection' ? playerInDirection(game, c.controller, back) : sa.controller;
+      if (to != null) moves.push([c, to]);
+    }
+    for (const [c, to] of moves) {
+      if (c.zone !== 'battlefield' || c.controller === to) continue;
+      const prev = c.controller;
+      c.controller = to; c.sick = true;
+      if (game.combat) { game.combat.attackers = game.combat.attackers.filter(a => a.card !== c.id); game.combat.blockers.delete(c.id); }
+      game.fire('ChangesController', { Card: c, OriginalController: prev });
     }
     game.touch();
     game.log(desc(game, sa));
+  },
+
+  async ChooseDirection(game, sa) {
+    const target = sa.etbCard || sa.host;
+    const pid = sa.controller;
+    const dir = await game.ask(pid, { type: 'option', prompt: `${game.name(sa.host)}: choose left or right`, options: [{ label: `Left (toward ${game.players[playerInDirection(game, pid, 'Left') ?? pid].name})`, value: 'Left' }, { label: `Right (toward ${game.players[playerInDirection(game, pid, 'Right') ?? pid].name})`, value: 'Right' }], sa, purpose: 'chooseDirection', ai: sa.p.AILogic });
+    target.chosen = { ...(target.chosen || {}), direction: dir === 'Right' ? 'Right' : 'Left' };
+    game.log(`${game.players[pid].name} chooses ${target.chosen.direction.toLowerCase()}.`);
+    game.touch();
+  },
+
+  // "target creature blocks <attacker> this turn if able" (Grappling Hook, provoke)
+  async MustBlock(game, sa) {
+    const ctx = ctxOf(game, sa);
+    const attacker = cardsOf(resolveDefined(game, sa.p.DefinedAttacker || 'Self', ctx)).map(c => liveOrLki(game, c)).find(c => c && c.isCard);
+    if (!attacker) return;
+    for (const c of cardsOf(objs(game, sa, 'Self'))) {
+      if (c.zone !== 'battlefield') continue;
+      c.mustBlock = { attacker: attacker.id, turn: game.turnNumber };
+      game.log(`${game.name(c)} must block ${game.name(attacker)} this turn if able.`);
+    }
+    game.touch();
+  },
+
+  // reselect which player or permanent an attacking creature attacks (or put it into combat attacking)
+  async ChangeCombatants(game, sa) {
+    if (!game.combat) return;
+    const ctx = ctxOf(game, sa);
+    for (const c of cardsOf(objs(game, sa, 'Self'))) {
+      if (c.zone !== 'battlefield') continue;
+      const rec = game.combat.attackers.find(a => a.card === c.id);
+      let opts = defendersFor(game, c.controller);
+      const spec = sa.p.Attacking;
+      if (spec && spec !== 'True') {
+        const ok = new Set();
+        for (let part of spec.split(' & ').map(s => s.trim())) {
+          if (part.startsWith('.')) part = 'Player' + part;
+          if (part.startsWith('Valid ')) { for (const x of resolveDefined(game, part, ctx)) if (x && x.isCard) ok.add('c' + x.id); continue; }
+          if (/^(Player|Opponent|You)(\.|$)/.test(part)) { for (const pl of game.livingPlayers()) if (matchValid(game, pl, part, ctx)) ok.add('p' + pl.id); continue; }
+          for (const x of resolveDefined(game, part, ctx)) if (x) ok.add(x.isPlayer ? 'p' + x.id : 'c' + x.id);
+        }
+        opts = opts.filter(d => ok.has(d.ref));
+      }
+      if (!opts.length) continue;
+      const cur = rec ? (rec.defenderCard ? 'c' + rec.defenderCard : 'p' + rec.defenderPlayer) : null;
+      const label = d => d.card ? game.name(game.cardById(d.card)) : game.players[d.player].name;
+      const options = opts.map(d => ({ label: `${d.ref === cur ? 'Keep attacking' : 'Attack'} ${label(d)}`, value: d.ref }));
+      const pick = opts.length === 1 && !rec ? opts[0].ref : await game.ask(sa.controller, { type: 'option', prompt: `${game.name(c)}: choose what it attacks`, options, sa, purpose: 'changeCombatants', cardId: c.id, ai: sa.p.AILogic });
+      const d = opts.find(x => x.ref === pick) || opts[0];
+      if (rec) { rec.defenderPlayer = d.player; rec.defenderCard = d.card || null; }
+      else game.combat.attackers.push({ card: c.id, defenderPlayer: d.player, defenderCard: d.card || null, blockers: [], blocked: false });
+      game.touch();
+      if (d.ref !== cur) game.log(`${game.name(c)} is now attacking ${label(d)}.`);
+    }
   },
   async DamageResolve() {},
   async Balance(game, sa) {
@@ -1787,13 +1869,27 @@ export const E = {
   },
   async Clash(game, sa) {
     const me = game.players[sa.controller];
-    const opp = game.opponents(sa.controller)[0];
+    const opps = game.opponents(sa.controller);
+    let opp = sa.p.Defined ? playersOf(resolveDefined(game, sa.p.Defined, ctxOf(game, sa))).find(p => p.id !== me.id && !p.lost) : null;
+    if (!opp && opps.length === 1) opp = opps[0];
+    else if (!opp && opps.length) {
+      const id = await game.ask(me.id, { type: 'player', prompt: 'Choose an opponent to clash with', players: opps.map(p => p.id), sa, purpose: 'clashOpponent', ai: 'Opponent' });
+      opp = opps.find(p => p.id === id) || opps[0];
+    }
     const a = me.library[0], b = opp && opp.library[0];
     const va = a ? game.chars(a).cmc : -1, vb = b ? game.chars(b).cmc : -1;
     game.log(`${me.name} clashes${opp ? ' with ' + opp.name : ''}: ${a ? game.name(a) + ' (' + va + ')' : 'nothing'} vs ${b ? game.name(b) + ' (' + vb + ')' : 'nothing'}.`);
+    game.fire('Clashed', { Player: me.id, Won: va > vb });
+    if (opp) game.fire('Clashed', { Player: opp.id, Won: vb > va });
+    // each clashing player puts the revealed card on the top or bottom of their library
+    for (const [pl, c] of [[me, a], [opp, b]]) {
+      if (!pl || !c || pl.library[0] !== c) continue;
+      const bottom = await game.ask(pl.id, { type: 'confirm', prompt: `Clash: put ${game.name(c)} on the bottom of your library?`, purpose: 'clashBottom', cards: [c.id], sa });
+      if (bottom) { pl.library.shift(); pl.library.push(c); game.touch(); }
+    }
+    if (sa.p.RememberClasher === 'True' && opp) remember(sa, [opp]);
     const name = va > vb ? sa.p.WinSubAbility : sa.p.OtherwiseSubAbility;
     if (name && sa.svars[name]) await resolveChain(game, makeSA(game, sa.svars[name], sa.svars, sa.host, sa.controller, { parent: sa }));
-    game.fire('Clashed', { Player: sa.controller, Won: va > vb });
   },
   async TimeTravel(game, sa) {
     const pid = sa.controller;

@@ -623,6 +623,7 @@ export function canBeTargetedBy(game, obj, sa) {
     const pc = game.playerChars(obj.id);
     if (pc.keywords.includes('Shroud')) return false;
     if (pc.keywords.includes('Hexproof') && obj.id !== you) return false;
+    if (sa.host && obj.id !== you && game.playerProtectedFrom(obj, sa.host)) return false;
     return true;
   }
   if (obj.stackItem) return true;
@@ -820,6 +821,8 @@ export function spellOptions(game, pid, card, { anyZone = false } = {}) {
         if ((m = k.match(/^Escape:(.*)$/))) pushFace(0, { altCost: 'Escape', altManaStr: m[1].split(':')[0], from: 'graveyard', label: `Escape ${f.name}` });
         if (k === 'Retrace') pushFace(0, { altCost: 'Retrace', from: 'graveyard', extraCostStr: 'Discard<1/Land>', label: `Retrace ${f.name}` });
         if ((m = k.match(/^Jump-start$/))) pushFace(0, { altCost: 'Flashback', from: 'graveyard', extraCostStr: 'Discard<1/Card>', label: `Jump-start ${f.name}` });
+        // mayhem: cast it from your graveyard for its mayhem cost if you discarded it this turn
+        if ((m = k.match(/^Mayhem:(.+)$/)) && card.discarded && card.discarded.turn === game.turnNumber && card.discarded.zcc === card.zcc) pushFace(0, { altCost: 'Mayhem', altManaStr: m[1].split(':')[0], from: 'graveyard', label: `Mayhem ${f.name}` });
       }
       for (const o of opts) o.key = (o.altCost || 'g') + o.key;
     }

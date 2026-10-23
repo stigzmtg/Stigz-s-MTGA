@@ -313,7 +313,7 @@ export class Game {
     for (let i = 0; i < STEPS.length; i++) {
       if (this.over) return;
       const step = STEPS[i];
-      const skip = this.skipEntry(p, step);
+      const skip = this.skipEntry(p, step) || this.beginPhaseSkip(p, step);
       if (skip) {
         if (!skip.thisTurn) p.skips = p.skips.filter(e => e !== skip);
         this.log(`${p.name} skips ${skip.label}.`);
@@ -332,6 +332,9 @@ export class Game {
     while (this.extraTurns.length) {
       const nx = this.extraTurns.pop();
       if (this.players[nx].lost) continue;
+      // "If a player would begin an extra turn, that player skips that turn instead."
+      const skipper = this.replacementsFor('BeginTurn').find(({ p, ctx }) => p.ExtraTurn === 'True' && p.Skip === 'True' && (!p.ValidPlayer || matchValid(this, this.players[nx], p.ValidPlayer, ctx)));
+      if (skipper) { this.log(`${this.players[nx].name} skips an extra turn (${this.name(skipper.h)}).`); continue; }
       this.activePlayer = nx;
       this.currentExtra = true;
       this.log(`${this.players[nx].name} takes an extra turn.`);
@@ -346,6 +349,36 @@ export class Game {
     if (!p.skips || !p.skips.length) return null;
     p.skips = p.skips.filter(e => !e.thisTurn || e.turn === this.turnNumber);
     return p.skips.find(e => e.steps.includes(step)) || null;
+  }
+
+  // active replacement effects of one event type on permanents and effects: [{ h, r, p, ctx }]
+  replacementsFor(event) {
+    const out = [];
+    for (const h of [...this.battlefield, ...this.effects]) {
+      if (h.phasedOut) continue;
+      const ch = h.isEffect ? h.effectChars : this.chars(h);
+      for (const r of ch.replacements) {
+        const p = r.parsed.p;
+        if (p.Event !== event) continue;
+        const ctx = { host: h, you: h.controller, svars: r.svars, sa: { svars: r.svars, host: h, controller: h.controller, root() { return { x: 0, paid: {} }; } } };
+        if (!checkPresence(this, p, ctx)) continue;
+        out.push({ h, r, p, ctx });
+      }
+    }
+    return out;
+  }
+
+  // "Skip your draw step." (Event$ BeginPhase | Skip$ True)
+  beginPhaseSkip(p, step) {
+    const forge = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main1', beginCombat: 'BeginCombat', end: 'End of Turn' }[step];
+    if (!forge) return null;
+    for (const { h, p: rp, ctx } of this.replacementsFor('BeginPhase')) {
+      if (rp.Skip !== 'True') continue;
+      if (rp.Phase && !rp.Phase.split(',').map(s => s.trim()).some(x => x === forge || (x === 'Main' && /^Main/.test(forge)))) continue;
+      if (rp.ValidPlayer && !matchValid(this, p, rp.ValidPlayer, ctx)) continue;
+      return { label: `their ${STEP_NAMES[step].toLowerCase().replace(/ step$/, '')} step (${this.name(h)})`, thisTurn: true };
+    }
+    return null;
   }
 
   async runStep(step) {
@@ -545,6 +578,8 @@ export class Game {
       if (p.Mode !== mode && !(mode === 'SpellCast' && p.Mode === 'SpellCastOrCopy') && !(mode === 'SpellCopy' && p.Mode === 'SpellCastOrCopy')) continue;
       const controller = host.isEffect ? host.controller : (host.lki ? host.controller : (zone === 'battlefield' || zone === 'stack' ? host.controller : host.owner));
       if (!this.triggerZoneOk(p, zone, host, rp)) continue;
+      // "When CARDNAME enters during the declare attackers step, ..." (Phase$ on a non-phase trigger)
+      if (p.Phase && mode !== 'Phase' && !p.Phase.split(',').map(s => s.trim()).includes(FORGE_PHASE[this.step])) continue;
       const ctx = { host, you: controller, trig: rp, svars: t.svars, sa: { svars: t.svars, host, controller, trig: rp, root() { return { x: host.xPaid || 0, paid: {} }; }, parent: null, targets: [] } };
       try {
         if (!triggerMatches(this, p, host, rp, ctx)) continue;
@@ -1175,6 +1210,13 @@ export class Game {
     }
     if (ch.types.has('Battle') && card.faceDef.defense) await this.addCounters(card, 'DEFENSE', +card.faceDef.defense || 0, null, { etb: true });
     if (this.hasKeywordIn(ch, 'Ravenous') && card.xPaid) await this.addCounters(card, 'P1P1', card.xPaid, null, { etb: true });
+    // graft N: enters with N +1/+1 counters
+    for (const k of ch.keywords) { const m = k.match(/^Graft:(\d+)$/); if (m) await this.addCounters(card, 'P1P1', +m[1], null, { etb: true }); }
+    // sunburst: a +1/+1 (creature) or charge counter for each color of mana spent to cast it
+    if (this.hasKeywordIn(ch, 'Sunburst') && opts.cast) {
+      const n = COLORS.filter(c => (card.manaSpent || {})[c] > 0).length;
+      if (n > 0) await this.addCounters(card, ch.types.has('Creature') ? 'P1P1' : 'CHARGE', n, null, { etb: true });
+    }
     for (const k of ch.keywords) {
       let m;
       if ((m = k.match(/^ETBReplacement:(\w+):(\w+)(?::(.*))?$/))) {
@@ -1298,6 +1340,7 @@ export class Game {
       return;
     }
     await this.moveCard(card, 'graveyard', { cause: sa, silent: true });
+    if (card.zone === 'graveyard') card.discarded = { turn: this.turnNumber, zcc: card.zcc }; // mayhem
     this.log(`${p.name} discards ${this.name(card)}.`, { cardId: card.id });
     this.fire('Discarded', { Card: card, Player: p.id, Cause: sa });
     this.fire('DiscardedAll', { Cards: [card], Player: p.id });
@@ -1408,15 +1451,22 @@ export class Game {
     const srcCh = source ? this.chars(source.lki ? source : source) : null;
     const srcCtrl = source ? (source.lki ? source.controller : source.controller) : null;
     // protection / prevention
-    if (target.isCard && source && this.hasProtectionFrom(target, source)) return 0;
-    if (target.isPlayer && this.playerChars(target.id).keywords.some(k => k === 'Protection from everything')) return 0;
+    const canPrevent = !this.activeStatics('CantPreventDamage').length;
+    const prevent = () => { this.notePrevented(source, target, amount, !!opts.combat); return 0; };
+    if (canPrevent) {
+      if (target.isCard && source && this.hasProtectionFrom(target, source)) return prevent();
+      if (target.isPlayer && this.playerProtectedFrom(target, source)) return prevent();
+      if (target.isCard && this.preventsDamage(this.chars(target), 'to', !!opts.combat)) return prevent();
+      if (srcCh && this.preventsDamage(srcCh, 'by', !!opts.combat)) return prevent();
+    }
     let rp = { Affected: target, Source: source, DamageSource: source, DamageAmount: amount, IsCombat: !!opts.combat };
     const prevented = await this.applyDamageReplacements(rp);
-    if (prevented === null) return 0;
+    if (prevented === null) { if (rp.prevented) this.notePrevented(source, target, amount, !!opts.combat); return 0; }
+    if (rp.preventedAmount > 0) this.notePrevented(source, target, rp.preventedAmount, !!opts.combat);
     amount = rp.DamageAmount;
     if (amount <= 0) return 0;
     const infect = srcCh && this.hasKeywordIn(srcCh, 'Infect');
-    const wither = srcCh && this.hasKeywordIn(srcCh, 'Wither');
+    const wither = srcCh && (this.hasKeywordIn(srcCh, 'Wither') || this.activeStatics('WitherDamage').some(s => !s.p.ValidCard || (source && matchValid(this, source, s.p.ValidCard, s.ctx))));
     const deathtouch = srcCh && this.hasKeywordIn(srcCh, 'Deathtouch');
     const lifelink = srcCh && this.hasKeywordIn(srcCh, 'Lifelink');
     if (target.isPlayer) {
@@ -1472,6 +1522,15 @@ export class Game {
     for (const t of byTarget.values()) this.fire('DamageDoneOnce', t);
     for (const s of bySource.values()) this.fire('DamageDealtOnce', s);
     if (batch.length) this.fire('DamageAll', { Amount: batch.reduce((a, d) => a + d.DamageAmount, 0), IsCombatDamage: batch[0].IsCombatDamage });
+    const prevented = this.preventBatch || [];
+    this.preventBatch = null;
+    const byPrevTarget = new Map();
+    for (const d of prevented) {
+      const tk = d.Target.isPlayer ? 'p' + d.Target.id : d.Target.id;
+      if (!byPrevTarget.has(tk)) byPrevTarget.set(tk, { ...d, DamageAmount: 0, Sources: [] });
+      const t = byPrevTarget.get(tk); t.DamageAmount += d.DamageAmount; t.Sources.push(d.Source);
+    }
+    for (const t of byPrevTarget.values()) this.fire('DamagePreventedOnce', t);
   }
 
   async applyDamageReplacements(rp) {
@@ -1491,13 +1550,16 @@ export class Game {
         (rp._applied = rp._applied || new Set()).add(h.id + r.key);
         if (p.Prevent === 'True' || p.PreventionEffect === 'True' && !p.ReplaceWith) {
           if (this.activeStatics('CantPreventDamage').length) continue;
+          rp.prevented = true;
           return null;
         }
         const raw = p.ReplaceWith && r.svars[p.ReplaceWith];
         if (!raw) continue;
         const parsed = parseAbility(raw);
         if (parsed.api === 'ReplaceDamage' || parsed.api === 'ReplaceEffect') {
+          if (p.PreventionEffect === 'True' && this.activeStatics('CantPreventDamage').length) continue;
           const v = calcCtx(this, parsed.p.Amount || parsed.p.VarValue, ctx);
+          if (p.PreventionEffect === 'True' && v < rp.DamageAmount) rp.preventedAmount = (rp.preventedAmount || 0) + rp.DamageAmount - Math.max(0, v);
           rp.DamageAmount = Math.max(0, v);
           if (parsed.p.VarName && parsed.p.VarName !== 'DamageAmount') { /* other vars ignored */ }
           if (rp.DamageAmount <= 0) return null;
@@ -1509,12 +1571,49 @@ export class Game {
     return rp;
   }
 
+  // keyword prevention: "Prevent all [combat] damage that would be dealt to [and dealt by] CARDNAME." (Fog Bank, Guard Gomazoa)
+  preventsDamage(ch, dir, combat) {
+    for (const k of ch.keywords) {
+      const m = k.match(/^(?:HIDDEN )?Prevent all (combat )?damage that would be dealt (to and dealt by|to|by) CARDNAME\.$/);
+      if (!m || (m[1] && !combat)) continue;
+      if (m[2] === 'to and dealt by' || m[2] === dir) return true;
+    }
+    return false;
+  }
+
+  // protection a player has from a damage source ("Protection from everything", protection from a player)
+  playerProtectedFrom(pl, source) {
+    for (const k of this.playerChars(pl.id).keywords) {
+      if (k === 'Protection from everything') return true;
+      if (source && this.protectionFromPlayerKw(k, source)) return true;
+    }
+    return false;
+  }
+
+  // "Protection:Player.PlayerUID_<id>:<name>": protection from everything that player controls
+  protectionFromPlayerKw(k, source) {
+    const m = k.match(/^Protection:Player\.PlayerUID_(\d+)/);
+    if (!m) return false;
+    const ctrl = source.isPlayer ? source.id : source.stackItem ? source.controller : ctrlOf(this, source);
+    return ctrl === +m[1];
+  }
+
+  // record prevented damage for "whenever damage would be dealt to you is prevented" (batched like damage)
+  notePrevented(source, target, amount, combat) {
+    if (amount <= 0) return;
+    const e = { Source: source, DamageSource: source, Target: target, DamageTarget: target, DamageAmount: amount, IsCombatDamage: combat };
+    this.fire('DamagePrevented', e);
+    if (this.damageBatch) (this.preventBatch = this.preventBatch || []).push(e);
+    else this.fire('DamagePreventedOnce', { ...e, Sources: [source] });
+  }
+
   hasProtectionFrom(card, source) {
     const ch = this.chars(card);
     const sch = source.lki ? source.chars : this.chars(source);
     for (const k of ch.keywords) {
       if (!k.startsWith('Protection')) continue;
       if (k === 'Protection from everything') return true;
+      if (k.startsWith('Protection:Player.')) { if (this.protectionFromPlayerKw(k, source)) return true; continue; }
       let m = k.match(/^Protection from (white|blue|black|red|green|multicolored|monocolored|colorless)$/i);
       if (m) {
         const col = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' }[m[1].toLowerCase()];

@@ -240,7 +240,8 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'nonMultiColor': return ch.colors.size <= 1;
     case 'ChosenColor': return !!host && !!host.chosen && (host.chosen.colors || []).some(c => ch.colors.has(c));
     case 'ChosenType': return !!host && !!host.chosen && !!host.chosen.type && hasType(game, ch, host.chosen.type, card);
-    case 'ChosenCard': return !!host && !!host.chosen && (host.chosen.cards || []).includes(card.id);
+    case 'ChosenCard': case 'ChosenCardStrict': return !!host && !!host.chosen && (host.chosen.cards || []).includes(card.id);
+    case 'Defending': return !!(game.combat && game.combat.attackers.some(a => a.defenderCard === card.id));
     case 'Historic': return hasType(game, ch, 'Historic', card);
     case 'Modified': return Object.values(card.counters || {}).some(n => n > 0) || game.attachmentsOf(card).some(a => game.chars(a).subtypes.has('Equipment') || (game.chars(a).subtypes.has('Aura') && a.controller === ctrl));
     case 'wasCast': return !!card.castFrom;
@@ -324,6 +325,8 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'milledThisTurn': return game.turnState.moves.some(m => m.card === card && m.from === 'library' && m.to === 'graveyard');
     case 'wasDealtExcessDamageThisTurn': return false;
     case 'blockedBySource': return !!(ctx.host && game.combat && game.combat.blockers.get(ctx.host.id) === card.id);
+    case 'canReceiveCounters P1P1': return !card.lki && card.zone === 'battlefield';
+    case 'canBeTurnedFaceUp': return !!card.faceDown && card.faceDef && card.def.faces[0].types.includes('Creature');
     case 'targetedBy': return false;
   }
   if (CAP_COLOR[prop]) return ch.colors.has(CAP_COLOR[prop]);
@@ -1024,7 +1027,8 @@ export function checkPresence(game, p, ctx) {
   if (p.IsPresent) {
     const zone = p.PresentZone ? (zoneMap[p.PresentZone] || p.PresentZone.toLowerCase()) : 'battlefield';
     let pool;
-    if (p.PresentPlayer) {
+    if (p.PresentDefined) pool = resolveDefined(game, p.PresentDefined, ctx).map(o => liveOrLki(game, o)).filter(o => o && !o.isPlayer);
+    else if (p.PresentPlayer) {
       const who = p.PresentPlayer === 'You' ? [ctx.you] : p.PresentPlayer === 'Opponent' ? game.livingPlayers().filter(x => game.isOpponent(x.id, ctx.you)).map(x => x.id) : game.players.map(x => x.id);
       pool = zone === 'battlefield' ? game.battlefield.filter(c => who.includes(c.controller)) : who.flatMap(id => game.zone(id, zone));
     } else pool = game.cardsInZone(zone);

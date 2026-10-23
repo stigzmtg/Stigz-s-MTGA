@@ -1,6 +1,6 @@
 // Heuristic AI agent. Answers every engine prompt ("ask") for its player.
 import { SA, getActions, spellOptions, buildSpellSA, targetSpec, targetCandidates, refOf, fromRef, manaSourcesFor, parseCost, activatedAbilities, producedUnits, canAfford } from '../engine/abilities.js';
-import { canBlock, canAttack, combatPower, blockRules, attackTax } from '../engine/combat.js';
+import { canBlock, canAttack, combatPower, blockRules, attackTax, canAttackDefender, playerInDirection } from '../engine/combat.js';
 import { matchValid, calc, ctxOf, ctrlOf } from '../engine/filters.js';
 import { parseAbility } from '../engine/forge.js';
 import { sleep, COLORS, BASIC_LAND_TYPES } from '../engine/util.js';
@@ -586,6 +586,7 @@ export class AIAgent {
       return bad.slice(0, max).map(c => c.id);
     }
     if (purpose === 'tap') return pick(cards.filter(c => c.controller !== pid).sort((a, b) => v(b) - v(a)), max);
+    if (purpose === 'gainControlChoice') return pick(cards.slice().sort((a, b) => v(b) - v(a)), Math.max(min, 1));
     if (purpose === 'untap') return pick(cards.filter(c => c.controller === pid), max);
     if (purpose === 'discardOpponent') return pick(cards.slice().sort((a, b) => v(b) - v(a)), max);
     if (purpose === 'costTapXType' || purpose === 'costtapXType') return pick(cards.slice().sort((a, b) => v(a) - v(b)), min);
@@ -624,7 +625,34 @@ export class AIAgent {
       const nonAlt = opts.find(o => !/Evoke|Morph|face down/i.test(o.label));
       return (nonAlt || opts[0]).value;
     }
+    if (req.purpose === 'chooseDirection') return this.direction(game, pid, req);
+    if (req.purpose === 'changeCombatants') {
+      // send the attacker at whoever we like least: never at ourselves, preferably at the weakest-defended threat
+      const c = game.cardById(req.cardId);
+      const mine = c && c.controller === pid;
+      const score = o => {
+        const ref = o.value; const obj = fromRef(game, ref);
+        if (!obj) return -99;
+        const owner = obj.isPlayer ? obj.id : obj.controller;
+        if (owner === pid) return -100;
+        return mine ? (obj.isPlayer ? 40 - obj.life + this.threat(owner) * 0.2 : 5) : this.threat(owner) + (obj.isPlayer ? 0 : -3);
+      };
+      return opts.slice().sort((a, b) => score(b) - score(a))[0].value;
+    }
     return opts[0].value;
+  }
+
+  // left or right: for control swaps take the richer neighbour's side, for attack limits face the weaker attacker
+  direction(game, pid, req) {
+    const worth = (q, valid) => q == null ? 0 : game.battlefield.filter(c => c.controller === q && valid(c)).reduce((s, c) => s + this.value(c), 0);
+    const left = playerInDirection(game, pid, 'Left'), right = playerInDirection(game, pid, 'Right');
+    if (req.ai === 'Aminatou' || req.ai === 'GainControl') {
+      // we take what the player in the chosen direction controls ... and give ours to the other side
+      const valid = req.ai === 'GainControl' ? (c => game.chars(c).types.has('Creature')) : (c => !game.chars(c).types.has('Land'));
+      return worth(left, valid) >= worth(right, valid) ? 'Left' : 'Right';
+    }
+    // everyone may attack only their nearest opponent in that direction: with Left we're attacked from our right
+    return this.threat(right ?? pid) <= this.threat(left ?? pid) ? 'Left' : 'Right';
   }
 
   modes(game, pid, req) {
@@ -657,6 +685,12 @@ export class AIAgent {
       case 'shuffle': return false;
       case 'reveal': return true;
       case 'exploreGrave': { const c = req.cards && game.cardById(req.cards[0]); return c ? game.chars(c).cmc > 5 : false; }
+      case 'clashBottom': {
+        const c = req.cards && game.cardById(req.cards[0]);
+        if (!c) return false;
+        const lands = game.battlefield.filter(x => x.controller === pid && game.chars(x).types.has('Land')).length;
+        return game.chars(c).types.has('Land') ? lands >= 6 : game.chars(c).cmc > lands + 3;
+      }
       case 'unlessCost': {
         if (!sa) return false;
         if (sa.api === 'Counter') return true;
@@ -668,6 +702,13 @@ export class AIAgent {
       case 'optionalTrigger': case 'optional': case 'optionalSearch': case 'etbOptional': {
         if (!sa) return true;
         const api = sa.api;
+        if (api === 'MoveCounter' && sa.p.AILogic === 'Graft') {
+          // graft: only onto our own creatures, and never if the counter is what keeps the grafter alive
+          const dst = sa.trig && sa.trig.Card, src = sa.host;
+          if (!dst || dst.controller !== pid || !src || src.zone !== 'battlefield') return false;
+          const sch = game.chars(src);
+          return !sch.types.has('Creature') || sch.toughness > 1;
+        }
         if (api === 'Sacrifice' && (!sa.p.Defined || sa.p.Defined === 'You')) return false;
         if (api === 'Discard' && (!sa.p.Defined || sa.p.Defined === 'You')) return game.players[pid].hand.length > 3;
         if (api === 'LoseLife' && (!sa.p.Defined || sa.p.Defined === 'You')) return game.players[pid].life > 15;
@@ -734,7 +775,8 @@ export class AIAgent {
   attackers(game, pid, req) {
     const me = game.players[pid];
     const cands = req.candidates.map(id => game.cardById(id)).filter(Boolean);
-    const opps = game.opponents(pid);
+    // only opponents some creature may legally attack (Mystic Barrier & co. limit who can be attacked)
+    const opps = game.opponents(pid).filter(o => !cands.length || cands.some(c => canAttackDefender(game, c, o.id, null)));
     if (!opps.length) return [];
     // potential damage opponents could swing back with
     const backswing = opps.reduce((m, o) => Math.max(m, game.battlefield.filter(c => c.controller === o.id && game.chars(c).types.has('Creature') && !game.hasKeyword(c, 'Defender')).reduce((s, c) => s + strikeDamage(game, c), 0)), 0);
