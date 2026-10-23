@@ -12,16 +12,18 @@ const hasAbil = (d, name) => (d.abilities || []).some(a => a.name === name);
 const isNs = m => /^N's /.test(m.name);
 const SNEAK = "Hide 'n' Sneak";
 const DRAW_SUPPORTERS = new Set(["Professor's Research", "Lillie's Determination", 'Iono', 'Carmine', 'Judge', 'Roxanne', "Colress's Experiment", "Explorer's Guidance", 'Gwynn', 'Naveen', 'Surfer', 'Harlequin', "Iris's Fighting Spirit", "Team Rocket's Ariana", "Team Rocket's Archer", 'Hassel', 'Lucian', "Morty's Conviction"]);
-const SETUP_SUPPORTERS = new Set(['Arven', 'Dawn', "Team Rocket's Petrel", 'Cyrano', 'Crispin', "Professor Sada's Vitality", "Rosa's Encouragement", "Ciphermaniac's Codebreaking", "Lana's Aid", 'Hilda', "Brock's Scouting", "Janine's Secret Art", "Team Rocket's Proton", "Larry's Skill", "Ethan's Adventure", "Colress's Tenacity", 'Salvatore', 'Penny']);
+const SETUP_SUPPORTERS = new Set(['Arven', 'Dawn', "Team Rocket's Petrel", 'Cyrano', 'Crispin', "Professor Sada's Vitality", "Rosa's Encouragement", "Ciphermaniac's Codebreaking", "Lana's Aid", 'Hilda', "Brock's Scouting", "Janine's Secret Art", "Team Rocket's Proton", "Larry's Skill", "Ethan's Adventure", "Colress's Tenacity", 'Salvatore', 'Penny', 'Tarragon']);
 const trSupporter = c => c.def.trainer === 'Supporter' && /Team Rocket/.test(c.name);
 // "This Pokémon also does N damage to itself"
 const SELF_DAMAGE = { 'Iron Tackle': 10, 'Wild Press': 70, 'Reckless Charge': 10, 'Dynamic Press': 80, 'Take Down': 10 };
 // attacks that develop the board rather than deal damage: worth something while the Bench is thin
-const SETUP_ATTACKS = new Set(['Jolting Charge', 'Summoning Jutsu', 'Call for Support', 'Celestial Roar', 'Abyss Seeking', 'Call for Family', 'Call Sign', 'Find a Friend', 'Minor Errand-Running', 'Kaleidowaltz', 'Collect', 'Burst Roar', 'Magnetic Charge', 'Evolution', 'Come and Get You', 'Ascension', 'Traverse Time', 'Dangle Tail']);
+const SETUP_ATTACKS = new Set(['Jolting Charge', 'Summoning Jutsu', 'Call for Support', 'Celestial Roar', 'Abyss Seeking', 'Call for Family', 'Call Sign', 'Find a Friend', 'Minor Errand-Running', 'Kaleidowaltz', 'Collect', 'Burst Roar', 'Magnetic Charge', 'Evolution', 'Come and Get You', 'Ascension', 'Traverse Time', 'Dangle Tail', 'Spreading Light', 'Double Draw', 'Electromagnetic Sonar']);
 // attacks that place damage counters (no Weakness, Resistance or damage reduction; stopped by effect protection)
 const COUNTER_ATTACKS = new Set(['Powerful Hand', 'Furtive Drop', 'Matcha Spin', 'Spiritual End']);
 // what attacks with no printed damage (or a small one) are really worth, for deciding where Energy goes
-const NOMINAL = { 'Seek Inspiration': 130, 'Night Joker': 170, 'Powerful Hand': 120, 'Trifrost': 110, 'Thunder Raid': 60, 'Lost Mine': 120, 'Vengeful Anchor': 170, 'Syrup Storm': 180, 'Twin Shotels': 100, 'Coordinated Throwing': 120, 'Apex Dragon': 280, 'Rumbling Bees': 330, 'Giant Bouquet': 220, 'Gobble Down': 160, 'Buddy Blast': 220, 'Abyssal Flames': 200, 'Rocket Rush': 150, 'Resentful Refrain': 200, 'Mad Bite': 190, 'Verdant Storm': 180, 'Solar Beatdown': 150, 'Erasure Ball': 280 };
+const NOMINAL = { 'Seek Inspiration': 130, 'Night Joker': 170, 'Powerful Hand': 120, 'Trifrost': 110, 'Thunder Raid': 60, 'Lost Mine': 120, 'Vengeful Anchor': 170, 'Syrup Storm': 180, 'Twin Shotels': 100, 'Coordinated Throwing': 120, 'Apex Dragon': 280, 'Rumbling Bees': 330, 'Giant Bouquet': 220, 'Gobble Down': 160, 'Buddy Blast': 220, 'Abyssal Flames': 200, 'Rocket Rush': 150, 'Resentful Refrain': 200, 'Mad Bite': 190, 'Verdant Storm': 180, 'Solar Beatdown': 150, 'Erasure Ball': 280, 'Unified Beatdown': 150, 'Phantom Maze': 230, 'Mind Ruler': 150, 'Garland Ray': 240, 'Relentless Punches': 150, 'Whirling Envy': 110, 'Blazing Burst': 200, 'Vengeful Crush': 180, 'Megafire of Envy': 100, 'Flopping Trap': 150, 'Power Press': 160 };
+// Special Energy that provides every type on some Pokémon (a Basic, a Stage 2)
+const EVERY_TYPE = new Set(['Prism Energy', 'Neo Upper Energy']);
 // "As often as you like" Abilities of Pokémon that power the others up from the Bench (not Mega Venusaur ex, an attacker)
 const isEngineAbility = a => /As often as you like/.test(a.text) && a.name !== 'Solar Transfer';
 // Items whose net effect on the hand is known (cards spent minus cards gained), for Powerful Hand turns
@@ -153,11 +155,31 @@ export class PokemonAI {
       case 'Fickle Spitting': d = [3, 4].includes(g.prizesLeft(opp)) ? printed : 0; break;
       case 'Sonic Ripper': d = 220; break;
       case 'Gemstone Mimicry': return depth || !target.def.tera ? 0 : this.copyBest(g, pid, mon, target, target.def.attacks || []).dmg;
+      // more popular decks
+      case 'Flopping Trap': d = printed + (mon.damage > 0 ? 100 : 0); break;
+      case 'Relentless Punches': d = printed + 50 * g.counters(target); break;
+      case 'Whirling Envy': d = printed + (g.counters(mon) >= 2 ? 90 : 0); break;
+      case 'Megafire of Envy': d = printed + (g.koDuring(pid, { byAttack: true }) ? 90 : 0); break;
+      case 'Vengeful Crush': d = printed + 30 * g.prizesTaken(opp); break;
+      case 'Blazing Burst': d = printed + 50 * g.prizesTaken(opp); break;
+      case 'Unified Beatdown': d = 30 * me.bench.length; break;
+      case 'Superpower': d = printed + (g.hpLeft(mon) > 30 ? 30 : 0); break;
+      case 'Phantom Maze': d = printed + 50 * g.retreatCost(target); break;
+      case 'Mind Ruler': d = 30 * g.pl(opp).hand.length; break;
+      case 'Power Press': d = printed + (g.energyTypes(mon).length - g.attackCost(mon, atk).length >= 2 ? 80 : 0); break;
+      case 'Garland Ray': d = 120 * Math.min(2, mon.energy.length); break;
+      case 'Strike the Sleeper': return 0;
+      // poison: 10 at the Pokémon Checkup, 60 with Pecharunt's Toxic Subjugation in the Active Spot
+      case 'Poison Spray': case 'Poison Chain': {
+        const pecharunt = g.isActive(mon) && g.hasAbility(mon, 'Toxic Subjugation');
+        if (!target.poisoned && !blocked && !g.conditionImmune(target, 'poisoned')) d = printed + (pecharunt ? 60 : 10);
+        break;
+      }
     }
     if (COUNTER_ATTACKS.has(atk.name)) return blocked ? 0 : Math.max(0, d);
     if (d > 0) d += g.attackBonus({ pid, opp }, mon, target);
     if (d > 0 && !['Cosmic Beam', 'Demolish', 'Spit Innocently', 'Twin Shotels', 'Swift'].includes(atk.name)) {
-      if (g.weaknessOf(target) === mon.def.type && atk.name !== 'Raging Curse') d *= 2;
+      if (g.weaknessOf(target) === mon.def.type && atk.name !== 'Raging Curse' && atk.name !== 'Whirling Envy') d *= 2;
       if (target.def.resist === mon.def.type && atk.name !== 'Rock Hurl') d -= 30;
     }
     // protections on the target
@@ -226,6 +248,8 @@ export class PokemonAI {
       case 'Twin Shotels': return Math.max(0, ...ob.map(m => score(m, 50)));
       case 'Seek Inspiration': return this.seekValue(g, pid, mon, g.pl(g.opp(pid)).active).bench;
       case 'Night Joker': return this.copyBest(g, pid, mon, g.pl(g.opp(pid)).active, this.jokerChoices(g, pid)).bench;
+      case 'Land Scoop': return best(20, () => true, true);
+      case 'Strike the Sleeper': return Math.max(0, ...ob.map(m => score(m, this.benchHit(g, pid, mon, m, 20 * g.counters(m)))));
       default: return 0;
     }
   }
@@ -292,7 +316,7 @@ export class PokemonAI {
     if (!this.playsCache[k]) {
       const p = g.pl(pid);
       const all = [...p.deck, ...p.hand, ...p.discard, ...p.prizes, ...p.lost, ...g.inPlay(pid).flatMap(m => m.energy)];
-      this.playsCache[k] = new Set(['Colorless', ...all.filter(c => c.def.cat === 'E').map(c => (c.def.anyType ? 'Any' : c.def.provides))]);
+      this.playsCache[k] = new Set(['Colorless', ...all.filter(c => c.def.cat === 'E').map(c => (c.def.anyType || EVERY_TYPE.has(c.name) ? 'Any' : c.def.provides))]);
     }
     return this.playsCache[k];
   }
@@ -362,6 +386,18 @@ export class PokemonAI {
     // Mega Venusaur ex's Solar Transfer: Grass Energy from the Bench onto the Active attacker that needs it
     a = abil.find(x => x.name === 'Solar Transfer');
     if (a) { const plan = this.solarPlan(g, pid); if (plan && once('solar', 4)) { this.eswitch = { turn: g.turn, ...plan }; return a; } }
+    // Armarouge's Fire Off: {R} Energy from the Bench onto the Active Pokémon that needs it
+    a = abil.find(x => x.name === 'Fire Off');
+    if (a) { const plan = this.fireOffPlan(g, pid); if (plan && once('fireoff', 6)) { this.eswitch = { turn: g.turn, ...plan }; return a; } }
+    // Ethan's Ho-Oh ex's Golden Flame: Fire Energy from the hand onto a Benched Ethan's Pokémon (Fire Off moves it on)
+    a = abil.find(x => x.name === 'Golden Flame');
+    if (a && this.goldenFlameUseful(g, pid) && once('ab:' + a.mon + a.name)) return a;
+    // Chandelure's Alluring Light: a card for each player (Mind Ruler likes the opponent's hand big)
+    a = abil.find(x => x.name === 'Alluring Light');
+    if (a && !deckLow && (me.hand.length <= 4 || this.plays(g, pid, 'Mind Ruler')) && once('ab:' + a.mon + a.name)) return a;
+    // Brute Bonnet's Toxic Powder: both Active Pokémon Poisoned, when ours doesn't mind (or wants it)
+    a = abil.find(x => x.name === 'Toxic Powder');
+    if (a && this.toxicPowderUseful(g, pid) && once('ab:' + a.mon + a.name)) return a;
     // Lost Zone: bring a Benched Comfey up to use Flower Selecting when we can switch back afterwards
     const pivot = this.comfeyPivot(g, pid, actions);
     if (pivot && once('pivot')) return pivot;
@@ -396,6 +432,14 @@ export class PokemonAI {
     if (this.plays(g, pid, 'Abyssal Flames') && me.discard.filter(c => c.def.cat === 'E').length < 12) { t = item(['Brilliant Blender']); if (t) return t; }
     // Energy Retrieval: Basic Energy back when the hand has none and something needs it
     if (!me.hand.some(c => c.def.cat === 'E') && g.inPlay(pid).some(m => this.needs(g, m).missing.length)) { t = item(['Energy Retrieval']); if (t) return t; }
+    // Scoop Up Cyclone: pick up a badly damaged Pokémon with a Rule Box before it gives up Prizes
+    if (g.inPlay(pid).some(m => ruleBox(m.def) && m.damage >= g.maxHp(m) / 2 && g.hpLeft(m) <= 120 && (me.bench.length || !g.isActive(m)))) { t = item(['Scoop Up Cyclone']); if (t) return t; }
+    // Tool Scrapper: the opponent's Tools
+    if (g.inPlay(opp).some(m => m.tool)) { t = item(['Tool Scrapper']); if (t) return t; }
+    // Pal Pad: Supporters back into a deck that's running out of them
+    if (me.discard.some(c => c.def.trainer === 'Supporter') && me.deck.filter(c => c.def.trainer === 'Supporter').length <= 2) { t = item(['Pal Pad']); if (t) return t; }
+    // Poké Vital A: a big heal for a badly damaged attacker
+    if (g.inPlay(pid).some(m => m.damage >= 120 || (g.isActive(m) && m.damage >= 90))) { t = item(['Poké Vital A']); if (t) return t; }
     // Pokémon Catcher: a coin flip for a gust, when there's a Benched target to Knock Out
     if (active && this.gustTarget(g, pid)) { t = item(['Pokémon Catcher']); if (t) return t; }
     // Unfair Stamp after a Knock Out: when we'd rather have 5 new cards and the opponent 2
@@ -480,7 +524,7 @@ export class PokemonAI {
       if (choice) return choice;
     }
     // more acceleration abilities once there is something to power
-    a = pickAbility(['Psychic Embrace', 'Super Cold', 'Overvolt Discharge', 'Ripening Charge', 'Sinister Surge']);
+    a = pickAbility(['Psychic Embrace', 'Super Cold', 'Overvolt Discharge', 'Ripening Charge', 'Sinister Surge', 'Stone Arms']);
     if (a && this.accelUseful(g, pid, a)) return a;
 
     // Mega Greninja ex's Mortal Shuriken: a Water Energy from the hand for 6 damage counters, when they Knock Out
@@ -657,6 +701,43 @@ export class PokemonAI {
     }
     return best;
   }
+  // Fire Off: a {R} Energy from a Benched Pokémon that can spare it onto the Active Pokémon that needs one
+  fireOffPlan(g, pid) {
+    const me = g.pl(pid), a = me.active;
+    if (!a) return null;
+    const need = this.needs(g, a);
+    if (!need.missing.some(t => t === 'Fire' || t === 'Colorless')) return null;
+    let best = null;
+    for (const m of me.bench) {
+      const c = m.energy.find(x => g.cardProvides(m, x, 'Fire'));
+      if (!c) continue;
+      // Ethan's Ho-Oh ex holds the Energy for others; an attacker that is ready keeps its own
+      const v = (this.needs(g, m).missing.length ? 0 : -20) + this.attackerValue(g, m) / 10 - (g.hasAbility(m, 'Golden Flame') ? 30 : 0);
+      if (!best || v < best.v) best = { v, from: m.id, card: c.id, to: a.id };
+    }
+    return best;
+  }
+  goldenFlameUseful(g, pid) {
+    const me = g.pl(pid);
+    if (!me.hand.some(c => isBasicEnergy(c) && c.def.provides === 'Fire')) return false;
+    // something will want the Energy: the Benched Ethan's Pokémon, or the Active one through Fire Off
+    return me.bench.some(m => /^Ethan's /.test(m.name) && this.needs(g, m).missing.length) || (g.inPlay(pid).some(m => g.hasAbility(m, 'Fire Off')) && me.active && this.needs(g, me.active).missing.length > 0);
+  }
+  toxicPowderUseful(g, pid) {
+    const me = g.pl(pid), mine = me.active, theirs = g.pl(g.opp(pid)).active;
+    const can = m => !!m && !m.poisoned && !g.conditionImmune(m, 'poisoned') && !g.abilityBlocked(pid, m);
+    // Conkeldurr's Gutsy Swing is free with a Special Condition; Binding Mochi adds 40 to a Poisoned attacker
+    const wants = !!mine && ((g.attacksOf(mine).some(x => x.name === 'Gutsy Swing') && !(mine.special || mine.poisoned || mine.burned)) || g.toolName(mine) === 'Binding Mochi');
+    if (wants && can(mine)) return true;
+    return can(theirs) && (!can(mine) || wants);
+  }
+  // Team Star Grunt: the Energy it takes leaves the opponent's Active Pokémon short of its best attack
+  gruntUseful(g, pid) {
+    const o = g.pl(g.opp(pid)).active;
+    if (!o || !o.energy.length) return false;
+    const have = g.energyTypes(o).length;
+    return g.attacksOf(o).some(a => !g.attackBlock(o, a) && g.attackCost(o, a).length >= have - 1 && g.attackCost(o, a).length > 0) && (o.def.ex || this.needs(g, o).dmg >= 120);
+  }
   // Strange Timepiece target: an evolved {P} Pokémon on the Bench that survives devolving
   timepieceTarget(g, pid) {
     return g.pl(pid).bench.filter(m => m.stack.length > 1 && m.def.type === 'Psychic' && m.damage < m.stack[0].def.hp).sort((x, y) => y.stack.length - x.stack.length)[0] || null;
@@ -721,6 +802,10 @@ export class PokemonAI {
     if (n === "Hero's Cape") return this.needs(g, m).dmg >= 100 && (me.active === m || m.def.stage !== 'Basic');
     if (n === "Cynthia's Power Weight") return /^Cynthia's /.test(m.name) && (m.def.stage !== 'Basic' || me.active === m);
     if (n === "Hop's Choice Band") return /^Hop's /.test(m.name) && this.needs(g, m).dmg >= 50;
+    if (n === 'Handheld Fan' || n === 'Powerglass') return me.active === m;
+    if (n === "Lillie's Pearl") return /^Lillie's /.test(m.name);
+    if (n === 'Future Booster Energy Capsule') return !!m.def.future;
+    if (n === 'Defiance Vest' || n === 'Sacred Charm') return me.active === m || this.needs(g, m).dmg >= 100;
     return true;
   }
   pickSupporter(g, pid, sup, { handAttack = false, affordable = () => true } = {}) {
@@ -747,6 +832,18 @@ export class PokemonAI {
     const turo = named("Professor Turo's Scenario");
     if (turo && g.inPlay(pid).some(m => ruleBox(m.def) && m.damage >= g.maxHp(m) / 2 && g.hpLeft(m) <= 120 && (me.bench.length || !g.isActive(m))) && me.bench.length >= 2) return turo;
     if (named('Briar')) return named('Briar');
+    // Team Star Grunt: an Energy off the opponent's Active Pokémon when that stops its attack next turn
+    const grunt = named('Team Star Grunt');
+    if (grunt && oppActive && oppActive.energy.length && this.gruntUseful(g, pid)) return grunt;
+    // Ruffian: a Tool and a Special Energy off one of the opponent's Pokémon
+    const ruffian = named('Ruffian');
+    if (ruffian && g.inPlay(opp).some(m => m.tool && m.energy.some(c => c.def.energy === 'Special') || (g.isActive(m) && (m.tool || m.energy.some(c => c.def.energy === 'Special'))))) return ruffian;
+    // Erika's Invitation: drag a fresh Basic from the opponent's hand into the Active Spot for our attacker
+    const erika = named("Erika's Invitation");
+    if (erika && g.pl(opp).hand.length >= 4 && g.pl(opp).bench.length < g.benchLimit(opp) && me.active && this.canAttackNow(g, me.active) && !(this.bestAttack(g, pid, me.active) || {}).ko) return erika;
+    // Saguaro: 50 off two damaged Pokémon
+    const saguaro = named('Saguaro');
+    if (saguaro && g.inPlay(pid).filter(m => m.damage >= 50).length >= 2 || saguaro && me.active && me.active.damage >= 80 && g.hpLeft(me.active) <= 100) return saguaro;
     // Kieran: 30 more damage when that turns a hit on a Pokémon ex (or V) into a Knock Out
     const kieran = named('Kieran');
     if (kieran && oppActive && (oppActive.def.ex || oppActive.def.v) && me.active) { const b = this.bestAttack(g, pid, me.active); if (b && !b.ko && b.v + 30 >= g.hpLeft(oppActive)) return kieran; }
@@ -797,6 +894,7 @@ export class PokemonAI {
     const me = g.pl(pid);
     if (c.name === 'Salvatore') return g.inPlay(pid).some(m => me.deck.some(x => isMon(x) && x.def.stage !== 'Basic' && g.evolvesFrom(m, x.def) && !(x.def.abilities || []).length));
     if (c.name === 'Penny') return false;
+    if (c.name === 'Tarragon') return me.discard.filter(x => (isMon(x) && x.def.type === 'Fighting') || (isBasicEnergy(x) && x.def.provides === 'Fighting')).length >= 2 && me.hand.length <= 5;
     if (c.name === "Ethan's Adventure") return me.deck.some(x => (isMon(x) && /^Ethan's /.test(x.name)) || isBasicEnergy(x, 'Fire'));
     if (c.name === "Larry's Skill") return me.hand.length <= 3;
     if (c.name === "Janine's Secret Art") return g.inPlay(pid).some(m => m.def.type === 'Darkness' && this.needs(g, m).missing.length) && me.deck.some(x => isBasicEnergy(x) && x.def.provides === 'Darkness');
@@ -887,10 +985,11 @@ export class PokemonAI {
         if (!need.missing.length) {
           // Energy that does something on its own still has a use
           if (c.name === 'Telepathic Psychic Energy' && m.def.type === 'Psychic' && me.bench.length < g.benchLimit(pid) && me.deck.some(x => isMon(x) && x.def.stage === 'Basic' && x.def.type === 'Psychic')) v = 12;
+          else if (g.hasAbility(m, 'Adrena-Power') && !g.adrenaPower(m) && (c.def.provides === 'Darkness' || g.everyType(m, c))) v = 30;
           else if (c.name === 'Enriching Energy' && me.deck.length > 8) v = 10;
           else continue;
         } else {
-          const fits = need.missing.includes(c.def.provides) || need.missing.includes('Colorless') || c.def.anyType;
+          const fits = need.missing.includes(c.def.provides) || need.missing.includes('Colorless') || g.everyType(m, c);
           if (!fits) continue;
           // Jet Energy switches a Benched Pokémon in: only one it makes ready to attack, and better than the Active
           if (c.name === 'Jet Energy' && m !== me.active) {
@@ -906,6 +1005,8 @@ export class PokemonAI {
           if (this.copyFodder(g, pid, m.card)) v -= 20;
         }
         if (c.name === 'Telepathic Psychic Energy' && m.def.type === 'Psychic' && me.bench.length < g.benchLimit(pid) - 1) v += 10;
+        // Okidogi's Adrena-Power: the first {D} Energy is 100 HP and 100 damage
+        if (need.missing.length && g.hasAbility(m, 'Adrena-Power') && !g.adrenaPower(m) && (c.def.provides === 'Darkness' || g.everyType(m, c))) v += 30;
         if (c.name === 'Enriching Energy' && me.deck.length > 8) v += 8;
         if (c.name === 'Mist Energy' || c.name === 'Spiky Energy') v += m === me.active ? 4 : 0;
         if (!best || v > best.v) best = { c, m, v };
@@ -924,6 +1025,8 @@ export class PokemonAI {
     if (a.name === 'Psychic Embrace') return g.inPlay(pid).some(m => m.def.type === 'Psychic' && this.needs(g, m).missing.length && g.hpLeft(m) > 60);
     if (a.name === 'Super Cold') return g.inPlay(pid).some(m => m.energy.filter(c => c.def.provides === 'Water').length < 4 && (this.needs(g, m).dmg >= 100 || m.name === 'Chien-Pao ex'));
     if (a.name === 'Ripening Charge') return true;
+    // Barbaracle: a {F} Energy from the hand for a {F} Pokémon that needs one
+    if (a.name === 'Stone Arms') return g.inPlay(pid).some(m => m.def.type === 'Fighting' && (this.needs(g, m).missing.length || (g.hasAbility(m, 'Adrena-Power') && !g.adrenaPower(m))));
     // Toxtricity: the Benched {D} Pokémon takes 2 damage counters, so only onto one that needs it and survives well
     if (a.name === 'Sinister Surge') return g.pl(pid).bench.some(m => m.def.type === 'Darkness' && this.needs(g, m).missing.length && g.hpLeft(m) > 60);
     return true;
@@ -987,6 +1090,17 @@ export class PokemonAI {
     // Brilliant Blender, Drilbur's Dig Dig Dig: Energy from the deck into the discard pile (Abyssal Flames counts it)
     if (hint === 'discard-deck') return opts.filter(c => c.def.cat === 'E').slice(0, req.max).map(c => c.id);
     if (hint === 'topdeck') return this.topdeck(g, pid, opts, req);
+    // Tool Scrapper: only the opponent's Tools
+    if (hint === 'scrap') { const theirs = opts.filter(c => c.owner !== pid); return (theirs.length ? theirs : opts).slice(0, Math.max(req.min, Math.min(req.max, theirs.length))).map(c => c.id); }
+    // Erika's Invitation: the Basic our Active can Knock Out for the most Prizes, else the weakest
+    if (hint === 'erika') {
+      const a = me.active, best = a && this.bestAttack(g, pid, a);
+      const dmg = best ? best.v : 0;
+      const val = c => (c.def.hp <= dmg ? 1000 + (c.def.ex ? 500 : 0) : 0) - c.def.hp;
+      return [[...opts].sort((x, y) => val(y) - val(x))[0].id];
+    }
+    // Volt Cyclone: move the Energy the attacker can best spare
+    if (hint === 'move-off') return [this.spareEnergy(g, opts)[0].id];
     const n = Math.max(req.min, Math.min(req.max, req.max));
     return want(n);
   }
@@ -1160,6 +1274,20 @@ export class PokemonAI {
       return pickN(ranked);
     }
     if (hint === 'own-damaged' || hint === 'scoop') return [opts.sort((a, b) => b.damage - a.damage)[0].id];
+    if (hint === 'heal') return pickN([...opts].sort((a, b) => b.damage - a.damage));
+    // Strike the Sleeper: 20 for each damage counter, a Knock Out first
+    if (hint === 'sleeper') {
+      const a = g.pl(pid).active;
+      const hit = m => (a ? this.benchHit(g, pid, a, m, 20 * g.counters(m)) : 0);
+      return [[...opts].sort((x, y) => ((hit(y) >= g.hpLeft(y)) - (hit(x) >= g.hpLeft(x))) * 1000 * g.prizeValue(y) + hit(y) - hit(x))[0].id];
+    }
+    // Energy moved onto one of the opponent's Pokémon (Handheld Fan, Slight Shift): the one it helps least
+    if (hint === 'opp-energy-to') return [[...opts].sort((x, y) => this.energyUse(g, x) - this.energyUse(g, y))[0].id];
+    // Ruffian: the Pokémon that loses the most
+    if (hint === 'ruffian') {
+      const val = m => (m.tool ? 1 : 0) + (m.energy.some(c => c.def.energy === 'Special') ? 1 : 0) + (g.isActive(m) ? 0.5 : 0);
+      return [[...opts].sort((x, y) => val(y) - val(x))[0].id];
+    }
     const es = this.eswitch && this.eswitch.turn === g.turn && g.current === pid ? this.eswitch : null;
     if (hint === 'energy-from' && es && opts.some(m => m.id === es.from)) return [es.from];
     if (hint.startsWith('attach') && es && opts.some(m => m.id === es.to) && g.pl(pid).active && g.pl(pid).active.id === es.to && !g.pl(pid).active.energy.some(c => c.id === es.card)) { this.eswitch = null; return [es.to]; }
@@ -1186,12 +1314,39 @@ export class PokemonAI {
       const n = Math.min(3, me.deck.filter(c => isBasicEnergy(c, 'Grass')).length);
       if (n && (m.def.attacks || []).some(atk => { const cost = g.attackCost(m, atk); return g.energyTypes(m).length + n >= cost.length && cost.filter(t => t !== 'Colorless').length <= g.energyTypes(m).filter(t => t === 'Grass').length + n; })) return true;
     }
+    // Conkeldurr's Gutsy Swing costs nothing once Brute Bonnet's Toxic Powder poisons it in the Active Spot
+    if ((m.def.attacks || []).some(a => a.name === 'Gutsy Swing') && !g.conditionImmune(m, 'poisoned')
+      && g.inPlay(pid).some(x => x !== m && g.toolName(x) === 'Ancient Booster Energy Capsule' && g.hasAbility(x, 'Toxic Powder') && x.used['Toxic Powder'] !== g.turn)) return true;
     let type = null, n = 0;
     if (m.def.type === 'Water' && g.inPlay(pid).some(x => x !== m && g.hasAbility(x, 'Super Cold'))) { type = 'Water'; n = me.hand.filter(c => isBasicEnergy(c) && c.def.provides === 'Water').length; }
     else if (m.def.type === 'Psychic' && g.inPlay(pid).some(x => g.hasAbility(x, 'Psychic Embrace'))) { type = 'Psychic'; n = Math.min(me.discard.filter(c => isBasicEnergy(c) && c.def.provides === 'Psychic').length, Math.floor((g.hpLeft(m) - 1) / 20)); }
     if (!type || !n) return false;
     return (m.def.attacks || []).some(atk => { const cost = g.attackCost(m, atk); return g.energyTypes(m).length + n >= cost.length && cost.every(t => t === type || t === 'Colorless'); });
   }
+  // attached Energy cards, the one the Pokémon can best spare first: it still pays for its best attack without it
+  spareEnergy(g, cards) {
+    const m = cards.length ? g.inPlay(cards[0].owner).find(x => x.energy.includes(cards[0])) : null;
+    if (!m) return cards;
+    const need = this.needs(g, m);
+    const cost = need.atk ? g.attackCost(m, need.atk) : [];
+    // what each card provides there (as in game.energyTypes)
+    const entries = x => {
+      if (!g.energyLive(x)) return ['Colorless'];
+      const t = g.everyType(m, x) ? 'Any' : x.def.either ? x.def.either.types.join('/') : x.def.provides || 'Colorless';
+      return Array(g.energyUnits(m, x)).fill(t);
+    };
+    const pays = c => {
+      const pool = m.energy.filter(x => x !== c).flatMap(entries);
+      const typed = cost.filter(t => t !== 'Colorless');
+      for (const t of typed) { let i = pool.findIndex(e => g.provides(e, t)); if (i < 0) return false; pool.splice(i, 1); }
+      return pool.length >= cost.length - typed.length;
+    };
+    // otherwise keep the Energy of the types the attack asks for
+    const score = c => (pays(c) ? 10 : 0) - (cost.some(t => t !== 'Colorless' && g.cardProvides(m, c, t)) ? 5 : 0);
+    return [...cards].sort((x, y) => score(y) - score(x));
+  }
+  // how much a Pokémon would use one more Energy (the opponent's, for Handheld Fan and Slight Shift)
+  energyUse(g, m) { const n = this.needs(g, m); return n.missing.length ? n.dmg + (m.def.ex ? 50 : 0) : 0; }
   attachScore(g, pid, m, type) {
     const need = this.needs(g, m);
     let s = need.dmg / 10;
@@ -1210,6 +1365,8 @@ export class PokemonAI {
     if (hint === 'discard-stadium-bonus') return true;
     if (hint === 'bench-snipe') return g.pl(g.opp(pid)).bench.some(m => g.hpLeft(m) <= 120);
     if (hint === 'more-damage') return true;
+    // Superpower: 30 more, unless the 30 it does to itself would Knock it Out
+    if (hint === 'superpower') { const a = g.pl(pid).active; return !!a && g.hpLeft(a) > 30; }
     if (/Snow Sink/.test(req.prompt)) return !!(g.stadium && g.stadium.owner !== pid);
     // Corkscrew Dive: draw up to 6 unless the deck is about to run out
     if (hint === 'draw-to-6') { const me = g.pl(pid); return me.deck.length - Math.max(0, 6 - me.hand.length) >= 4; }

@@ -42,7 +42,7 @@ const REPLAY_EVERY = +(flags.replay || 50);
 const db = JSON.parse(fs.readFileSync('data/ptcg/cards.json', 'utf8'));
 const decks = JSON.parse(fs.readFileSync('data/ptcg/decks.json', 'utf8'));
 // Abilities you may use as often as you like
-const MULTI_USE = new Set(['Super Cold', 'Psychic Embrace', 'Solar Transfer']);
+const MULTI_USE = new Set(['Super Cold', 'Psychic Embrace', 'Solar Transfer', 'Fire Off']);
 
 class Violation extends Error {}
 
@@ -306,7 +306,7 @@ class Checker {
     g.checkKOs = async (ctx) => {
       const before = g.players.map(p => p.prizes.length);
       const value = new Map();
-      for (const p of g.players) for (const m of g.inPlay(p.id)) value.set(m.id, { pid: p.id, v: g.prizeValue(m), legacy: m.energy.some(c => c.name === 'Legacy Energy') });
+      for (const p of g.players) for (const m of g.inPlay(p.id)) value.set(m.id, { pid: p.id, v: g.prizeValue(m), legacy: m.energy.some(c => c.name === 'Legacy Energy'), pearl: g.toolName(m) === "Lillie's Pearl" && /^Lillie's /.test(m.name) });
       const firstEvent = g.events.length ? g.events[g.events.length - 1].id : -1;
       const legacyBefore = g.players.map(p => p.legacyUsed);
       depth++;
@@ -317,7 +317,9 @@ class Checker {
         const sum = ko.reduce((s, k) => s + k.v, 0);
         const taken = before[taker] - g.players[taker].prizes.length;
         const legacy = g.players[1 - taker].legacyUsed && !legacyBefore[1 - taker] ? 1 : 0;
-        const lo = Math.min(before[taker], Math.max(0, sum - legacy)), hi = Math.min(before[taker], sum + 2 * ko.length);
+        // Lillie's Pearl: one fewer for a Lillie's Pokémon Knocked Out by an attack
+        const pearls = ko.filter(k => k.pearl).length;
+        const lo = Math.min(before[taker], Math.max(0, sum - legacy - pearls)), hi = Math.min(before[taker], sum + 2 * ko.length);
         if (taken < lo || taken > hi) self.fail(`${g.players[taker].name} took ${taken} Prize card(s) for Knock Outs worth ${sum} (expected ${lo}-${hi})`);
       }
       if (depth === 0) self.settled();

@@ -227,6 +227,7 @@ export class PokemonGame {
     if (t === "Hero's Cape") hp += 100;
     if (t === "Cynthia's Power Weight" && /^Cynthia's /.test(mon.name)) hp += 70;
     if (mon.def.type === 'Grass') hp += 20 * this.liveEnergy(mon, 'Growing Grass Energy').length;
+    if (this.adrenaPower(mon)) hp += 100;
     if (this.stadium && this.stadium.card.name === 'Lively Stadium' && basic) hp += 30;
     if (this.stadium && this.stadium.card.name === 'Gravity Mountain' && mon.def.stage === 'Stage2') hp -= 30;
     return hp;
@@ -252,6 +253,15 @@ export class PokemonGame {
   abilitiesOf(mon) {
     let list = this.baseAbilities(mon);
     if (!list.length) return list;
+    // Iron Thorns ex's Initialization (in the Active Spot): Pokémon with a Rule Box have no Abilities, except Future
+    // Pokémon (Iron Thorns ex is one, so asking about its own Abilities doesn't come back here)
+    if (this.ruleBox(mon.def) && !mon.def.future && this.players.some(p => p.active && p.active !== mon && this.baseAbilities(p.active).some(a => a.name === 'Initialization') && this.hasAbility(p.active, 'Initialization'))) return [];
+    // Ting-Lu ex's Cursed Land (in the Active Spot): the opponent's Pokémon with damage counters have no Abilities,
+    // except Pokémon ex
+    if (mon.damage > 0 && !mon.def.ex) {
+      const o = this.players[this.opp(mon.owner)].active;
+      if (o && this.baseAbilities(o).some(a => a.name === 'Cursed Land') && this.hasAbility(o, 'Cursed Land')) return [];
+    }
     if (mon.def.v && mon.def.stage === 'Basic' && this.players.some(p => this.inPlay(p.id).some(m => m !== mon && !m.def.v && this.abilitiesOf(m).some(a => a.name === 'Fettered in Misfortune')))) return [];
     if (this.isActive(mon)) {
       const o = this.players[this.opp(mon.owner)].active;
@@ -262,6 +272,15 @@ export class PokemonGame {
   hasAbility(mon, name) { return this.abilitiesOf(mon).some(a => a.name === name); }
   anyInPlayHasAbility(name, pid = null) { return this.players.some(p => (pid == null || p.id === pid) && this.inPlay(p.id).some(m => this.hasAbility(m, name))); }
   dampActive() { return this.anyInPlayHasAbility('Damp'); }
+  // Jellicent ex's Oceanic Curse: while it's the opponent's Active Pokémon, no Items or Tools from this player's hand
+  oceanicCurse(pid) { const o = this.players[this.opp(pid)].active; return !!o && this.hasAbility(o, 'Oceanic Curse'); }
+  // Milotic's Mentally Calm: this player's Pokémon in play and their attached cards can't be put into their hand
+  handLocked(pid) { return this.anyInPlayHasAbility('Mentally Calm', this.opp(pid)); }
+  // Sandshrew's Sand Screen: this player's Items and Supporters can't put Trainer cards from their discard pile
+  // into their deck
+  sandScreen(pid) { return this.anyInPlayHasAbility('Sand Screen', this.opp(pid)); }
+  // Patrat's Watchful Eye: damage counters can't be moved
+  countersLocked() { return this.anyInPlayHasAbility('Watchful Eye'); }
 
   weaknessOf(mon) {
     // Archaludon ex's Metal Defender: no Weakness during the opponent's next turn
@@ -279,10 +298,24 @@ export class PokemonGame {
     const out = [];
     for (const c of mon.energy) {
       if (!this.energyLive(c)) { out.push('Colorless'); continue; }
-      const t = c.def.anyType ? 'Any' : c.def.either ? c.def.either.types.join('/') : c.def.provides || 'Colorless';
+      const t = this.everyType(mon, c) ? 'Any' : c.def.either ? c.def.either.types.join('/') : c.def.provides || 'Colorless';
       for (let k = this.energyUnits(mon, c); k > 0; k--) out.push(t);
     }
     return out;
+  }
+  // Energy that provides every type: Legacy Energy; Prism Energy on a Basic Pokémon; Neo Upper Energy on a Stage 2
+  everyType(mon, card) {
+    if (card.def.anyType) return true;
+    if (card.name === 'Prism Energy') return mon.def.stage === 'Basic' && this.energyLive(card);
+    if (card.name === 'Neo Upper Energy') return mon.def.stage === 'Stage2' && this.energyLive(card);
+    return false;
+  }
+  // does this Energy card, attached to this Pokémon, provide this type?
+  cardProvides(mon, card, type) {
+    if (!this.energyLive(card)) return type === 'Colorless';
+    if (this.everyType(mon, card)) return true;
+    if (card.def.either) return card.def.either.types.includes(type);
+    return (card.def.provides || 'Colorless') === type;
   }
   // Temple of Sinnoh: Special Energy attached to Pokémon provides {C} and has no other effect
   energyLive(card) { return card.def.energy !== 'Special' || this.stadiumName() !== 'Temple of Sinnoh'; }
@@ -292,6 +325,7 @@ export class PokemonGame {
     if (!this.energyLive(card)) return 1;
     if (card.def.either) return card.def.either.units;
     if (card.name === 'Ignition Energy') return mon.def.stage !== 'Basic' ? 3 : 1;
+    if (card.name === 'Neo Upper Energy') return mon.def.stage === 'Stage2' ? 2 : 1;
     return card.def.energy === 'Basic' && card.def.provides === 'Grass' && this.wildGrowth(mon.owner) ? 2 : 1;
   }
   // does one Energy entry (from energyTypes) provide this type?
@@ -305,12 +339,18 @@ export class PokemonGame {
     if (this.stadiumName() === "N's Castle" && /^N's /.test(mon.name)) return 0;
     // Archaludon's Metal Bridge: Pokémon with {M} Energy attached
     if (this.anyInPlayHasAbility('Metal Bridge', p) && this.energyTypes(mon).some(t => this.provides(t, 'Metal'))) return 0;
-    let n = mon.def.retreat;
     const t = this.toolName(mon);
+    // Future Booster Energy Capsule: a Future Pokémon has no Retreat Cost
+    if (t === 'Future Booster Energy Capsule' && mon.def.future) return 0;
+    let n = mon.def.retreat;
     if (t === 'Air Balloon') n -= 2;
     if (t === 'Rescue Board') { if (this.hpLeft(mon) <= 30) return 0; n -= 1; }
+    // Mega Chandelure ex's Binding Flame: the opponent's Active Pokémon's Retreat Cost is {C} more (for each)
+    if (this.isActive(mon)) n += this.inPlay(this.opp(p)).filter(m => this.hasAbility(m, 'Binding Flame')).length;
     return Math.max(0, n);
   }
+  // Okidogi's Adrena-Power: with any {D} Energy attached, 100 more HP and 100 more damage
+  adrenaPower(mon) { return this.hasAbility(mon, 'Adrena-Power') && mon.energy.some(c => this.cardProvides(mon, c, 'Darkness')); }
   // attack costs after reductions, as a list of types
   attackCost(mon, atk) {
     let cost = [...atk.cost];
@@ -321,6 +361,8 @@ export class PokemonGame {
     if (this.toolName(mon) === "Hop's Choice Band" && /^Hop's /.test(mon.name)) { const i = cost.lastIndexOf('Colorless'); if (i >= 0) cost.splice(i, 1); }
     // Nighttime Mine: attacks by Tera Pokémon cost {C} more
     if (this.stadiumName() === 'Nighttime Mine' && this.isTera(mon)) cost.push('Colorless');
+    // Conkeldurr's Gutsy Swing: free while it's affected by a Special Condition
+    if (atk.name === 'Gutsy Swing' && (mon.special || mon.poisoned || mon.burned)) return [];
     // Radiant Charizard's Excited Heart: {C} less for each Prize card the opponent has taken
     if (this.hasAbility(mon, 'Excited Heart')) for (let k = 0; k < this.prizesTaken(this.opp(mon.owner)); k++) { const i = cost.lastIndexOf('Colorless'); if (i < 0) break; cost.splice(i, 1); }
     if (atk.name === 'Blood Moon' && this.hasAbility(mon, 'Seasoned Skill')) {
@@ -521,7 +563,8 @@ export class PokemonGame {
     const out = [];
     const firstTurn = p.turns === 1;
     const mons = this.inPlay(pid);
-    const itemLock = this.hasEffect('itemLock', { pid });
+    // Frillish's Oceanic Gloom (this turn), Jellicent ex's Oceanic Curse (while it's the opponent's Active Pokémon)
+    const itemLock = this.hasEffect('itemLock', { pid }) || this.oceanicCurse(pid);
     const evoLock = this.evolutionJammed(pid);
     // Genesect's ACE Nullifier (with a Tool attached): no ACE SPEC cards from the hand
     const aceLocked = this.inPlay(this.opp(pid)).some(m => m.tool && this.hasAbility(m, 'ACE Nullifier'));
@@ -843,11 +886,17 @@ export class PokemonGame {
 
   clearConditions(mon) { mon.special = null; mon.poisoned = false; mon.burned = false; }
   // special conditions: Ancient Booster Energy Capsule, Flare Veil and Dig keep them off
-  setCondition(mon, cond, ctx = null) {
-    if (this.toolName(mon) === 'Ancient Booster Energy Capsule' && mon.def.ancient) return false;
+  conditionImmune(mon, cond) {
+    if (this.toolName(mon) === 'Ancient Booster Energy Capsule' && mon.def.ancient) return true;
     // Bubbly Water Energy: the {W} Pokémon it's attached to can't be affected by Special Conditions
-    if (mon.def.type === 'Water' && this.liveEnergy(mon, 'Bubbly Water Energy').length) return false;
-    if (this.stadiumName() === 'Festival Grounds' && mon.energy.length) return false;
+    if (mon.def.type === 'Water' && this.liveEnergy(mon, 'Bubbly Water Energy').length) return true;
+    if (this.stadiumName() === 'Festival Grounds' && mon.energy.length) return true;
+    // Hoothoot's Insomnia
+    if (cond === 'asleep' && this.hasAbility(mon, 'Insomnia')) return true;
+    return false;
+  }
+  setCondition(mon, cond, ctx = null) {
+    if (this.conditionImmune(mon, cond)) return false;
     if (ctx && this.effectsBlocked(ctx, mon)) return false;
     if (cond === 'poisoned') mon.poisoned = true;
     else if (cond === 'burned') mon.burned = true;
@@ -926,6 +975,7 @@ export class PokemonGame {
     await this.runAttack(ctx);
     // Boomerang Energy discarded by this Pokémon's own attack comes back after attacking
     for (const c of boomerang) if (mon.stack.length && p.discard.includes(c)) { p.discard.splice(p.discard.indexOf(c), 1); mon.energy.push(c); this.log(`Boomerang Energy returns to ${mon.name}.`); }
+    if (ctx.fans && !this.over) await this.handheldFan(ctx);
     this.festivalSweep();
     await this.checkKOs(ctx);
   }
@@ -1024,6 +1074,9 @@ export class PokemonGame {
     if ((target.def.ex || target.def.v) && this.hasEffect('kieran', { pid: ctx.pid })) n += 30;
     // Victini's Victory Cheer: +10 each, on attacks by Evolution {R} Pokémon
     if (attacker.def.type === 'Fire' && attacker.def.stage !== 'Basic') n += 10 * this.inPlay(ctx.pid).filter(m => this.hasAbility(m, 'Victory Cheer')).length;
+    // Okidogi's Adrena-Power; Future Booster Energy Capsule on a Future Pokémon
+    if (this.adrenaPower(attacker)) n += 100;
+    if (t === 'Future Booster Energy Capsule' && attacker.def.future) n += 20;
     if (/^Hop's /.test(attacker.name)) {
       // Hop's Snorlax's Extra Helpings (doesn't stack), Hop's Choice Band, Postwick
       if (this.anyInPlayHasAbility('Extra Helpings', ctx.pid)) n += 30;
@@ -1039,6 +1092,13 @@ export class PokemonGame {
     // Kakuna's Exoskeleton; "takes N less damage during your opponent's next turn" (Iron Feathers, Rolling Iron)
     if (this.hasAbility(target, 'Exoskeleton')) dmg -= 20;
     for (const e of this.effects) if (e.kind === 'guard' && e.turn === this.turn && e.mon === target.id) dmg -= e.n;
+    // Terapagos ex's Crown Opal: no damage from Basic non-{C} Pokémon during the opponent's next turn
+    if (attacker.def.stage === 'Basic' && attacker.def.type !== 'Colorless' && this.hasEffect('crownOpal', { mon: target })) return 0;
+    // Mega Diancie ex's Diamond Coat; Defiance Vest (while behind on Prizes); Sacred Charm (attackers with an Ability)
+    if (this.hasAbility(target, 'Diamond Coat')) dmg -= 30;
+    const t = this.toolName(target);
+    if (t === 'Defiance Vest' && this.prizesLeft(target.owner) > this.prizesLeft(attacker.owner)) dmg -= 40;
+    if (t === 'Sacred Charm' && this.abilitiesOf(attacker).length) dmg -= 30;
     return Math.max(0, dmg);
   }
   curlyWall(pid) { const bs = this.inPlay(pid).filter(m => m.name === 'Bouffalant'); return bs.length >= 2 && bs.some(m => this.hasAbility(m, 'Curly Wall')); }
@@ -1055,6 +1115,21 @@ export class PokemonGame {
     const spiky = active ? this.liveEnergy(target, 'Spiky Energy').length : 0;
     if (spiky && attacker.stack.length && this.addCounters(attacker, 2 * spiky)) this.log(`Spiky Energy puts ${2 * spiky} damage counters on ${attacker.name}.`);
     if (this.hasEffect('readyToRam', { mon: target }) && attacker.stack.length && this.addCounters(attacker, 6, { ctx: { pid: owner } })) this.log(`Ready to Ram puts 6 damage counters on ${attacker.name}.`);
+    // Handheld Fan: an Energy moves from the attacker to one of its owner's Benched Pokémon once the attack is done
+    if (active && this.toolName(target) === 'Handheld Fan') (ctx.fans = ctx.fans || []).push(target);
+  }
+  async handheldFan(ctx) {
+    const attacker = ctx.attacker, p = this.players[ctx.pid];
+    for (const holder of ctx.fans) {
+      if (!attacker.stack.length || !attacker.energy.length || !p.bench.length) return;
+      const owner = holder.owner;
+      const [c] = await this.chooseCards(owner, attacker.energy, { min: 1, max: 1, prompt: `Handheld Fan: move which Energy from ${attacker.name} to one of your opponent's Benched Pokémon?`, from: 'energy', hint: 'opp-discard' });
+      const to = c && await this.chooseOneMon(owner, p.bench, `Handheld Fan: move ${c.name} to which of your opponent's Benched Pokémon?`, 'opp-energy-to');
+      if (!c || !to) continue;
+      this.removeFromZones(c);
+      to.energy.push(c);
+      this.log(`Handheld Fan moves ${c.name} from ${attacker.name} to ${to.name}.`);
+    }
   }
 
   // ------------------------------------------------------------ Knock Outs and Prizes
@@ -1071,6 +1146,11 @@ export class PokemonGame {
         if (byAttack && this.toolName(m) === 'Luxurious Cape' && !this.ruleBox(m.def)) n += 1;
         if (byAttack && ctx.extraPrize.has(m)) n += 1;
         if (byAttack && this.players[ctx.pid].briar && this.isActive(m) && this.isTera(ctx.attacker)) n += 1;
+        // Lillie's Pearl on a Lillie's Pokémon: one fewer Prize card
+        if (byAttack && this.toolName(m) === "Lillie's Pearl" && /^Lillie's /.test(m.name)) {
+          n = Math.max(0, n - 1);
+          this.log(`Lillie's Pearl: ${this.players[taker].name} takes 1 fewer Prize card.`);
+        }
         // Legacy Energy: one fewer Prize card, once per game
         if (byAttack && !this.players[owner].legacyUsed && this.liveEnergy(m, 'Legacy Energy').length) {
           n = Math.max(0, n - 1);
@@ -1147,12 +1227,25 @@ export class PokemonGame {
     p.briar = false;
     // Ignition Energy attached to this player's Pokémon is discarded at the end of their turn
     for (const m of this.inPlay(pid)) for (const c of this.liveEnergy(m, 'Ignition Energy')) { this.discard(c); this.log(`Ignition Energy is discarded from ${m.name}.`); }
+    // Powerglass: the Active Pokémon may get a Basic Energy from the discard pile
+    const a = p.active;
+    if (a && this.toolName(a) === 'Powerglass' && p.discard.some(c => c.def.cat === 'E' && c.def.energy === 'Basic')
+      && await this.confirm(pid, `Powerglass: attach a Basic Energy card from your discard pile to ${a.name}?`, 'powerglass')) {
+      const [c] = await this.chooseCards(pid, p.discard.filter(x => x.def.cat === 'E' && x.def.energy === 'Basic'), { min: 1, max: 1, prompt: `Attach which Basic Energy to ${a.name}?`, from: 'discard', hint: 'attach' });
+      if (c && a.stack.length) await this.attachEnergy(pid, a, c);
+    }
     this.festivalSweep();
     // checkup: both Active Pokémon
     for (const q of [this.players[pid], this.players[this.opp(pid)]]) {
       const m = q.active;
       if (!m) continue;
-      if (m.poisoned) { this.addCounters(m, 1); this.log(`${m.name} takes 10 poison damage.`); }
+      if (m.poisoned) {
+        // Pecharunt's Toxic Subjugation (the opponent's Active Pokémon): 5 more damage counters
+        const o = this.players[this.opp(q.id)].active;
+        const more = o && this.hasAbility(o, 'Toxic Subjugation') ? 5 : 0;
+        this.addCounters(m, 1 + more);
+        this.log(`${m.name} takes ${10 + 10 * more} poison damage.`);
+      }
       if (m.burned) { this.addCounters(m, 2); this.log(`${m.name} takes 20 burn damage.`); if (this.flip(`${m.name} is Burned`)) { m.burned = false; this.log(`${m.name} is no longer Burned.`); } }
       if (m.special === 'asleep' && this.flip(`${m.name} is Asleep`)) { m.special = null; this.log(`${m.name} wakes up.`); }
       if (m.special === 'paralyzed' && q.id === pid) { m.special = null; this.log(`${m.name} is no longer Paralyzed.`); }
