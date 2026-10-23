@@ -36,6 +36,8 @@ const PURPOSE_TITLES = {
   discard: 'Discard', mulliganBottom: 'Mulligan', scryBottom: 'Scry', surveilGrave: 'Surveil', sacrifice: 'Sacrifice', costSac: 'Sacrifice',
   legendKeep: 'Legend rule', crew: 'Crew', searchBattlefield: 'Search your library', searchHand: 'Search your library', search: 'Choose cards',
   digHand: 'Look at the top of your library', dig: 'Look at the top of your library', digBattlefield: 'Look at the top of your library', chooseCard: 'Choose', clone: 'Choose a card to copy',
+  casualty: 'Casualty', emerge: 'Emerge', enlist: 'Enlist', exert: 'Exert', costExile: 'Exile', costExileSameGrave: 'Exile', cipher: 'Cipher', clashBottom: 'Clash',
+  exploreGrave: 'Explore', pile: 'Make two piles', choosePile: 'Choose a pile', openingHand: 'Opening hand', blight: 'Blight', dredge: 'Dredge', cumulativeUpkeepGrave: 'Cumulative upkeep',
 };
 
 export function CardsDialog({ game, req, respond, onHover }) {
