@@ -13,10 +13,12 @@ const setmap = fs.existsSync(mapPath) ? JSON.parse(fs.readFileSync(mapPath, 'utf
 if ([...need].some(s => !setmap[s])) {
   const sets = await api('sets');
   for (const s of sets) {
-    if (!/^(sv|me|swsh|svp|mep|mee|sve)/i.test(s.id) && !/Energ|Promo/i.test(s.name)) continue;
+    if (!/^(sv|me|swsh|svp|mep|mee|sve|30th)/i.test(s.id) && !/Energ|Promo/i.test(s.name)) continue;
     const d = await api('sets/' + s.id);
     const ab = d && d.abbreviation && d.abbreviation.official;
-    if (ab) setmap[ab] = { id: s.id, name: s.name, cards: Object.fromEntries((d.cards || []).map(c => [String(parseInt(c.localId, 10)), c.id])) };
+    // two sets can share an abbreviation (30th Celebration and its Classic Collection): keep the main one
+    const official = (d && d.cardCount && d.cardCount.official) || 0;
+    if (ab && (!setmap[ab] || official > (setmap[ab].official || 0))) setmap[ab] = { id: s.id, name: s.name, official, cards: Object.fromEntries((d.cards || []).map(c => [String(parseInt(c.localId, 10)), c.id])) };
     await sleep(60);
   }
   fs.writeFileSync(mapPath, JSON.stringify(setmap));
