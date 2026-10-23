@@ -1122,7 +1122,8 @@ export class Game {
     const meldPartner = from === 'battlefield' && card.meldedWith != null ? this.cardById(card.meldedWith) : null;
     card.reset();
     card.zcc++;
-    if (isToken && dest !== 'battlefield') {
+    // (a copy of a card being cast — Wondrous Crucible — is a token on the stack, not gone)
+    if (isToken && dest !== 'battlefield' && !(dest === 'stack' && card.isSpellCopy)) {
       card.zone = 'gone';
       this.cards.delete(card.id);
       this.recordMove(card, lki, from, dest, opts, ZONE_NAME);

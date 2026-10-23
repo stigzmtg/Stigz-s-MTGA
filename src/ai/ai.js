@@ -876,6 +876,7 @@ export class AIAgent {
 
   number(game, pid, req) {
     if (req.purpose === 'readAhead') return req.min;
+    if (req.purpose === 'divide') return Math.max(req.min, Math.min(req.max, Math.floor((req.left || req.max) / (req.targetsLeft || 1))));
     if (req.purpose === 'chorus') return Math.min(req.max, game.step === 'main2' ? req.max : Math.floor(req.max / 2));
     if (req.purpose === 'xValue' && req.xCost === 'PayLife') {
       const opp = game.battlefield.filter(c => c.controller !== pid && game.chars(c).types.has('Creature'));
@@ -902,9 +903,13 @@ export class AIAgent {
         const saved = root.x;
         let pickX = null;
         try {
-          for (let x = req.max; x >= req.min && pickX == null; x--) {
-            root.x = x;
-            if (xTargets.every(s => { const spec = targetSpec(game, s); const sent = this.sentiment(s); return spec.min === 0 || targetCandidates(game, s, spec).some(c => { const mine = c.isPlayer ? c.id === pid : ctrlOf(game, c) === pid; return sent === 'harm' ? !mine : mine; }); })) pickX = x;
+          // first an X with a target worth it (ours to help, theirs to harm), then any X with a legal target
+          for (const picky of [true, false]) {
+            for (let x = req.max; x >= req.min && pickX == null; x--) {
+              root.x = x;
+              if (xTargets.every(s => { const spec = targetSpec(game, s); const sent = this.sentiment(s); return spec.min === 0 || targetCandidates(game, s, spec).some(c => { if (!picky) return true; const mine = c.isPlayer ? c.id === pid : ctrlOf(game, c) === pid; return sent === 'harm' ? !mine : mine; }); })) pickX = x;
+            }
+            if (pickX != null) break;
           }
         } finally { root.x = saved; }
         if (pickX != null) return pickX;

@@ -1587,4 +1587,23 @@ test('Ninjutsu only with an unblocked attacker after blocks; commander ninjutsu 
   expect(y.zone === 'battlefield' && out.zone === 'hand' && T.game.isAttacking(y), 'Yuriko is attacking, the Outcast returned');
 });
 
+test('Divided as you choose: the caster splits the damage (Fiery Justice)', async T => {
+  const angel = await T.put(1, 'Serra Angel'), elf = await T.put(1, 'Llanowar Elves');
+  T.a.on('targets', req => req.cands.filter(r => r === refOf(angel) || r === refOf(elf)));
+  const asked = [];
+  T.a.on('divide', req => { asked.push(req); return req.max; });
+  await T.cast('Fiery Justice');
+  expect(asked.length === 1 && asked[0].min === 1 && asked[0].max === 4, `one split prompt, 1-4 (${asked.map(r => r.min + '-' + r.max)})`);
+  expect(angel.zone === 'graveyard' && elf.zone === 'graveyard', `four to the 4/4 angel, one to the elf (${angel.zone}, ${elf.zone})`);
+});
+
+test('A cast copy of a card (Wondrous Crucible) stays a registered object on the stack and the battlefield', async T => {
+  await T.put(0, 'Wondrous Crucible');
+  await T.put(0, 'Serra Angel', 'library'); await T.put(0, 'Serra Angel', 'library');
+  T.a.on('castFree', () => true);
+  await T.game.runStep('end'); await T.resolve();
+  const tok = T.tokens(0).find(t => T.game.name(t) === 'Serra Angel');
+  expect(tok && T.game.cardById(tok.id) === tok, `the token copy is registered (${!!tok})`);
+});
+
 process.exit(await run(tests) ? 1 : 0);

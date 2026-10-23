@@ -461,6 +461,8 @@ function cardProp(game, card, ch, prop, ctx) {
     return !!game.combat && !!a && game.combat.blockers.get(card.id) === a.id;
   }
   if (prop === 'otherAbility') { const r = ctx.sa && (ctx.sa.root ? ctx.sa.root() : ctx.sa); return !(r && r.stackItem === card); }
+  // two-word creature types ("Time Lord")
+  if (/^[A-Z][a-zA-Z'-]* [A-Z][a-zA-Z'-]*$/.test(prop)) return hasType(game, ch, prop, card);
   unknownProps.add(prop);
   return false;
 }

@@ -108,7 +108,11 @@ function checkInvariants(game, initial, atPriority) {
     if (c.zone !== z) fail('state', `${c.def.name} listed in ${z} but its zone is ${c.zone}`);
     if (c.owner !== p.id) fail('state', `${c.def.name} in someone else's ${z}`);
   }
-  for (const c of game.battlefield) { place(c, 'battlefield'); if (c.zone !== 'battlefield') fail('state', `${c.def.name} on the battlefield list with zone ${c.zone}`); }
+  for (const c of game.battlefield) {
+    place(c, 'battlefield');
+    if (c.zone !== 'battlefield') fail('state', `${c.def.name} on the battlefield list with zone ${c.zone}`);
+    if (game.cardById(c.id) !== c) { fail('state', `${c.def.name}${c.token ? ' (token)' : ''} is on the battlefield but not registered in the game (id ${c.id} → ${game.cardById(c.id) ? game.cardById(c.id).def.name : 'nothing'})`); if (flags.verbose && !cur.dumped) { cur.dumped = true; console.log(game.logs.slice(-40).map(l => `    [T${l.turn}] ${l.text}`).join('\n')); } }
+  }
   for (const it of game.stack) if (it.card && it.kind === 'spell') { place(it.card, 'stack'); if (it.card.zone !== 'stack') fail('state', `stack spell ${it.card.def.name} has zone ${it.card.zone}`); }
   const counts = game.players.map(() => 0);
   for (const c of game.cards.values()) {
@@ -150,6 +154,15 @@ function checkInvariants(game, initial, atPriority) {
 }
 
 // ------------------------------------------------------------------ legality oracle for offered actions
+const PHASE_ORDER = ['untap', 'upkeep', 'draw', 'main1', 'beginCombat', 'declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage', 'endCombat', 'main2', 'end', 'cleanup'];
+const PHASE_NAME = { Untap: 'untap', Upkeep: 'upkeep', Draw: 'draw', Main1: 'main1', BeginCombat: 'beginCombat', 'Declare Attackers': 'declareAttackers', 'Declare Blockers': 'declareBlockers', 'First Strike Damage': 'firstStrikeDamage', 'Combat Damage': 'combatDamage', EndCombat: 'endCombat', Main2: 'main2', 'End of Turn': 'end', Cleanup: 'cleanup' };
+function phaseIn(game, spec) {
+  const at = PHASE_ORDER.indexOf(game.step);
+  return spec.split(',').some(part => {
+    if (part.includes('->')) { const [a, b] = part.split('->').map(x => PHASE_ORDER.indexOf(PHASE_NAME[x.trim()])); return a >= 0 && b >= 0 && at >= a && at <= b; }
+    return PHASE_NAME[part.trim()] === game.step;
+  });
+}
 function hasteLike(game, c) {
   return game.hasKeyword(c, 'Haste') || game.activeStatics('ActivateAbilityAsIfHaste').some(s => matchValid(game, c, s.p.ValidCard || 'Card', s.ctx));
 }
@@ -205,6 +218,8 @@ function oracle(game, pid, actions) {
       if ((ap.SorcerySpeed === 'True' || ap.IsEquip === 'True') && !sorcery) fail('oracle', `sorcery-speed ability offered at instant speed (${nm}: ${a.label})`);
       if (ap.ActivationLimit && /^\d+$/.test(ap.ActivationLimit) && (card.abilityUses[abil.key] || 0) >= +ap.ActivationLimit) fail('oracle', `ability offered past its activation limit (${nm}: ${a.label})`);
       if (ap.PlayerTurn === 'True' && game.activePlayer !== pid) fail('oracle', `"only during your turn" ability offered on another turn (${nm})`);
+      if (ap.OpponentTurn === 'True' && game.activePlayer === pid) fail('oracle', `"only during an opponent's turn" ability offered on your turn (${nm})`);
+      if (ap.ActivationPhases && !phaseIn(game, ap.ActivationPhases)) fail('oracle', `ability limited to ${ap.ActivationPhases} offered during ${game.step} (${nm})`);
       for (const pt of cost.parts) {
         if (pt.type === 'PayLife' && /^\d+$/.test(pt.amount) && p.life < +pt.amount) fail('oracle', `ability offered that costs ${pt.amount} life with ${p.life} life (${nm})`);
         if ((pt.type === 'Sac' || pt.type === 'Exile' || pt.type === 'Discard' || pt.type === 'Return') && /CARDNAME|Card\.Self/.test(pt.valid || '') && pt.type !== 'Discard' && card.zone !== 'battlefield' && pt.type !== 'Exile') fail('oracle', `self-sacrifice ability offered off the battlefield (${nm})`);
