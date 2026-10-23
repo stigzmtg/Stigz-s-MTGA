@@ -24,6 +24,17 @@ export function createStore() {
   };
 }
 
+// a pixel length from a CSS custom property, which may be calc(84px * 1.2) on big screens
+export function cssPx(el, name, fallback) {
+  const v = getComputedStyle(el).getPropertyValue(name).trim();
+  const m = /^calc\(\s*([\d.]+)px\s*\*\s*([\d.]+)\s*\)$/.exec(v);
+  if (m) return +m[1] * +m[2];
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+// the big-screen size scale (1 on laptops)
+export const uiScale = () => (typeof document === 'undefined' ? 1 : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--s')) || 1);
+
 export async function fetchJSON(url, onProgress) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);

@@ -292,7 +292,7 @@ export function TokenDialog({ game, onMake, onClose }) {
       <h2>Create tokens</h2>
       <div className="sub">For effects the engine doesn't automate.</div>
       <div className="numrow"><span>Amount</span><button className="btn sm" onClick={() => setN(Math.max(1, n - 1))}>−</button><span className="val" style={{ fontSize: 22 }}>{n}</span><button className="btn sm" onClick={() => setN(n + 1)}>+</button></div>
-      <div className="optlist" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
+      <div className="optlist" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(calc(150px * var(--s)), 1fr))' }}>
         {TOKENS.filter(([k]) => game.db.rawTokens[k]).map(([k, l]) => <button key={k} className="btn" onClick={() => onMake(k, n)}>{l}</button>)}
       </div>
       <div className="filters"><label htmlFor="custom-pt">Custom creature</label><input id="custom-pt" className="input" style={{ width: 80 }} value={pt} onChange={e => setPt(e.target.value)} /><button className="btn" onClick={() => onMake('custom:' + pt, n)}>Create</button></div>

@@ -125,7 +125,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
         <div className="setup">
           <section className="panel" aria-label="Selected deck">
             <div className="panel-head"><h2>{deck.name}</h2>{deck.custom && onBuild ? <button className="btn sm" onClick={() => onBuild(deck.id)}>Edit this deck</button> : null}</div>
-            <div className="commander-showcase bigcard" style={{ '--cw': deck.commanders.length > 1 ? '190px' : '250px' }}>
+            <div className="commander-showcase bigcard" style={{ '--cw': deck.commanders.length > 1 ? 'calc(190px * var(--s))' : 'calc(250px * var(--s))' }}>
               {(() => {
                 const imgs = imagesOk ? (deck.custom ? deck.commanders.map(n => cardImage(n)) : lobbyImages(deck.id)) : [];
                 return deck.commanders.map((n, i) => { const d = db.get(n); return d ? <div className="cardwrap" key={n}><CardFace v={{ ...viewOfDef(d), img: imgs[i] || null }} size="big" /></div> : null; });

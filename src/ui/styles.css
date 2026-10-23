@@ -1,5 +1,6 @@
 /* Stigz’s TCG Arena — a felt-table look. Layout: board (opponents / prompt / you) + side rail (preview, stack, log). */
 :root {
+  --s: 1;   /* size scale for big screens (see below); tools/build.mjs multiplies pixel sizes by it */
   --felt: #12291f;
   --felt-2: #183627;
   --felt-deep: #0b1913;
@@ -726,3 +727,10 @@ kbd { font: 600 12px/1 'Alegreya Sans', sans-serif; padding: 2px 6px; border-rad
   .builder-side { position: static; }
   .builder-results { max-height: 50vh; }
 }
+
+/* bigger screens: everything a little bigger (text, buttons, panels, cards). Laptops stay at 1. */
+@media (min-width: 1600px) and (min-height: 820px) { :root { --s: 1.1; } }
+@media (min-width: 1880px) and (min-height: 900px) { :root { --s: 1.2; } }
+@media (min-width: 2200px) and (min-height: 1100px) { :root { --s: 1.35; } }
+@media (min-width: 2500px) and (min-height: 1250px) { :root { --s: 1.5; } }
+@media (min-width: 3200px) and (min-height: 1650px) { :root { --s: 1.8; } }

@@ -3,6 +3,7 @@
 import { CardFace, CardBack, viewOf, ManaCost, Pip, RulesText } from './cardview.jsx';
 import { imageOf } from './images.js';
 import { EmoteBubble } from './emotes.jsx';
+import { cssPx, uiScale } from './common.js';
 
 const { useState, useEffect, useLayoutEffect, useRef } = React;
 
@@ -246,7 +247,7 @@ export function Mat({ game, pid, ctx, side, compact }) {
     if (s.sig === sig && s.done) return;
     s.sig = sig; s.done = true;
     const mat = el.parentNode;
-    const base = parseFloat(getComputedStyle(mat).getPropertyValue('--cw-base')) || 80;
+    const base = cssPx(mat, '--cw-base', 80);
     const cs = getComputedStyle(el);
     const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
     const tried = new Map();
@@ -261,7 +262,8 @@ export function Mat({ game, pid, ctx, side, compact }) {
       return ok;
     };
     // the answer lies in [lo, hi]; the smallest size is used even if nothing fits
-    let lo = Math.round(base * 0.55), hi = Math.round(base * 1.5);
+    // big screens have room for bigger cards
+    let lo = Math.round(base * 0.55), hi = Math.round(base * (uiScale() >= 1.2 ? 1.75 : 1.5));
     const w0 = Math.min(hi, Math.max(lo, Math.round(base * fit)));
     // a sparse battlefield takes the largest size at once
     if (fits(w0)) { lo = w0; if (fits(hi)) lo = hi; else { hi--; for (let step = 1; lo < hi; step *= 2) { const t = Math.min(hi, lo + step); if (fits(t)) lo = t; else { hi = t - 1; break; } } } }
@@ -332,7 +334,7 @@ export function Hand({ game, pid, ctx }) {
     return () => ro.disconnect();
   }, []);
   const n = p.hand.length;
-  const cw = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hand-w')) || 112;
+  const cw = cssPx(document.documentElement, '--hand-w', 112);
   const gap = 8;
   // whole pixels everywhere so card images and text are never resampled at a fractional offset
   const overlap = n > 1 && n * (cw + gap) > w ? Math.floor(Math.max(-cw * 0.72, (w - n * cw) / (n - 1))) : gap;

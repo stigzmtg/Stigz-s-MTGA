@@ -33,7 +33,10 @@ await build({
   legalComments: 'none',
 });
 
-const css = fs.readFileSync('src/ui/generated/symbols.css', 'utf8') + '\n' + fs.readFileSync('src/ui/styles.css', 'utf8') + '\n' + fs.readFileSync('src/ptcg/ui/ptcg.css', 'utf8') + '\n' + fs.readFileSync('src/ui/home.css', 'utf8');
+// bigger screens get a bigger table: every pixel size of 3px or more in our stylesheets is multiplied by --s, which
+// styles.css raises at wide, tall windows (1 on laptops). Media query conditions and url(...) contents stay as they are.
+const scalePx = css => css.replace(/(@media[^{]*\{)|(url\([^)]*\))|(\d*\.?\d+)px\b/g, (m, media, url, num) => (media || url || parseFloat(num) < 3 ? m : `calc(${num}px * var(--s))`));
+const css = fs.readFileSync('src/ui/generated/symbols.css', 'utf8') + '\n' + scalePx(fs.readFileSync('src/ui/styles.css', 'utf8') + '\n' + fs.readFileSync('src/ptcg/ui/ptcg.css', 'utf8') + '\n' + fs.readFileSync('src/ui/home.css', 'utf8'));
 const fonts = 'https://fonts.googleapis.com/css2?family=Alegreya+Sans+SC:wght@500;700;800&family=Alegreya+Sans:wght@400;600;700;800&family=Alegreya:ital,wght@0,400;0,500;1,400&family=Cinzel:wght@600;700&display=swap';
 const react = 'https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js';
 const reactDom = 'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js';
