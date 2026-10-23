@@ -1771,6 +1771,17 @@ test('Ninja Pizza: "at the beginning of your second main phase" triggers in main
   T.game.fire('Phase', { Phase: 'Main2', Player: 0 }); await T.resolve();
   expect(T.tokens(0).length === n0 + 1, `main 2: a Food (${T.tokens(0).length - n0})`);
 });
+test('Haldan: an exiled red card with fetch counters is cast with blue mana ("mana of any color")', async T => {
+  for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
+  const haldan = await T.put(0, 'Haldan, Avid Arcanist');
+  const isl = await T.put(0, 'Island');
+  const bolt = await T.put(0, 'Lightning Bolt', 'exile'); bolt.exiledWith = haldan.id; bolt.counters.FETCH = 1;
+  T.noMana(0); T.game.priority = 0; T.game.touch();
+  const opts = castableOptions(T.game, 0, bolt);
+  expect(opts.length > 0, 'castable from exile with an Island');
+  const ok = await castSpell(T.game, 0, bolt, { optionKey: opts[0].key }); await T.resolve();
+  expect(ok && isl.tapped && bolt.zone !== 'exile', `cast (${ok}, ${isl.tapped}, ${bolt.zone})`);
+});
 test("Nexos: basic lands' {C}{C} pays for {X} costs only", async T => {
   for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
   await T.put(0, 'Nexos');

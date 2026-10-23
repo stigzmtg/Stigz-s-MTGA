@@ -1119,7 +1119,7 @@ function mayPlayFrom(game, pid, card) {
     const player = st.host.isEffect ? st.host.controller : who;
     if (player !== pid && !/Player|Opponent/.test(p.MayPlayPlayer || '')) continue;
     if (p.MayPlayLimit && (st.host.mayPlayUses || 0) >= +p.MayPlayLimit) continue;
-    return { st, without: p.MayPlayWithoutManaCost === 'True', ignoreType: p.MayPlayIgnoreType === 'True' };
+    return { st, without: p.MayPlayWithoutManaCost === 'True', ignoreType: p.MayPlayIgnoreType === 'True', ignoreColor: p.MayPlayIgnoreColor === 'True' };
   }
   return null;
 }
@@ -1346,6 +1346,19 @@ function spellCost(game, pid, card, opt, sa) {
   mana.generic += raise;
   for (const col of colorReduce) { if (mana.colored[col] > 0) mana.colored[col]--; else if (mana.generic > 0) mana.generic--; }
   mana.generic = Math.max(0, mana.generic - reduce);
+  // "you may spend mana as though it were mana of any color / type to cast it" (Brainstealer Dragon,
+  // Gonti, Daxos, ...): each colored symbol takes any color (any type: anything)
+  if (opt.mayPlay && (opt.mayPlay.ignoreColor || opt.mayPlay.ignoreType)) {
+    const ANY = ['W', 'U', 'B', 'R', 'G'];
+    for (const col of ANY) {
+      const n = mana.colored[col] || 0;
+      if (!n) continue;
+      mana.colored[col] = 0;
+      if (opt.mayPlay.ignoreType) mana.generic += n; else for (let i = 0; i < n; i++) mana.hybrid = [...mana.hybrid, ANY];
+    }
+    if (opt.mayPlay.ignoreType) { mana.generic += mana.hybrid.length; mana.hybrid = []; }
+    else mana.hybrid = mana.hybrid.map(h => [...new Set([...h, ...ANY])]);
+  }
   return { mana, extra };
 }
 
