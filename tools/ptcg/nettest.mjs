@@ -1,12 +1,14 @@
 // Headless online-play test for Pokémon battles: a host and a guest share an in-memory room and play one battle in
 // lockstep (an AI clicks for each person). A spectator joins mid-battle and catches up from history; the guest
 // "reloads" mid-battle and replays from storage. TAKEOVER=1: the guest never comes back and the host's AI takes over.
+// CHAOS=1: the host and the guest click anything the screen allows, at random (tools/ptcg/chaos.mjs), not the AI.
 // Usage: node tools/ptcg/nettest.mjs [games=4] [seed=1]
 import fs from 'node:fs';
 import { PokemonGame } from '../../src/ptcg/game.js';
 import { PokemonAI } from '../../src/ptcg/ai.js';
 import { Lockstep, LocalSeatAgent, RemoteSeatAgent } from '../../src/net/lockstep.js';
 import { MockHub } from '../lib/mockroom.mjs';
+import { ChaosAgent } from './chaos.mjs';
 
 const [G = 4, SEED = 1] = process.argv.slice(2).map(Number);
 const db = JSON.parse(fs.readFileSync('data/ptcg/cards.json', 'utf8'));
@@ -26,7 +28,7 @@ function client(hub, { cid, nick, cfg, seat, storage }) {
   const net = new Lockstep({ channel: ch, cid, nick, cfg, seat, storage });
   const isHost = cfg.host === cid;
   // a person takes a moment over each decision, so the battle is still going when the guest reloads
-  const ai = new PokemonAI(), slow = { ask: async (g, pid, req) => { await new Promise(r => setTimeout(r, 12)); return ai.ask(g, pid, req); } };
+  const ai = process.env.CHAOS ? new ChaosAgent(cfg.seed * 7 + seat + 1) : new PokemonAI(), slow = { ask: async (g, pid, req) => { await new Promise(r => setTimeout(r, 12)); return ai.ask(g, pid, req); } };
   const agents = cfg.seats.map((s, pid) => pid === seat ? new LocalSeatAgent(net, slow) : new RemoteSeatAgent(net, null, isHost ? new PokemonAI() : null));
   // each browser names its own player "You": names only appear in text
   const game = new PokemonGame({ db, seed: cfg.seed, players: cfg.seats.map((s, pid) => ({ name: pid === seat ? 'You' : s.n, deck: byId[s.d], agent: agents[pid], human: true })) });

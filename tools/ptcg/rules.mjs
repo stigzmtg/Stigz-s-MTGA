@@ -1121,6 +1121,99 @@ test('Rocky Fighting Energy keeps attack effects off the {F} Pokémon it is atta
   expect(la.special === 'confused', 'a {P} Pokémon is not protected');
 });
 
+// ---- Found by chaos play (tools/ptcg/invariants.mjs --chaos): cards that could be played to do nothing at all
+test('Deck-only Trainers, Abilities and Stadium actions are not offered with an empty deck', async T => {
+  T.mon(0, 'Genesect ex', { active: true });   // Metallic Signal
+  T.mon(0, 'Budew');
+  T.mon(1, 'Budew', { active: true });
+  const pad = T.hand(0, 'Poké Pad'), pr = T.hand(0, "Professor's Research");
+  T.g.stadium = { card: T.card(1, 'Artazon'), owner: 1 };
+  const acts = () => T.g.legalActions(0);
+  expect(acts().some(a => a.card === pad.id), 'Poké Pad with a deck');
+  expect(acts().some(a => a.t === 'ability' && a.name === 'Metallic Signal'), 'Metallic Signal with a deck');
+  expect(acts().some(a => a.t === 'stadium'), "Artazon's action with a deck");
+  T.A.deck = [];
+  expect(!acts().some(a => a.card === pad.id), 'no Poké Pad with an empty deck');
+  expect(!acts().some(a => a.t === 'ability' && a.name === 'Metallic Signal'), 'no Metallic Signal with an empty deck');
+  expect(!acts().some(a => a.t === 'stadium'), "no Artazon's action with an empty deck");
+  expect(acts().some(a => a.card === pr.id), "Professor's Research still playable: it discards the hand");
+  T.A.hand = [pr];
+  expect(!acts().some(a => a.card === pr.id), "no Professor's Research with nothing in hand or deck");
+});
+test('A "when you play this Pokémon" Ability that searches the deck is not offered with an empty deck', async T => {
+  T.mon(0, 'Budew', { active: true }); T.mon(1, 'Budew', { active: true });
+  const m = T.hand(0, 'Meowth ex');            // Last-Ditch Catch: a Supporter from the deck
+  let asked = 0;
+  T.a.on('confirm', () => { asked++; return true; });
+  T.A.deck = [];
+  await T.play(m);
+  expect(T.A.bench.some(x => x.name === 'Meowth ex'), 'Meowth ex benched');
+  expect(asked === 0, `no "Use Last-Ditch Catch?" question (${asked})`);
+});
+test("Team Rocket's Ariana is not playable with 5 or more other cards in hand", async T => {
+  T.mon(0, 'Budew', { active: true }); T.mon(1, 'Budew', { active: true });
+  const ar = T.hand(0, "Team Rocket's Ariana");
+  for (let i = 0; i < 5; i++) T.hand(0, 'Psychic Energy');
+  expect(!T.g.legalActions(0).some(a => a.card === ar.id), 'not with 5 other cards in hand');
+  T.A.hand.pop();
+  await T.play(ar);
+  expect(T.A.hand.length === 5, `draws up to 5 (${T.A.hand.length})`);
+});
+test("Special Red Card needs a hand to disrupt; Professor Turo's Scenario needs a Benched Pokémon", async T => {
+  T.mon(0, 'Budew', { active: true }); T.mon(1, 'Budew', { active: true });
+  T.B.prizes.splice(0, 3);
+  const red = T.hand(0, 'Special Red Card'), turo = T.hand(0, "Professor Turo's Scenario");
+  const acts = () => T.g.legalActions(0);
+  expect(!acts().some(a => a.card === red.id), 'no Special Red Card against an empty hand');
+  T.hand(1, 'Psychic Energy');
+  expect(acts().some(a => a.card === red.id), 'Special Red Card against a hand');
+  expect(!acts().some(a => a.card === turo.id), "no Turo's Scenario with only an Active Pokémon");
+  T.mon(0, 'Solrock');
+  expect(acts().some(a => a.card === turo.id), "Turo's Scenario with a Benched Pokémon");
+});
+test('A main-phase answer that is not one of the choices asks again instead of ending the turn', async T => {
+  T.mon(0, 'Budew', { active: true }); T.mon(1, 'Budew', { active: true });
+  const e = T.hand(0, 'Psychic Energy');
+  let n = 0;
+  T.a.on('main', req => { n++; if (n === 1) return { t: 'attack', mon: 999, name: 'Nothing' }; if (n === 2) return req.actions.find(a => a.t === 'energy'); return { t: 'end' }; });
+  T.b.on('main', () => ({ t: 'end' }));
+  T.g.turn = 2; T.g.current = 1;
+  T.g.maxTurns = 3;
+  await T.g.takeTurn();
+  expect(n === 3, `asked again after the odd answer (${n} questions)`);
+  expect(T.A.active.energy.includes(e), 'the Energy was attached after the odd answer');
+});
+
+test('A Supporter backed out of (nothing chosen, nothing happened) goes back to the hand and is not used up', async T => {
+  T.mon(0, 'Budew', { active: true }); T.mon(1, 'Budew', { active: true });
+  const gw = T.hand(0, 'Gwynn'); T.hand(0, 'Budew');
+  T.a.on('discard-draw', () => []);
+  const hand = T.A.hand.length;
+  await T.play(gw);
+  expect(T.A.hand.includes(gw), 'Gwynn is back in hand');
+  expect(T.A.hand.length === hand && !T.A.discard.includes(gw), `nothing discarded or drawn (${T.A.hand.length})`);
+  expect(!T.A.supporter, 'no Supporter used this turn');
+  expect(T.g.legalActions(0).some(a => a.card === gw.id), 'Gwynn can still be played');
+});
+test('An Ability that showed hidden cards is used up even when nothing was taken (no looking again and again)', async T => {
+  const met = T.mon(0, 'Metang', { active: true }); T.mon(1, 'Budew', { active: true });
+  T.A.deck = [T.card(0, 'Metal Energy')];
+  T.a.on('attach', () => []);
+  await T.ability(met, 'Metal Maker');
+  expect(met.energy.length === 0, 'nothing attached');
+  expect(!T.g.legalActions(0).some(a => a.t === 'ability' && a.name === 'Metal Maker'), 'Metal Maker used up: the top card was seen');
+});
+test('An empty answer to a question that needs a card still does the effect (a Stadium action is not given back)', async T => {
+  T.mon(0, 'Budew', { active: true }); T.mon(1, 'Budew', { active: true });
+  T.g.stadium = { card: T.card(1, 'Academy at Night'), owner: 1 };
+  T.hand(0, 'Psychic Energy');
+  const act = () => T.g.legalActions(0).find(a => a.t === 'stadium');
+  expect(act(), "Academy at Night's action offered");
+  T.a.on('topdeck', () => []);
+  await T.g.doAction(0, act());
+  expect(T.A.deck[0].name === 'Psychic Energy', 'a card went on top (Academy at Night needs exactly 1)');
+  expect(!act(), 'and the action is used up');
+});
 let pass = 0, fail = 0;
 for (const t of tests) {
   if (ONLY && !ONLY.test(t.name)) continue;
