@@ -146,6 +146,7 @@ export class Card {
     this.kicked = 0;
     this.xPaid = 0;
     this.castFrom = null;
+    this.castMayPlayHost = null;
     this.castSA = null;
     this.timestamp = newTimestamp(this.game);
     this.regenShields = 0;

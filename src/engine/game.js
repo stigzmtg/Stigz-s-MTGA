@@ -1046,7 +1046,7 @@ export class Game {
       counters: { ...card.counters }, tapped: card.tapped, token: card.token, isCommander: card.isCommander,
       remembered: [...card.remembered], imprinted: [...card.imprinted], chosen: { ...card.chosen }, attachedTo: card.attachedTo,
       zone: card.zone, zcc: card.zcc, damage: card.damage, timestamp: card.timestamp, xPaid: card.xPaid, kicked: card.kicked, faceDown: card.faceDown,
-      castFrom: card.castFrom, exiledWith: card.exiledWith, face: card.face, faceDef: card.faceDef,
+      castFrom: card.castFrom, castMayPlayHost: card.castMayPlayHost, exiledWith: card.exiledWith, face: card.face, faceDef: card.faceDef,
       wasAttacking: this.isAttacking(card), wasBlocking: this.isBlocking(card),
       attachments: this.battlefield.filter(a => a.attachedTo === card.id).map(a => a.id),
       blitzed: card.blitzed, evoked: card.evoked, squad: card.squad, renowned: card.renowned, monstrous: card.monstrous, championed: card.championed,

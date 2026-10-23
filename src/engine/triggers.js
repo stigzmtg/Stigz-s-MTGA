@@ -189,7 +189,7 @@ export function triggerMatches(game, p, host, rp, ctx) {
     }
     case 'ManaExpend': return (!p.Player || vc(game, playerObj(game, rp.Player), p.Player, ctx)) && (!p.Amount || +p.Amount === rp.Amount);
     case 'CounterPlayerAddedAll': return true;
-    case 'LandPlayed': return vc(game, rp.Card, p.ValidCard, ctx);
+    case 'LandPlayed': return vc(game, rp.Card, p.ValidCard, ctx) && (!p.ValidSA || validSA(game, rp, p.ValidSA, ctx));
     case 'TokenCreated': case 'TokenCreatedOnce': {
       if (!vc(game, rp.Card, p.ValidToken || p.ValidCard, ctx)) return false;
       if (p.ValidPlayer && !vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx)) return false;
@@ -235,7 +235,8 @@ function validSA(game, rp, spec, ctx) {
     const s = part.trim();
     if (s === 'Spell' && rp.IsSpell) return true;
     if (s === 'Activated' && !rp.IsSpell && !rp.IsTrigger) return true;
-    if (s === 'Spell.MayPlaySource' && rp.IsSpell && rp.MayPlay) return true;
+    // played thanks to this source's "you may play/cast ... from your graveyard" (Serra Paragon)
+    if (/^(Spell|SpellAbility)\.MayPlaySource$/.test(s)) { if ((rp.IsSpell || s.startsWith('SpellAbility')) && rp.MayPlay && (rp.MayPlayHost == null || !ctx.host || rp.MayPlayHost === ctx.host.id)) return true; continue; }
     if (s.startsWith('Spell.') && rp.IsSpell) {
       const prop = s.slice(6);
       if (prop === 'Flashback' && rp.AltCost === 'Flashback') return true;

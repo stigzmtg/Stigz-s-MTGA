@@ -417,6 +417,8 @@ function cardProp(game, card, ch, prop, ctx) {
   if ((m = prop.match(/^Devotion/))) return false;
   if ((m = prop.match(/^namedCard$/))) return !!host && host.chosen && host.chosen.name === ch.name;
   if ((m = prop.match(/^ExiledWith(Source|Effect)?$/))) return !!host && card.exiledWith === host.id;
+  // "Card.CastSa Spell.MayPlaySource": cast thanks to this source's may-play permission (Jaya's emblem, Edgar)
+  if (prop === 'CastSa Spell.MayPlaySource') return card.castMayPlayHost != null && (!host || card.castMayPlayHost === host.id);
   // "Card.TriggeredNewCard", "Card.TriggeredSources": the object(s) the trigger refers to
   if (/^Triggered\w+$/.test(prop)) return resolveDefined(game, prop, ctx).some(x => x && !x.isPlayer && x.id === card.id);
   if ((m = prop.match(/^(\w+)Ctrl$/))) {

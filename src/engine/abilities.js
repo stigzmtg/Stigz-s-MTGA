@@ -1449,7 +1449,7 @@ export async function playLand(game, pid, card, action) {
   if (opt.mayPlay && opt.mayPlay.st) opt.mayPlay.st.host.mayPlayUses = (opt.mayPlay.st.host.mayPlayUses || 0) + 1;
   game.log(`${p.name} plays ${card.def.faces[opt.face].name}.`, { type: 'land', cardId: card.id });
   await game.moveCard(card, 'battlefield', { controller: pid, face: opt.face, silent: true });
-  game.fire('LandPlayed', { Card: card, Player: pid });
+  game.fire('LandPlayed', { Card: card, Player: pid, MayPlay: !!opt.mayPlay, MayPlayHost: opt.mayPlay && opt.mayPlay.st ? opt.mayPlay.st.host.id : null });
   return true;
 }
 
@@ -1737,6 +1737,8 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
   card.controller = pid;
   card.face = opt.face || 0;
   card.castFrom = fromZone;
+  // cast thanks to a "you may cast ... from your graveyard" permission: whose (Jaya's emblem, Edgar, Serra Paragon)
+  card.castMayPlayHost = opt.mayPlay && opt.mayPlay.st ? opt.mayPlay.st.host.id : null;
   if (opt.faceDown) card.faceDown = true;
   if (sa.promisedGift != null) card.promisedGift = sa.promisedGift;
   if (opt.altCost === 'Flashback' || opt.altCost === 'Harmonize' || (opt.altCost === 'Escape' && !faceIsPermanent(face))) card.mustBeExiled = true;
@@ -1751,7 +1753,7 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
   const rec = { lki: game.makeLKI(card), controller: pid };
   game.turnState.spellsCast.push(rec);
   game.players[pid].spellsCastThisTurn.push(rec);
-  game.fire('SpellCast', { Card: card, Player: pid, IsSpell: true, StackItem: item, CastFrom: fromZone === 'hand' ? 'hand' : fromZone, AltCost: opt.altCost, MayPlay: !!opt.mayPlay, Targets: sa.chain().flatMap(s => s.targets), SpellAbility: sa });
+  game.fire('SpellCast', { Card: card, Player: pid, IsSpell: true, StackItem: item, CastFrom: fromZone === 'hand' ? 'hand' : fromZone, AltCost: opt.altCost, MayPlay: !!opt.mayPlay, MayPlayHost: card.castMayPlayHost, Targets: sa.chain().flatMap(s => s.targets), SpellAbility: sa });
   // casualty / replicate: "when you cast this spell, copy it ..." (you may choose new targets for the copies)
   const copies = (sa.casualtySac ? 1 : 0) + (sa.replicated || 0);
   if (copies) {

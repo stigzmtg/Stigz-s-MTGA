@@ -1,7 +1,7 @@
 // Behavioural tests for rules features added to the engine (Graft, Gift, Must Block, Cipher, ...):
 // set up a board, use the card, assert the outcome. Usage: node tools/mechanics.mjs [name-filter]
 import { setup, expect, run, db } from './lib/testkit.mjs';
-import { castSpell, getActions, refOf, activatedAbilities, castableOptions, activateAbility } from '../src/engine/abilities.js';
+import { castSpell, getActions, refOf, activatedAbilities, castableOptions, activateAbility, playLand, spellOptions } from '../src/engine/abilities.js';
 import * as combat from '../src/engine/combat.js';
 import { calcCtx } from '../src/engine/filters.js';
 import { sanitizeAnswer } from '../src/engine/game.js';
@@ -1672,6 +1672,33 @@ test('Demonic Covenant: sacrificed when the two milled cards share all their car
 test("Uro is sacrificed when it enters unless it escaped (SacValid$ Self)", async T => {
   const uro = await T.cast("Uro, Titan of Nature's Wrath");
   expect(uro.zone === 'graveyard', `cast from hand: sacrificed (${uro.zone})`);
+});
+test("Jaya's emblem: an instant cast from the graveyard is exiled, one cast from hand isn't", async T => {
+  const jaya = await T.put(0, 'Jaya Ballard'); jaya.counters.LOYALTY = 8;
+  await T.activate(jaya, 0, a => a.parsed.p.Ultimate === 'True');
+  const b1 = await T.cast('Lightning Bolt', 0, { action: {} });
+  expect(b1.zone === 'graveyard', `cast from hand: graveyard (${b1.zone})`);
+  T.mana(0); T.game.priority = 0;
+  const opt = spellOptions(T.game, 0, b1).find(o => o.mayPlay);
+  expect(!!opt, 'castable from the graveyard with the emblem');
+  const ok = await castSpell(T.game, 0, b1, { optionKey: opt.key }); await T.resolve();
+  expect(ok && b1.zone === 'exile', `cast from graveyard: exiled (${ok}, ${b1.zone})`);
+});
+test('Serra Paragon: only the land played from the graveyard gets "exile it and gain 2 life"', async T => {
+  await T.put(0, 'Serra Paragon');
+  T.game.priority = 0; T.A.landsPlayed = 0;
+  const f1 = await T.put(0, 'Forest', 'hand');
+  await playLand(T.game, 0, f1, {}); await T.resolve();
+  const life = T.A.life;
+  await T.game.sacrifice(f1, null); await T.resolve();
+  expect(f1.zone === 'graveyard' && T.A.life === life, `played from hand, sacrificed: graveyard, no life (${f1.zone}, ${T.A.life - life})`);
+  T.A.landsPlayed = 0; T.game.turnState.mayPlayUsed = {};
+  const f2 = await T.put(0, 'Forest', 'graveyard');
+  const opt = spellOptions(T.game, 0, f2).find(o => o.land);
+  expect(!!opt, 'a land is playable from the graveyard');
+  await playLand(T.game, 0, f2, { optionKey: opt.key }); await T.resolve();
+  await T.game.sacrifice(f2, null); await T.resolve();
+  expect(f2.zone === 'exile' && T.A.life === life + 2, `played from graveyard, sacrificed: exiled, +2 life (${f2.zone}, ${T.A.life - life})`);
 });
 test("Nexos: basic lands' {C}{C} pays for {X} costs only", async T => {
   for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
