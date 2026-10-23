@@ -55,7 +55,14 @@ function MonView({ game, mon, big, state, fx, onClick, onHover }) {
       {conds.length ? <span className="pk-conds">{conds.map(c => <span key={c} className={`c ${c.toLowerCase()}`}>{c}</span>)}</span> : null}
       <div className="pk-hp" title={`${left} / ${max} HP`}><i style={{ width: pct + '%' }} className={pct <= 30 ? 'low' : pct <= 60 ? 'mid' : ''} /><span>{left}</span></div>
       <div className="pk-attached">
-        {mon.energy.map(c => <Energy key={c.id} type={c.def.anyType ? 'Any' : c.def.provides || 'Colorless'} size={big ? 18 : 14} title={c.def.anyType ? `${c.name}: counts as every type` : c.name} />)}
+        {/* one symbol per Energy the card provides here, as the engine counts it (Team Rocket's Energy: two {P}/{D};
+            Ignition Energy on an Evolution: {C}{C}{C}; Basic {G} with Wild Growth: two) */}
+        {mon.energy.flatMap(c => {
+          const t = c.def.anyType ? 'Any' : c.def.either ? c.def.either.types.join('/') : c.def.provides || 'Colorless';
+          const n = game.energyUnits(mon, c);
+          const title = c.def.anyType ? `${c.name}: counts as every type` : c.def.either ? `${c.name}: ${n} Energy, each ${c.def.either.types.join(' or ')}` : n > 1 ? `${c.name}: ${n} Energy` : c.name;
+          return Array.from({ length: n }, (_, k) => <Energy key={`${c.id}-${k}`} type={t} size={big ? 18 : 14} title={title} />);
+        })}
         {mon.tool ? <span className="pk-tool" title={mon.tool.name}>{mon.tool.name.replace('Technical Machine: ', 'TM ')}</span> : null}
       </div>
     </div>
@@ -120,7 +127,7 @@ function CardsDialog({ game, req, respond, onHover }) {
   const pickable = shown.filter(c => opts.has(c.id));
   const toggle = id => setSel(s => s.includes(id) ? s.filter(x => x !== id) : s.length >= req.max ? (req.max === 1 ? [id] : s) : [...s, id]);
   const ok = sel.length >= req.min && sel.length <= req.max;
-  const title = { deck: 'Your deck', discard: 'Your discard pile', 'deck-top': 'Top of your deck', prizes: 'Your Prize cards', energy: 'Attached Energy', 'opp-hand': "Your opponent's hand", hand: 'Your hand' }[req.from] || 'Choose';
+  const title = { deck: 'Your deck', discard: 'Your discard pile', 'deck-top': 'Top of your deck', 'deck-bottom': 'Bottom of your deck', prizes: 'Your Prize cards', energy: 'Attached Energy', 'opp-hand': "Your opponent's hand", hand: 'Your hand' }[req.from] || 'Choose';
   return (
     <Modal label={req.prompt}>
       <h2>{title}</h2>
@@ -307,6 +314,14 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
   const abilityActs = actions.filter(a => a.t === 'ability');
   const stadiumAct = actions.find(a => a.t === 'stadium');
   const canAttack = attackRows.some(r => r.act);
+  // an attack that isn't printed on the Active Pokémon: from a Technical Machine, an earlier stage (Memory Dive) or a
+  // Benched Pokémon (Mew ex's Memory Helix)
+  const attackSource = src => {
+    if (src === 'tm') return 'from its Tool';
+    if (src === 'prev') return 'earlier stage';
+    if (src && src[0] === 'b') { const id = src.slice(1); const m = game.monById(id) || game.monById(+id); return m ? `via ${m.name}` : null; }
+    return null;
+  };
 
   const stateOf = mon => (targets.has(mon.id) ? (sel.includes(mon.id) ? 'selected' : 'targetable') : '');
   const side = (p, bottom) => {
@@ -357,7 +372,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
       <div className="acts pk-acts">
         {attackRows.map(r => (
           <button key={r.atk.name + r.atk.src} className={`btn atk ${r.act ? 'primary' : ''}`} disabled={!r.act} title={r.why || r.atk.text || r.atk.name} onClick={() => respond(r.act)}>
-            <Cost cost={game.attackCost(active, r.atk)} size={15} /> <span>{r.atk.name}</span>{r.atk.damage ? <b>{r.atk.damage}</b> : null}
+            <Cost cost={game.attackCost(active, r.atk)} size={15} /> <span>{r.atk.name}</span>{r.atk.damage ? <b>{r.atk.damage}</b> : null}{attackSource(r.atk.src) ? <small className="atk-src">{attackSource(r.atk.src)}</small> : null}
           </button>
         ))}
         {retreatActs.length ? <button className="btn" onClick={() => setMode({ kind: 'retreat', options: retreatActs.map(a => a.to) })} title="Discard Energy equal to the Retreat Cost">Retreat <Cost cost={Array(game.retreatCost(active)).fill('Colorless')} size={13} /></button> : null}

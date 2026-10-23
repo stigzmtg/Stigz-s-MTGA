@@ -18,6 +18,12 @@ const GLYPH = {
   Any: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm0 3.2a4.8 4.8 0 1 1 0 9.6 4.8 4.8 0 0 1 0-9.6z',
 };
 export function Energy({ type, size = 18, title }) {
+  // Energy that is one of two types ('Psychic/Darkness'): a disc split between them
+  if (type && type.includes('/')) {
+    const [a, b] = type.split('/');
+    const name = `${a} or ${b} Energy`;
+    return <span className="pk-en split" style={{ '--en': TYPE_COLORS[a], '--en2': TYPE_COLORS[b], width: size, height: size }} title={title || name} aria-label={name} />;
+  }
   const t = GLYPH[type] ? type : 'Colorless';
   const dark = t === 'Lightning' || t === 'Colorless';
   const name = t === 'Any' ? 'Energy of every type' : `${t} Energy`;

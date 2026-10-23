@@ -3,7 +3,7 @@
 Two card battle simulators in one site:
 
 - **Magic: The Gathering Commander** against AI opponents, or with friends, using any of the **194 preconstructed Commander decks** (Commander 2013 through 2026, including Universes Beyond and Secret Lair precons). 1v1 or up to 4-player free-for-all.
-- **Pokémon TCG battles** against a computer opponent or a friend with **19 of the most-played tournament decks** (Dragapult ex, Charizard ex, Gardevoir ex, Raging Bolt ex, Gholdengo ex, Miraidon ex, Mega Absol Box, Chien-Pao Baxcalibur, Roaring Moon ex, Lost Zone Box, Slowking, N's Zoroark ex, Festival Lead, Alakazam Dusknoir, Hydrapple ex, Dhelmise, Mega Lopunny ex, Crustle, Basic Box), card for card from Limitless decklists.
+- **Pokémon TCG battles** against a computer opponent or a friend with **27 of the most-played tournament decks** (Dragapult ex, Charizard ex, Gardevoir ex, Raging Bolt ex, Gholdengo ex, Miraidon ex, Mega Absol Box, Chien-Pao Baxcalibur, Roaring Moon ex, Lost Zone Box, Slowking, N's Zoroark ex, Festival Lead, Alakazam Dusknoir, Hydrapple ex, Dhelmise, Mega Lopunny ex, Crustle, Basic Box, Mega Excadrill ex, Mega Lucario ex, Mega Sharpedo ex, Rocket's Honchkrow, Cynthia's Garchomp ex, Mew Box, Marnie's Grimmsnarl ex, Hop's Trevenant), card for card from Limitless decklists.
 
 **Play it:** https://stigzmtg.github.io/Stigz-s-MTGA/ (GitHub Pages; see [Hosting](#hosting) to put it on a non-GitHub address)
 
@@ -88,6 +88,7 @@ Pokémon side:
 ```sh
 node tools/ptcg/rules.mjs            # rules tests: Weakness/Resistance, Prizes, retreat, conditions, evolution, tricky cards
 node tools/ptcg/sim.mjs 300          # headless computer-vs-computer games across every matchup
+node tools/ptcg/invariants.mjs 4     # every pairing of decks N times, checking the game state after every action (60 cards each, no negative damage, Prizes, Bench, once-per-turn rules, replays); --selftest injects faults
 node tools/ptcg/uitest.mjs out/ 14   # click through a battle in headless Chromium like a person
 node tools/ptcg/nettest.mjs 6        # battles with a friend, headless: every peer identical after a reload, a late watcher, an AI takeover (TAKEOVER=1)
 node tools/ptcg/mptest.mjs out/ 8    # the same in real browsers: invite link, seats, battle, reload, watcher, end and restart (P2P=1 for real rooms)

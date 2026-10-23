@@ -76,7 +76,7 @@ export function PkLobby({ data, online, onStart, onHome, onHelp }) {
       <main className="lobby pk-lobby">
         <section className="intro">
           <h1>Pick a deck, start a battle</h1>
-          <p>Nineteen of the most-played decks from top Pokémon TCG tournaments, card for card as their players built them. Battle the computer or a friend, with every attack, Ability and Trainer working by the rules.</p>
+          <p>Twenty-seven of the most-played decks from top Pokémon TCG tournaments, card for card as their players built them. Battle the computer or a friend, with every attack, Ability and Trainer working by the rules.</p>
         </section>
         <div className="pk-lobby-grid">
           <section className="panel" aria-label="Your deck">
