@@ -23,7 +23,7 @@ if (!fs.existsSync('data/images.json')) fs.writeFileSync(path.join(DIST, 'data',
 await build({
   entryPoints: ['src/ui/main.jsx'],
   bundle: true,
-  minify: true,
+  minify: !process.env.NOMINIFY, // NOMINIFY=1 keeps names readable for profiling
   format: 'iife',
   target: ['es2020'],
   jsxFactory: 'React.createElement',

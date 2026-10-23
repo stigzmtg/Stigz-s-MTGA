@@ -231,37 +231,50 @@ export function Mat({ game, pid, ctx, side, compact }) {
     else if (attackTarget) { e.stopPropagation(); ctx.attack.setCurrent(ref); }
   };
   // fit: the largest card size (whole pixels, so images and text stay sharp) at which the battlefield fits its mat.
-  // A binary search over card widths, run in layout effects before the browser paints.
+  // Searched in one layout effect before the browser paints: each try sets the size on the mat and measures, so
+  // React renders once per change instead of once per try. Starting from the current size, a card entering or
+  // leaving usually settles in two or three measurements.
   const fieldRef = useRef(null);
   const [fit, setFit] = useState(1);
-  const search = useRef({ sig: '', lo: 0, hi: 0, base: 0 });
+  const search = useRef({ sig: '', done: false });
   const sig = `${game.battlefield.filter(c => c.controller === pid).length}:${game.battlefield.filter(c => c.controller === pid && c.tapped).length}:${creatures.length}:${other.length}:${lands.length}:${p.command.length}`;
   useLayoutEffect(() => {
     const el = fieldRef.current;
     if (!el) return;
     const s = search.current;
-    if (s.sig !== sig) {
-      s.sig = sig;
-      s.base = parseFloat(getComputedStyle(el.parentNode).getPropertyValue('--cw-base')) || 80;
-      s.lo = Math.round(s.base * 0.55); s.hi = Math.round(s.base * 1.5);
-    }
-    if (s.lo >= s.hi) { const want = s.lo / s.base; if (Math.abs(want - fit) > 1e-6) setFit(want); return; }
-    const width = Math.round(s.base * fit);
-    // layout boxes only: transforms (enter animations, attackers leaning in) must not count
+    if (s.sig === sig && s.done) return;
+    s.sig = sig; s.done = true;
+    const mat = el.parentNode;
+    const base = parseFloat(getComputedStyle(mat).getPropertyValue('--cw-base')) || 80;
     const cs = getComputedStyle(el);
-    const rows = [...el.children];
-    const top = Math.min(...rows.map(r => r.offsetTop)), bottom = Math.max(...rows.map(r => r.offsetTop + r.offsetHeight));
-    const content = bottom - top + (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-    const fits = content - el.clientHeight <= 2;
-    if (width >= s.lo && width <= s.hi) { if (fits) s.lo = width; else s.hi = width - 1; }
-    const next = s.lo >= s.hi ? s.lo : Math.ceil((s.lo + s.hi) / 2);
-    if (Math.abs(next / s.base - fit) > 1e-6) setFit(next / s.base);
+    const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    const tried = new Map();
+    // layout boxes only: transforms (enter animations, attackers leaning in) must not count
+    const fits = w => {
+      if (tried.has(w)) return tried.get(w);
+      mat.style.setProperty('--fit', String(w / base));
+      let top = Infinity, bottom = -Infinity;
+      for (const r of el.children) { top = Math.min(top, r.offsetTop); bottom = Math.max(bottom, r.offsetTop + r.offsetHeight); }
+      const ok = !el.children.length || bottom - top + pad - el.clientHeight <= 2;
+      tried.set(w, ok);
+      return ok;
+    };
+    // the answer lies in [lo, hi]; the smallest size is used even if nothing fits
+    let lo = Math.round(base * 0.55), hi = Math.round(base * 1.5);
+    const w0 = Math.min(hi, Math.max(lo, Math.round(base * fit)));
+    // a sparse battlefield takes the largest size at once
+    if (fits(w0)) { lo = w0; if (fits(hi)) lo = hi; else { hi--; for (let step = 1; lo < hi; step *= 2) { const t = Math.min(hi, lo + step); if (fits(t)) lo = t; else { hi = t - 1; break; } } } }
+    else { hi = w0 - 1; for (let step = 1; lo < hi; step *= 2) { const t = Math.max(lo, hi - step + 1); if (fits(t)) { lo = t; break; } hi = t - 1; } }
+    while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (fits(mid)) lo = mid; else hi = mid - 1; }
+    const want = lo / base;
+    mat.style.setProperty('--fit', String(want));
+    if (Math.abs(want - fit) > 1e-6) setFit(want);
   });
   useEffect(() => {
     const el = fieldRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
     let last = 0;
-    const ro = new ResizeObserver(() => { if (Math.abs(el.clientHeight - last) < 2 && Math.abs(el.clientWidth - (ro.w || 0)) < 2) return; last = el.clientHeight; ro.w = el.clientWidth; search.current.sig = ''; setFit(f => f + 1e-9); });
+    const ro = new ResizeObserver(() => { if (Math.abs(el.clientHeight - last) < 2 && Math.abs(el.clientWidth - (ro.w || 0)) < 2) return; last = el.clientHeight; ro.w = el.clientWidth; search.current.done = false; setFit(f => f + 1e-9); });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);

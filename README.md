@@ -71,6 +71,14 @@ node tools/mptest.mjs out/ 8     # online play in real browsers: create a room, 
 P2P=1 node tools/mptest.mjs out/ 8   # the same over the website's real peer-to-peer rooms (needs internet)
 ```
 
+Readability and smoothness (both games):
+
+```sh
+node tools/textaudit.mjs out/        # every visible text: size, contrast against what is drawn behind it, blur-prone transforms
+node tools/perfaudit.mjs 4 6         # frame times and long tasks with the CPU slowed 4x (home page, a battle, a 4-player game)
+NOMINIFY=1 node tools/build.mjs      # readable function names for profiling
+```
+
 Pokémon side:
 
 ```sh
