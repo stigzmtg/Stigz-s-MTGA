@@ -54,6 +54,16 @@ const DECKS = [
   { name: 'Mega Starmie ex', id: 'mega-starmie', featured: 'POR-21', blurb: 'Jetting Blow costs one Energy and hits the Bench too; Nebula Beam ignores Weakness, Resistance and every effect. Dusknoir and Munkidori put damage counters where they’re needed.' },
   { name: "Ethan's Typhlosion", id: 'ethans-typhlosion', featured: 'DRI-34', blurb: 'Every Ethan’s Adventure in the discard pile adds 60 to Buddy Blast. Quilava finds Ethan’s Adventure each turn, and Victini and Brave Bangle add damage.' },
   { name: 'Bloodmoon Ursaluna', id: 'bloodmoon-ursaluna', featured: 'PRE-54', blurb: 'Mad Bite does 30 more for every damage counter on the Active Pokémon. Mega Greninja ex’s Mortal Shuriken places 6 at a time, and Transformation Tome swaps Pokémon in from the discard pile.' },
+  { name: 'Pidgeot Control', id: 'pidgeot-control', featured: 'OBF-164', blurb: 'Pidgeot ex’s Quick Search finds any card every turn, so the deck runs one of everything: Team Star Grunt, Ruffian and Erika’s Invitation pick the opponent apart while Pal Pad recycles them, and Milotic and Sandshrew stop them recovering.' },
+  { name: 'Okidogi', id: 'okidogi', featured: 'TWM-111', blurb: 'With a Darkness Energy attached Okidogi gets 100 more HP and does 100 more damage, and Prism Energy counts as Darkness on a Basic Pokémon. Barbaracle attaches Fighting Energy from the hand and Tarragon brings everything back.' },
+  { name: 'Toxtricity Box', id: 'toxtricity-box', featured: 'PFL-68', blurb: 'Toxtricity’s Sinister Surge attaches Darkness Energy from the deck. Brute Bonnet and Pecharunt poison the Active, Pecharunt adds 5 more damage counters at each Checkup, and Chi-Yu and Team Rocket’s Sneasel feed on damage.' },
+  { name: 'Ho-Oh Armarouge', id: 'ho-oh-armarouge', featured: 'DRI-39', blurb: 'Armarouge moves Fire Energy from the Bench to the Active Pokémon as often as you like, and Ethan’s Ho-Oh ex attaches 2 more each turn. Reshiram ex and Durant ex hit harder for every Prize the opponent has taken.' },
+  { name: 'Terapagos ex', id: 'terapagos', featured: 'SCR-128', blurb: 'Unified Beatdown hits for 30 per Benched Pokémon, and Area Zero Underdepths makes room for 8. Noctowl finds the Trainers, Bouffalant walls with Curly Wall, and Crown Opal shuts out Basic attackers.' },
+  { name: 'Conkeldurr', id: 'conkeldurr', featured: 'TWM-105', blurb: 'Gutsy Swing hits for 250 and costs nothing while Conkeldurr has a Special Condition, so Tantrum confuses it on purpose. Binding Mochi adds 40 to a Poisoned attacker and Brute Bonnet hammers in between.' },
+  { name: 'Mega Chandelure ex', id: 'mega-chandelure', featured: 'PBL-38', blurb: 'Binding Flame makes the opponent’s Active harder to retreat, and Phantom Maze hits 50 harder for every {C} of its Retreat Cost. Chandelure’s Alluring Light draws a card for each player and Mind Ruler punishes a big hand.' },
+  { name: 'Mega Greninja ex', id: 'mega-greninja', featured: 'CRI-22', blurb: 'Mortal Shuriken places 6 damage counters every turn from the Active Spot, and Ninja Spinner hits for 200. Dragapult ex spreads more, and Neo Upper Energy powers the Stage 2s with every type at once.' },
+  { name: 'Mega Diancie ex', id: 'mega-diancie', featured: 'PFL-41', blurb: 'Garland Ray discards Energy for 120 each while Diamond Coat takes 30 off every hit. Jellicent ex shuts off Items and Tools, Wondrous Patch and Powerglass recharge, and Dusknoir finishes things off.' },
+  { name: 'Iron Thorns ex', id: 'iron-thorns', featured: 'TWM-77', blurb: 'Iron Thorns ex in the Active Spot switches off the Abilities of every Pokémon with a Rule Box. Crustle walls Pokémon ex, Future Booster Energy Capsule adds 20, and Saguaro and Poké Vital A heal.' },
 ];
 
 // what each deck attacks with, for the lobby's type filter: its main attackers' types, in order (checked against the
@@ -69,14 +79,17 @@ const TYPES = {
   'hops-zacian': ['Metal', 'Colorless'], regidrago: ['Dragon', 'Grass'], giratina: ['Dragon', 'Colorless'],
   'joltik-box': ['Grass', 'Lightning', 'Colorless'], 'froslass-munkidori': ['Water', 'Psychic'], ceruledge: ['Fire'], 'rockets-mewtwo': ['Grass', 'Psychic'],
   flareon: ['Fire', 'Grass', 'Psychic'], greninja: ['Water', 'Fighting'], 'mega-starmie': ['Water'], 'ethans-typhlosion': ['Fire'], 'bloodmoon-ursaluna': ['Fighting', 'Water'],
+  'pidgeot-control': ['Colorless'], okidogi: ['Fighting'], 'toxtricity-box': ['Darkness'], 'ho-oh-armarouge': ['Fire'], terapagos: ['Colorless', 'Psychic'],
+  conkeldurr: ['Fighting'], 'mega-chandelure': ['Psychic', 'Fire'], 'mega-greninja': ['Water', 'Fighting'], 'mega-diancie': ['Psychic'], 'iron-thorns': ['Lightning', 'Grass'],
 };
 
 // trait lists the card records don't carry
 const TERA = new Set(['OBF-125', 'TWM-130', 'TWM-25', 'TWM-64', 'TWM-112', 'SSP-57', 'ASC-121', 'TWM-106', 'PRE-14', 'PRE-6', 'PRE-75', 'SCR-128']);
 // card records TCGdex has wrong (checked against the printed cards on Limitless)
 const FIX = { '30C-70': { stage: 'Stage1', from: 'Eevee' } };
-const ANCIENT = new Set(['Roaring Moon', 'Roaring Moon ex', 'Raging Bolt ex', 'Scream Tail', "Explorer's Guidance", "Professor Sada's Vitality", 'Ancient Booster Energy Capsule', 'Earthen Vessel']);
-const FUTURE = new Set(['Iron Hands ex', 'Iron Bundle', 'Iron Leaves ex', 'Miraidon ex', 'Iron Crown ex']);
+const ANCIENT = new Set(['Roaring Moon', 'Roaring Moon ex', 'Raging Bolt ex', 'Scream Tail', 'Brute Bonnet', 'Flutter Mane', "Explorer's Guidance", "Professor Sada's Vitality", 'Ancient Booster Energy Capsule', 'Earthen Vessel']);
+// (Scarlet & Violet's Miraidon ex came before the Future label)
+const FUTURE = new Set(['Iron Hands ex', 'Iron Bundle', 'Iron Leaves ex', 'Iron Crown ex', 'Iron Thorns ex', 'Future Booster Energy Capsule']);
 const ACE_SPEC = new Set(['Unfair Stamp', 'Secret Box', 'Prime Catcher', 'Sparkling Crystal', "Hero's Cape", 'Legacy Energy', 'Enriching Energy']);
 // Special Energy that provides a type (Legacy Energy provides every type, one at a time)
 const SPECIAL_PROVIDES = { 'Telepathic Psychic Energy': 'Psychic', 'Growing Grass Energy': 'Grass', 'Rocky Fighting Energy': 'Fighting', "Team Rocket's Energy": 'Darkness', 'Bubbly Water Energy': 'Water' };

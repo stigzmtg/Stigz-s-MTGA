@@ -19,7 +19,8 @@
 //    from the zone the question names, and the main phase never offers what the turn's limits have used up
 //  - a Trainer, Ability or Stadium action that does nothing at all (no question, no coin flip, no change) isn't
 //    playable: it would use up the card or the once-per-turn use for nothing
-//  - nothing is done without limit in one turn: at most 120 main-phase actions, 30 of the same kind
+//  - nothing is done without limit in one turn: at most 120 main-phase actions, 30 of the same kind (not counting
+//    Abilities that can go round in circles for ever, like Solar Transfer moving the same Energy back and forth)
 //
 // --chaos=one: one seat (alternating) clicks uniformly at random among everything the screen allows, against the AI;
 // --chaos=both: both seats do; --chaos=mixed: both seats hand each decision to the AI or to chance, half and half;
@@ -42,7 +43,9 @@ const REPLAY_EVERY = +(flags.replay || 50);
 const db = JSON.parse(fs.readFileSync('data/ptcg/cards.json', 'utf8'));
 const decks = JSON.parse(fs.readFileSync('data/ptcg/decks.json', 'utf8'));
 // Abilities you may use as often as you like
-const MULTI_USE = new Set(['Super Cold', 'Psychic Embrace', 'Solar Transfer']);
+const MULTI_USE = new Set(['Super Cold', 'Psychic Embrace', 'Solar Transfer', 'Fire Off']);
+// of those, the ones with no natural end: Mega Venusaur ex's Solar Transfer moves {G} Energy between any of your Pokémon
+const CYCLIC = new Set(['Solar Transfer']);
 
 class Violation extends Error {}
 
@@ -240,8 +243,11 @@ class Checker {
       }
       // nothing without limit in one turn
       const card = act.card != null ? p.hand.find(x => x.id === act.card) : null;
-      self.count(`actions:${pid}`, 120, 'a main-phase action');
-      self.count(`kind:${pid}:${act.t}:${act.name || (card && card.name) || ''}`, 30, `${act.t} ${act.name || (card && card.name) || ''}`.trim());
+      const cyclic = act.t === 'ability' && CYCLIC.has(act.name);
+      if (!cyclic) {
+        self.count(`actions:${pid}`, 120, 'a main-phase action');
+        self.count(`kind:${pid}:${act.t}:${act.name || (card && card.name) || ''}`, 30, `${act.t} ${act.name || (card && card.name) || ''}`.trim());
+      }
       // a Trainer, Ability or Stadium action that can do nothing at all shouldn't be playable
       const watch = act.t === 'trainer' || act.t === 'ability' || act.t === 'stadium';
       const before = watch ? signature(g, act.card) : null;
@@ -263,8 +269,10 @@ class Checker {
           if (act.t === 'trainer' && card.def.trainer === 'Supporter') self.uncount(`supporter:${pid}`);
           if (act.t === 'ability') { self.uncount(`ability:${act.mon}:${act.name}`); const fx = ABILITIES[act.name] || {}; if (fx.oncePerPlayer) self.uncount(`abilityP:${pid}:${fx.oncePerPlayer === true ? act.name : fx.oncePerPlayer}`); }
           if (act.t === 'stadium') self.uncount(`stadiumUse:${pid}`);
-          self.uncount(`actions:${pid}`);
-          self.uncount(`kind:${pid}:${act.t}:${act.name || (card && card.name) || ''}`);
+          if (!cyclic) {
+            self.uncount(`actions:${pid}`);
+            self.uncount(`kind:${pid}:${act.t}:${act.name || (card && card.name) || ''}`);
+          }
           // given back after showing hidden cards would let a player look again and again
           if (shown) self.fail(`${what} was given back after showing hidden cards (by ${p.name})`);
         }
@@ -306,7 +314,7 @@ class Checker {
     g.checkKOs = async (ctx) => {
       const before = g.players.map(p => p.prizes.length);
       const value = new Map();
-      for (const p of g.players) for (const m of g.inPlay(p.id)) value.set(m.id, { pid: p.id, v: g.prizeValue(m), legacy: m.energy.some(c => c.name === 'Legacy Energy') });
+      for (const p of g.players) for (const m of g.inPlay(p.id)) value.set(m.id, { pid: p.id, v: g.prizeValue(m), legacy: m.energy.some(c => c.name === 'Legacy Energy'), pearl: g.toolName(m) === "Lillie's Pearl" && /^Lillie's /.test(m.name) });
       const firstEvent = g.events.length ? g.events[g.events.length - 1].id : -1;
       const legacyBefore = g.players.map(p => p.legacyUsed);
       depth++;
@@ -317,7 +325,9 @@ class Checker {
         const sum = ko.reduce((s, k) => s + k.v, 0);
         const taken = before[taker] - g.players[taker].prizes.length;
         const legacy = g.players[1 - taker].legacyUsed && !legacyBefore[1 - taker] ? 1 : 0;
-        const lo = Math.min(before[taker], Math.max(0, sum - legacy)), hi = Math.min(before[taker], sum + 2 * ko.length);
+        // Lillie's Pearl: one fewer for a Lillie's Pokémon Knocked Out by an attack
+        const pearls = ko.filter(k => k.pearl).length;
+        const lo = Math.min(before[taker], Math.max(0, sum - legacy - pearls)), hi = Math.min(before[taker], sum + 2 * ko.length);
         if (taken < lo || taken > hi) self.fail(`${g.players[taker].name} took ${taken} Prize card(s) for Knock Outs worth ${sum} (expected ${lo}-${hi})`);
       }
       if (depth === 0) self.settled();
