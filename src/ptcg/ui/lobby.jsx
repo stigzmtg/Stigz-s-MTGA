@@ -107,7 +107,7 @@ export function PkLobby({ data, online, onStart, onHome, onHelp }) {
         <button className="btn sm" onClick={onHelp}>How to play</button>
       </header>
       <main className="lobby pk-lobby">
-        <section className="intro">
+        <section className="intro" data-eyebrow="Pokémon TCG · Tournament decks">
           <h1>Pick a deck, start a battle</h1>
           <p>{data.decks.length} of the most-played decks from top Pokémon TCG tournaments, card for card as their players built them. Battle the computer or a friend, with every attack, Ability and Trainer working by the rules.</p>
         </section>

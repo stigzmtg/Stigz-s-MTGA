@@ -144,6 +144,16 @@ function LifeTotal({ p, onClick }) {
   );
 }
 
+// small line icons for the zones (an empty graveyard or exile shows its icon instead of a top card)
+export const ZoneIcon = ({ zone }) => (
+  <svg className="zicon" viewBox="0 0 24 24" aria-hidden="true">
+    {zone === 'graveyard' ? <path d="M7 21V10a5 5 0 0 1 10 0v11M5 21h14M12 9v6M9.5 11.5h5" />
+      : zone === 'exile' ? <><circle cx="12" cy="12" r="8" /><path d="M12 4a5 5 0 0 1 0 10 3 3 0 0 0 0 6" /></>
+        : zone === 'hand' ? <path d="M4.5 8.5 9 6.2l3.6 10.9-4.5 2.3zM11 5.5l4.8-.9 2.1 11.3-4.8.9" />
+          : <path d="M6 4h10v16H6zM9 2h10v16" />}
+  </svg>
+);
+
 function Piles({ game, pid, ctx, compact }) {
   const p = game.players[pid];
   const top = p.graveyard[p.graveyard.length - 1];
@@ -152,11 +162,11 @@ function Piles({ game, pid, ctx, compact }) {
   return (
     <div className="piles">
       {compact ? null : <button className="pile" onClick={open('library')} title={`Library: ${p.library.length} cards`}><span className="pc"><CardBack sleeve={ctx.sleeves && ctx.sleeves[pid]} /></span><span className="pl">Library</span><b>{p.library.length}</b></button>}
-      <button className="pile" onClick={open('graveyard')} title={`Graveyard: ${p.graveyard.length} cards`} onMouseEnter={() => top && ctx.onHover(top.id)}>
-        <span className="pc">{top ? <CardFace v={viewOf(game, top)} /> : <span className="slot" />}</span><span className="pl">Graveyard</span><b>{p.graveyard.length}</b>
+      <button className={`pile ${top ? '' : 'none'}`} onClick={open('graveyard')} title={`Graveyard: ${p.graveyard.length} cards`} onMouseEnter={() => top && ctx.onHover(top.id)}>
+        <span className="pc"><span className="slot"><ZoneIcon zone="graveyard" /></span></span><span className="pl">Graveyard</span><b>{p.graveyard.length}</b>
       </button>
-      <button className="pile" onClick={open('exile')} title={`Exile: ${p.exile.length} cards`} onMouseEnter={() => ex && ctx.onHover(ex.id)}>
-        <span className="pc">{ex ? <CardFace v={ex.faceDown ? { ...viewOf(game, ex), faceDown: true, name: 'Face-down card' } : viewOf(game, ex)} /> : <span className="slot" />}</span><span className="pl">Exile</span><b>{p.exile.length}</b>
+      <button className={`pile ${ex ? '' : 'none'}`} onClick={open('exile')} title={`Exile: ${p.exile.length} cards`} onMouseEnter={() => ex && ctx.onHover(ex.id)}>
+        <span className="pc"><span className="slot"><ZoneIcon zone="exile" /></span></span><span className="pl">Exile</span><b>{p.exile.length}</b>
       </button>
     </div>
   );
@@ -284,25 +294,37 @@ export function Mat({ game, pid, ctx, side, compact }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  // your side panel: when the mat is short, drop the least needed lines until it fits (see styles.css)
+  const plateRef = useRef(null);
+  const [tight, setTight] = useState(0);
+  useLayoutEffect(() => {
+    const el = plateRef.current;
+    if (!el || !isMe) return;
+    let lvl = 0;
+    for (; lvl < 3; lvl++) { el.dataset.tight = lvl; if (el.scrollHeight <= el.clientHeight + 1) break; }
+    el.dataset.tight = lvl;
+    if (lvl !== tight) setTight(lvl);
+  });
   const classes = ['mat', side, game.activePlayer === pid ? 'active' : '', p.lost ? 'lost' : '', targetable ? (chosen ? 'targeted' : 'targetable') : '', attackTarget ? (ctx.attack.current === ref ? 'targeted' : 'targetable') : '', compact ? 'compact' : ''];
   const plate = (
-    <div className="plate">
+    <div className="plate" ref={plateRef} data-tight={isMe ? tight : undefined}>
       <EmoteBubble b={ctx.emotes && ctx.emotes.get(pid)} />
       <span className="who" data-ref={ref}>
         <span title={`${p.name} · library ${p.library.length} · hand ${p.hand.length}`}><Avatar game={game} p={p} av={ctx.avatars && ctx.avatars[pid]} /></span>
         <LifeTotal p={p} onClick={isMe ? (e => { e.stopPropagation(); ctx.onPlayerMenu(pid, e); }) : undefined} />
       </span>
       <span className="ident">
-        <span className="pname" title={p.name}>{p.name}{game.activePlayer === pid ? <span className="turnmark" title="Active player">turn</span> : null}</span>
+        <span className="pname" title={p.name}><span className="pn">{p.name}</span>{game.activePlayer === pid ? <span className="turnmark" title="Active player">turn</span> : null}</span>
         <span className="status"><StatusChips game={game} pid={pid} />{incoming ? <span className="chip danger" title="Attacking this player">⚔ {incoming.n} attacking · {incoming.power} power</span> : null}<span className="pdeck">{p.deckName}</span></span>
       </span>
       {!isMe ? <span className="plate-extras"><OppHand n={p.hand.length} sleeve={ctx.sleeves && ctx.sleeves[pid]} /><Piles game={game} pid={pid} ctx={ctx} compact={compact} /></span> : null}
       {isMe && Object.values(p.pool).some(n => n > 0) ? <span className="pool" title="Mana pool">{Object.entries(p.pool).flatMap(([k, n]) => Array.from({ length: n }, (_, i) => <Pip key={k + i} s={k} />))}</span> : null}
+      {isMe ? <Piles game={game} pid={pid} ctx={ctx} /> : null}
     </div>
   );
   const front = (
     <div className="row front">
-      {creatures.length ? creatures.map(g => <CardSlot key={g.cards[0].id} card={g.cards[0]} count={g.cards.length} ctx={ctx} />) : <span className="empty">No creatures</span>}
+      {creatures.map(g => <CardSlot key={g.cards[0].id} card={g.cards[0]} count={g.cards.length} ctx={ctx} />)}
     </div>
   );
   const back = (
@@ -317,7 +339,6 @@ export function Mat({ game, pid, ctx, side, compact }) {
     <section className={classes.filter(Boolean).join(' ')} onClick={onSeat} style={{ ...identityStyle(p.colorIdentity), '--fit': fit }} aria-label={`${p.name}'s battlefield`}>
       {plate}
       <div className="field" ref={fieldRef}>{front}{back}</div>
-      {isMe ? <Piles game={game} pid={pid} ctx={ctx} /> : null}
     </section>
   );
 }

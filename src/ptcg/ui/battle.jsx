@@ -70,7 +70,7 @@ function MonView({ game, mon, big, state, fx, onClick, onHover }) {
   );
 }
 
-function EmptySlot({ big }) { return <div className={`pk-mon empty ${big ? 'big' : ''}`}><div className="pk-card slot" /></div>; }
+function EmptySlot({ big }) { return <div className={`pk-mon empty ${big ? 'big' : ''}`}><div className="pk-card slot"><span className="slotname">{big ? 'Active' : 'Bench'}</span></div></div>; }
 
 function Prizes({ n, label, sleeve }) {
   return (
@@ -199,7 +199,7 @@ function Preview({ game, hover }) {
   if (hover && hover.mon != null) { mon = game.monById(hover.mon); def = mon && mon.def; }
   if (hover && hover.card != null) { const c = game.cardById(hover.card); def = c && c.def; }
   if (hover && hover.key) def = game.db[hover.key];
-  if (!def) return <div className="empty">Point at any card to read it here.</div>;
+  if (!def) return <div className="preview-empty"><span className="ghostcard" aria-hidden="true" /><span>Point at any card to read it here.</span></div>;
   const img = pkImage(def.key);
   return (
     <div className="pk-preview">
@@ -343,7 +343,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
         <div className="pk-plate">
           <EmoteBubble b={emotes.bubbles.get(p.id)} />
           <div className="who">{avatarOf(p.id) ? <AnimalAvatar code={avatarOf(p.id)} size={36} /> : null}<b>{p.name}</b>{game.current === p.id && !game.over ? <span className="turnmark">turn</span> : null}</div>
-          <div className="deck">{p.deckName}</div>
+          {p.deckName && p.deckName !== p.name ? <div className="deck">{p.deckName}</div> : null}
           <Prizes n={p.prizes.length} label={p.name} sleeve={sleeves[p.id]} />
         </div>
         <div className="pk-field">{act}{bench}</div>
@@ -416,7 +416,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
           {side(O, false)}
           <div className="pk-mid">
             <div className="pk-stadium" title={game.stadium ? game.stadium.card.name : 'No Stadium in play'}>
-              {game.stadium ? <CardArt def={game.stadium.card.def} cls="small" onEnter={() => setHover({ card: game.stadium.card.id })} onLeave={() => setHover(null)} /> : <span className="none">No Stadium</span>}
+              {game.stadium ? <CardArt def={game.stadium.card.def} cls="small" onEnter={() => setHover({ card: game.stadium.card.id })} onLeave={() => setHover(null)} /> : <span className="pk-card small slot none" aria-label="No Stadium in play"><span className="slotname">Stadium</span></span>}
             </div>
             <div className={`prompt pk-prompt ${req ? '' : 'waiting'}`}>{bar}</div>
             <div className="pk-coinbox">{fx.coin ? <div key={fx.coin.key} className={`pk-coin ${fx.coin.heads ? 'heads' : 'tails'}`}><span className="face">{fx.coin.heads ? 'H' : 'T'}</span><span className="lbl">{fx.coin.heads ? 'Heads' : 'Tails'}{fx.coin.reason ? <small>{fx.coin.reason}</small> : null}</span></div> : null}</div>

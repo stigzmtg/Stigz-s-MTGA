@@ -71,7 +71,7 @@ function LogPanel({ game, me, onHover }) {
 
 function Preview({ game, cardId, support, images, me = 0 }) {
   const card = cardId != null ? game.cardById(cardId) : null;
-  if (!card) return <div className="empty">Point at any card to read it here.</div>;
+  if (!card) return <div className="preview-empty"><span className="ghostcard" aria-hidden="true" /><span>Point at any card to read it here.</span></div>;
   const v = viewOf(game, card);
   const hidden = card.faceDown && card.controller !== me && card.owner !== me;
   const facts = [];

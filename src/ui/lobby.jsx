@@ -5,6 +5,7 @@ import { HelpDialog, SizeButton } from './dialogs.jsx';
 import { FriendsPanel } from './online.jsx';
 import { lobbyImages, subscribeImages, imagesVersion, cardImage } from './images.js';
 import { DeckStyleButton, subscribeDeckStyles, deckStylesVersion } from './deckstyle.jsx';
+import { identityStyle } from './board.jsx';
 
 const { useState, useMemo, useEffect, useSyncExternalStore } = React;
 
@@ -28,6 +29,12 @@ function SetMark({ set, name }) {
   const code = set.toLowerCase();
   if (NO_SYMBOL.has(code)) return <span className="setcode" title={name}>{set}</span>;
   return <i className={`ss ss-${code} setsym`} title={`${name} (${set})`} aria-label={name} />;
+}
+
+// the commander's art, cropped, in front of each deck's name (its colors until the pictures load)
+function DeckArt({ deck, imagesOk }) {
+  const img = imagesOk ? (deck.custom ? cardImage(deck.commanders[0]) : lobbyImages(deck.id)[0]) : null;
+  return <span className={`art ${img ? 'img' : ''}`} style={img ? { backgroundImage: `url(${img})` } : undefined} aria-hidden="true" />;
 }
 
 function deckStats(db, deck, support) {
@@ -96,7 +103,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
       <header className="topbar">{onHome ? <button className="brand linklike" onClick={onHome} title="Choose a game">Stigz’s TCG Arena<small>Commander</small></button> : <span className="brand">Stigz’s TCG Arena<small>Commander vs AI</small></span>}<span className="spacer" /><span className="chip">{decks.length} preconstructed decks</span>{onHome ? <button className="btn sm" onClick={onHome}>Switch game</button> : null}<SizeButton /><button className="btn sm" onClick={() => setHelp(true)}>How to play</button></header>
       {help ? <HelpDialog onClose={() => setHelp(false)} /> : null}
       <div className="lobby">
-        <div className="intro">
+        <div className="intro" data-eyebrow="Magic: The Gathering · Commander">
           <h1>Pick a precon, take a seat</h1>
           <p>Every Commander precon from Commander 2013 to today, played with full rules automation. Face computer opponents, or open a room and play with friends. Choose your deck and shuffle up.</p>
         </div>
@@ -113,7 +120,8 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
               <div key={g.set + g.decks[0].id}>
                 <div className="setgroup"><SetMark set={g.decks[0].set} name={g.set} /> {g.set} {g.year ? `· ${g.year}` : ''}</div>
                 {g.decks.map(d => (
-                  <button key={d.id} className={`deckrow ${d.id === mine ? 'sel' : ''}`} onClick={() => setMine(d.id)}>
+                  <button key={d.id} className={`deckrow ${d.id === mine ? 'sel' : ''}`} onClick={() => setMine(d.id)} style={identityStyle(identities[d.id] || [])}>
+                    <DeckArt deck={d} imagesOk={imagesOk} />
                     <span className="dn">{d.name}</span>
                     <span className="dc">{d.commanders.join(' & ')}</span>
                     <span className="ds"><Identity colors={identities[d.id]} /><SetMark set={d.set} name={d.setName} /></span>
