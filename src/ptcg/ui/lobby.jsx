@@ -1,6 +1,7 @@
 // Pokémon lobby: pick one of the tournament decks, pick (or randomize) the opponent's, start the battle.
 import { Energy } from './energy.jsx';
 import { DeckRecord } from '../../ui/replaybar.jsx';
+import { DeckStyleButton, subscribeDeckStyles, deckStylesVersion } from '../../ui/deckstyle.jsx';
 import { pkImage, subscribePk, pkImagesVersion } from './images.js';
 import { PkFriendsPanel } from './friends.jsx';
 
@@ -50,11 +51,12 @@ export function PkLobby({ data, online, onStart, onHome, onHelp }) {
   const [hover, setHover] = useState(null);
   const deck = data.decks.find(d => d.id === mine);
   const friends = online.mode === 'friends';
-  // in a room, the deck picked here is the one you bring
+  // in a room, the deck picked here is the one you bring (with its sleeves and box)
+  const styles = useSyncExternalStore(subscribeDeckStyles, deckStylesVersion);
   useEffect(() => {
     try { localStorage.setItem('pk-lobby', JSON.stringify({ mine, opp })); } catch { /* storage unavailable */ }
     online.onDeck(mine);
-  }, [mine, online.room]);
+  }, [mine, online.room, styles]);
   const start = () => {
     try { localStorage.setItem('pk-lobby', JSON.stringify({ mine, opp })); } catch { /* storage unavailable */ }
     const pool = data.decks.filter(d => d.id !== mine);
@@ -89,6 +91,7 @@ export function PkLobby({ data, online, onStart, onHome, onHelp }) {
               <div className="pk-chosen-body">
                 <div className="pk-feature">{preview ? <img src={preview} alt={hover ? data.cards[hover].name : deck.name} /> : null}</div>
                 <div>
+                  <DeckStyleButton kind="pk" deck={deck} colors={deck.energy} />
                   <p className="blurb">{deck.blurb}</p>
                   <p className="credit">List: {deck.list}{deck.player ? `, played by ${deck.player}` : ''}. <a href={deck.source} target="_blank" rel="noopener">Limitless</a></p>
                   <DeckRecord kind="pk" id={deck.id} />

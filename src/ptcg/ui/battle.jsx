@@ -12,9 +12,10 @@ import { recordGame } from '../../ui/records.js';
 import { ReplayBar } from '../../ui/replaybar.jsx';
 import { useEmotes, EmoteButton, EmoteBubble, WatcherEmotes } from '../../ui/emotes.jsx';
 import { Coach } from '../../ui/coach.jsx';
-import { AnimalAvatar } from '../../ui/avatar.jsx';
+import { AnimalAvatar, myAvatar } from '../../ui/avatar.jsx';
+import { Sleeve, savedStyle } from '../../ui/deckstyle.jsx';
 
-const { useState, useEffect, useRef, useSyncExternalStore } = React;
+const { useState, useEffect, useRef, useMemo, useSyncExternalStore } = React;
 const COND_LABEL = { asleep: 'Asleep', confused: 'Confused', paralyzed: 'Paralyzed' };
 
 // ---------------------------------------------------------------- a card picture (with a drawn fallback)
@@ -34,7 +35,10 @@ function CardArt({ def, cls = '', onClick, onEnter, onLeave, title }) {
     </div>
   );
 }
-const CardBack = ({ cls = '' }) => <div className={`pk-card back ${cls}`}><span className="ball" /></div>;
+// sleeve: { code, av } when the owner sleeved their deck (see ui/deckstyle.jsx)
+const CardBack = ({ cls = '', sleeve }) => (sleeve && sleeve.code
+  ? <div className={`pk-card back sleeved ${cls}`}><Sleeve code={sleeve.code} avatar={sleeve.av} /></div>
+  : <div className={`pk-card back ${cls}`}><span className="ball" /></div>);
 
 // ---------------------------------------------------------------- a Pokémon in play
 function MonView({ game, mon, big, state, fx, onClick, onHover }) {
@@ -60,20 +64,20 @@ function MonView({ game, mon, big, state, fx, onClick, onHover }) {
 
 function EmptySlot({ big }) { return <div className={`pk-mon empty ${big ? 'big' : ''}`}><div className="pk-card slot" /></div>; }
 
-function Prizes({ n, label }) {
+function Prizes({ n, label, sleeve }) {
   return (
     <div className="pk-prizes" title={`${n} Prize card${n === 1 ? '' : 's'} left`} aria-label={`${label}: ${n} Prize cards left`}>
-      <div className="grid">{Array.from({ length: 6 }, (_, i) => i < n ? <CardBack key={i} cls="tiny" /> : <span key={i} className="taken" />)}</div>
+      <div className="grid">{Array.from({ length: 6 }, (_, i) => i < n ? <CardBack key={i} cls="tiny" sleeve={sleeve} /> : <span key={i} className="taken" />)}</div>
       <div className="cap"><b>{n}</b> Prize{n === 1 ? '' : 's'}</div>
     </div>
   );
 }
 
-function Piles({ game, p, onOpen }) {
+function Piles({ game, p, onOpen, sleeve }) {
   const top = p.discard[p.discard.length - 1];
   return (
     <div className="pk-piles">
-      <div className="pile" title={`Deck: ${p.deck.length} cards`}><CardBack cls="tiny" /><span><b>{p.deck.length}</b> Deck</span></div>
+      <div className="pile" title={`Deck: ${p.deck.length} cards`}><CardBack cls="tiny" sleeve={sleeve} /><span><b>{p.deck.length}</b> Deck</span></div>
       <button className="pile" onClick={() => onOpen('discard')} title="See the discard pile">{top ? <CardArt def={top.def} cls="tiny" /> : <span className="pk-card tiny slot" />}<span><b>{p.discard.length}</b> Discard</span></button>
       {p.lost.length ? <button className="pile" onClick={() => onOpen('lost')} title="See the Lost Zone"><span className="pk-card tiny lostz" /><span><b>{p.lost.length}</b> Lost Zone</span></button> : null}
     </div>
@@ -242,6 +246,10 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
   const emotes = useEmotes(session);
   // friends' avatars (online battles)
   const avatarOf = pid => (session.online && session.cfg.seats[pid] ? session.cfg.seats[pid].a : null);
+  // card sleeves: everyone's online; yours otherwise
+  const sleeves = useMemo(() => game.players.map((p, pid) => (session.online
+    ? (session.cfg.seats[pid] && session.cfg.seats[pid].sl ? { code: session.cfg.seats[pid].sl, av: session.cfg.seats[pid].a } : null)
+    : pid === session.me ? { code: savedStyle('pk', p.deckId).s, av: myAvatar() } : null)), [session]);
   useEffect(() => { setMode(null); setSel([]); setConfirmEnd(false); }, [pend && pend.id]);
   useEffect(() => { if (!flash) return; const t = setTimeout(() => setFlash(null), 2200); return () => clearTimeout(t); }, [flash]);
   useEffect(() => {
@@ -315,11 +323,11 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
           <EmoteBubble b={emotes.bubbles.get(p.id)} />
           <div className="who">{avatarOf(p.id) ? <AnimalAvatar code={avatarOf(p.id)} size={36} /> : null}<b>{p.name}</b>{game.current === p.id && !game.over ? <span className="turnmark">turn</span> : null}</div>
           <div className="deck">{p.deckName}</div>
-          <Prizes n={p.prizes.length} label={p.name} />
-          {!bottom ? <div className="opphand" title={`${p.hand.length} cards in hand`}><span className="fan">{Array.from({ length: Math.min(p.hand.length, 8) }, (_, i) => <CardBack key={i} cls="micro" />)}</span><b>{p.hand.length}</b> in hand</div> : null}
+          <Prizes n={p.prizes.length} label={p.name} sleeve={sleeves[p.id]} />
+          {!bottom ? <div className="opphand" title={`${p.hand.length} cards in hand`}><span className="fan">{Array.from({ length: Math.min(p.hand.length, 8) }, (_, i) => <CardBack key={i} cls="micro" sleeve={sleeves[p.id]} />)}</span><b>{p.hand.length}</b> in hand</div> : null}
         </div>
         <div className="pk-field">{act}{bench}</div>
-        <Piles game={game} p={p} onOpen={z => setZone({ p, z, mine: isMe })} />
+        <Piles game={game} p={p} onOpen={z => setZone({ p, z, mine: isMe })} sleeve={sleeves[p.id]} />
       </section>
     );
   };
@@ -394,7 +402,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
           </div>
           {side(P, true)}
           <div className="pk-hand" aria-label={`${whose(P)} hand`} style={{ '--n': P.hand.length }}>
-            {watching ? P.hand.map(c => <div key={c.id} className="pk-handslot"><CardBack /></div>) : P.hand.map(c => (
+            {watching ? P.hand.map(c => <div key={c.id} className="pk-handslot"><CardBack sleeve={sleeves[P.id]} /></div>) : P.hand.map(c => (
               <div key={c.id} className={`pk-handslot ${handActs.has(c.id) ? 'playable' : ''} ${mode && mode.card === c.id ? 'chosen' : ''}`}>
                 <CardArt def={c.def} onClick={() => onHand(c)} onEnter={() => setHover({ card: c.id })} onLeave={() => setHover(null)} />
               </div>

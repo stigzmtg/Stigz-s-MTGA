@@ -4,6 +4,7 @@ import { DeckRecord } from './replaybar.jsx';
 import { HelpDialog } from './dialogs.jsx';
 import { FriendsPanel } from './online.jsx';
 import { lobbyImages, subscribeImages, imagesVersion, cardImage } from './images.js';
+import { DeckStyleButton, subscribeDeckStyles, deckStylesVersion } from './deckstyle.jsx';
 
 const { useState, useMemo, useEffect, useSyncExternalStore } = React;
 
@@ -76,7 +77,8 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
   const stats = useMemo(() => deckStats(db, deck, support), [deck]);
   const sortedDecks = useMemo(() => decks.slice().sort((a, b) => a.name.localeCompare(b.name)), [decks]);
   useEffect(() => { storageSet('pa-lobby', { mine, numOpp, opps }); }, [mine, numOpp, opps]);
-  useEffect(() => { if (online && online.onDeck) online.onDeck(mine); }, [mine, online && online.room]);
+  const styles = useSyncExternalStore(subscribeDeckStyles, deckStylesVersion);
+  useEffect(() => { if (online && online.onDeck) online.onDeck(mine); }, [mine, online && online.room, styles]);
   const friends = online && online.mode === 'friends';
 
   const start = () => {
@@ -131,6 +133,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
                 return deck.commanders.map((n, i) => { const d = db.get(n); return d ? <div className="cardwrap" key={n}><CardFace v={{ ...viewOfDef(d), img: imgs[i] || null }} size="big" /></div> : null; });
               })()}
             </div>
+            <DeckStyleButton kind="mtg" deck={deck} colors={identities[deck.id] || []} />
             <div className="deckstats" style={{ marginTop: 10 }}>
               <span className="chip">{deck.setName}</span>
               {Object.entries(stats.counts).filter(([, n]) => n).map(([t, n]) => <span key={t} className="chip">{n} {t === 'Sorcery' ? 'Sorceries' : t + 's'}</span>)}

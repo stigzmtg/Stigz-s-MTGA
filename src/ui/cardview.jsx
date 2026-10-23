@@ -3,6 +3,7 @@ import { costSymbols } from '../engine/mana.js';
 import { counterName } from '../engine/game.js';
 import { KEYWORD_COUNTERS } from '../engine/chars.js';
 import { imageOf, cardImage } from './images.js';
+import { Sleeve } from './deckstyle.jsx';
 
 const HYBRID = ['wu', 'wb', 'ub', 'ur', 'br', 'bg', 'rw', 'rg', 'gw', 'gu'];
 function msClass(sym) {
@@ -148,7 +149,9 @@ function artStyle(v) {
   };
 }
 
-export function CardBack({ cls = '' }) {
+// sleeve: { code, av } when the owner sleeved their deck (see deckstyle.jsx)
+export function CardBack({ cls = '', sleeve }) {
+  if (sleeve && sleeve.code) return <div className={`card back sleeved ${cls}`} aria-label="Card back"><Sleeve code={sleeve.code} avatar={sleeve.av} /></div>;
   return <div className={`card back ${cls}`} aria-label="Card back"><div className="oval" /></div>;
 }
 

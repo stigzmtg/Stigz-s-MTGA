@@ -13,6 +13,7 @@ import { RoomClient, roomApi, isRoomCode } from '../../net/roomclient.js';
 import { Recorder, ReplayControl, ReplayAgent, pkDelay, loadReplay } from '../../ui/records.js';
 import { resetTips } from '../../ui/coach.jsx';
 import { myAvatar } from '../../ui/avatar.jsx';
+import { savedStyle } from '../../ui/deckstyle.jsx';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -203,7 +204,7 @@ export function PokemonApp({ onHome }) {
       room.start({ seed: (Math.random() * 2 ** 32) >>> 0, seats });
     },
     onWatch: () => { room.lastAutoStart = room.cfg.game; setSession(newOnlineBattle(data, room, room.cfg)); },
-    onDeck: id => { if (room) room.setDeck(id); },
+    onDeck: id => { if (!room) return; room.setDeck(id); const st = savedStyle('pk', id); room.setExtra({ sl: st.s, bx: st.b }); },
   };
   const toastEl = toast ? <div className="toast" role="status">{toast}</div> : null;
   if (!session) return <>

@@ -18,6 +18,7 @@ import { initApp } from './install.js';
 import { loadCustomDecks, findDeck, registerDeck, unpackDeck, packDeck, customDeck } from './customdecks.js';
 import { DeckBuilder } from './builder.jsx';
 import { myAvatar } from './avatar.jsx';
+import { savedStyle } from './deckstyle.jsx';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -247,7 +248,8 @@ function MtgApp({ onHome }) {
       room.setDeck(id);
       // a custom deck travels with you (not on claude.ai, whose room messages are too small for a decklist)
       const d = customDeck(id);
-      room.setExtra({ dk: d && !onClaude() ? packDeck(d) : null });
+      const st = savedStyle('mtg', id);
+      room.setExtra({ dk: d && !onClaude() ? packDeck(d) : null, sl: st.s, bx: st.b });
     },
   };
   if (builder) return <DeckBuilder data={all} editId={builder.id}

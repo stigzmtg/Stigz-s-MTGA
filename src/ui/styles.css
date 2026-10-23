@@ -811,3 +811,26 @@ kbd { font: 600 12px/1 'Alegreya Sans', sans-serif; padding: 2px 6px; border-rad
 .helper-focus { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .helper-focus .chip { cursor: pointer; }
 @media (max-width: 900px) { .helper-thread { max-height: 60vh; } }
+/* ---- sleeves and deck boxes */
+.card.back.sleeved, .pk-card.back.sleeved { background: none; border: 0; overflow: hidden; }
+.card.back.sleeved .sleeve, .pk-card.back.sleeved .sleeve { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.deckbox { display: block; flex: none; overflow: visible; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.45)); }
+.ds-lobby { display: flex; align-items: center; gap: 12px; margin: 4px 0 8px; }
+.ds-lobby-side { display: grid; gap: 4px; justify-items: start; }
+.ds-lobby-side .note { margin: 0; font-size: 13px; }
+.ds-boxbtn { padding: 0; border: 0; background: none; cursor: pointer; transition: transform 0.15s; }
+.ds-boxbtn:hover { transform: translateY(-2px) rotate(-1.5deg); }
+.ds-editor { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 22px; align-items: start; }
+.ds-preview { display: grid; gap: 14px; justify-items: center; width: 230px; }
+.ds-fan { position: relative; width: 200px; height: 118px; }
+.ds-back { position: absolute; left: 50%; top: 8px; width: 74px; aspect-ratio: 63 / 88; margin-left: -37px; transform: translateX(var(--x)) rotate(var(--r)); transform-origin: 50% 120%; border-radius: 6px; overflow: hidden; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.55); }
+.ds-back .sleeve { width: 100%; height: 100%; display: block; }
+.ds-back .card.back, .ds-back .pk-card.back { position: absolute; inset: 0; width: 100%; height: 100%; --cw: 74px; border-radius: 6px; }
+.ds-options { display: grid; gap: 12px; min-width: 0; align-content: start; }
+.ds-tabs { justify-self: start; }
+.ds-emblems { display: flex; flex-wrap: wrap; gap: 6px; }
+.ds-emblems button { width: 38px; height: 38px; padding: 2px; display: grid; place-items: center; border-radius: 50%; border: 2px solid transparent; background: rgba(255, 255, 255, 0.04); cursor: pointer; color: var(--ink-dim); font-size: 11px; }
+.ds-emblems button.on { border-color: var(--brass-hi); }
+.ds-match { justify-self: start; }
+.seat-deck .deckbox { display: inline-block; vertical-align: middle; margin-right: 4px; filter: none; }
+@media (max-width: 640px) { .ds-editor { grid-template-columns: minmax(0, 1fr); } .ds-preview { width: 100%; } }

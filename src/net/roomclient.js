@@ -6,8 +6,11 @@ const CODE_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789';
 export function newRoomCode() { let s = ''; for (let i = 0; i < 6; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]; return s; }
 export const isRoomCode = s => /^[a-z0-9]{6}$/.test(s || '');
 
-// an avatar code (see ui/avatar.jsx): seven small numbers
+// how a player looks in a room: an avatar (ui/avatar.jsx, seven small numbers), and the sleeves and deck box of the
+// deck they bring (ui/deckstyle.jsx, four). Read from presence, kept in their seat.
 const isAvatar = v => typeof v === 'string' && /^\d{1,2}(\.\d{1,2}){6}$/.test(v);
+const isStyle = v => typeof v === 'string' && /^\d{1,2}(\.\d{1,2}){3}$/.test(v);
+const lookOf = p => ({ a: isAvatar(p.av) ? p.av : undefined, sl: isStyle(p.sl) ? p.sl : undefined, bx: isStyle(p.bx) ? p.bx : undefined });
 
 // running inside the claude.ai page (rooms through its room capability) or as a standalone website
 export const onClaude = () => typeof window !== 'undefined' && !!(window.claude && window.claude.use);
@@ -58,7 +61,7 @@ export class RoomClient {
       return false;
     }
     this.code = code;
-    if (asHost) this.cfg = { code, kind: this.kind, game: 0, seed: 0, host: this.cid, started: false, subs: {}, seats: [{ k: 'h', c: this.cid, n: this.nick, d: this.deck, a: this.extra.av }, { k: 'h', c: null, n: '', d: null }] };
+    if (asHost) this.cfg = { code, kind: this.kind, game: 0, seed: 0, host: this.cid, started: false, subs: {}, seats: [{ k: 'h', c: this.cid, n: this.nick, d: this.deck, ...lookOf(this.extra) }, { k: 'h', c: null, n: '', d: null }] };
     // a host coming back to its own room (a reload): pick its config up again, games and seats included
     else { const saved = this.savedCfg(code); if (saved && saved.host === this.cid) this.cfg = saved; }
     this.unsub = this.room.onPeers(() => this.sync());
@@ -94,7 +97,7 @@ export class RoomClient {
     for (const p of this.room.peers() || []) {
       const pr = p.presence || {};
       if (pr.pa !== PROTOCOL || pr.code !== this.code || !pr.cid) continue;
-      out.set(pr.cid, { cid: pr.cid, nick: String(pr.nick || 'Player').slice(0, 24), deck: pr.deck || null, want: typeof pr.want === 'number' ? pr.want : null, av: isAvatar(pr.av) ? pr.av : null, me: pr.cid === this.cid, presence: pr });
+      out.set(pr.cid, { cid: pr.cid, nick: String(pr.nick || 'Player').slice(0, 24), deck: pr.deck || null, want: typeof pr.want === 'number' ? pr.want : null, av: isAvatar(pr.av) ? pr.av : null, look: lookOf(pr), me: pr.cid === this.cid, presence: pr });
     }
     return out;
   }
@@ -112,11 +115,11 @@ export class RoomClient {
       const seats = this.cfg.seats.map(s => ({ ...s }));
       for (const m of members.values()) {
         if (m.me || m.want == null || !seats[m.want] || seats[m.want].k !== 'h') continue;
-        if (seats.some(s => s.c === m.cid)) { const cur = seats.findIndex(s => s.c === m.cid); if (cur !== m.want && !seats[m.want].c) { seats[cur] = { k: 'h', c: null, n: '', d: null }; seats[m.want] = { k: 'h', c: m.cid, n: m.nick, d: m.deck, a: m.av }; } continue; }
-        if (!seats[m.want].c) seats[m.want] = { k: 'h', c: m.cid, n: m.nick, d: m.deck, a: m.av };
+        if (seats.some(s => s.c === m.cid)) { const cur = seats.findIndex(s => s.c === m.cid); if (cur !== m.want && !seats[m.want].c) { seats[cur] = { k: 'h', c: null, n: '', d: null }; seats[m.want] = { k: 'h', c: m.cid, n: m.nick, d: m.deck, ...m.look }; } continue; }
+        if (!seats[m.want].c) seats[m.want] = { k: 'h', c: m.cid, n: m.nick, d: m.deck, ...m.look };
       }
-      for (const s of seats) { const m = s.c && members.get(s.c); if (m) { s.n = m.nick; s.d = m.deck; s.a = m.av; } }
-      seats[0] = { ...seats[0], n: this.nick, d: this.deck, a: this.extra.av };
+      for (const s of seats) { const m = s.c && members.get(s.c); if (m) { s.n = m.nick; s.d = m.deck; Object.assign(s, m.look); } }
+      seats[0] = { ...seats[0], n: this.nick, d: this.deck, ...lookOf(this.extra) };
       if (JSON.stringify(seats) !== JSON.stringify(this.cfg.seats)) { this.cfg = { ...this.cfg, seats }; this.announce(); }
     }
     this.bump();
@@ -124,8 +127,12 @@ export class RoomClient {
 
   // ---- what this viewer does in the room
   setNick(nick) { this.nick = nick; if (this.isHost && this.cfg && !this.cfg.started) this.cfg = { ...this.cfg, seats: this.cfg.seats.map((s, i) => i === 0 ? { ...s, n: nick } : s) }; this.announce(); this.bump(); }
-  setExtra(patch) { this.extra = { ...this.extra, ...patch }; this.announce(); }
-  setAvatar(av) { this.extra = { ...this.extra, av }; if (this.isHost && this.cfg && !this.cfg.started) this.cfg = { ...this.cfg, seats: this.cfg.seats.map((s, i) => i === 0 ? { ...s, a: av } : s) }; this.announce(); this.bump(); }
+  setExtra(patch) {
+    this.extra = { ...this.extra, ...patch };
+    if (this.isHost && this.cfg && !this.cfg.started) this.cfg = { ...this.cfg, seats: this.cfg.seats.map((s, i) => (i === 0 ? { ...s, ...lookOf(this.extra) } : s)) };
+    this.announce(); this.bump();
+  }
+  setAvatar(av) { this.setExtra({ av }); }
   setDeck(deck) { this.deck = deck; if (this.isHost && this.cfg && !this.cfg.started) this.cfg = { ...this.cfg, seats: this.cfg.seats.map((s, i) => i === 0 ? { ...s, d: deck } : s) }; this.announce(); this.bump(); }
   sit(i) { this.want = i; this.announce(); this.bump(); }
   stand() { this.want = null; this.announce(); this.bump(); }

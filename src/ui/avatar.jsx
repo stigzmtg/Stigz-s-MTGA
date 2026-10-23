@@ -53,7 +53,7 @@ export function myAvatar(cid = safeStorage.getItem('pa-cid')) {
 export const saveAvatar = code => safeStorage.setItem('pa-avatar', code);
 
 // ---- drawing
-function shade(hex, amt) {
+export function shade(hex, amt) {
   const n = parseInt(hex.slice(1), 16);
   const ch = (v) => Math.max(0, Math.min(255, Math.round(amt < 0 ? v * (1 + amt) : v + (255 - v) * amt)));
   return '#' + [n >> 16, (n >> 8) & 255, n & 255].map(ch).map(v => v.toString(16).padStart(2, '0')).join('');
@@ -242,10 +242,10 @@ export function AnimalAvatar({ code, size = 40, title, full = false }) {
 }
 
 // ---- picking one
-function Swatches({ list, value, onPick, label }) {
+export function Swatches({ list, value, onPick, label }) {
   return <div className="av-swatches" role="radiogroup" aria-label={label}>{list.map((c, i) => <button key={i} role="radio" aria-checked={value === i} className={value === i ? 'on' : ''} style={{ background: c }} onClick={() => onPick(i)} aria-label={`${label} ${i + 1}`} />)}</div>;
 }
-function Choices({ list, value, onPick, label }) {
+export function Choices({ list, value, onPick, label }) {
   return <div className="av-choices" role="radiogroup" aria-label={label}>{list.map((n, i) => <button key={n} role="radio" aria-checked={value === i} className={`btn sm ${value === i ? 'on' : ''}`} onClick={() => onPick(i)}>{n}</button>)}</div>;
 }
 

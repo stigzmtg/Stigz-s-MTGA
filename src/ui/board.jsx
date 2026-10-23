@@ -151,7 +151,7 @@ function Piles({ game, pid, ctx, compact }) {
   const open = z => e => { e.stopPropagation(); ctx.openZone(pid, z); };
   return (
     <div className="piles">
-      {compact ? null : <button className="pile" onClick={open('library')} title={`Library: ${p.library.length} cards`}><span className="pc"><CardBack /></span><span className="pl">Library</span><b>{p.library.length}</b></button>}
+      {compact ? null : <button className="pile" onClick={open('library')} title={`Library: ${p.library.length} cards`}><span className="pc"><CardBack sleeve={ctx.sleeves && ctx.sleeves[pid]} /></span><span className="pl">Library</span><b>{p.library.length}</b></button>}
       <button className="pile" onClick={open('graveyard')} title={`Graveyard: ${p.graveyard.length} cards`} onMouseEnter={() => top && ctx.onHover(top.id)}>
         <span className="pc">{top ? <CardFace v={viewOf(game, top)} /> : <span className="slot" />}</span><span className="pl">Graveyard</span><b>{p.graveyard.length}</b>
       </button>
@@ -162,11 +162,11 @@ function Piles({ game, pid, ctx, compact }) {
   );
 }
 
-function OppHand({ n }) {
+function OppHand({ n, sleeve }) {
   const shown = Math.min(n, 7);
   return (
     <span className="opphand" title={`${n} card${n === 1 ? '' : 's'} in hand`}>
-      <span className="fan" style={{ '--n': shown }}>{Array.from({ length: shown }, (_, i) => <span key={i} className="fb" style={{ '--k': i - (shown - 1) / 2 }}><CardBack /></span>)}</span>
+      <span className="fan" style={{ '--n': shown }}>{Array.from({ length: shown }, (_, i) => <span key={i} className="fb" style={{ '--k': i - (shown - 1) / 2 }}><CardBack sleeve={sleeve} /></span>)}</span>
       <b>{n}</b>
     </span>
   );
@@ -296,7 +296,7 @@ export function Mat({ game, pid, ctx, side, compact }) {
         <span className="pname" title={p.name}>{p.name}{game.activePlayer === pid ? <span className="turnmark" title="Active player">turn</span> : null}</span>
         <span className="status"><StatusChips game={game} pid={pid} />{incoming ? <span className="chip danger" title="Attacking this player">⚔ {incoming.n} attacking · {incoming.power} power</span> : null}<span className="pdeck">{p.deckName}</span></span>
       </span>
-      {!isMe ? <OppHand n={p.hand.length} /> : null}
+      {!isMe ? <OppHand n={p.hand.length} sleeve={ctx.sleeves && ctx.sleeves[pid]} /> : null}
       {!isMe ? <Piles game={game} pid={pid} ctx={ctx} compact={compact} /> : null}
       {isMe && Object.values(p.pool).some(n => n > 0) ? <span className="pool" title="Mana pool">{Object.entries(p.pool).flatMap(([k, n]) => Array.from({ length: n }, (_, i) => <Pip key={k + i} s={k} />))}</span> : null}
     </div>

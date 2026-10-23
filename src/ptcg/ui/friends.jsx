@@ -4,16 +4,17 @@ import { CopyLink } from '../../ui/online.jsx';
 import { isRoomCode, onClaude } from '../../net/roomclient.js';
 import { Energy } from './energy.jsx';
 import { AnimalAvatar, Lineup, Watchers, MyAvatarRow, AvatarButton, myAvatar } from '../../ui/avatar.jsx';
+import { DeckBox, defaultBox } from '../../ui/deckstyle.jsx';
 
 const { useState } = React;
 
 // the code from whatever was typed or pasted: "abc123", "pk-abc123" or a whole invite link
 export const codeFromInput = v => v.toLowerCase().trim().replace(/^.*#/, '').replace(/^pk-/, '').replace(/[^a-z0-9]/g, '').slice(0, 6);
 
-function SeatDeck({ decks, id }) {
+function SeatDeck({ decks, id, bx }) {
   const d = decks.find(x => x.id === id);
   if (!d) return <span className="seat-deck muted">Choosing a deck…</span>;
-  return <span className="seat-deck">{d.energy.map(t => <Energy key={t} type={t} size={13} />)} {d.name}</span>;
+  return <span className="seat-deck"><DeckBox code={bx || defaultBox(d.id, d.energy)} size={22} />{d.energy.map(t => <Energy key={t} type={t} size={13} />)} {d.name}</span>;
 }
 
 export function PkFriendsPanel({ data, online, deck }) {
@@ -106,7 +107,7 @@ export function PkFriendsPanel({ data, online, deck }) {
               {s.c ? <AnimalAvatar code={s.a} size={34} /> : <span className="seat-no">{i + 1}</span>}
               <span className="seat-who">
                 {s.c ? <b>{s.n || 'Player'}{s.c === cfg.host ? ' (host)' : ''}{mine ? ' · you' : ''}</b> : <b className="muted">Open seat</b>}
-                {s.c ? <SeatDeck decks={data.decks} id={s.d} /> : <span className="seat-deck muted">Waiting for a friend</span>}
+                {s.c ? <SeatDeck decks={data.decks} id={s.d} bx={s.bx} /> : <span className="seat-deck muted">Waiting for a friend</span>}
               </span>
               <span className="seat-act">
                 {s.c && !m ? <span className="chip">away</span> : null}

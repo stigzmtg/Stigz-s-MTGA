@@ -13,6 +13,8 @@ import { recordGame } from './records.js';
 import { ReplayBar } from './replaybar.jsx';
 import { useEmotes, EmoteButton, WatcherEmotes } from './emotes.jsx';
 import { Coach } from './coach.jsx';
+import { savedStyle } from './deckstyle.jsx';
+import { myAvatar } from './avatar.jsx';
 
 const { useState, useEffect, useRef, useMemo, useSyncExternalStore } = React;
 
@@ -236,10 +238,15 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
   };
 
   const emotes = useEmotes(session);
+  // card sleeves, by seat: everyone's online; yours (and in replays the recorded player's) otherwise
+  const sleeves = useMemo(() => (session.online
+    ? session.cfg.seats.map(s => (s.k === 'h' && s.c && s.sl ? { code: s.sl, av: s.a } : null))
+    : game.players.map((p, i) => (i === human.pid ? { code: savedStyle('mtg', p.deckId).s, av: myAvatar() } : null))), [session]);
   const ctx = {
     game, me, support, emotes: emotes.bubbles,
     // friends' avatars, by seat (online games)
     avatars: session.online ? session.cfg.seats.map(s => (s.k === 'h' && s.c ? s.a : null)) : null,
+    sleeves,
     onHover: setHover,
     openZone: (p, z) => setZone({ pid: p, zone: z }),
     chosen,

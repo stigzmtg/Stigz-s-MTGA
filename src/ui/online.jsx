@@ -3,6 +3,7 @@ import { Pip } from './cardview.jsx';
 import { findDeck } from './customdecks.js';
 import { isRoomCode, onClaude } from '../net/roomclient.js';
 import { AnimalAvatar, Lineup, Watchers, MyAvatarRow, AvatarButton, myAvatar } from './avatar.jsx';
+import { DeckBox, defaultBox } from './deckstyle.jsx';
 
 const { useState } = React;
 
@@ -32,9 +33,12 @@ export function CopyLink({ code, kind = '' }) {
   );
 }
 
-function DeckName({ decks, id }) {
-  const d = findDeck(decks, id);
-  return d ? <span className="seat-deck" title={d.commanders.join(' & ')}>{d.name}</span> : <span className="seat-deck muted">Choosing a deck…</span>;
+function DeckName({ data, id, bx }) {
+  const d = findDeck(data.decks, id);
+  if (!d) return <span className="seat-deck muted">Choosing a deck…</span>;
+  const colors = new Set();
+  for (const n of d.commanders) { const c = data.db.get(n); if (c) for (const x of c.colorIdentity()) colors.add(x); }
+  return <span className="seat-deck" title={d.commanders.join(' & ')}><DeckBox code={bx || defaultBox(d.id, ['W', 'U', 'B', 'R', 'G'].filter(x => colors.has(x)))} size={22} />{d.name}</span>;
 }
 
 export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave, onStart, onWatch, session }) {
@@ -130,7 +134,7 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
                     <option value="random">Random precon</option>
                     {sortedDecks.filter(d => !d.custom).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
-                ) : <span className="seat-deck">{s.d && s.d !== 'random' ? (decks.find(d => d.id === s.d) || {}).name : 'Random precon'}</span>) : s.c ? <DeckName decks={decks} id={s.d} /> : <span className="seat-deck muted">Waiting for a friend</span>}
+                ) : <span className="seat-deck">{s.d && s.d !== 'random' ? (decks.find(d => d.id === s.d) || {}).name : 'Random precon'}</span>) : s.c ? <DeckName data={data} id={s.d} bx={s.bx} /> : <span className="seat-deck muted">Waiting for a friend</span>}
               </span>
               <span className="seat-act">
                 {s.k === 'h' && s.c && !m ? <span className="chip">away</span> : null}
