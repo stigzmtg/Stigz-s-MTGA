@@ -13,6 +13,7 @@ import { makePace, gamePacer } from './pacing.js';
 import { createStore, loadSettings, saveSettings, safeStorage, fetchJSON } from './common.js';
 import { Home } from './home.jsx';
 import { PokemonApp, pkRoomFromHash } from '../ptcg/ui/app.jsx';
+import { Recorder, ReplayControl, ReplayAgent, mtgDelay, loadReplay } from './records.js';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -45,8 +46,35 @@ function newSession(data, cfg) {
     const humanTypes = window.__paHumanTypes;
     game.agents[0] = { ask: (g, pid, req) => (g.turnNumber < window.__paAutoplay || (humanTypes && !humanTypes.includes(req.type)) ? bot.ask(g, pid, req) : human.ask(g, pid, req)) };
   }
+  // every decision is recorded so the game can be replayed (records.js)
+  const recorder = new Recorder();
+  game.agents = game.agents.map(a => recorder.wrap(a));
+  session.recorder = recorder;
   preloadDecks([cfg.mine.id, ...cfg.opps.map(d => d.id)]);
   game.start().then(() => store.bump());
+  return session;
+}
+
+// watching a replay: the same seed and decks, every seat answering from the recorded decisions
+function newReplaySession(data, rep) {
+  const store = createStore();
+  const settings = loadSettings();
+  const human = new HumanAgent(() => store.bump(), settings);
+  human.pid = rep.seat || 0;
+  const ctl = new ReplayControl(rep.log.length, () => store.bump());
+  const agent = new ReplayAgent(rep.log, ctl, applyOp, mtgDelay);
+  const byId = Object.fromEntries(data.decks.map(d => [d.id, d]));
+  const players = rep.players.map(p => ({ name: p.name, deck: byId[p.deckId] || data.decks[0], agent, human: p.human }));
+  const game = new Game({ db: data.db, seed: rep.seed, players, onUpdate: () => store.bump(), maxTurns: rep.maxTurns || 400 });
+  game.continueAfterHumanLoss = !!rep.cal;
+  const pace = makePace({ ...settings, aiSpeed: 'normal' });
+  game.pace = async kind => { const ms = pace(kind); if (ms > 0) { game.notify(); await ctl.gate(ms); } };
+  const session = {
+    game, human, store, settings, cfg: null, replay: ctl, replayId: rep.id,
+    setSettings(s) { Object.assign(settings, s); saveSettings(settings); },
+  };
+  preloadDecks(rep.players.map(p => p.deckId));
+  game.start().then(() => { ctl.end(); store.bump(); });
   return session;
 }
 
@@ -183,6 +211,15 @@ function MtgApp({ onHome }) {
     if (cur && (cur.game !== cfg.game || !cfg.started) && !session.game.over) { endSession(session); setSession(null); setToast('The host ended the game.'); }
   }, [data, room, cfg && cfg.game, cfg && cfg.started]);
 
+  // a replay picked on the home screen
+  useEffect(() => {
+    if (!data) return;
+    let id = null;
+    try { id = sessionStorage.getItem('pa-open-replay'); sessionStorage.removeItem('pa-open-replay'); } catch { /* storage blocked */ }
+    const rep = id && loadReplay(id);
+    if (rep && rep.kind === 'mtg') setSession(newReplaySession(data, { ...rep, id }));
+  }, [data]);
+
   if (!data) return <Loading progress={progress} error={error} />;
   const onlineProps = {
     api, room, mode, setMode, onCreate, onJoin, onLeave,
@@ -200,7 +237,8 @@ function MtgApp({ onHome }) {
       else if (session.online && room && room.isHost && session.game.over) room.stop();
       endSession(session); setSession(null);
     }}
-    onRematch={() => { endSession(session); setSession(newSession(data, session.cfg)); }} />;
+    onRematch={() => { endSession(session); setSession(newSession(data, session.cfg)); }}
+    onReplay={id => { const rep = loadReplay(id); if (!rep) return; endSession(session); setSession(newReplaySession(data, { ...rep, id })); }} />;
 }
 
 // which game: the address says (#pokemon, #mtg, or a room invite: #abc123 for Commander, #pk-abc123 for Pokémon),

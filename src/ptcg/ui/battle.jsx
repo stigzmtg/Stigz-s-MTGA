@@ -6,6 +6,10 @@ import { pkImage, subscribePk, pkImagesVersion } from './images.js';
 import { Modal } from '../../ui/dialogs.jsx';
 import { secondPerson } from '../../ui/table.jsx';
 import { RoomStatus } from '../../ui/online.jsx';
+import { SoundToggle } from '../../ui/dialogs.jsx';
+import { useGameSounds } from '../../ui/sound.js';
+import { recordGame } from '../../ui/records.js';
+import { ReplayBar } from '../../ui/replaybar.jsx';
 
 const { useState, useEffect, useRef, useSyncExternalStore } = React;
 const COND_LABEL = { asleep: 'Asleep', confused: 'Confused', paralyzed: 'Paralyzed' };
@@ -211,7 +215,7 @@ function Log({ game, me }) {
 
 // ---------------------------------------------------------------- the battle
 // session.me is your seat (the bottom of the table); watchers of a friends' battle see the host's seat at the bottom
-export function Battle({ session, host, onExit, onRematch, onLobby }) {
+export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) {
   const { game, human, store } = session;
   useSyncExternalStore(store.subscribe, store.get);
   useSyncExternalStore(subscribePk, pkImagesVersion);
@@ -228,6 +232,10 @@ export function Battle({ session, host, onExit, onRematch, onLobby }) {
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [flash, setFlash] = useState(null);
   const fx = useFx(game, me, watching);
+  useGameSounds(game, { kind: 'pk', me, watching });
+  // a finished battle goes into your record (with a replay)
+  useEffect(() => { if (game.over && !session.record) session.record = recordGame(session, 'pk'); }, [game.over]);
+  const replay = session.replay;
   useEffect(() => { setMode(null); setSel([]); setConfirmEnd(false); }, [pend && pend.id]);
   useEffect(() => { if (!flash) return; const t = setTimeout(() => setFlash(null), 2200); return () => clearTimeout(t); }, [flash]);
   useEffect(() => {
@@ -361,8 +369,10 @@ export function Battle({ session, host, onExit, onRematch, onLobby }) {
         <span className="chip pk-chip">Pokémon TCG</span>
         <span className="turninfo">Turn <b>{game.turn}</b> · <b>{game.players[game.current].name}</b></span>
         <RoomStatus session={session} />
+        {replay ? <ReplayBar ctl={replay} /> : null}
         <span className="spacer" />
-        <button className="btn sm danger" onClick={onExit} title={online && host && !game.over ? 'Ends the battle for both players' : undefined}>{game.over ? (online ? 'Back to room' : 'New battle') : online ? (host ? 'End battle' : watching ? 'Stop watching' : 'Leave battle') : 'Leave battle'}</button>
+        <SoundToggle session={session} />
+        <button className="btn sm danger" onClick={onExit} title={online && host && !game.over ? 'Ends the battle for both players' : undefined}>{replay ? 'Close replay' : game.over ? (online ? 'Back to room' : 'New battle') : online ? (host ? 'End battle' : watching ? 'Stop watching' : 'Leave battle') : 'Leave battle'}</button>
       </header>
       <div className="game pk-game">
         <main className="pk-board" onClick={e => { if (e.target === e.currentTarget) setMode(null); }}>
@@ -402,8 +412,14 @@ export function Battle({ session, host, onExit, onRematch, onLobby }) {
           <p className="sub">{youText(game.result || '')}. {game.turn} turns.{online && !host ? ' The host can start a rematch from here.' : ''}</p>
           <div className="row">
             <button className="btn" onClick={() => setDismissed(true)}>View board</button>
-            <button className="btn" onClick={onLobby}>{online ? 'Back to room' : 'New battle'}</button>
-            {!online || host ? <button className="btn primary" onClick={onRematch}>Rematch</button> : null}
+            {replay ? <>
+              <button className="btn" onClick={() => onReplay && onReplay(session.replayId)}>Watch again</button>
+              <button className="btn primary" onClick={onExit}>Close replay</button>
+            </> : <>
+              {session.record && session.record.replay && onReplay ? <button className="btn" onClick={() => onReplay(session.record.id)}>Watch replay</button> : null}
+              <button className="btn" onClick={onLobby}>{online ? 'Back to room' : 'New battle'}</button>
+              {!online || host ? <button className="btn primary" onClick={onRematch}>Rematch</button> : null}
+            </>}
           </div>
         </Modal>
       ) : null}

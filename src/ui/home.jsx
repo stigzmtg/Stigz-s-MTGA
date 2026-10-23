@@ -7,6 +7,7 @@ import { Energy } from '../ptcg/ui/energy.jsx';
 import { codeFromInput } from '../ptcg/ui/friends.jsx';
 import { isRoomCode } from '../net/roomclient.js';
 import { safeStorage, fetchJSON } from './common.js';
+import { loadRecords, tally } from './records.js';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -191,6 +192,59 @@ function JoinBox({ onJoin }) {
   );
 }
 
+// ---------------------------------------------------------------- your record
+const when = t => {
+  const d = new Date(t), now = new Date();
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (d.toDateString() === now.toDateString()) return `Today ${time}`;
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return `Yesterday ${time}`;
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+};
+const RESULT = { win: 'Win', loss: 'Loss', draw: 'Draw' };
+
+function Summary({ kind, label }) {
+  const t = tally(kind);
+  if (!t.games) return <div className={`rec-sum ${kind}`}><b>{label}</b><span className="none">No games yet</span></div>;
+  const counts = {};
+  for (const r of loadRecords()) if (r.kind === kind) counts[r.deck.name] = (counts[r.deck.name] || 0) + 1;
+  const fav = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  const pct = Math.round((100 * t.win) / t.games);
+  return (
+    <div className={`rec-sum ${kind}`}>
+      <b>{label}</b>
+      <span className="wl"><em>{t.win}</em>–<em>{t.loss}</em>{t.draw ? <>–<em>{t.draw}</em></> : null}</span>
+      <span className="meter" aria-label={`${pct}% wins`}><i style={{ width: pct + '%' }} /></span>
+      <span className="fine">{pct}% wins over {t.games} game{t.games === 1 ? '' : 's'}{fav ? ` · most played: ${fav[0]}` : ''}</span>
+    </div>
+  );
+}
+
+function RecordSection({ onWatch }) {
+  const recs = loadRecords();
+  return (
+    <section className="home-sec record" aria-labelledby="record">
+      <SectionHead id="record" eyebrow="Your games" title="Your record">{recs.length ? 'Every game you finish is kept on this device, and the latest ones come with a replay you can watch move by move.' : 'Finish a game and it shows up here, with a replay you can watch move by move.'}</SectionHead>
+      <div className="rec-grid">
+        <Summary kind="mtg" label="Commander" />
+        <Summary kind="pk" label="Pokémon" />
+      </div>
+      {recs.length ? (
+        <ol className="rec-list" aria-label="Recent games">
+          {recs.slice(0, 8).map(r => (
+            <li key={r.id} className={r.kind}>
+              <span className={`res ${r.result}`}>{RESULT[r.result]}</span>
+              <span className="what"><b>{r.deck.name}</b><span>vs {r.opps.map(o => o.deck || o.name).join(', ')}</span></span>
+              <span className="meta">{r.kind === 'pk' ? 'Pokémon' : 'Commander'} · {r.mode === 'online' ? 'with friends' : 'vs computer'} · {r.turns} turns · {when(r.at)}</span>
+              {r.replay ? <button className="btn sm" onClick={() => onWatch(r)}>Watch replay</button> : <span className="noreplay">No replay</span>}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </section>
+  );
+}
+
 // ---------------------------------------------------------------- the page
 export function Home({ onPick, onJoin }) {
   useSyncExternalStore(subscribePk, pkImagesVersion);
@@ -222,6 +276,7 @@ export function Home({ onPick, onJoin }) {
           <button onClick={() => scrollTo('games')}>Games</button>
           <button onClick={() => scrollTo('decks')}>Decks</button>
           <button onClick={() => scrollTo('friends')}>Friends</button>
+          <button onClick={() => scrollTo('record')}>Record</button>
           <button onClick={() => scrollTo('why')}>Features</button>
         </span>
         <span className="spacer" />
@@ -295,6 +350,8 @@ export function Home({ onPick, onJoin }) {
           <JoinBox onJoin={onJoin} />
         </div>
       </section>
+
+      <RecordSection onWatch={r => { try { sessionStorage.setItem('pa-open-replay', r.id); } catch { /* storage blocked */ } onPick(r.kind === 'pk' ? 'pokemon' : 'mtg'); }} />
 
       <section className="home-sec why" aria-labelledby="why">
         <SectionHead id="why" eyebrow="Built for real games" title="Why it plays well" />

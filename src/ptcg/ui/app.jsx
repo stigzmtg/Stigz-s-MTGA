@@ -10,6 +10,7 @@ import { makePace } from '../../ui/pacing.js';
 import { Modal } from '../../ui/dialogs.jsx';
 import { Lockstep, LocalSeatAgent, RemoteSeatAgent } from '../../net/lockstep.js';
 import { RoomClient, roomApi, isRoomCode } from '../../net/roomclient.js';
+import { Recorder, ReplayControl, ReplayAgent, pkDelay, loadReplay } from '../../ui/records.js';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -38,8 +39,26 @@ function newBattle(data, cfg) {
     db: data.cards, onUpdate: () => store.bump(),
     players: [{ name: 'You', deck: cfg.mine, agent, human: true }, { name: cfg.opp.name, deck: cfg.opp, agent: ai }],
   });
+  // every decision is recorded so the battle can be replayed (ui/records.js)
+  const recorder = new Recorder();
+  game.agents = game.agents.map(a => recorder.wrap(a));
   game.start().then(() => store.bump(), e => { console.error(e); store.bump(); });
-  return { game, human, ai, store, settings, cfg, me: 0 };
+  return { game, human, ai, store, settings, cfg, me: 0, recorder };
+}
+
+// watching a replay: the same seed and decks, both seats answering from the recorded decisions
+function newReplayBattle(data, rep) {
+  const store = createStore();
+  const human = new PtcgHuman(() => store.bump());
+  const ctl = new ReplayControl(rep.log.length, () => store.bump());
+  const agent = new ReplayAgent(rep.log, ctl, null, pkDelay);
+  const byId = Object.fromEntries(data.decks.map(d => [d.id, d]));
+  const game = new PokemonGame({
+    db: data.cards, seed: rep.seed, onUpdate: () => store.bump(), maxTurns: rep.maxTurns || 120,
+    players: rep.players.map(p => ({ name: p.name, deck: byId[p.deckId] || data.decks[0], agent, human: p.human })),
+  });
+  game.start().then(() => { ctl.end(); store.bump(); }, e => { console.error(e); store.bump(); });
+  return { game, human, store, settings: loadSettings(), cfg: null, me: rep.seat || 0, replay: ctl, replayId: rep.id };
 }
 
 // a battle with a friend: both browsers run the same game from the host's seed and swap only their decisions
@@ -112,6 +131,14 @@ export function PokemonApp({ onHome }) {
     roomApi().then(a => setApi(a || null));
   }, []);
   useEffect(() => { safeStorage.setItem('pk-mode', mode); }, [mode]);
+  // a replay picked on the home screen
+  useEffect(() => {
+    if (!data) return;
+    let id = null;
+    try { id = sessionStorage.getItem('pa-open-replay'); sessionStorage.removeItem('pa-open-replay'); } catch { /* storage blocked */ }
+    const rep = id && loadReplay(id);
+    if (rep && rep.kind === 'pk') setSession(newReplayBattle(data, { ...rep, id }));
+  }, [data]);
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 4000); return () => clearTimeout(t); }, [toast]);
   useSyncExternalStore(room ? room.subscribe : (() => () => {}), room ? room.getVersion : (() => 0));
   // leaving the Pokémon side: stop the battle and leave the room
@@ -191,6 +218,7 @@ export function PokemonApp({ onHome }) {
   return <>
     <Battle key={`${session.game.seed}:${session.online ? session.online.game : ''}`} session={session} host={host}
       onExit={back} onLobby={back}
+      onReplay={id => { const rep = loadReplay(id); if (!rep) return; endBattle(session); setSession(newReplayBattle(data, { ...rep, id })); }}
       onRematch={() => {
         if (session.online) { if (host) online.onStart(); return; }
         endBattle(session); setSession(newBattle(data, session.cfg));

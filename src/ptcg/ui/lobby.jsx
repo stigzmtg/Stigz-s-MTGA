@@ -1,5 +1,6 @@
 // Pokémon lobby: pick one of the tournament decks, pick (or randomize) the opponent's, start the battle.
 import { Energy } from './energy.jsx';
+import { DeckRecord } from '../../ui/replaybar.jsx';
 import { pkImage, subscribePk, pkImagesVersion } from './images.js';
 import { PkFriendsPanel } from './friends.jsx';
 
@@ -90,6 +91,7 @@ export function PkLobby({ data, online, onStart, onHome, onHelp }) {
                 <div>
                   <p className="blurb">{deck.blurb}</p>
                   <p className="credit">List: {deck.list}{deck.player ? `, played by ${deck.player}` : ''}. <a href={deck.source} target="_blank" rel="noopener">Limitless</a></p>
+                  <DeckRecord kind="pk" id={deck.id} />
                   <DeckList deck={deck} cards={data.cards} onHover={setHover} />
                 </div>
               </div>

@@ -1,5 +1,6 @@
 // Deck selection: pick your precon and your AI opponents.
 import { CardFace, viewOfDef, Pip } from './cardview.jsx';
+import { DeckRecord } from './replaybar.jsx';
 import { HelpDialog } from './dialogs.jsx';
 import { FriendsPanel } from './online.jsx';
 import { lobbyImages, subscribeImages, imagesVersion } from './images.js';
@@ -135,6 +136,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome }) {
               <span className="chip">Avg MV {stats.avgMV}</span>
             </div>
             <p className="coverage">Rules automation: <b>{stats.coverage}%</b> of cards fully automated. Anything missed can be fixed with the right-click tools.</p>
+            <DeckRecord kind="mtg" id={deck.id} />
           </section>
           <div className="seg modeswitch" role="tablist" aria-label="Game mode">
             <button role="tab" aria-selected={!friends} className={!friends ? 'on' : ''} onClick={() => online && online.setMode('solo')}>Solo vs AI</button>

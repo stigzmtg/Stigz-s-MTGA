@@ -636,3 +636,15 @@ kbd { font: 600 12px/1 'Alegreya Sans', sans-serif; padding: 2px 6px; border-rad
 @media (max-width: 1600px) { .topbar.online .brand { display: none; } .topbar.online .ph { padding: 4px 4px; letter-spacing: 0.04em; } }
 /* in a game on a phone, the corner name shortens to keep the top bar to as few rows as possible */
 @media (max-width: 600px) { .app.table .brand-rest { display: none; } }
+/* the speaker button in game top bars */
+.btn.icon { display: inline-grid; place-items: center; padding: 5px 8px; }
+.btn.icon svg { width: 18px; height: 18px; fill: currentColor; }
+.soundbtn[aria-pressed="false"] { color: var(--ink-faint); }
+/* replay controls in a game's top bar */
+.replaybar { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.replaybar .seg button { padding: 4px 9px; font-weight: 700; }
+.replaypos { position: relative; display: inline-grid; place-items: center; width: 92px; height: 22px; border-radius: 999px; overflow: hidden; border: 1px solid var(--line-strong); background: rgba(0, 0, 0, 0.35); font-size: 12px; }
+.replaypos i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, rgba(214, 170, 85, 0.45), rgba(243, 212, 136, 0.6)); }
+.replaypos b { position: relative; color: var(--ink); text-shadow: 0 1px 2px #000; }
+.deckrec { font-size: 13.5px; color: var(--ink-dim); margin: 6px 0 0; }
+.deckrec .w { color: #a9e3ab; } .deckrec .l { color: #f2a593; }

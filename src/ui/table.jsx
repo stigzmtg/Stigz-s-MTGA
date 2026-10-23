@@ -2,12 +2,15 @@
 import { CardFace, viewOf, ManaCost, Pip, RulesText } from './cardview.jsx';
 import { Mat, Hand, StackView, RecentPlays, useRecentPlays, ArrowLayer, TurnBanner } from './board.jsx';
 import { imagesAvailable, subscribeImages, imagesVersion } from './images.js';
-import { Modal, CardsDialog, TargetsDialog, OptionDialog, ModesDialog, ConfirmDialog, NumberDialog, ColorDialog, PlayerDialog, MulliganDialog, ZoneDialog, SettingsDialog, TokenDialog, HelpDialog, Menu } from './dialogs.jsx';
+import { Modal, CardsDialog, TargetsDialog, OptionDialog, ModesDialog, ConfirmDialog, NumberDialog, ColorDialog, PlayerDialog, MulliganDialog, ZoneDialog, SettingsDialog, TokenDialog, HelpDialog, Menu, SoundToggle } from './dialogs.jsx';
 import { getActions, refOf, fromRef, manaAbilitiesOf, manaSourcesFor, activateManaAbility } from '../engine/abilities.js';
 import { STEP_NAMES } from '../engine/game.js';
 import { blockRules } from '../engine/combat.js';
 import { applyOp, cardMenuItems, playerMenuItems } from './manual.js';
 import { RoomStatus } from './online.jsx';
+import { useGameSounds } from './sound.js';
+import { recordGame } from './records.js';
+import { ReplayBar } from './replaybar.jsx';
 
 const { useState, useEffect, useRef, useMemo, useSyncExternalStore } = React;
 
@@ -141,12 +144,15 @@ function PromptBar({ game, human, me, mode, ctx, actions, onPass, onEndTurn, spe
 }
 
 // ------------------------------------------------------------------ main view
-export function GameView({ session, onExit, onRematch, support, imagesOk }) {
+export function GameView({ session, onExit, onRematch, onReplay, support, imagesOk }) {
   useStore(session.store);
   useSyncExternalStore(subscribeImages, imagesVersion);
   const { game, human } = session;
   const me = human.pid != null ? human.pid : 0;
   const self = session.spectator ? -1 : me; // the seat that is "you" (spectators have none)
+  useGameSounds(game, { kind: 'mtg', me, watching: !!session.spectator });
+  // a finished game goes into your record (with a replay)
+  useEffect(() => { if (game.over && !session.record) session.record = recordGame(session, 'mtg'); }, [game.over]);
   const pending = human.pending;
   const req = pending ? pending.req : null;
   const [hover, setHover] = useState(null);
@@ -201,7 +207,8 @@ export function GameView({ session, onExit, onRematch, support, imagesOk }) {
   // manual tools: applied at once in solo play; online they ride along with your next decision
   const online = session.online || null;
   const use = (op) => {
-    if (!online) return run(() => applyOp(game, op));
+    if (session.replay) return;
+    if (!online) { if (session.recorder) session.recorder.ops.push(op); return run(() => applyOp(game, op)); }
     if (!(game.pendingAsk && game.pendingAsk.pid === me && human.pending)) { setToast('Manual tools work while the game is waiting on you (your priority or a choice).'); return; }
     online.pendingOps.push(op);
     return run(() => applyOp(game, op));
@@ -324,10 +331,12 @@ export function GameView({ session, onExit, onRematch, support, imagesOk }) {
         <span className="turninfo">Turn <b>{game.turnNumber}</b> · <b>{game.players[game.activePlayer].name}</b></span>
         <PhaseTracker game={game} />
         <RoomStatus session={session} />
+        {session.replay ? <ReplayBar ctl={session.replay} /> : null}
         <span className="spacer" />
+        <SoundToggle session={session} />
         <button className="btn sm" onClick={() => setShowHelp(true)} title="How to play">Help</button>
         <button className="btn sm" onClick={() => setShowSettings(true)}>Settings</button>
-        <button className="btn sm danger" onClick={() => game.over || session.spectator ? onExit() : setConfirmExit(true)}>{game.over ? (session.online ? 'Back to room' : 'New game') : session.spectator ? 'Stop watching' : 'Leave game'}</button>
+        <button className="btn sm danger" onClick={() => game.over || session.spectator || session.replay ? onExit() : setConfirmExit(true)}>{session.replay ? 'Close replay' : game.over ? (session.online ? 'Back to room' : 'New game') : session.spectator ? 'Stop watching' : 'Leave game'}</button>
       </header>
       <div className="game">
         <main className={`board opp${opps.length} ${images ? 'with-images' : ''}`} ref={boardRef} onClick={() => setPicked(null)}>
@@ -385,9 +394,15 @@ export function GameView({ session, onExit, onRematch, support, imagesOk }) {
           </ol>
           <div className="dlg-actions">
             <button className="btn" onClick={() => { session.dismissedResult = true; session.store.bump(); }}>View board</button>
-            {session.online ? <button className="btn primary" onClick={onExit}>Back to room</button> : <>
-              <button className="btn" onClick={onExit}>New game</button>
-              <button className="btn primary" onClick={onRematch}>Rematch</button>
+            {session.replay ? <>
+              <button className="btn" onClick={() => onReplay && onReplay(session.replayId)}>Watch again</button>
+              <button className="btn primary" onClick={onExit}>Close replay</button>
+            </> : <>
+              {session.record && session.record.replay && onReplay ? <button className="btn" onClick={() => onReplay(session.record.id)}>Watch replay</button> : null}
+              {session.online ? <button className="btn primary" onClick={onExit}>Back to room</button> : <>
+                <button className="btn" onClick={onExit}>New game</button>
+                <button className="btn primary" onClick={onRematch}>Rematch</button>
+              </>}
             </>}
           </div>
         </Modal>

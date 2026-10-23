@@ -1,5 +1,7 @@
 // Modal dialogs for engine prompts and app-level panels.
 import { CardFace, viewOf, Pip, RulesText } from './cardview.jsx';
+import { play as playSound } from './sound.js';
+import { loadSettings, saveSettings } from './common.js';
 import { fromRef } from '../engine/abilities.js';
 import { onClaude } from '../net/roomclient.js';
 
@@ -224,6 +226,10 @@ export function SettingsDialog({ settings, onChange, onClose }) {
         <Toggle k="fullControl" title="Full control" note="Stop at every priority window where you could act." />
         <Toggle k="autoCommander" title="Always return my commander to the command zone" note="Otherwise you'll be asked each time." />
         <Toggle k="images" title="Show card images" note="Turn off for drawn card frames with the full rules text on every card." />
+        <Toggle k="sound" title="Sound effects" note="Card draws, land drops, spells, attacks and hits." />
+        <label htmlFor="set-volume"><span style={{ minWidth: 90 }}>Volume</span>
+          <input id="set-volume" type="range" min="0" max="1" step="0.05" value={settings.volume == null ? 0.6 : settings.volume} disabled={settings.sound === false} onChange={e => set('volume', +e.target.value)} onPointerUp={() => playSound('cast')} />
+        </label>
       </div>
       <div className="dlg-actions"><button className="btn primary" onClick={onClose}>Done</button></div>
     </Modal>
@@ -317,5 +323,22 @@ export function Menu({ menu, onClose }) {
           <button key={i} className={`mi ${it.primary ? 'cast' : ''}`} role="menuitem" onClick={() => { onClose(); it.run(); }}><RulesText text={it.label} /></button>)}
       </div>
     </div>
+  );
+}
+
+// the speaker button in a game's top bar: sound on or off (the same setting as in Settings)
+export function SoundToggle({ session }) {
+  const [on, setOn] = React.useState(() => loadSettings().sound !== false);
+  const flip = () => {
+    const next = !on;
+    if (session && session.setSettings) session.setSettings({ sound: next });
+    else { saveSettings({ ...loadSettings(), sound: next }); if (session && session.settings) session.settings.sound = next; }
+    setOn(next);
+    if (next) setTimeout(() => playSound('click'), 30);
+  };
+  return (
+    <button className="btn sm icon soundbtn" onClick={flip} aria-pressed={on} aria-label={on ? 'Sound on: turn it off' : 'Sound off: turn it on'} title={on ? 'Sound on' : 'Sound off'}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" />{on ? <path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /> : <path d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />}</svg>
+    </button>
   );
 }
