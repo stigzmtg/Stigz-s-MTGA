@@ -1,12 +1,12 @@
 // Implementations of Forge ability APIs ("DB$ Draw", "SP$ Destroy", ...).
 import { parseAbility } from './forge.js';
 import { matchValid, resolveDefined, calc, calcCtx, ctxOf, findTargets, liveOrLki, ctrlOf, zoneMap, compareSpec, isPlayer } from './filters.js';
-import { SA, makeSA, resolveChain, chooseTargetsForSA, castSpell, castableOptions, spellOptions, refOf, fromRef, canAfford, payManaCost, parseCost, chooseModes, targetSpec, targetCandidates, producedUnits, buildSpellSA, humanValid } from './abilities.js';
+import { SA, makeSA, resolveChain, chooseTargetsForSA, castSpell, castableOptions, spellOptions, refOf, fromRef, canAfford, payManaCost, parseCost, chooseModes, targetSpec, targetCandidates, producedUnits, buildSpellSA, humanValid, canPayNonMana, payCostParts, rollDice, costLabel as costLabelOf } from './abilities.js';
 import { normalizeCounter, counterName } from './game.js';
 const counterLabel = k => `${counterName(k)} counter`;
 import { COLORS, COLOR_NAMES, NAME_TO_COLOR, BASIC_LAND_TYPES } from './util.js';
-import { cmc, parseMana } from './mana.js';
-import { canAttack, defendersFor } from './combat.js';
+import { cmc, parseMana, addCosts } from './mana.js';
+import { canAttack, defendersFor, playerInDirection } from './combat.js';
 
 const Z = z => (z ? (zoneMap[z] || z.toLowerCase()) : z);
 
@@ -145,10 +145,11 @@ async function scry(game, pid, n, sa) {
 
 async function surveil(game, pid, n, sa) {
   const p = game.players[pid];
+  for (const s of game.activeStatics('SurveilNum')) if (matchValid(game, p, s.p.ValidPlayer || 'You', s.ctx)) n += +(s.p.Num || 0);
   const top = p.library.slice(0, n);
   if (!top.length) return;
   const gy = await chooseCards(game, pid, top, 0, top.length, `Surveil ${n}: choose cards to put into your graveyard`, sa, 'surveilGrave', { reveal: true });
-  for (const c of gy) await game.moveCard(c, 'graveyard', { silent: true });
+  for (const c of gy) { const r = await game.moveCard(c, 'graveyard', { silent: true }); if (r && r.zone === 'graveyard') r.surveilledTurn = game.turnNumber; }
   game.log(`${p.name} surveils ${n}${gy.length ? ` (${gy.length} to the graveyard)` : ''}.`);
   game.fire('Surveil', { Player: pid, Amount: n });
 }
@@ -284,12 +285,12 @@ export const E = {
         if (c.zone === 'gone') continue;
         const from = c.zone;
         if (p.RememberLKI === 'True') remember(sa, [c.zone === 'battlefield' ? game.makeLKI(c) : c]);
-        if (dest === 'library' && p.Shuffle === 'True') { await game.moveCard(c, 'library', { ...moveOpts(c), pos: 'top' }); game.shuffle(game.players[c.owner]); moved.push(c); continue; }
+        if (dest === 'library' && p.Shuffle === 'True') { await game.moveCard(c, 'library', { ...moveOpts(c), pos: 'top' }); game.shuffle(game.players[c.owner], sa); moved.push(c); continue; }
         const r = await game.moveCard(c, dest, moveOpts(c));
         await after(r, from);
       }
       await game.endBatch();
-      if (dest === 'library' && p.Shuffle === 'True') for (const pl of new Set(list.map(c => c.owner))) game.shuffle(game.players[pl]);
+      if (dest === 'library' && p.Shuffle === 'True') for (const pl of new Set(list.map(c => c.owner))) game.shuffle(game.players[pl], sa);
       return;
     }
     // hidden-zone search / choice
@@ -309,7 +310,7 @@ export const E = {
       const mandatory = p.Mandatory === 'True' || origins[0] === 'battlefield';
       if (sa.p.Optional === 'True' && !mandatory) {
         const yes = await game.ask(pl.id, { type: 'confirm', prompt: `${desc(game, sa)}?`, purpose: 'optionalSearch', sa });
-        if (!yes) { if (origins.includes('library') && p.Shuffle !== 'False') game.shuffle(pl); continue; }
+        if (!yes) { if (origins.includes('library') && p.Shuffle !== 'False') game.shuffle(pl, sa); continue; }
       }
       let chosen;
       if (p.AtRandom === 'True') { const tmp = pool.slice(); game.rng.shuffle(tmp); chosen = tmp.slice(0, n); }
@@ -330,7 +331,8 @@ export const E = {
       }
       await game.endBatch();
       if (chosen.length && dest !== 'battlefield' && origins.includes('library')) game.log(`${pl.name} searches their library${dest === 'hand' ? ' and puts ' + chosen.length + ' card(s) into their hand' : ''}.`);
-      if (origins.includes('library') && p.Shuffle !== 'False') game.shuffle(pl);
+      if (origins.includes('library')) game.fire('SearchedLibrary', { Player: chooser, Searched: pl.id, SearchOwn: chooser === pl.id });
+      if (origins.includes('library') && p.Shuffle !== 'False') game.shuffle(pl, sa);
     }
   },
 
@@ -365,7 +367,7 @@ export const E = {
     await game.endBatch();
     if (pool.length > 4) game.log(`${desc(game, sa)} (${pool.length} cards)`);
     if (p.RememberChanged === 'True') remember(sa, moved);
-    if (dest === 'library' && p.Shuffle !== 'False') for (const pl of new Set(pool.map(c => c.owner))) game.shuffle(game.players[pl]);
+    if (dest === 'library' && p.Shuffle !== 'False') for (const pl of new Set(pool.map(c => c.owner))) game.shuffle(game.players[pl], sa);
   },
 
   async Token(game, sa) {
@@ -419,8 +421,9 @@ export const E = {
       if (opts.length) type = opts.length === 1 ? opts[0] : await game.ask(sa.controller, { type: 'option', prompt: 'Choose a counter type', options: opts.map(o => ({ label: o, value: o })), purpose: 'counterType', sa });
     }
     const n = num(game, sa, 'CounterNum', 1);
-    if (p.Monstrosity === 'True') {
-      for (const c of cardsOf(list)) { if (c.monstrous) continue; await game.addCounters(c, 'P1P1', n, sa); c.monstrous = true; game.fire('BecomeMonstrous', { Card: c }); }
+    if (p.Monstrosity) {
+      const mn = p.Monstrosity === 'True' ? n : calc(game, p.Monstrosity, sa);
+      for (const c of cardsOf(list)) { if (c.monstrous) continue; await game.addCounters(c, 'P1P1', mn, sa); c.monstrous = true; game.fire('BecomeMonstrous', { Card: c }); }
       return;
     }
     if (p.Adapt === 'True') { for (const c of cardsOf(list)) if (!(c.counters.P1P1 > 0)) await game.addCounters(c, 'P1P1', n, sa); return; }
@@ -430,7 +433,7 @@ export const E = {
       if (o.isPlayer) await game.addCounters(o, type, amt, sa);
       else if (o.isCard) await game.addCounters(o, type, amt, sa, { etb: !!p.ETB && sa.etbCard === o });
     }
-    if (p.Renown === 'True') for (const c of cardsOf(list)) c.renowned = true;
+    if (p.Renown === 'True') for (const c of cardsOf(list)) { c.renowned = true; game.fire('BecomeRenowned', { Card: c, Player: c.controller }); }
     if (p.RememberCards === 'True') remember(sa, list);
   },
 
@@ -482,12 +485,10 @@ export const E = {
 
   async Proliferate(game, sa) {
     const pid = sa.controller;
-    const cands = [...game.battlefield.filter(c => Object.values(c.counters).some(n => n > 0)), ...game.livingPlayers().filter(p => Object.values(p.counters).some(n => n > 0))];
-    if (!cands.length) return;
-    const ans = await game.ask(pid, { type: 'targets', prompt: 'Proliferate: choose any number of permanents and/or players', cands: cands.map(refOf), min: 0, max: cands.length, sa, purpose: 'proliferate', notTargeting: true });
-    const chosen = (ans || []).map(r => fromRef(game, r)).filter(Boolean);
-    for (const o of chosen) for (const [k, n] of Object.entries(o.counters)) if (n > 0) await game.addCounters(o, k, 1, sa, { silent: true });
-    if (chosen.length) game.log(`${game.players[pid].name} proliferates (${chosen.map(o => game.name(o)).join(', ')}).`);
+    // "if you would proliferate, proliferate twice instead"
+    const rp = await game.applySimpleReplacement('Proliferate', { Affected: game.players[pid], Player: pid, Num: 1 }, sa);
+    const times = rp ? Math.max(1, rp.Num || 1) : 1;
+    for (let k = 0; k < times; k++) await proliferateOnce(game, sa, pid);
   },
 
   async Pump(game, sa) {
@@ -498,7 +499,11 @@ export const E = {
     const d = p.NumDef != null ? calc(game, p.NumDef, sa) : 0;
     let kws = kwList(p.KW);
     if (p.KWChoice || p.Choices && p.KWChoice !== undefined) { /* ignore */ }
-    if (p.DefinedKW) kws = kws.concat(kwList(p.DefinedKW));
+    // "Protection:Player.PlayerUID_ChosenPlayerUID:ChosenPlayerName" with DefinedKW$ <player>: fill in that player
+    if (p.DefinedKW) {
+      const who = playersOf(resolveDefined(game, p.DefinedKW, ctxOf(game, sa)))[0];
+      kws = who ? kws.map(k => k.replace(/ChosenPlayerUID/g, String(who.id)).replace(/ChosenPlayerName/g, who.name)) : kws.filter(k => !/ChosenPlayer/.test(k));
+    }
     for (const o of list) {
       if (!o) continue;
       if (o.isPlayer) {
@@ -640,7 +645,7 @@ export const E = {
     }
     const valid = (p.SacValid || 'Card.Self').replace(/CARDNAME/g, 'Card.Self');
     for (const pl of playersOf(def.length ? def : [game.players[sa.controller]])) {
-      const pool = game.battlefield.filter(c => c.controller === pl.id && matchValid(game, c, valid, { ...ctx, you: pl.id }));
+      const pool = game.battlefield.filter(c => c.controller === pl.id && matchValid(game, c, valid, { ...ctx, you: pl.id }) && !game.cantSacrifice(c, sa));
       const n = p.Amount === 'All' ? pool.length : num(game, sa, 'Amount', 1);
       if (!pool.length) continue;
       let chosen;
@@ -660,7 +665,13 @@ export const E = {
   async SacrificeAll(game, sa) {
     const ctx = ctxOf(game, sa);
     let list = game.battlefield.filter(c => matchValid(game, c, sa.p.ValidCards || 'Card', ctx));
-    if (sa.p.Defined) { const pl = playersOf(resolveDefined(game, sa.p.Defined, ctx)).map(x => x.id); list = list.filter(c => pl.includes(c.controller)); }
+    if (sa.p.Defined) {
+      // Defined$ names either players (sacrifice what they control) or the permanents themselves
+      const objs2 = resolveDefined(game, sa.p.Defined, ctx);
+      const pl = playersOf(objs2).map(x => x.id);
+      const cs = new Set(objs2.filter(o => o && !o.isPlayer).map(o => liveOrLki(game, o)).filter(c => c && c.isCard && c.zone === 'battlefield').map(c => c.id));
+      list = list.filter(c => pl.includes(c.controller) || cs.has(c.id));
+    }
     game.beginBatch();
     for (const c of list) { const lki = game.makeLKI(c); await game.sacrifice(c, sa); if (sa.p.RememberSacrificed === 'True') remember(sa, [lki]); }
     await game.endBatch();
@@ -831,7 +842,7 @@ export const E = {
         else await game.moveCard(c, rdest, { cause: sa, silent: true, exiledWith: sa.host.id });
       }
       if (p.RememberRevealed === 'True') remember(sa, revealed);
-      if (p.Shuffle === 'True') game.shuffle(pl);
+      if (p.Shuffle === 'True') game.shuffle(pl, sa);
       game.touch();
     }
   },
@@ -945,7 +956,7 @@ export const E = {
     if (!ok && r != null && (game.debugLog || game.debugChoose)) console.log('ChoosePlayer: invalid answer', JSON.stringify(r), choices.map(p => p.id));
     target.chosen = { ...(target.chosen || {}), player: ok ? r : choices[0].id };
     if (sa.p.RememberChosen === 'True') remember(sa, [game.players[target.chosen.player]]);
-    game.log(`${chooser.name} chooses ${game.players[target.chosen.player].name}.`);
+    game.log(sa.p.Secretly === 'True' ? `${chooser.name} secretly chooses a player.` : `${chooser.name} chooses ${game.players[target.chosen.player].name}.`);
   },
 
   async ChooseNumber(game, sa) {
@@ -982,11 +993,13 @@ export const E = {
     };
     const mk = (raw, i, kind) => ({ raw, parsed: parseAbility(raw), svars, src: e, key: `e${e.id}${kind}${i}` });
     e.effectChars = { name: e.effectName, types: new Set(['Effect']), subtypes: new Set(), supertypes: new Set(), colors: new Set(), keywords: [], abilities: [], triggers: triggers.map((r, i) => mk(r, i, 'T')), statics: statics.map((r, i) => mk(r, i, 'S')), replacements: repls.map((r, i) => mk(r, i, 'R')), svars, power: 0, toughness: 0, cmc: 0 };
+    if (p.SetChosenNumber) e.chosen.number = calc(game, p.SetChosenNumber, sa);
     if (p.RememberObjects) e.remembered = resolveDefined(game, p.RememberObjects, ctx).map(o => o.lki ? liveOrLki(game, o) : o).filter(Boolean);
     if (p.ImprintCards) e.imprinted = resolveDefined(game, p.ImprintCards, ctx);
     if (p.RememberLKI === 'True') e.remembered = e.remembered.map(o => o.isCard ? game.makeLKI(o) : o);
     if (e.duration === 'UntilHostLeavesPlay' || e.duration === 'UntilLoseControlOfHost') { e.endsWhenHostLeaves = sa.host.id; e.duration = 'Permanent'; }
     if (e.duration === 'UntilHostLeavesPlayOrEOT') { e.endsWhenHostLeaves = sa.host.id; e.duration = 'EOT'; }
+    if (e.duration === 'UntilUntaps') { e.endsWhenHostUntaps = sa.host.id; e.endsWhenHostLeaves = sa.host.id; e.duration = 'Permanent'; }
     if (p.Stackable === 'False' && game.effects.some(x => x.effectName === e.effectName && x.controller === e.controller)) return;
     if (p.Duration === 'Permanent' && /Emblem/.test(e.effectName)) e.isEmblem = true;
     game.effects.push(e);
@@ -1028,6 +1041,8 @@ export const E = {
     sub.isTrigger = true;
     sub.trigRemembered = rem;
     sub.delayRemembered = rem;
+    // "when you pay this cost one or more times, put that many ..." (Count$TriggerRememberAmount)
+    if (p.RememberSVarAmount) sub.triggerRememberAmount = sa.svars[p.RememberSVarAmount] ? calc(game, sa.svars[p.RememberSVarAmount], sa) : 0;
     sub.description = (p.TriggerDescription || parseAbility(raw).p.SpellDescription || '').replace(/CARDNAME/g, game.name(sa.host));
     const ok = await chooseTargetsForSA(game, sub, { optional: true });
     if (!ok) return;
@@ -1051,9 +1066,10 @@ export const E = {
       c.sick = true;
       if (p.LoseControl) {
         const lc = p.LoseControl;
-        c.tempControl = { prev, owner: sa.controller, until: /EOT/.test(lc) ? 'EOT' : 'Permanent', untilHostLeaves: /LeavesPlay|LoseControl/.test(lc) ? sa.host.id : null };
+        c.tempControl = { prev, owner: sa.controller, until: /EOT/.test(lc) ? 'EOT' : /EndOfCombat/.test(lc) ? 'UntilEndOfCombat' : 'Permanent', untilHostLeaves: /LeavesPlay|LoseControl/.test(lc) ? sa.host.id : null, untilUntapOf: /Untap/.test(lc) ? sa.host.id : null };
       }
       if (p.Untap === 'True') c.tapped = false;
+      if (p.RememberControlled === 'True') remember(sa, [c]);
       if (p.AddKWs) c.temp.push({ keywords: kwList(p.AddKWs), until: p.LoseControl && /EOT/.test(p.LoseControl) ? 'EOT' : 'Permanent', owner: sa.controller });
       if (game.combat) { game.combat.attackers = game.combat.attackers.filter(a => a.card !== c.id); game.combat.blockers.delete(c.id); }
       game.touch();
@@ -1082,8 +1098,10 @@ export const E = {
       for (const x of d) { if (x && x.stackItem) items.push(x); else if (x && x.isCard) { const it = game.stack.find(s => s.card === x); if (it) items.push(it); } }
       if (!items.length && sa.trig && sa.trig.StackItem) items = [sa.trig.StackItem];
     }
-    const n = num(game, sa, 'Amount', 1);
+    let n = num(game, sa, 'Amount', 1);
     const controller = sa.p.Controller ? (playersOf(resolveDefined(game, sa.p.Controller, ctx))[0] || game.players[sa.controller]).id : sa.controller;
+    // "if you would copy a spell one or more times, instead copy it that many times plus an additional time"
+    if (n > 0 && items.some(it => it.kind === 'spell')) { const rp = await game.applySimpleReplacement('CopySpell', { Affected: game.players[controller], Player: controller, Amount: n }, sa); if (rp && rp.Amount > n) { game.log(`${game.players[controller].name} makes an additional copy.`); n = rp.Amount; } }
     for (const item of items) for (let i = 0; i < n; i++) await copyStackItem(game, item, controller, sa.p.MayChooseTarget === 'True' || sa.p.MayChooseNewTargets === 'True');
   },
 
@@ -1127,6 +1145,8 @@ export const E = {
     if (p.SetToughness) extra.toughness = calc(game, p.SetToughness, sa);
     if (p.AddKeywords) extra.keywords = (extra.keywords || []).concat(kwList(p.AddKeywords));
     if (p.SetColor) extra.colors = p.SetColor.split(',').map(x => NAME_TO_COLOR[x.trim().toLowerCase()]).filter(Boolean);
+    if (p.NewName) extra.name = p.NewName;
+    if (p.AddColors) extra.addColors = p.AddColors.split(',').map(x => NAME_TO_COLOR[x.trim().toLowerCase()]).filter(Boolean);
     target.copyOf = { def: base.def, face: base.face || 0, extra };
     game.touch();
     game.log(`${game.name(target)} becomes a copy of ${game.name(source)}.`);
@@ -1143,7 +1163,8 @@ export const E = {
     }
     if (p.Choices) {
       const pool = game.battlefield.filter(c => matchValid(game, c, p.Choices, ctx));
-      list = await chooseCards(game, sa.controller, pool, 1, num(game, sa, 'ChoiceNum', 1), 'Choose a permanent to copy', sa, 'copy');
+      const chooser = p.Chooser ? (playersOf(resolveDefined(game, p.Chooser, ctx))[0] || game.players[sa.controller]) : game.players[sa.controller];
+      list = await chooseCards(game, chooser.id, pool, 1, num(game, sa, 'ChoiceNum', 1), 'Choose a permanent to copy', sa, 'copy');
     }
     const n = num(game, sa, 'NumCopies', 1);
     const ctrl = p.Controller ? (playersOf(resolveDefined(game, p.Controller, ctx))[0] || game.players[sa.controller]).id : sa.controller;
@@ -1187,7 +1208,11 @@ export const E = {
     const p = sa.p;
     const ctx = ctxOf(game, sa);
     const objsToAttach = p.Object ? cardsOf(resolveDefined(game, p.Object, ctx)) : [sa.host.lki ? sa.host.card : sa.host];
-    const target = (hasTgtSpec(sa) ? sa.targets : resolveDefined(game, p.Defined || 'Self', ctx))[0];
+    let target = (hasTgtSpec(sa) ? sa.targets : resolveDefined(game, p.Defined || 'Self', ctx))[0];
+    if (p.Choices && !hasTgtSpec(sa)) {
+      const pool = game.battlefield.filter(c => !objsToAttach.includes(c) && matchValid(game, c, p.Choices, ctx));
+      target = (await chooseCards(game, sa.controller, pool, p.Optional === 'True' ? 0 : 1, 1, p.ChoiceTitle || 'Choose what to attach it to', sa, 'attachChoice'))[0];
+    }
     if (!target) return;
     for (const a of objsToAttach) {
       if (!a || a.zone !== 'battlefield') continue;
@@ -1195,6 +1220,13 @@ export const E = {
       else {
         if (target.zone !== 'battlefield' || target === a) continue;
         if (game.chars(a).subtypes.has('Equipment') && (!game.chars(target).types.has('Creature'))) continue;
+        if (game.chars(a).subtypes.has('Fortification') && (!game.chars(target).types.has('Land'))) continue;
+        for (const r of game.chars(a).replacements) {
+          const rp = r.parsed.p;
+          if (rp.Event !== 'Attached' || !r.svars[rp.ReplaceWith]) continue;
+          if (rp.ValidTarget && !matchValid(game, target, rp.ValidTarget, { host: a, you: a.controller })) continue;
+          await resolveChain(game, makeSA(game, r.svars[rp.ReplaceWith], r.svars, a, a.controller, { key: r.key }));
+        }
         a.attachedTo = target.id;
       }
       game.touch();
@@ -1254,7 +1286,7 @@ export const E = {
 
   async Regenerate(game, sa) { for (const c of cardsOf(objs(game, sa, 'Self'))) { c.regenShields = (c.regenShields || 0) + 1; c.temp.push({ until: 'EOT', regen: true }); } game.touch(); },
 
-  async Shuffle(game, sa) { for (const pl of playersOf(objs(game, sa, 'You'))) game.shuffle(pl); },
+  async Shuffle(game, sa) { for (const pl of playersOf(objs(game, sa, 'You'))) game.shuffle(pl, sa); },
 
   async Amass(game, sa) {
     const n = num(game, sa, 'Num', 1);
@@ -1285,30 +1317,33 @@ export const E = {
 
   async Explore(game, sa) {
     for (const c of cardsOf(objs(game, sa, 'Self'))) {
-      const pl = game.players[c.controller];
-      const top = pl.library[0];
-      if (!top) continue;
-      game.log(`${game.name(c)} explores, revealing ${game.name(top)}.`);
-      if (game.chars(top).types.has('Land')) await game.moveCard(top, 'hand', { silent: true });
-      else {
-        if (c.zone === 'battlefield') await game.addCounters(c, 'P1P1', 1, sa);
-        const toGy = await game.ask(pl.id, { type: 'confirm', prompt: `Put ${game.name(top)} into your graveyard?`, purpose: 'exploreGrave', cards: [top.id], sa });
-        if (toGy) await game.moveCard(top, 'graveyard');
+      // "if a creature you control would explore, instead it explores, then it explores again"
+      let times = num(game, sa, 'Num', 1);
+      if (!sa.p.Num && game.replacementsFor('Explore').some(({ p, ctx }) => !p.ValidExplorer || matchValid(game, c, p.ValidExplorer, ctx))) times = 2;
+      for (let k = 0; k < times; k++) {
+        const pl = game.players[c.controller];
+        const top = pl.library[0];
+        if (!top) break;
+        game.log(`${game.name(c)} explores, revealing ${game.name(top)}.`);
+        if (game.chars(top).types.has('Land')) await game.moveCard(top, 'hand', { silent: true });
+        else {
+          if (c.zone === 'battlefield') await game.addCounters(c, 'P1P1', 1, sa);
+          const toGy = await game.ask(pl.id, { type: 'confirm', prompt: `Put ${game.name(top)} into your graveyard?`, purpose: 'exploreGrave', cards: [top.id], sa });
+          if (toGy) await game.moveCard(top, 'graveyard');
+        }
+        game.fire('Explores', { Card: c, Player: pl.id });
       }
-      game.fire('Explores', { Card: c, Player: pl.id });
     }
   },
 
   async RollDice(game, sa) {
     const sides = num(game, sa, 'Sides', 6);
     const amount = num(game, sa, 'Amount', 1);
-    let total = 0;
-    for (let i = 0; i < amount; i++) total += 1 + game.rng.int(sides);
+    const ignore = sa.p.IgnoreLower ? num(game, sa, 'IgnoreLower', 1) : 0;
+    let { total } = await rollDice(game, sa.controller, amount, sides, ignore, sa);
     total += num(game, sa, 'Modifier', 0);
-    game.log(`${game.players[sa.controller].name} rolls a d${sides}: ${total}.`);
     sa.host.chosen = { ...(sa.host.chosen || {}), number: total };
     storeSVar(sa, 'Result', String(total));
-    game.fire('RolledDie', { Player: sa.controller, Result: total, Sides: sides });
     if (sa.p.ResultSubAbilities) {
       for (const part of sa.p.ResultSubAbilities.split(',')) {
         const [range, name] = part.split(':');
@@ -1322,7 +1357,8 @@ export const E = {
   },
 
   async FlipCoin(game, sa) {
-    const win = game.rng.int(2) === 0;
+    let win = game.rng.int(2) === 0;
+    if (game.activeStatics('FlipCoinDoubler').some(s => matchValid(game, game.players[sa.controller], s.p.ValidPlayer || 'You', s.ctx))) win = (game.rng.int(2) === 0) || win;
     game.log(`${game.players[sa.controller].name} flips a coin: ${win ? 'wins' : 'loses'}.`);
     const name = win ? sa.p.WinSubAbility : sa.p.LoseSubAbility;
     if (name && sa.svars[name]) {
@@ -1341,17 +1377,40 @@ export const E = {
       if (mode === 'TurnFaceUp' || mode === 'TurnFace') {
         if (!c.faceDown) continue;
         c.faceDown = false;
+        c.cloaked = false; c.disguised = false;
         if (sa.p.Megamorph === 'true' || sa.p.Megamorph === 'True') await game.addCounters(c, 'P1P1', 1, sa);
         game.touch();
         game.log(`${game.players[c.controller].name} turns ${game.name(c)} face up.`);
         c.turnedFaceUpTurn = game.turnNumber;
+        // "as CARDNAME is turned face up, ..." replacements
+        for (const r of game.chars(c).replacements) {
+          const rp = r.parsed.p;
+          if (rp.Event !== 'TurnFaceUp' || !r.svars[rp.ReplaceWith]) continue;
+          if (rp.ValidCard && !matchValid(game, c, rp.ValidCard, { host: c, you: c.controller })) continue;
+          if (rp.Optional === 'True' && !(await game.ask(c.controller, { type: 'confirm', prompt: `${game.name(c)}: ${rp.Description || 'apply?'}`, purpose: 'replacement', cardId: c.id }))) continue;
+          const sub = makeSA(game, r.svars[rp.ReplaceWith], r.svars, c, c.controller, { key: r.key });
+          for (const s of sub.chain()) s.etbCard = c;
+          await resolveChain(game, sub);
+        }
         game.fire('TurnFaceUp', { Card: c, Player: c.controller });
+      } else if (mode === 'TurnFaceDown') {
+        if (c.faceDown || c.zone !== 'battlefield') continue;
+        c.faceDown = true; c.copyOf = null;
+        game.touch();
+        game.log(`${game.players[c.controller].name} turns ${game.name(c)} face down.`);
       } else if (mode === 'Transform' || mode === 'Flip') {
         if (c.def.faces.length < 2) continue;
         c.face = c.face ? 0 : 1;
         c.transformed = !!c.face;
         game.touch();
         game.log(`${game.name(c)} transforms.`);
+        for (const r of game.chars(c).replacements) {
+          const rp = r.parsed.p;
+          if (rp.Event !== 'Transform' || !r.svars[rp.ReplaceWith]) continue;
+          const sub = makeSA(game, r.svars[rp.ReplaceWith], r.svars, c, c.controller, { key: r.key });
+          for (const s of sub.chain()) s.etbCard = c;
+          await resolveChain(game, sub);
+        }
         game.fire('Transformed', { Card: c });
       }
     }
@@ -1362,8 +1421,26 @@ export const E = {
     const n = num(game, sa, 'Amount', 1);
     const cards = sa.p.Defined && !/You|Player/.test(sa.p.Defined) ? cardsOf(resolveDefined(game, sa.p.Defined, ctxOf(game, sa))) : pl.library.slice(0, n);
     for (const c of cards) {
-      await game.moveCard(c, 'battlefield', { controller: sa.controller, faceDown: true, silent: true });
+      const r = await game.moveCard(c, 'battlefield', { controller: sa.controller, faceDown: true, silent: true, setProps: { manifested: true } });
+      if (r && sa.p.RememberManifested === 'True') remember(sa, [r]);
       game.log(`${pl.name} manifests a card.`);
+    }
+  },
+
+  // cloak: put the card onto the battlefield face down as a 2/2 creature with ward {2}
+  async Cloak(game, sa) {
+    const ctx = ctxOf(game, sa);
+    const players = sa.p.DefinedPlayer ? playersOf(resolveDefined(game, sa.p.DefinedPlayer, ctx)) : [game.players[sa.controller]];
+    const n = num(game, sa, 'Amount', 1);
+    const fromTop = !sa.p.Defined || sa.p.Defined === 'TopOfLibrary';
+    for (const pl of players) {
+      if (pl.lost) continue;
+      const cards = fromTop ? pl.library.slice(0, n) : cardsOf(resolveDefined(game, sa.p.Defined, ctx));
+      for (const c of cards) {
+        const r = await game.moveCard(c, 'battlefield', { controller: pl.id, faceDown: true, silent: true, cause: sa, setProps: { manifested: true, cloaked: true } });
+        if (r && sa.p.RememberCloaked === 'True') remember(sa, [r]);
+        game.log(`${pl.name} cloaks a card.`);
+      }
     }
   },
 
@@ -1383,14 +1460,18 @@ export const E = {
   async Vote(game, sa) {
     const choices = (sa.p.Choices || '').split(',').map(s => s.trim()).filter(n => sa.svars[n]);
     if (!choices.length) return;
-    const tally = {};
+    const tally = {}, votes = {};
     for (const pl of game.livingPlayers()) {
       const v = await game.ask(pl.id, { type: 'option', prompt: `Vote: ${desc(game, sa)}`, options: choices.map(n => ({ label: parseAbility(sa.svars[n]).p.SpellDescription || n, value: n })), sa, purpose: 'vote' });
-      tally[v || choices[0]] = (tally[v || choices[0]] || 0) + 1;
+      const pick = choices.includes(v) ? v : choices[0];
+      tally[pick] = (tally[pick] || 0) + 1;
+      votes[pl.id] = [pick];
     }
     const best = Object.entries(tally).sort((a, b) => b[1] - a[1]);
     const winners = best.filter(x => x[1] === best[0][1]).map(x => x[0]);
-    for (const w of winners) await resolveChain(game, makeSA(game, sa.svars[w], sa.svars, sa.host, sa.controller, { parent: sa }));
+    game.fire('Vote', { Player: sa.controller, Votes: votes });
+    const resolveThese = winners.length > 1 && sa.p.VoteTiedAbility && sa.svars[sa.p.VoteTiedAbility] ? [sa.p.VoteTiedAbility] : winners;
+    for (const w of resolveThese) await resolveChain(game, makeSA(game, sa.svars[w], sa.svars, sa.host, sa.controller, { parent: sa }));
   },
 
   async Repeat(game, sa) {
@@ -1418,6 +1499,7 @@ export const E = {
     const prev = sa.host.remembered;
     const prevImp = sa.host.imprinted;
     const useImp = p.UseImprinted === 'True';
+    const added = [];
     for (const it of items.slice(0, 60)) {
       if (useImp) sa.host.imprinted = [it];
       else sa.host.remembered = [...(p.RememberOld ? prev : []), it];
@@ -1429,8 +1511,10 @@ export const E = {
         if (!yes) continue;
       }
       if (await chooseTargetsForSA(game, sub, { optional: true })) await resolveChain(game, sub);
+      // what the iterations remember ("RememberChosen") outlives the loop; the iterated object doesn't
+      if (!useImp) for (const x of sa.host.remembered || []) if (x !== it && !prev.includes(x) && !added.includes(x)) added.push(x);
     }
-    if (useImp) sa.host.imprinted = prevImp; else sa.host.remembered = prev;
+    if (useImp) sa.host.imprinted = prevImp; else sa.host.remembered = [...prev, ...added];
   },
 
   async Branch(game, sa) {
@@ -1448,7 +1532,14 @@ export const E = {
   },
 
   async AddPhase(game, sa) {
-    if ((sa.p.ExtraPhase || '').includes('Combat') || sa.p.ExtraPhase === 'BeginCombat') { game.extraCombats = (game.extraCombats || 0) + 1; game.log('An additional combat phase will follow.'); }
+    if ((sa.p.ExtraPhase || '').includes('Combat') || sa.p.ExtraPhase === 'BeginCombat') {
+      game.extraCombats = (game.extraCombats || 0) + 1;
+      game.log('An additional combat phase will follow.');
+      // "at the beginning of that combat, ..."
+      const dt = sa.p.ExtraPhaseDelayedTrigger && sa.svars[sa.p.ExtraPhaseDelayedTrigger];
+      const ex = sa.p.ExtraPhaseDelayedTriggerExcute || sa.p.ExtraPhaseDelayedTriggerExecute;
+      if (dt && ex) game.delayed.push({ id: game.uid++, p: { ...parseAbility(dt).p, Execute: ex, ValidPlayer: undefined }, svars: sa.svars, host: sa.host, controller: sa.controller, remembered: [], turn: game.turnNumber, thisTurnOnly: true, afterCombats: (game.combatsThisTurn || 0) + 1 });
+    }
   },
   async AddTurn(game, sa) {
     const n = sa.p.NumTurns ? calc(game, sa.p.NumTurns, sa) : 1;
@@ -1472,7 +1563,17 @@ export const E = {
     game.touch();
   },
 
-  async Phases(game, sa) { for (const c of cardsOf(objs(game, sa, 'Self'))) { c.phasedOut = true; game.log(`${game.name(c)} phases out.`); } game.touch(); },
+  async Phases(game, sa) {
+    const out = [];
+    for (const c of cardsOf(objs(game, sa, 'Self'))) {
+      if (c.zone !== 'battlefield') continue;
+      if (c.phasedOut) { if (sa.p.PhaseInOrOut === 'True') { c.phasedOut = false; game.log(`${game.name(c)} phases in.`); } continue; }
+      c.phasedOut = true; out.push(c);
+      game.log(`${game.name(c)} phases out.`);
+    }
+    game.touch();
+    if (out.length) game.fire('PhaseOutAll', { Cards: out, Amount: out.length });
+  },
 
   async Play(game, sa) {
     const p = sa.p;
@@ -1503,7 +1604,16 @@ export const E = {
         if (!yes) break;
       }
       cards = cards.filter(c => c !== pick);
-      if (game.chars(pick).types.has('Land')) { await game.moveCard(pick, 'battlefield', { controller: pid }); continue; }
+      if (game.chars(pick).types.has('Land') && p.CopyCard !== 'True') { await game.moveCard(pick, 'battlefield', { controller: pid }); continue; }
+      if (p.CopyCard === 'True') {
+        // "copy that card; you may cast the copy" — the copy is a new object that stops existing outside the stack
+        const copy = game.newCard(pick.def, pid);
+        copy.token = true; copy.isSpellCopy = true; copy.zone = 'none'; copy.face = pick.face;
+        let ok = false;
+        try { ok = await castSpell(game, pid, copy, {}, { free, fromEffect: true, effectSA: sa }); } catch (e) { if (!e.cancelled) throw e; }
+        if (!ok && copy.zone === 'none') { copy.zone = 'gone'; game.cards.delete(copy.id); }
+        continue;
+      }
       try {
         const ok = await castSpell(game, pid, pick, {}, { free, fromEffect: true, effectSA: sa });
         if (ok && p.ReplaceGraveyard === 'Exile') pick.mustBeExiled = true;
@@ -1657,12 +1767,34 @@ export const E = {
     host.monstrous = true;
     game.fire('BecomeMonstrous', { Card: host });
   },
-  async ChangeTargets() {},
+  // choose new targets for target spell or ability (Emissary of Grudges)
+  async ChangeTargets(game, sa) {
+    const ctx = ctxOf(game, sa);
+    const items = (hasTgtSpec(sa) ? sa.targets : resolveDefined(game, sa.p.Defined || 'Targeted', ctx)).filter(t => t && t.stackItem && game.stack.includes(t));
+    for (const item of items) {
+      if (sa.p.ConditionPlayerContains && !matchValid(game, game.players[item.controller], sa.p.ConditionPlayerContains, ctx)) continue;
+      if (sa.p.ConditionTargetValidTargeting && !item.sa.chain().flatMap(s => s.targets || []).some(t => matchValid(game, t, sa.p.ConditionTargetValidTargeting, ctx))) continue;
+      let changed = false;
+      for (const s of item.sa.chain()) {
+        const spec = targetSpec(game, s);
+        if (!spec || !s.targets || !s.targets.length) continue;
+        const cands = targetCandidates(game, s, spec).filter(c => c !== item);
+        if (!cands.length) continue;
+        const max = Math.min(spec.max, cands.length);
+        const chooser = sa.p.Chooser ? (playersOf(resolveDefined(game, sa.p.Chooser, ctx))[0] || game.players[sa.controller]) : game.players[sa.controller];
+        const ans = await game.ask(chooser.id, { type: 'targets', prompt: `Choose new targets for ${item.description}`, cands: cands.map(refOf), min: Math.min(spec.min, max), max, sa: s, spec, purpose: 'changeTargets' });
+        const picked = (ans || []).map(r => fromRef(game, r)).filter(o => o && cands.includes(o));
+        if (picked.length < spec.min) continue;
+        s.targets = picked; s.targetZcc = picked.map(o => (o.isCard ? o.zcc : null)); changed = true;
+      }
+      if (changed) { game.touch(); game.log(`${game.players[sa.controller].name} changes the targets of ${item.description} (now ${item.sa.chain().flatMap(s => s.targets || []).map(t => game.name(t)).join(', ')}).`); }
+    }
+  },
   async ExchangeZone() {},
   async RearrangeTopOfLibrary(game, sa) {
     const pl = playersOf(objs(game, sa, 'You'))[0] || game.players[sa.controller];
     const n = num(game, sa, 'NumCards', 3);
-    if (sa.p.MayShuffle === 'True' && await game.ask(sa.controller, { type: 'confirm', prompt: 'Shuffle the library instead?', purpose: 'shuffle', sa })) { game.shuffle(pl); return; }
+    if (sa.p.MayShuffle === 'True' && await game.ask(sa.controller, { type: 'confirm', prompt: 'Shuffle the library instead?', purpose: 'shuffle', sa })) { game.shuffle(pl, sa); return; }
     await scry(game, sa.controller, Math.min(n, pl.library.length), sa);
   },
   async Radiation(game, sa) { for (const pl of playersOf(objs(game, sa, 'You'))) await game.addCounters(pl, 'RAD', num(game, sa, 'Num', 1), sa); },
@@ -1744,12 +1876,89 @@ export const E = {
   async GainControlVariant(game, sa) {
     const ctx = ctxOf(game, sa);
     const list = sa.p.AllValid ? game.battlefield.filter(c => matchValid(game, c, sa.p.AllValid, ctx)) : cardsOf(objs(game, sa, 'Self'));
-    for (const c of list) {
-      const to = sa.p.ChangeController === 'CardOwner' ? c.owner : sa.controller;
-      if (c.controller !== to) { c.controller = to; c.sick = true; }
+    const mode = sa.p.ChangeController;
+    const dir = (sa.host.chosen && sa.host.chosen.direction) || 'Left';
+    const back = dir === 'Left' ? 'Right' : 'Left';
+    const moves = [];
+    if (mode === 'ChooseNextPlayerInChosenDirection' || mode === 'ChooseFromPlayerToTheirRight') {
+      // starting with you and proceeding in the direction, each player chooses one of the next player's permanents
+      const order = [];
+      const d = mode === 'ChooseFromPlayerToTheirRight' ? 'Right' : dir;
+      for (let pid = sa.controller, k = 0; k < game.players.length && pid != null && !order.includes(pid); k++) { order.push(pid); pid = playerInDirection(game, pid, d); }
+      for (const pid of order) {
+        const from = playerInDirection(game, pid, d);
+        const pool = list.filter(c => c.controller === from);
+        const pick = (await chooseCards(game, pid, pool, 1, 1, `Choose a permanent ${game.players[from].name} controls to gain control of`, sa, 'gainControlChoice'))[0];
+        if (pick) moves.push([pick, pid]);
+      }
+    } else for (const c of list) {
+      // each player gains control of what the next player in the chosen direction controls
+      const to = mode === 'CardOwner' ? c.owner : mode === 'NextPlayerInChosenDirection' ? playerInDirection(game, c.controller, back) : sa.controller;
+      if (to != null) moves.push([c, to]);
+    }
+    for (const [c, to] of moves) {
+      if (c.zone !== 'battlefield' || c.controller === to) continue;
+      const prev = c.controller;
+      c.controller = to; c.sick = true;
+      if (game.combat) { game.combat.attackers = game.combat.attackers.filter(a => a.card !== c.id); game.combat.blockers.delete(c.id); }
+      game.fire('ChangesController', { Card: c, OriginalController: prev });
     }
     game.touch();
     game.log(desc(game, sa));
+  },
+
+  async ChooseDirection(game, sa) {
+    const target = sa.etbCard || sa.host;
+    const pid = sa.controller;
+    const dir = await game.ask(pid, { type: 'option', prompt: `${game.name(sa.host)}: choose left or right`, options: [{ label: `Left (toward ${game.players[playerInDirection(game, pid, 'Left') ?? pid].name})`, value: 'Left' }, { label: `Right (toward ${game.players[playerInDirection(game, pid, 'Right') ?? pid].name})`, value: 'Right' }], sa, purpose: 'chooseDirection', ai: sa.p.AILogic });
+    target.chosen = { ...(target.chosen || {}), direction: dir === 'Right' ? 'Right' : 'Left' };
+    game.log(`${game.players[pid].name} chooses ${target.chosen.direction.toLowerCase()}.`);
+    game.touch();
+  },
+
+  // "target creature blocks <attacker> this turn if able" (Grappling Hook, provoke)
+  async MustBlock(game, sa) {
+    const ctx = ctxOf(game, sa);
+    const attacker = cardsOf(resolveDefined(game, sa.p.DefinedAttacker || 'Self', ctx)).map(c => liveOrLki(game, c)).find(c => c && c.isCard);
+    if (!attacker) return;
+    for (const c of cardsOf(objs(game, sa, 'Self'))) {
+      if (c.zone !== 'battlefield') continue;
+      c.mustBlock = { attacker: attacker.id, turn: game.turnNumber };
+      game.log(`${game.name(c)} must block ${game.name(attacker)} this turn if able.`);
+    }
+    game.touch();
+  },
+
+  // reselect which player or permanent an attacking creature attacks (or put it into combat attacking)
+  async ChangeCombatants(game, sa) {
+    if (!game.combat) return;
+    const ctx = ctxOf(game, sa);
+    for (const c of cardsOf(objs(game, sa, 'Self'))) {
+      if (c.zone !== 'battlefield') continue;
+      const rec = game.combat.attackers.find(a => a.card === c.id);
+      let opts = defendersFor(game, c.controller);
+      const spec = sa.p.Attacking;
+      if (spec && spec !== 'True') {
+        const ok = new Set();
+        for (let part of spec.split(' & ').map(s => s.trim())) {
+          if (part.startsWith('.')) part = 'Player' + part;
+          if (part.startsWith('Valid ')) { for (const x of resolveDefined(game, part, ctx)) if (x && x.isCard) ok.add('c' + x.id); continue; }
+          if (/^(Player|Opponent|You)(\.|$)/.test(part)) { for (const pl of game.livingPlayers()) if (matchValid(game, pl, part, ctx)) ok.add('p' + pl.id); continue; }
+          for (const x of resolveDefined(game, part, ctx)) if (x) ok.add(x.isPlayer ? 'p' + x.id : 'c' + x.id);
+        }
+        opts = opts.filter(d => ok.has(d.ref));
+      }
+      if (!opts.length) continue;
+      const cur = rec ? (rec.defenderCard ? 'c' + rec.defenderCard : 'p' + rec.defenderPlayer) : null;
+      const label = d => d.card ? game.name(game.cardById(d.card)) : game.players[d.player].name;
+      const options = opts.map(d => ({ label: `${d.ref === cur ? 'Keep attacking' : 'Attack'} ${label(d)}`, value: d.ref }));
+      const pick = opts.length === 1 && !rec ? opts[0].ref : await game.ask(sa.controller, { type: 'option', prompt: `${game.name(c)}: choose what it attacks`, options, sa, purpose: 'changeCombatants', cardId: c.id, ai: sa.p.AILogic });
+      const d = opts.find(x => x.ref === pick) || opts[0];
+      if (rec) { rec.defenderPlayer = d.player; rec.defenderCard = d.card || null; }
+      else game.combat.attackers.push({ card: c.id, defenderPlayer: d.player, defenderCard: d.card || null, blockers: [], blocked: false });
+      game.touch();
+      if (d.ref !== cur) game.log(`${game.name(c)} is now attacking ${label(d)}.`);
+    }
   },
   async DamageResolve() {},
   async Balance(game, sa) {
@@ -1772,7 +1981,8 @@ export const E = {
     const top = pl.library.slice(0, 2);
     if (!top.length) return;
     const pick = (await chooseCards(game, pl.id, top, 1, 1, 'Manifest dread: choose a card to manifest', sa, 'manifestDread', { reveal: true }))[0] || top[0];
-    await game.moveCard(pick, 'battlefield', { controller: pl.id, faceDown: true, silent: true });
+    const r = await game.moveCard(pick, 'battlefield', { controller: pl.id, faceDown: true, silent: true, setProps: { manifested: true } });
+    if (r && sa.p.RememberManifested === 'True') remember(sa, [r]);
     for (const c of top) if (c !== pick) await game.moveCard(c, 'graveyard', { silent: true });
     game.log(`${pl.name} manifests dread.`);
   },
@@ -1787,13 +1997,27 @@ export const E = {
   },
   async Clash(game, sa) {
     const me = game.players[sa.controller];
-    const opp = game.opponents(sa.controller)[0];
+    const opps = game.opponents(sa.controller);
+    let opp = sa.p.Defined ? playersOf(resolveDefined(game, sa.p.Defined, ctxOf(game, sa))).find(p => p.id !== me.id && !p.lost) : null;
+    if (!opp && opps.length === 1) opp = opps[0];
+    else if (!opp && opps.length) {
+      const id = await game.ask(me.id, { type: 'player', prompt: 'Choose an opponent to clash with', players: opps.map(p => p.id), sa, purpose: 'clashOpponent', ai: 'Opponent' });
+      opp = opps.find(p => p.id === id) || opps[0];
+    }
     const a = me.library[0], b = opp && opp.library[0];
     const va = a ? game.chars(a).cmc : -1, vb = b ? game.chars(b).cmc : -1;
     game.log(`${me.name} clashes${opp ? ' with ' + opp.name : ''}: ${a ? game.name(a) + ' (' + va + ')' : 'nothing'} vs ${b ? game.name(b) + ' (' + vb + ')' : 'nothing'}.`);
+    game.fire('Clashed', { Player: me.id, Won: va > vb });
+    if (opp) game.fire('Clashed', { Player: opp.id, Won: vb > va });
+    // each clashing player puts the revealed card on the top or bottom of their library
+    for (const [pl, c] of [[me, a], [opp, b]]) {
+      if (!pl || !c || pl.library[0] !== c) continue;
+      const bottom = await game.ask(pl.id, { type: 'confirm', prompt: `Clash: put ${game.name(c)} on the bottom of your library?`, purpose: 'clashBottom', cards: [c.id], sa });
+      if (bottom) { pl.library.shift(); pl.library.push(c); game.touch(); }
+    }
+    if (sa.p.RememberClasher === 'True' && opp) remember(sa, [opp]);
     const name = va > vb ? sa.p.WinSubAbility : sa.p.OtherwiseSubAbility;
     if (name && sa.svars[name]) await resolveChain(game, makeSA(game, sa.svars[name], sa.svars, sa.host, sa.controller, { parent: sa }));
-    game.fire('Clashed', { Player: sa.controller, Won: va > vb });
   },
   async TimeTravel(game, sa) {
     const pid = sa.controller;
@@ -1862,6 +2086,338 @@ export const E = {
     c.foretoldTurn = game.turnNumber;
     game.log(`${game.players[sa.controller].name} foretells a card.`);
   },
+  // soulbond: pair the host with another unpaired creature you control
+  async Pair(game, sa) {
+    const host = sa.host;
+    const ok = c => c && c.zone === 'battlefield' && c.controller === sa.controller && game.chars(c).types.has('Creature') && !game.pairedPartner(c);
+    if (!ok(host)) return;
+    let partner = sa.p.Defined ? cardsOf(resolveDefined(game, sa.p.Defined, ctxOf(game, sa))).find(c => c !== host && ok(c)) : null;
+    if (!sa.p.Defined) partner = (await chooseCards(game, sa.controller, game.battlefield.filter(c => c !== host && ok(c)), 1, 1, `Soulbond: pair ${game.name(host)} with`, sa, 'pair'))[0];
+    if (!partner) return;
+    host.pairedWith = partner.id; partner.pairedWith = host.id;
+    game.touch();
+    game.log(`${game.name(host)} is paired with ${game.name(partner)}.`);
+  },
+
+  // empower <type> N: loyalty counters on your <type> token, creating one first if needed
+  async Empower(game, sa) {
+    const type = sa.p.Type || 'Jace';
+    const n = num(game, sa, 'Num', 1);
+    let tok = game.battlefield.find(c => c.controller === sa.controller && c.token && game.chars(c).subtypes.has(type) && game.chars(c).types.has('Planeswalker'));
+    if (!tok) { tok = (await makeTokens(game, sa, `u_empower_${type.toLowerCase()}`, sa.controller, 1))[0]; }
+    if (tok) await game.addCounters(tok, 'LOYALTY', n, sa);
+  },
+
+  // gain control of target spell
+  async ControlSpell(game, sa) {
+    const ctx = ctxOf(game, sa);
+    const to = sa.p.NewController ? playersOf(resolveDefined(game, sa.p.NewController, ctx))[0] : game.players[sa.controller];
+    if (!to) return;
+    const items = (hasTgtSpec(sa) ? sa.targets : resolveDefined(game, sa.p.Defined || 'Targeted', ctx)).map(x => (x && x.stackItem) ? x : game.stack.find(s => s.card === x)).filter(it => it && game.stack.includes(it));
+    for (const it of items) {
+      if (it.controller === to.id) continue;
+      it.controller = to.id;
+      for (const s of it.sa.chain()) s.controller = to.id;
+      if (it.card) it.card.controller = to.id;
+      game.touch();
+      game.log(`${to.name} gains control of ${it.description}.`);
+    }
+  },
+
+  // choose a source (Deflecting Palm)
+  async ChooseSource(game, sa) {
+    const pool = [...game.battlefield, ...game.stack.filter(s => s.card).map(s => s.card)];
+    const pick = (await chooseCards(game, sa.controller, pool, 1, 1, sa.p.ChoiceTitle || 'Choose a source', sa, 'chooseSource'))[0];
+    if (!pick) return;
+    const target = sa.etbCard || sa.host;
+    target.chosen = { ...(target.chosen || {}), cards: [pick.id] };
+    game.log(`${game.players[sa.controller].name} chooses ${game.name(pick)}.`);
+  },
+
+  async UnlockDoor(game, sa) {
+    const c = sa.host;
+    if (c && c.isCard) game.unlockDoor(c, num(game, sa, 'Door', 0), sa.controller);
+  },
+
+  // plot: exile it from your hand; cast it as a sorcery on a later turn without paying its mana cost
+  async Plot(game, sa) {
+    const c = sa.host;
+    if (!c || c.zone !== 'hand') return;
+    await game.moveCard(c, 'exile', { silent: true });
+    c.plotted = { turn: game.turnNumber, zcc: c.zcc };
+    game.log(`${game.players[sa.controller].name} plots ${game.name(c)}.`);
+  },
+
+  // champion: exile another [type] you control or sacrifice this; it returns when this leaves
+  async Champion(game, sa) {
+    const host = sa.host;
+    if (!host || host.zone !== 'battlefield') return;
+    const type = sa.p.ChampionType || 'Creature';
+    const pool = game.battlefield.filter(c => c !== host && c.controller === sa.controller && matchValid(game, c, type, ctxOf(game, sa)));
+    const pick = (await chooseCards(game, sa.controller, pool, 0, 1, `Champion: exile another ${type} you control (or ${game.name(host)} is sacrificed)`, sa, 'champion'))[0];
+    if (pick) { const r = await game.moveCard(pick, 'exile', { cause: sa, exiledWith: host.id }); host.championed = r ? [{ id: r.id, zcc: r.zcc }] : []; return; }
+    await game.sacrifice(host, sa);
+  },
+
+  // cumulative upkeep: put an age counter, then pay the cost for each age counter or sacrifice it
+  async CumulativeUpkeep(game, sa) {
+    const host = sa.host;
+    if (!host || host.zone !== 'battlefield') return;
+    await game.addCounters(host, 'AGE', 1, sa);
+    const n = host.counters.AGE || 1;
+    const pid = sa.controller;
+    const costStr = sa.p.UpkeepCost || '0';
+    let m;
+    const ask = desc => game.ask(pid, { type: 'confirm', prompt: `Cumulative upkeep for ${game.name(host)}: ${desc}? (otherwise sacrifice it)`, purpose: 'cumulativeUpkeep', sa, cardId: host.id, age: n });
+    if ((m = costStr.match(/^FlipCoin<(\d+)>$/))) {
+      if (await ask(`flip ${n * +m[1]} coin${n * +m[1] === 1 ? '' : 's'}`)) {
+        for (let i = 0; i < n * +m[1]; i++) { const win = game.rng.int(2) === 0; game.log(`${game.players[pid].name} flips a coin: ${win ? 'wins' : 'loses'}.`); game.fire('FlippedCoin', { Player: pid, Result: win }); }
+        return;
+      }
+    } else if ((m = costStr.match(/^PutCardToLibFromSameGrave<(\d+)\/[^/]*\/(\w+)>$/))) {
+      const need = n * +m[1];
+      const owners = game.livingPlayers().filter(pl => pl.graveyard.filter(c => matchValid(game, c, m[2], ctxOf(game, sa))).length >= need);
+      if (owners.length && await ask(`put ${need} cards from a single graveyard on the bottom of their owner's library`)) {
+        let from = owners[0];
+        if (owners.length > 1) { const id = await game.ask(pid, { type: 'player', prompt: 'From whose graveyard?', players: owners.map(o => o.id), sa, purpose: 'cumulativeUpkeepGrave' }); from = owners.find(o => o.id === id) || owners[0]; }
+        const pool = from.graveyard.filter(c => matchValid(game, c, m[2], ctxOf(game, sa)));
+        for (const c of await chooseCards(game, pid, pool, need, need, `Put ${need} cards on the bottom of ${from.name}'s library`, sa, 'cumulativeUpkeepCards')) await game.moveCard(c, 'library', { pos: 'bottom', cause: sa });
+        return;
+      }
+    } else {
+      const cost = parseCost(costStr);
+      let mana = parseMana('0');
+      for (let i = 0; i < n; i++) mana = addCosts(mana, cost.mana);
+      const parts = cost.parts.map(pt => (/^\d+$/.test(pt.amount) ? { ...pt, amount: String(+pt.amount * n), args: [String(+pt.amount * n), ...pt.args.slice(1)] } : pt));
+      const full = { ...cost, mana, parts, tap: false, untap: false };
+      if ((!cost.hasMana || canAfford(game, pid, mana)) && canPayNonMana(game, sa, full) && await ask(`pay ${costLabelOf(costStr)} × ${n}`)) {
+        if ((!cost.hasMana || await payManaCost(game, pid, mana)) && await payCostParts(game, sa, full)) return;
+      }
+    }
+    game.log(`${game.players[pid].name} doesn't pay the cumulative upkeep for ${game.name(host)}.`);
+    await game.sacrifice(host, sa);
+  },
+
+  async ReplaceMana() {}, // interpreted by the mana replacement code (Mana Reflection, Omnath)
+
+  // "prevent the next N damage that would be dealt this turn to any number of targets, divided as you choose"
+  async PreventDamage(game, sa) {
+    const list = objs(game, sa, null);
+    const n = num(game, sa, 'Amount', 1);
+    game.shields = game.shields || [];
+    list.forEach((t, i) => {
+      const amt = sa.division ? sa.division[i] : n;
+      if (!t || amt <= 0) return;
+      game.shields.push(t.isPlayer ? { player: t.id, amount: amt, turn: game.turnNumber } : { card: t.id, zcc: t.zcc, amount: amt, turn: game.turnNumber });
+      game.log(`The next ${amt} damage to ${game.name(t)} this turn will be prevented.`);
+    });
+  },
+
+  async ChooseEvenOdd(game, sa) {
+    const v = await game.ask(sa.controller, { type: 'option', prompt: 'Choose odd or even', options: [{ label: 'Odd', value: 'Odd' }, { label: 'Even', value: 'Even' }], sa, purpose: 'chooseEvenOdd' });
+    const target = sa.etbCard || sa.host;
+    target.chosen = { ...(target.chosen || {}), evenOdd: v === 'Odd' ? 'Odd' : 'Even' };
+    game.log(`${game.players[sa.controller].name} chooses ${target.chosen.evenOdd.toLowerCase()}.`);
+  },
+
+  // exchange the powers of two creatures (until end of combat)
+  async ExchangePower(game, sa) {
+    const ctx = ctxOf(game, sa);
+    const xs = [...cardsOf(resolveDefined(game, sa.p.Defined || 'Self', ctx)), ...cardsOf(hasTgtSpec(sa) ? sa.targets : [])].filter(c => c && c.zone === 'battlefield');
+    if (xs.length < 2) return;
+    const [a, b] = xs;
+    const pa = game.chars(a).power, pb = game.chars(b).power;
+    const until = sa.p.Duration === 'UntilEndOfCombat' ? 'UntilEndOfCombat' : durationOf(sa);
+    a.mods.push({ id: game.uid++, power: pb, until }); b.mods.push({ id: game.uid++, power: pa, until });
+    game.touch();
+    game.log(`${game.name(a)} and ${game.name(b)} exchange power (${pb} and ${pa}).`);
+  },
+
+  // end the combat phase: remove everything from combat, exile all spells and abilities from the stack
+  async EndCombatPhase(game, sa) {
+    if (game.combat) { game.combat.attackers = []; game.combat.blockers = new Map(); }
+    await exileStack(game, sa);
+    game.endCombatNow = true;
+    game.log('The combat phase ends.');
+  },
+
+  // end the turn: exile the stack and skip straight to the cleanup step
+  async EndTurn(game, sa) {
+    await exileStack(game, sa);
+    if (game.combat) { game.combat.attackers = []; game.combat.blockers = new Map(); }
+    game.endTurnNow = true;
+    game.log('The turn ends.');
+  },
+
+  // for each player, choose a group (friend or foe), then each group does its thing
+  async AssignGroup(game, sa) {
+    const names = (sa.p.Choices || '').split(',').map(s => s.trim()).filter(n => sa.svars[n]);
+    if (!names.length) return;
+    const groups = Object.fromEntries(names.map(n => [n, []]));
+    for (const pl of playersOf(objs(game, sa, 'Player'))) {
+      const pick = await game.ask(sa.controller, { type: 'option', prompt: `${game.name(sa.host)}: choose for ${pl.name}`, options: names.map(n => ({ label: parseAbility(sa.svars[n]).p.SpellDescription || n, value: n })), sa, purpose: 'assignGroup', forPlayer: pl.id });
+      groups[names.includes(pick) ? pick : names[0]].push(pl);
+    }
+    const prev = sa.host.remembered;
+    for (const n of names) {
+      if (!groups[n].length) continue;
+      sa.host.remembered = groups[n].slice();
+      const sub = makeSA(game, sa.svars[n], sa.svars, sa.host, sa.controller, { parent: sa, key: sa.key + n });
+      for (const s of sub.chain()) s.rememberedOverride = groups[n].slice();
+      await resolveChain(game, sub);
+    }
+    sa.host.remembered = prev;
+  },
+
+  // "exchange the text boxes of those creatures for as long as this enchantment remains on the battlefield"
+  async ExchangeTextBox(game, sa) {
+    const list = cardsOf(hasTgtSpec(sa) ? sa.targets : objs(game, sa, 'Self')).filter(c => c && c.zone === 'battlefield');
+    if (list.length < 2) return;
+    const [a, b] = list;
+    const host = sa.host && sa.host.isCard && sa.p.Duration === 'AsLongAsInPlay' ? sa.host : null;
+    const link = (x, y) => { x.textSwap = { other: y.id, otherZcc: y.zcc, host: host ? host.id : null, hostZcc: host ? host.zcc : null }; };
+    link(a, b); link(b, a);
+    game.touch();
+    game.log(`${game.name(a)} and ${game.name(b)} exchange text boxes.`);
+  },
+
+  async ChooseSector(game, sa) {
+    const SECTORS = ['Alpha', 'Beta', 'Gamma'];
+    const v = await game.ask(sa.controller, { type: 'option', prompt: 'Choose a sector', options: SECTORS.map(x => ({ label: x, value: x })), sa, purpose: 'chooseSector', ai: sa.p.AILogic });
+    const s = SECTORS.includes(v) ? v : 'Alpha';
+    sa.host.chosen = { ...(sa.host.chosen || {}), sector: s };
+    game.touch();
+    game.log(`${game.players[sa.controller].name} chooses the ${s.toLowerCase()} sector.`);
+  },
+
+  // the planar die (there's no planar deck outside Planechase, so planeswalking and chaos have nothing to act on)
+  async RollPlanarDice(game, sa) {
+    const pid = sa.controller;
+    let amount = 1, ignore = 0;
+    // "if you would roll one or more planar dice, instead roll that many plus one and ignore one" (Ichor Elixir)
+    const rr = await game.applySimpleReplacement('RollPlanarDice', { Affected: game.players[pid], Player: pid, Number: 1, Ignore: 0 }, sa);
+    if (rr) { amount = Math.max(1, rr.Number || 1); ignore = rr.Ignore || 0; }
+    const FACES = ['Chaos', 'Planeswalk', 'Blank', 'Blank', 'Blank', 'Blank'];
+    const rolls = [];
+    for (let i = 0; i < amount; i++) rolls.push(FACES[game.rng.int(6)]);
+    while (ignore > 0 && rolls.length > 1) {
+      const opts = [...new Set(rolls)];
+      const drop = opts.length === 1 ? opts[0] : await game.ask(pid, { type: 'option', prompt: `Planar die: ${rolls.join(', ')}. Choose a result to ignore`, options: opts.map(x => ({ label: x, value: x })), sa, purpose: 'planarIgnore' });
+      rolls.splice(rolls.indexOf(opts.includes(drop) ? drop : opts[0]), 1);
+      ignore--;
+    }
+    game.log(`${game.players[pid].name} rolls the planar die: ${rolls.join(', ')}.`);
+    for (const r of rolls) {
+      if (r === 'Chaos') await E.ChaosEnsues(game, sa);
+      else if (r === 'Planeswalk') await E.Planeswalk(game, sa);
+    }
+  },
+  async ChaosEnsues(game, sa) { game.log('Chaos ensues (no plane is in play, so nothing happens).'); game.fire('ChaosEnsues', { Player: sa.controller }); },
+  async Planeswalk(game, sa) { game.log(`${game.players[sa.controller].name} can't planeswalk: there's no planar deck in this game.`); },
+  async BlankLine() {},
+
+  // "change the text of that creature by replacing all instances of one creature type with Vampire"
+  async ChangeText(game, sa) {
+    const m = String(sa.p.ChangeTypeWord || '').match(/^ChooseCreatureType (\w+)$/);
+    if (!m) return;
+    const to = m[1];
+    const known = new Set(creatureTypesInGame(game));
+    for (const c of cardsOf(objs(game, sa, 'Self'))) {
+      if (c.zone !== 'battlefield') continue;
+      const ch = game.chars(c);
+      const words = [...ch.subtypes].filter(t => !game.nonCreatureSubtypes.has(t));
+      const text = [...ch.abilities, ...ch.triggers, ...ch.statics, ...ch.replacements].map(e => e.raw).concat(Object.values(ch.svars), ch.keywords).join(' ');
+      for (const w of text.match(/\b[A-Z][a-z]+\b/g) || []) if (known.has(w) && !words.includes(w)) words.push(w);
+      const list = words.filter(w => w !== to);
+      if (!list.length) continue;
+      const pick = list.length === 1 ? list[0] : await game.ask(sa.controller, { type: 'option', prompt: `${game.name(c)}: replace which creature type with ${to}?`, options: list.map(x => ({ label: x, value: x })), sa, purpose: 'changeText', cardId: c.id });
+      const from = list.includes(pick) ? pick : list[0];
+      c.textChanges = [...(c.textChanges || []), { from, to }];
+      game.touch();
+      game.log(`${game.name(c)}: ${from} becomes ${to} in its text.`);
+    }
+  },
+
+  // "each player separates all permanents they control into three piles, then chooses one at random"
+  async MultiplePiles(game, sa) {
+    const p = sa.p;
+    const ctx = ctxOf(game, sa);
+    const n = Math.max(2, num(game, sa, 'Piles', 2));
+    const zone = Z(p.Zone || 'Battlefield');
+    const np = game.players.length;
+    const players = playersOf(objs(game, sa, 'Player')).sort((a, b) => ((a.id - sa.controller + np) % np) - ((b.id - sa.controller + np) % np));
+    const chosen = [];
+    for (const pl of players) {
+      let rest = (zone === 'battlefield' ? game.battlefield.filter(c => c.controller === pl.id) : (pl[zone] || []).slice()).filter(c => matchValid(game, c, p.ValidCards || 'Card', ctx));
+      const piles = [];
+      for (let i = 1; i < n; i++) {
+        let pick = [];
+        if (rest.length) {
+          const ids = await game.ask(pl.id, { type: 'cards', prompt: `Separate your permanents into ${n} piles: choose the cards for pile ${i} (the rest make pile ${n})`, cards: rest.map(c => c.id), min: 0, max: rest.length, purpose: 'pile', pile: i, piles: n, sa });
+          pick = rest.filter(c => (ids || []).includes(c.id));
+        }
+        piles.push(pick);
+        rest = rest.filter(c => !pick.includes(c));
+      }
+      piles.push(rest);
+      let k = 0;
+      if (p.RandomChosen === 'True') k = game.rng.int(n);
+      else {
+        const v = await game.ask(pl.id, { type: 'option', prompt: 'Choose a pile', options: piles.map((x, i) => ({ label: `Pile ${i + 1}: ${x.map(c => game.name(c)).join(', ') || 'empty'}`, value: i })), sa, purpose: 'choosePile' });
+        k = piles[v] ? v : 0;
+      }
+      game.log(`${pl.name} makes piles of ${piles.map(x => x.length).join(', ')}; pile ${k + 1} is chosen${p.RandomChosen === 'True' ? ' at random' : ''} (${piles[k].map(c => game.name(c)).join(', ') || 'empty'}).`);
+      chosen.push(...piles[k]);
+    }
+    const raw = p.ChosenPile && sa.svars[p.ChosenPile];
+    if (!raw) return;
+    const prev = sa.host.remembered;
+    sa.host.remembered = chosen.slice();
+    const s2 = makeSA(game, raw, sa.svars, sa.host, sa.controller, { parent: sa, key: sa.key + 'pile' });
+    for (const s of s2.chain()) s.rememberedOverride = chosen.slice();
+    await resolveChain(game, s2);
+    sa.host.remembered = prev;
+  },
+
+  // meld: exile both cards, then put them onto the battlefield as the melded permanent
+  async Meld(game, sa) {
+    const p = sa.p;
+    const pid = sa.controller;
+    const mine = c => c.controller === pid && c.owner === pid && !c.faceDown;
+    const prim = game.battlefield.find(c => mine(c) && c.def.faces[0].name === p.Primary);
+    const sec = game.battlefield.find(c => mine(c) && c.def.faces[0].name === p.Secondary);
+    if (!prim || !sec || prim.def.faces.length < 2) return;
+    await game.moveCard(prim, 'exile', { cause: sa, silent: true });
+    await game.moveCard(sec, 'exile', { cause: sa, silent: true });
+    if (prim.zone !== 'exile' || sec.zone !== 'exile') return;
+    const melded = await game.moveCard(prim, 'battlefield', { controller: pid, face: 1, cause: sa, silent: true });
+    if (!melded) return;
+    melded.meldedWith = sec.id;
+    game.touch();
+    game.log(`${p.Primary} and ${p.Secondary} meld into ${game.name(melded)}.`);
+  },
+
+  // blight N: put N -1/-1 counters on a creature you control
+  async Blight(game, sa) {
+    const n = num(game, sa, 'Num', 1);
+    for (const pl of playersOf(objs(game, sa, 'You'))) {
+      const pool = game.battlefield.filter(c => c.controller === pl.id && game.chars(c).types.has('Creature'));
+      const pick = (await chooseCards(game, pl.id, pool, 1, 1, `Blight ${n}: put ${n} -1/-1 counter${n === 1 ? '' : 's'} on a creature you control`, sa, 'blight'))[0];
+      if (pick) { await game.addCounters(pick, 'M1M1', n, sa); game.log(`${pl.name} blights ${n} (${game.name(pick)}).`); }
+    }
+  },
+
+  // the promised opponent gets the card's gift (GiftAbility SVar, Defined$ Promised)
+  async GiveGift(game, sa) {
+    const raw = sa.svars.GiftAbility;
+    const to = playersOf(resolveDefined(game, 'Promised', ctxOf(game, sa)))[0];
+    if (!raw || !to || to.lost) return;
+    game.log(`${game.players[sa.controller].name} gives ${to.name} ${parseAbility(raw).p.GiftDescription || 'a gift'}.`);
+    const sub = makeSA(game, raw, sa.svars, sa.host, sa.controller, { parent: sa, key: sa.key + '>gift' });
+    if (await chooseTargetsForSA(game, sub, { optional: true })) await resolveChain(game, sub);
+    game.fire('GiveGift', { Player: sa.controller, Card: sa.host, Recipient: to.id });
+  },
+
   async ClassLevelUp(game, sa) {
     const c = sa.host;
     c.classLevel = num(game, sa, 'ClassLevel', (c.classLevel || 1) + 1);
@@ -1870,6 +2426,26 @@ export const E = {
     game.fire('ClassLevelGained', { Card: c, ClassLevel: c.classLevel });
   },
 };
+
+async function proliferateOnce(game, sa, pid) {
+  const cands = [...game.battlefield.filter(c => Object.values(c.counters).some(n => n > 0)), ...game.livingPlayers().filter(p => Object.values(p.counters).some(n => n > 0))];
+  if (!cands.length) return;
+  const ans = await game.ask(pid, { type: 'targets', prompt: 'Proliferate: choose any number of permanents and/or players', cands: cands.map(refOf), min: 0, max: cands.length, sa, purpose: 'proliferate', notTargeting: true });
+  const chosen = (ans || []).map(r => fromRef(game, r)).filter(Boolean);
+  for (const o of chosen) for (const [k, n] of Object.entries(o.counters)) if (n > 0) await game.addCounters(o, k, 1, sa, { silent: true });
+  if (chosen.length) game.log(`${game.players[pid].name} proliferates (${chosen.map(o => game.name(o)).join(', ')}).`);
+}
+
+async function exileStack(game, sa) {
+  const self = sa.host && sa.host.isCard ? sa.host : null;
+  for (const it of [...game.stack]) {
+    game.stack.splice(game.stack.indexOf(it), 1);
+    if (it.card && it.card.zone === 'stack' && !it.isCopy) await game.moveCard(it.card, 'exile', { silent: true });
+    else if (it.card && it.isCopy) { it.card.zone = 'gone'; game.cards.delete(it.card.id); }
+  }
+  if (self && self.zone === 'stack') self.mustBeExiled = true;
+  game.touch();
+}
 
 async function protectionColors(game, sa) {
   const g = sa.p.Gains || 'Choice';

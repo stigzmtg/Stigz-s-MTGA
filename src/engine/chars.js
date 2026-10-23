@@ -37,8 +37,69 @@ export function baseChars(game, card) {
   if (card.def.isSplit && card.zone !== 'stack' && !card.faceDown) {
     ch.cmc = card.def.faces.reduce((a, x) => a + cmc(x.manaCost), 0);
   }
+  if (card.zone === 'battlefield' && card.unlocked && !card.faceDown && !card.copyOf) roomChars(card, ch);
+  // impending: not a creature while it has time counters
+  if (card.impending && card.zone === 'battlefield' && (card.counters.TIME || 0) > 0) ch.types.delete('Creature');
   if (card.copyOf && card.copyOf.extra) applyCopyExtras(ch, card.copyOf.extra);
+  if (card.textSwap && card.zone === 'battlefield' && !card.faceDown) swapTextBox(game, card, ch);
+  if (card.textChanges && card.textChanges.length && !card.faceDown) applyTextChanges(ch, card.textChanges);
   return ch;
+}
+
+// exchanged text boxes: abilities, keywords and rules text come from the other creature's printed face
+function swapTextBox(game, card, ch) {
+  const ts = card.textSwap;
+  const o = game.cardById(ts.other);
+  const h = ts.host != null ? game.cardById(ts.host) : null;
+  if (!o || o.zone !== 'battlefield' || o.zcc !== ts.otherZcc || o.faceDown) return;
+  if (ts.host != null && (!h || h.zone !== 'battlefield' || h.zcc !== ts.hostZcc)) return;
+  const of = o.faceDef;
+  ch.keywords = [...of.keywords];
+  ch.abilities = abilityList(of.abilities, of.svars, card, `${card.face}xA`);
+  ch.triggers = abilityList(of.triggers, of.svars, card, `${card.face}xT`);
+  ch.statics = abilityList(of.statics, of.svars, card, `${card.face}xS`);
+  ch.replacements = abilityList(of.replacements, of.svars, card, `${card.face}xR`);
+  ch.svars = of.svars;
+  ch.oracle = of.oracle;
+}
+
+// text-changing effects (New Blood): every instance of a word in the type line and abilities is replaced
+function applyTextChanges(ch, changes) {
+  const swap = s => changes.reduce((t, { from, to }) => t.replace(new RegExp(`\\b${from}\\b`, 'g'), to), String(s));
+  for (const { from, to } of changes) if (ch.subtypes.has(from)) { ch.subtypes.delete(from); ch.subtypes.add(to); }
+  const svars = {};
+  for (const [k, v] of Object.entries(ch.svars || {})) svars[k] = swap(v);
+  const remap = list => list.map(e => {
+    const raw = swap(e.raw);
+    return { ...e, raw, parsed: raw === e.raw ? e.parsed : parseAbility(raw), svars: e.svars === ch.svars ? svars : e.svars };
+  });
+  ch.abilities = remap(ch.abilities); ch.triggers = remap(ch.triggers); ch.statics = remap(ch.statics); ch.replacements = remap(ch.replacements);
+  ch.keywords = ch.keywords.map(swap);
+  ch.svars = svars;
+  ch.oracle = swap(ch.oracle || '');
+}
+
+// A Room permanent has the characteristics of its unlocked doors; each locked door can be unlocked
+// as a sorcery by paying its mana cost.
+export function isRoom(def) { return def.altMode === 'Split' && def.faces.length > 1 && def.faces.every(f => f.subtypes.includes('Room')); }
+function roomChars(card, ch) {
+  const faces = card.def.faces;
+  const open = faces.filter((_, i) => card.unlocked.includes(i));
+  ch.name = open.map(f => f.name).join(' // ') || faces.map(f => f.name).join(' // ');
+  ch.cmc = open.reduce((a, f) => a + cmc(f.manaCost), 0);
+  ch.colors = new Set(open.flatMap(f => f.colors));
+  ch.svars = Object.assign({}, ...faces.map(f => f.svars).reverse());
+  ch.keywords = open.flatMap(f => f.keywords);
+  ch.oracle = open.map(f => f.oracle).join('\n');
+  for (const [kind, prop] of [['abilities', 'abilities'], ['triggers', 'triggers'], ['statics', 'statics'], ['replacements', 'replacements']]) {
+    ch[kind] = [];
+    faces.forEach((f, i) => { if (card.unlocked.includes(i)) ch[kind].push(...abilityList(f[prop], f.svars, card, `${i}${kind[0].toUpperCase()}`).map(e => ({ ...e, door: i }))); });
+  }
+  faces.forEach((f, i) => {
+    if (card.unlocked.includes(i) || !f.manaCostStr) return;
+    const raw = `AB$ UnlockDoor | Cost$ ${f.manaCostStr} | SorcerySpeed$ True | Static$ True | Door$ ${i} | SpellDescription$ Unlock ${f.name}`;
+    ch.abilities.push({ raw, parsed: parseAbility(raw), svars: f.svars, src: card, key: `unlock${i}` });
+  });
 }
 
 function applyCopyExtras(ch, extra) {
@@ -48,6 +109,8 @@ function applyCopyExtras(ch, extra) {
   if (extra.toughness != null) ch.toughnessStr = String(extra.toughness);
   if (extra.keywords) ch.keywords.push(...extra.keywords);
   if (extra.colors) ch.colors = new Set(extra.colors);
+  if (extra.addColors) for (const c of extra.addColors) ch.colors.add(c);
+  if (extra.name) ch.name = extra.name;
 }
 
 const CARD_TYPES = new Set(['Artifact', 'Battle', 'Creature', 'Enchantment', 'Instant', 'Land', 'Planeswalker', 'Sorcery', 'Kindred']);
@@ -262,7 +325,7 @@ export function computeAll(game) {
   for (const c of all) applyOwnMods(game, c, map.get(c.id), 6);
   for (const { st, ctx } of active) {
     const p = st.parsed.p;
-    if (!(p.AddKeyword || p.RemoveKeyword || p.RemoveAllAbilities || p.AddAbility || p.AddTrigger || p.AddStaticAbility || p.AddHiddenKeyword || p.AddReplacementEffects || p.AddSVar)) continue;
+    if (!(p.AddKeyword || p.RemoveKeyword || p.RemoveAllAbilities || p.AddAbility || p.AddTrigger || p.AddStaticAbility || p.AddHiddenKeyword || p.AddReplacementEffects || p.AddSVar || p.GainsAbilitiesOf)) continue;
     for (const c of affectedCards(game, st, ctx, map)) {
       const ch = map.get(c.id) || lazy(game, c);
       if (p.RemoveAllAbilities) { ch.abilities = []; ch.triggers = []; ch.statics = []; ch.replacements = []; ch.keywords = []; }
@@ -274,6 +337,31 @@ export function computeAll(game) {
       if (p.AddStaticAbility) grantAbilities(ch, p.AddStaticAbility, st.svars, st.host, 'S', 's' + st.host.id + st.key);
       if (p.AddReplacementEffects) grantAbilities(ch, p.AddReplacementEffects, st.svars, st.host, 'R', 's' + st.host.id + st.key);
       if (p.AddSVar) for (const n of p.AddSVar.split(' & ')) if (st.svars[n]) ch.svars = { ...ch.svars, [n]: st.svars[n] };
+      // "CARDNAME has all activated abilities of all lands on the battlefield"
+      if (p.GainsAbilitiesOf) {
+        const types = p.GainsAbilitiesOf.split(',').map(x => x.trim());
+        for (const x of bf) {
+          if (x.id === c.id || x.phasedOut) continue;
+          const xch = map.get(x.id);
+          if (!xch || !types.some(t => xch.types.has(t))) continue;
+          for (const a of xch.abilities) if (!a.gainedFrom && !ch.abilities.some(b => b.raw === a.raw)) ch.abilities.push({ ...a, key: `g${x.id}:${a.key}`, gainedFrom: x.id });
+        }
+      }
+    }
+  }
+  // continuous statics granted in layer 6 (AddStaticAbility, granted by other statics) apply from layer 7 on
+  const known = new Set(statics.map(st => st.raw + '|' + st.host.id));
+  for (const c of bf) {
+    if (c.phasedOut) continue;
+    for (const st of map.get(c.id).statics) {
+      const p = st.parsed.p;
+      if (p.Mode !== 'Continuous' || known.has(st.raw + '|' + c.id)) continue;
+      const ez = p.EffectZone || 'Battlefield';
+      if (ez !== 'All' && !ez.split(',').some(z => (zoneMap[z] || z.toLowerCase()) === 'battlefield')) continue;
+      known.add(st.raw + '|' + c.id);
+      const entry = { ...st, host: c, ch: map.get(c.id) };
+      const ctx = staticActive(game, entry);
+      if (ctx) active.push({ st: entry, ctx });
     }
   }
   for (const c of all) {
@@ -315,12 +403,17 @@ export function computeAll(game) {
   for (const { st, ctx } of active) {
     const p = st.parsed.p;
     if (!(p.AddPower || p.AddToughness)) continue;
-    const ap = p.AddPower ? calcCtx(game, p.AddPower, ctx) : 0;
-    const at = p.AddToughness ? calcCtx(game, p.AddToughness, ctx) : 0;
+    const perCard = /^Affected/.test(p.AddPower || '') || /^Affected/.test(p.AddToughness || '');
+    const ap = p.AddPower && !perCard ? calcCtx(game, p.AddPower, ctx) : 0;
+    const at = p.AddToughness && !perCard ? calcCtx(game, p.AddToughness, ctx) : 0;
     for (const c of affectedCards(game, st, ctx, map)) {
       const ch = map.get(c.id);
       if (!ch) continue;
-      ch.power += ap; ch.toughness += at;
+      if (perCard) {
+        const cctx = { ...ctx, host: c, sa: { ...ctx.sa, host: c } };
+        if (p.AddPower) ch.power += calcCtx(game, p.AddPower, cctx);
+        if (p.AddToughness) ch.toughness += calcCtx(game, p.AddToughness, cctx);
+      } else { ch.power += ap; ch.toughness += at; }
     }
   }
   for (const c of all) {

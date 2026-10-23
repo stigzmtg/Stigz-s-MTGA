@@ -1,7 +1,7 @@
 // Core game state and flow: zones, turns, priority, the stack, state-based actions and triggers.
 import { Card, Player, newTimestamp } from './cards.js';
-import { RNG, COLORS, BASIC_LAND_TYPES, sleep } from './util.js';
-import { computeAll, charsOutside } from './chars.js';
+import { RNG, COLORS, BASIC_LAND_TYPES, NAME_TO_COLOR, sleep, compare } from './util.js';
+import { computeAll, charsOutside, isRoom } from './chars.js';
 import { matchValid, resolveDefined, calcCtx, checkPresence, ctrlOf, zoneMap, findTargets } from './filters.js';
 import { synthesizeKeywords, keywordInfo } from './keywords.js';
 import { SA, castSpell, activateAbility, resolveStackItem, chooseTargetsForSA, getActions, playLand, manaSourcesFor, activateManaAbility, resolveChain, castAlternative } from './abilities.js';
@@ -97,7 +97,7 @@ export class Game {
   }
 
   freshTurnState() {
-    return { spellsCast: [], moves: [], damagedPlayers: {}, combatDamagedPlayers: {}, damagedCards: {}, dealtDamage: {}, creaturesDied: 0, permanentLeft: {}, attackedWith: [], turnsTaken: this.turnState ? this.turnState.turnsTaken : {}, landsEntered: {}, abilityResolved: {}, triggerCounts: {}, tokenBatches: {}, loopCounts: {}, resolutions: 0 };
+    return { spellsCast: [], moves: [], damagedPlayers: {}, combatDamagedPlayers: {}, combatDamageSources: {}, damagedCards: {}, dealtDamage: {}, creaturesDied: 0, permanentLeft: {}, attackedWith: [], turnsTaken: this.turnState ? this.turnState.turnsTaken : {}, landsEntered: {}, abilityResolved: {}, triggerCounts: {}, tokenBatches: {}, loopCounts: {}, resolutions: 0 };
   }
 
   // ---------------------------------------------------------------- queries
@@ -295,6 +295,16 @@ export class Game {
         for (const id of ids) { const c = this.cardById(id); if (c) await this.moveCard(c, 'library', { pos: 'bottom', silent: true }); }
       }
     }
+    // "if this card is in your opening hand, you may begin the game with it on the battlefield"
+    for (const pid of this.apnap()) {
+      for (const c of [...this.players[pid].hand]) {
+        const k = c.faceDef.keywords.find(x => /^MayEffectFromOpeningHand:/.test(x));
+        const raw = k && c.faceDef.svars[k.split(':')[1]];
+        if (!raw || c.zone !== 'hand') continue;
+        if (!(await this.ask(pid, { type: 'confirm', prompt: `Begin the game with ${this.name(c)} on the battlefield?`, purpose: 'openingHand', cards: [c.id] }))) continue;
+        await this.resolveSAChain(new SA(this, { raw, parsed: parseAbility(raw), svars: c.faceDef.svars, src: c, key: 'openingHand' }, c, pid));
+      }
+    }
   }
 
   // ---------------------------------------------------------------- turns
@@ -302,28 +312,41 @@ export class Game {
     this.turnNumber++;
     const ap = this.activePlayer;
     const p = this.players[ap];
+    // day / night: night if the previous turn's active player cast no spells, day again after two or more
+    if (this.dayNight && this.lastActive != null && this.players[this.lastActive]) {
+      const cast = this.players[this.lastActive].spellsCastThisTurn.length;
+      if (this.dayNight === 'Day' && cast === 0) this.setDayNight('Night');
+      else if (this.dayNight === 'Night' && cast >= 2) this.setDayNight('Day');
+    }
+    this.lastActive = ap;
     this.turnState = this.freshTurnState();
     this.turnState.turnsTaken[ap] = (this.turnState.turnsTaken[ap] || 0) + 1;
-    for (const pl of this.players) { pl.landsPlayed = 0; pl.lifeGainedThisTurn = 0; pl.lifeLostThisTurn = 0; pl.cardsDrawnThisTurn = 0; pl.spellsCastThisTurn = []; }
+    for (const pl of this.players) { pl.landsPlayed = 0; pl.lifeGainedThisTurn = 0; pl.lifeLostThisTurn = 0; pl.cardsDrawnThisTurn = 0; pl.spellsCastThisTurn = []; pl.manaExpended = 0; }
+    p.attackedPlayers = []; p.attackedPlayersTurn = this.turnNumber;
     for (const c of this.battlefield) c.abilityUses = {};
     this.log(`Turn ${this.turnNumber}: ${p.name}`, { type: 'turn' });
     // effects lasting "until your next turn"
     await this.expireDurations('UntilYourNextTurn', ap);
     this.extraCombats = 0;
+    this.combatsThisTurn = 0;
+    this.endTurnNow = false; this.endCombatNow = false;
     for (let i = 0; i < STEPS.length; i++) {
       if (this.over) return;
       const step = STEPS[i];
-      const skip = this.skipEntry(p, step);
+      const skip = this.skipEntry(p, step) || this.beginPhaseSkip(p, step);
       if (skip) {
         if (!skip.thisTurn) p.skips = p.skips.filter(e => e !== skip);
         this.log(`${p.name} skips ${skip.label}.`);
         if (step === 'beginCombat') i = STEPS.indexOf('endCombat');
         continue;
       }
+      if (this.endTurnNow) { this.endTurnNow = false; this.endCombatNow = false; if (step !== 'cleanup') { i = STEPS.indexOf('cleanup') - 1; continue; } }
+      if (this.endCombatNow && ['declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage'].includes(step)) continue;
+      if (step === 'endCombat') this.endCombatNow = false;
       if (step === 'firstStrikeDamage' && !(this.combat && combat.needsFirstStrike(this))) continue;
       if ((step === 'declareBlockers' || step === 'firstStrikeDamage' || step === 'combatDamage') && !(this.combat && this.combat.attackers.length)) continue;
       await this.runStep(step);
-      if (step === 'endCombat' && this.extraCombats > 0) { this.extraCombats--; i = STEPS.indexOf('beginCombat') - 1; }
+      if ((step === 'endCombat' || step === 'main2') && this.extraCombats > 0) { this.extraCombats--; i = STEPS.indexOf('beginCombat') - 1; }
       if (this.players[ap].lost) break;
     }
     this.combat = null;
@@ -332,6 +355,9 @@ export class Game {
     while (this.extraTurns.length) {
       const nx = this.extraTurns.pop();
       if (this.players[nx].lost) continue;
+      // "If a player would begin an extra turn, that player skips that turn instead."
+      const skipper = this.replacementsFor('BeginTurn').find(({ p, ctx }) => p.ExtraTurn === 'True' && p.Skip === 'True' && (!p.ValidPlayer || matchValid(this, this.players[nx], p.ValidPlayer, ctx)));
+      if (skipper) { this.log(`${this.players[nx].name} skips an extra turn (${this.name(skipper.h)}).`); continue; }
       this.activePlayer = nx;
       this.currentExtra = true;
       this.log(`${this.players[nx].name} takes an extra turn.`);
@@ -348,20 +374,55 @@ export class Game {
     return p.skips.find(e => e.steps.includes(step)) || null;
   }
 
+  // active replacement effects of one event type on permanents and effects: [{ h, r, p, ctx }]
+  replacementsFor(event) {
+    const out = [];
+    for (const h of [...this.battlefield, ...this.effects]) {
+      if (h.phasedOut) continue;
+      const ch = h.isEffect ? h.effectChars : this.chars(h);
+      for (const r of ch.replacements) {
+        const p = r.parsed.p;
+        if (p.Event !== event) continue;
+        const ctx = { host: h, you: h.controller, svars: r.svars, sa: { svars: r.svars, host: h, controller: h.controller, root() { return { x: 0, paid: {} }; } } };
+        if (!checkPresence(this, p, ctx)) continue;
+        out.push({ h, r, p, ctx });
+      }
+    }
+    return out;
+  }
+
+  // "Skip your draw step." (Event$ BeginPhase | Skip$ True)
+  beginPhaseSkip(p, step) {
+    const forge = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main1', beginCombat: 'BeginCombat', end: 'End of Turn' }[step];
+    if (!forge) return null;
+    for (const { h, p: rp, ctx } of this.replacementsFor('BeginPhase')) {
+      if (rp.Skip !== 'True') continue;
+      if (rp.Phase && !rp.Phase.split(',').map(s => s.trim()).some(x => x === forge || (x === 'Main' && /^Main/.test(forge)))) continue;
+      if (rp.ValidPlayer && !matchValid(this, p, rp.ValidPlayer, ctx)) continue;
+      return { label: `their ${STEP_NAMES[step].toLowerCase().replace(/ step$/, '')} step (${this.name(h)})`, thisTurn: true };
+    }
+    return null;
+  }
+
   async runStep(step) {
     this.step = step;
     this.touch();
     const ap = this.activePlayer;
     const p = this.players[ap];
-    for (const pl of this.players) pl.pool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+    this.emptyPools();
     this.notify();
     switch (step) {
       case 'untap': {
-        for (const c of this.battlefield) {
-          if (c.phasedOut && c.controller === ap) { c.phasedOut = false; continue; }
+        for (const c of [...this.battlefield]) {
+          if (c.phasedOut && c.controller === ap) {
+            if (!this.activeStatics('CantPhaseIn').some(s => matchValid(this, c, s.p.ValidCard || 'Card', s.ctx))) { c.phasedOut = false; this.touch(); }
+            continue;
+          }
           if (c.controller === ap) {
             c.sick = false;
-            if (c.tapped && !this.hasKeyword(c, "CARDNAME doesn't untap during your untap step.") && !c.doesntUntap && !(c.exertedTurn === this.turnNumber - this.players.length) && !this.untapPrevented(c)) await this.untap(c);
+            if (c.skipNextUntap) { c.skipNextUntap = false; continue; } // exerted
+            if (c.tapped && this.hasKeyword(c, 'You may choose not to untap CARDNAME during your untap step.') && await this.ask(ap, { type: 'confirm', prompt: `Keep ${this.name(c)} tapped?`, purpose: 'keepTapped', cardId: c.id })) continue;
+            if (c.tapped && !this.hasKeyword(c, "CARDNAME doesn't untap during your untap step.") && !c.doesntUntap && !this.untapPrevented(c)) await this.untap(c);
           } else if (c.tapped && this.activeStatics('UntapOtherPlayer').some(s => s.ctx.you === c.controller && matchValid(this, c, s.p.ValidCard || 'Permanent.YouCtrl', s.ctx))) await this.untap(c);
         }
         // goad wears off at goader's next turn
@@ -386,12 +447,22 @@ export class Game {
         break;
       }
       case 'main1': {
+        if ((p.counters.RAD || 0) > 0) {
+          const milled = await this.mill(p, p.counters.RAD, null);
+          const nonland = milled.filter(c => !this.chars(c).types.has('Land')).length;
+          if (nonland) {
+            this.log(`Radiation: ${p.name} milled ${nonland} nonland card${nonland > 1 ? 's' : ''}.`);
+            if (this.activeStatics('GainLifeRadiation').some(s => matchValid(this, p, s.p.ValidPlayer || 'You', s.ctx))) await this.gainLife(p, nonland, null);
+            else await this.loseLife(p, nonland, null);
+            await this.removeCounters(p, 'RAD', nonland);
+          }
+        }
         // saga lore counters
         for (const c of this.battlefield.filter(x => x.controller === ap && this.chars(x).subtypes.has('Saga'))) await this.addCounters(c, 'LORE', 1, null);
         this.fire('Phase', { Phase: 'Main1', Player: ap });
         break;
       }
-      case 'beginCombat': this.combat = { attackers: [], blockers: new Map(), firstStrikeDone: new Set() }; this.fire('Phase', { Phase: 'BeginCombat', Player: ap }); break;
+      case 'beginCombat': this.combat = { attackers: [], blockers: new Map(), firstStrikeDone: new Set() }; this.combatsThisTurn = (this.combatsThisTurn || 0) + 1; this.fire('Phase', { Phase: 'BeginCombat', Player: ap }); break;
       case 'declareAttackers': {
         if (!this.combat) this.combat = { attackers: [], blockers: new Map(), firstStrikeDone: new Set() };
         await combat.declareAttackers(this);
@@ -409,6 +480,8 @@ export class Game {
         break;
       }
       case 'cleanup': {
+        // "at the beginning of the next cleanup step" (MayFlashSac)
+        this.fire('Phase', { Phase: 'Cleanup', Player: ap });
         // discard to hand size
         const max = this.playerChars(ap).maxHandSize;
         if (p.hand.length > max) {
@@ -434,6 +507,24 @@ export class Game {
       this.combat = null;
       this.touch();
     }
+  }
+
+  // mana empties between steps, except what "you don't lose unspent mana" keeps; Omnath turns lost mana colorless
+  emptyPools() {
+    for (const pl of this.players) {
+      const keep = {};
+      for (const s of this.activeStatics('UnspentMana')) {
+        if (!matchValid(this, pl, s.p.ValidPlayer || 'You', s.ctx)) continue;
+        const t = s.p.ManaType;
+        for (const k of Object.keys(pl.pool)) if (!t || t === 'All' || t.split(',').some(x => (NAME_TO_COLOR[x.trim().toLowerCase()] || x.trim()) === k)) keep[k] = true;
+      }
+      const lost = Object.keys(pl.pool).filter(k => !keep[k]).reduce((a, k) => a + (pl.pool[k] || 0), 0);
+      const np = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+      for (const k of Object.keys(np)) if (keep[k]) np[k] = pl.pool[k] || 0;
+      if (lost > 0 && this.replacementsFor('LoseMana').some(({ p, ctx }) => !p.ValidPlayer || matchValid(this, pl, p.ValidPlayer, ctx))) np.C += lost;
+      pl.pool = np;
+    }
+    this.touch();
   }
 
   async expireDurations(kind, pid = null) {
@@ -470,6 +561,7 @@ export class Game {
     while (!this.over) {
       await this.processTriggersAndSBA();
       if (this.over) return;
+      if (this.endTurnNow || (this.endCombatNow && this.combat && !this.stack.length)) return;
       const living = this.livingPlayers().length;
       const pid = this.priority;
       if (this.players[pid].lost) { this.priority = this.nextPlayer(pid); continue; }
@@ -539,13 +631,23 @@ export class Game {
   fire(mode, rp = {}) {
     if (this.over) return;
     rp.Mode = mode;
+    if ((mode === 'ChangesZone' || mode === 'ChangesZoneAll') && rp.Destination === 'Battlefield' && this.battlefield.length) {
+      const off = this.activeStatics('DisableTriggers').filter(s => (!s.p.ValidMode || s.p.ValidMode.split(',').includes(mode)) && (!s.p.Destination || s.p.Destination === 'Battlefield'));
+      if (off.length) {
+        const blocked = c => c && off.some(s => matchValid(this, c, s.p.ValidCause || 'Creature', s.ctx));
+        if (mode === 'ChangesZone' && blocked(rp.Card)) return;
+        if (mode === 'ChangesZoneAll') { rp.Cards = (rp.Cards || []).filter(c => !blocked(c)); if (!rp.Cards.length) return; rp.Amount = rp.Cards.length; }
+      }
+    }
     const sources = this.triggerHosts(mode, rp);
     for (const { host, t, zone } of sources) {
       const p = t.parsed.p;
       if (p.Mode !== mode && !(mode === 'SpellCast' && p.Mode === 'SpellCastOrCopy') && !(mode === 'SpellCopy' && p.Mode === 'SpellCastOrCopy')) continue;
-      const controller = host.isEffect ? host.controller : (host.lki ? host.controller : (zone === 'battlefield' || zone === 'stack' ? host.controller : host.owner));
+      const controller = t.delayed && t.delayed.controller != null ? t.delayed.controller : host.isEffect ? host.controller : (host.lki ? host.controller : (zone === 'battlefield' || zone === 'stack' ? host.controller : host.owner));
       if (!this.triggerZoneOk(p, zone, host, rp)) continue;
-      const ctx = { host, you: controller, trig: rp, svars: t.svars, sa: { svars: t.svars, host, controller, trig: rp, root() { return { x: host.xPaid || 0, paid: {} }; }, parent: null, targets: [] } };
+      // "When CARDNAME enters during the declare attackers step, ..." (Phase$ on a non-phase trigger)
+      if (p.Phase && mode !== 'Phase' && !p.Phase.split(',').map(s => s.trim()).includes(FORGE_PHASE[this.step])) continue;
+      const ctx = { host, you: controller, trig: rp, svars: t.svars, door: t.door, sa: { svars: t.svars, host, controller, trig: rp, root() { return { x: host.xPaid || 0, paid: {} }; }, parent: null, targets: [] } };
       try {
         if (!triggerMatches(this, p, host, rp, ctx)) continue;
         if (!checkPresence(this, p, ctx)) continue;
@@ -577,7 +679,8 @@ export class Game {
 
   triggerZoneOk(p, zone, host, rp) {
     const tz = p.TriggerZones ? p.TriggerZones.split(',').map(z => zoneMap[z.trim()] || z.trim().toLowerCase()) : null;
-    if (host.isEffect || host.isDelayed) return true;
+    // delayed triggers exist apart from their source: they fire wherever (and whether) that card is now
+    if (host.isEffect || host.isDelayed || zone === 'delayed') return true;
     if (zone === 'lookback') {
       // leaves-the-battlefield triggers "look back in time"
       return !tz || tz.includes('battlefield');
@@ -625,6 +728,7 @@ export class Game {
     for (const d of this.delayed) {
       if (d.fired) continue;
       if (d.thisTurnOnly && d.turn !== this.turnNumber) continue;
+      if (d.afterCombats && (this.combatsThisTurn || 0) < d.afterCombats) continue;
       if (d.nextTurn && d.turn === this.turnNumber) continue;
       out.push({ host: d.host, t: { parsed: { p: d.p }, svars: d.svars, key: 'delayed' + d.id, delayed: d }, zone: 'delayed', delayed: d });
     }
@@ -644,6 +748,7 @@ export class Game {
       const to = this.pendingInitiative; this.pendingInitiative = null;
       if (!this.players[to].lost) await this.takeInitiative(to);
     }
+    await this.assignSectors();
     for (let guard = 0; guard < 50 && !this.over; guard++) {
       await this.checkSBA();
       if (this.over) return;
@@ -811,7 +916,8 @@ export class Game {
         }
         if ((ch.subtypes.has('Equipment') || ch.subtypes.has('Fortification')) && c.attachedTo != null) {
           const tc = this.cardById(c.attachedTo);
-          if (!tc || tc.zone !== 'battlefield' || !this.chars(tc).types.has('Creature') || ch.types.has('Creature')) { c.attachedTo = null; this.touch(); acted = true; }
+          const kind = ch.subtypes.has('Fortification') ? 'Land' : 'Creature';
+          if (!tc || tc.zone !== 'battlefield' || !this.chars(tc).types.has(kind) || ch.types.has('Creature')) { c.attachedTo = null; this.touch(); acted = true; }
         }
         // counter annihilation
         if (c.counters.P1P1 > 0 && c.counters.M1M1 > 0) {
@@ -943,7 +1049,7 @@ export class Game {
       castFrom: card.castFrom, exiledWith: card.exiledWith, face: card.face, faceDef: card.faceDef,
       wasAttacking: this.isAttacking(card), wasBlocking: this.isBlocking(card),
       attachments: this.battlefield.filter(a => a.attachedTo === card.id).map(a => a.id),
-      blitzed: card.blitzed, evoked: card.evoked, squad: card.squad, renowned: card.renowned, monstrous: card.monstrous,
+      blitzed: card.blitzed, evoked: card.evoked, squad: card.squad, renowned: card.renowned, monstrous: card.monstrous, championed: card.championed,
     };
   }
 
@@ -982,6 +1088,8 @@ export class Game {
       if (r === null) return card; // replaced entirely
       dest = r;
     }
+    // "triggered abilities you control can't cause you to exile creature tokens you control"
+    if (dest === 'exile' && from === 'battlefield' && opts.cause && this.cantByStatic('CantExile', card, opts.cause, !!opts.forCost)) return card;
     const lki = from === 'battlefield' ? this.makeLKI(card) : (from === 'stack' ? this.makeLKI(card) : null);
     const wasFaceDown = card.faceDown;
     // leaving the battlefield
@@ -1009,7 +1117,9 @@ export class Game {
     // tokens cease to exist outside the battlefield
     const isToken = card.token;
     const prevController = card.controller;
-    const keepCounters = opts.keepCounters ? { ...card.counters } : null;
+    const countersRemain = dest !== 'hand' && dest !== 'library' && card.faceDef.statics.some(s => /Mode\$ CountersRemain/.test(s));
+    const keepCounters = opts.keepCounters || countersRemain ? { ...card.counters } : null;
+    const meldPartner = from === 'battlefield' && card.meldedWith != null ? this.cardById(card.meldedWith) : null;
     card.reset();
     card.zcc++;
     if (isToken && dest !== 'battlefield') {
@@ -1018,6 +1128,7 @@ export class Game {
       this.recordMove(card, lki, from, dest, opts, ZONE_NAME);
       return null;
     }
+    if (keepCounters && dest !== 'battlefield') card.counters = keepCounters;
     card.enteredFrom = from; card.movedTurn = this.turnNumber;
     card.controller = dest === 'battlefield' ? (opts.controller != null ? opts.controller : (from === 'stack' ? prevController : card.owner)) : card.owner;
     card.zone = dest;
@@ -1027,11 +1138,14 @@ export class Game {
       card.sick = true;
       card.enteredTurn = this.turnNumber;
       card.timestamp = newTimestamp(this);
+      card.enteredController = card.controller;
       card.tapped = !!opts.tapped;
       if (opts.faceDown) card.faceDown = true;
+      if (opts.setProps) Object.assign(card, opts.setProps);
       if (opts.transformed) { card.face = 1; card.transformed = true; }
       if (opts.face != null) card.face = opts.face;
-      if (opts.cast) { card.castFrom = opts.cast.from; card.xPaid = opts.cast.x || 0; card.kicked = opts.cast.kicked || 0; card.castSA = opts.cast.sa || null; card.manaSpent = opts.cast.manaSpent || null; card.optionalCosts = opts.cast.optionalCosts || []; card.altCost = opts.cast.altCost || null; card.convokedBy = opts.cast.convokedBy || []; card.squad = opts.cast.squad || 0; card.evoked = card.altCost === 'Evoke'; card.blitzed = card.altCost === 'Blitz'; }
+      if (isRoom(card.def)) card.unlocked = opts.cast ? [opts.face || 0] : [];
+      if (opts.cast) { card.castFrom = opts.cast.from; card.xPaid = opts.cast.x || 0; card.kicked = opts.cast.kicked || 0; card.castSA = opts.cast.sa || null; card.manaSpent = opts.cast.manaSpent || null; card.optionalCosts = opts.cast.optionalCosts || []; card.altCost = opts.cast.altCost || null; card.convokedBy = opts.cast.convokedBy || []; card.squad = opts.cast.squad || 0; card.evoked = card.altCost === 'Evoke'; card.blitzed = card.altCost === 'Blitz'; card.promisedGift = opts.cast.sa && opts.cast.sa.promisedGift != null ? opts.cast.sa.promisedGift : null; }
       if (keepCounters) card.counters = keepCounters;
       if (opts.attachTo != null) card.attachedTo = opts.attachTo;
       this.touch();
@@ -1053,6 +1167,8 @@ export class Game {
       if (!opts.silent && opts.log !== false) this.logMove(card, lki, from, dest, wasFaceDown);
     }
     this.recordMove(card, lki, from, dest, opts, ZONE_NAME);
+    // a melded permanent is both cards: the other one goes along
+    if (meldPartner && meldPartner.zone === 'exile') await this.moveCard(meldPartner, dest === 'command' ? (to === 'command' ? 'graveyard' : to) : dest, { silent: true, noReplace: dest === 'battlefield' });
     return card;
   }
 
@@ -1168,18 +1284,44 @@ export class Game {
     }
     if (ch.types.has('Planeswalker') && ch.loyalty != null) {
       const ctx = { host: card, you: card.controller, svars: ch.svars };
-      const n = /^\d+$/.test(ch.loyalty) ? +ch.loyalty : calcCtx(this, ch.loyalty, ctx);
+      let n = /^\d+$/.test(ch.loyalty) ? +ch.loyalty : calcCtx(this, ch.loyalty, ctx);
+      // compleated: two fewer loyalty counters for each {P} paid with life
+      if (this.hasKeywordIn(ch, 'Compleated') && card.castSA && card.castSA.phyrexianLife) n = Math.max(0, n - 2 * card.castSA.phyrexianLife);
       card.enteringPW = true;
       await this.addCounters(card, 'LOYALTY', n, null, { etb: true });
       card.enteringPW = false;
     }
     if (ch.types.has('Battle') && card.faceDef.defense) await this.addCounters(card, 'DEFENSE', +card.faceDef.defense || 0, null, { etb: true });
     if (this.hasKeywordIn(ch, 'Ravenous') && card.xPaid) await this.addCounters(card, 'P1P1', card.xPaid, null, { etb: true });
+    if (card.castSA && card.castSA.chorusCounters) await this.addCounters(card, 'P1P1', card.castSA.chorusCounters, null, { etb: true });
+    if (this.hasKeywordIn(ch, 'Unleash') && await this.ask(card.controller, { type: 'confirm', prompt: `Unleash: have ${this.name(card)} enter with a +1/+1 counter? (It can't block while it has one.)`, purpose: 'unleash', cardId: card.id })) await this.addCounters(card, 'P1P1', 1, null, { etb: true });
+    if (this.hasKeywordIn(ch, 'Start your engines') && !(this.players[card.controller].speed > 0)) { this.players[card.controller].speed = 1; this.log(`${this.players[card.controller].name}'s speed is 1.`); }
+    if (card.castSA && card.castSA.altCost === 'Impending') { const k = ch.keywords.find(x => /^Impending:/.test(x)); if (k) { card.impending = true; await this.addCounters(card, 'TIME', +k.split(':')[1] || 1, null, { etb: true }); } }
+    // daybound: it becomes day if it's neither; at night it enters transformed
+    if (card.def.faces.length > 1 && card.def.faces[0].keywords.includes('Daybound') && !card.faceDown) {
+      if (!this.dayNight) this.setDayNight('Day');
+      else if (this.dayNight === 'Night' && card.face === 0) { card.face = 1; card.transformed = true; this.touch(); }
+    }
+    // vanishing N: enters with N time counters; bloodthirst N: +1/+1 counters if an opponent was dealt damage this turn
+    for (const k of ch.keywords) {
+      let m;
+      if ((m = k.match(/^Vanishing:(\d+)$/))) await this.addCounters(card, 'TIME', +m[1], null, { etb: true });
+      if ((m = k.match(/^Bloodthirst:(\d+)$/)) && this.opponents(card.controller).some(o => this.turnState.damagedPlayers[o.id] > 0)) await this.addCounters(card, 'P1P1', +m[1], null, { etb: true });
+    }
+    // graft N: enters with N +1/+1 counters
+    for (const k of ch.keywords) { const m = k.match(/^Graft:(\d+)$/); if (m) await this.addCounters(card, 'P1P1', +m[1], null, { etb: true }); }
+    // sunburst: a +1/+1 (creature) or charge counter for each color of mana spent to cast it
+    if (this.hasKeywordIn(ch, 'Sunburst') && opts.cast) {
+      const n = COLORS.filter(c => (card.manaSpent || {})[c] > 0).length;
+      if (n > 0) await this.addCounters(card, ch.types.has('Creature') ? 'P1P1' : 'CHARGE', n, null, { etb: true });
+    }
     for (const k of ch.keywords) {
       let m;
       if ((m = k.match(/^ETBReplacement:(\w+):(\w+)(?::(.*))?$/))) {
         const raw = ch.svars[m[2]];
         if (!raw) continue;
+        const [, zoneP, validP] = (m[3] || '').split(':');
+        if (validP && zoneP) continue; // "other creatures you control enter with ..." (applied below, from the host)
         if (m[3] === 'Optional' || /Optional/.test(m[3] || '')) {
           const yes = await this.ask(card.controller, { type: 'confirm', prompt: `${this.name(card)}: ${parseAbility(raw).p.SpellDescription || 'use this ability as it enters?'}`, purpose: 'etbOptional', cardId: card.id });
           if (!yes) continue;
@@ -1188,6 +1330,20 @@ export class Game {
       }
     }
     for (const mod of opts.etbMods || []) await this.runETBMod(card, mod.raw, mod.svars, mod.host);
+    // permanents (or cards in other zones) whose keywords say how other cards enter
+    for (const h of [...this.battlefield, ...this.players.flatMap(pl => pl.graveyard)]) {
+      if (h === card || h.phasedOut) continue;
+      const hk = h.zone === 'battlefield' ? this.chars(h).keywords : h.faceDef.keywords;
+      for (const k of hk) {
+        const m = k.match(/^ETBReplacement:(\w+):(\w+):([^:]*):(\w+):(.+)$/);
+        if (!m || (zoneMap[m[4]] || m[4].toLowerCase()) !== h.zone) continue;
+        const svars = h.zone === 'battlefield' ? this.chars(h).svars : h.faceDef.svars;
+        const raw = svars[m[2]];
+        if (!raw || !matchValid(this, card, m[5], { host: h, you: h.zone === 'battlefield' ? h.controller : h.owner })) continue;
+        if (m[3] === 'Optional' && !(await this.ask(h.zone === 'battlefield' ? h.controller : h.owner, { type: 'confirm', prompt: `${this.name(h)}: ${parseAbility(raw).p.SpellDescription || 'apply to ' + this.name(card) + '?'}`, purpose: 'etbOptional', cardId: card.id }))) continue;
+        await this.runETBMod(card, raw, svars, h);
+      }
+    }
     // replacement effects created while this permanent was entering (e.g. Spark Double's extra counter)
     for (const e of this.effects.filter(x => x.timestamp >= etbStart)) {
       for (const r of e.effectChars.replacements) {
@@ -1198,8 +1354,16 @@ export class Game {
         if (raw) await this.runETBMod(card, raw, r.svars, e);
       }
     }
-    // saga: first lore counter
-    if (this.chars(card).subtypes.has('Saga') && !this.chars(card).types.has('Creature')) await this.addCounters(card, 'LORE', 1, null);
+    // saga: first lore counter (read ahead: choose the chapter to start on; earlier chapters don't trigger)
+    if (this.chars(card).subtypes.has('Saga') && !this.chars(card).types.has('Creature')) {
+      if (this.hasKeyword(card, 'Read ahead')) {
+        const chapters = this.keywordArgs(card, 'Chapter')[0];
+        const final = chapters ? +chapters[0] : 3;
+        const n = final > 1 ? await this.ask(card.controller, { type: 'number', prompt: `Read ahead: start ${this.name(card)} on which chapter?`, min: 1, max: final, purpose: 'readAhead', cardId: card.id }) : 1;
+        if (n > 1) { card.counters.LORE = Math.min(final, n) - 1; this.touch(); }
+      }
+      await this.addCounters(card, 'LORE', 1, null);
+    }
     this.touch();
   }
 
@@ -1214,12 +1378,47 @@ export class Game {
   // ---------------------------------------------------------------- basic actions
   async drawCards(p, n, sa, silent = false) {
     const drawn = [];
+    // "if an opponent would draw two or more cards, instead ..."
+    if (n >= 2 && this.turnNumber > 0) {
+      for (const { h, r, p: rp, ctx } of this.replacementsFor('DrawCards')) {
+        const key = h.id + ':' + r.key;
+        if (this.activeRepl.has(key)) continue;
+        if (rp.ValidPlayer && !matchValid(this, p, rp.ValidPlayer, ctx)) continue;
+        const m = (rp.Number || '').match(/^(EQ|NE|LT|LE|GT|GE)(\d+)$/);
+        if (m && !compare(n, m[1], +m[2])) continue;
+        const raw = rp.ReplaceWith && r.svars[rp.ReplaceWith];
+        if (!raw) continue;
+        this.log(`${this.name(h)} replaces ${p.name}'s draw.`);
+        const s = new SA(this, { raw, parsed: parseAbility(raw), svars: r.svars, src: h, key: r.key }, h, h.controller, { trig: { Affected: p, Player: p.id, Number: n } });
+        this.activeRepl.add(key);
+        try { await this.resolveSAChain(s); } finally { this.activeRepl.delete(key); }
+        return drawn;
+      }
+    }
     for (let i = 0; i < n; i++) {
+      // dredge N: instead of drawing, mill N and return the dredge card from the graveyard to hand
+      if (this.turnNumber > 0) {
+        const dredgers = p.graveyard.map(c => ({ c, k: c.faceDef.keywords.find(k => /^Dredge:\d+$/.test(k)) })).filter(x => x.k && p.library.length >= +x.k.split(':')[1]);
+        if (dredgers.length) {
+          const pick = await this.ask(p.id, { type: 'option', prompt: 'You would draw a card. Dredge instead?', options: [{ label: 'Draw a card', value: 0 }, ...dredgers.map(x => ({ label: `Dredge ${x.k.split(':')[1]}: mill ${x.k.split(':')[1]} and return ${this.name(x.c)} to your hand`, value: x.c.id }))], purpose: 'dredge', cards: dredgers.map(x => x.c.id) });
+          const d = dredgers.find(x => x.c.id === pick);
+          if (d) {
+            const nm = +d.k.split(':')[1];
+            this.log(`${p.name} dredges ${this.name(d.c)} (mill ${nm}).`);
+            await this.mill(p, nm, sa);
+            if (d.c.zone === 'graveyard') await this.moveCard(d.c, 'hand', { cause: sa });
+            continue;
+          }
+        }
+      }
+      // "each opponent can't draw more than one card each turn"
+      if (this.activeStatics('CantDraw').some(s => matchValid(this, p, s.p.ValidPlayer || 'Player', s.ctx) && p.cardsDrawnThisTurn >= +(s.p.DrawLimit || 0))) break;
       // draw replacements
       const repl = await this.applySimpleReplacement('Draw', { Affected: p, Player: p.id }, sa);
       if (repl === null) continue;
       if (!p.library.length) { p.drewFromEmpty = true; this.touch(); break; }
-      const c = p.library[0];
+      // "you draw cards from the bottom of your library rather than the top"
+      const c = this.activeStatics('DrawFromBottom').some(s => matchValid(this, p, s.p.ValidPlayer || 'You', s.ctx)) ? p.library[p.library.length - 1] : p.library[0];
       await this.moveCard(c, 'hand', { silent: true, noReplace: true });
       p.cardsDrawnThisTurn++;
       drawn.push(c);
@@ -1258,8 +1457,11 @@ export class Game {
         const parsed = parseAbility(raw);
         if (parsed.api === 'ReplaceEffect' || parsed.api === 'ReplaceCounter' || parsed.api === 'ReplaceToken' || parsed.api === 'ReplaceDamage') {
           const ctx2 = { host: h, you, svars: r.svars, trig: rp, sa: { svars: r.svars, host: h, controller: you, trig: rp, root() { return { x: 0, paid: {} }; } } };
-          const varName = parsed.p.VarName;
-          if (varName && parsed.p.VarValue != null) rp[varName] = calcCtx(this, parsed.p.VarValue, ctx2);
+          for (let q = parsed, guard = 0; q && guard < 5; guard++) {
+            if (q.p.VarName && q.p.VarValue != null) rp[q.p.VarName] = calcCtx(this, q.p.VarValue, ctx2);
+            q = q.p.SubAbility && r.svars[q.p.SubAbility] ? parseAbility(r.svars[q.p.SubAbility]) : null;
+            if (q && q.api !== 'ReplaceEffect') q = null;
+          }
           continue;
         }
         const s = new SA(this, { raw, parsed, svars: r.svars, src: h, key: r.key }, h, you, { trig: rp });
@@ -1298,6 +1500,7 @@ export class Game {
       return;
     }
     await this.moveCard(card, 'graveyard', { cause: sa, silent: true });
+    if (card.zone === 'graveyard') card.discarded = { turn: this.turnNumber, zcc: card.zcc }; // mayhem
     this.log(`${p.name} discards ${this.name(card)}.`, { cardId: card.id });
     this.fire('Discarded', { Card: card, Player: p.id, Cause: sa });
     this.fire('DiscardedAll', { Cards: [card], Player: p.id });
@@ -1310,10 +1513,14 @@ export class Game {
     await this.endBatch();
     if (cards.length) this.log(`${p.name} mills ${cards.length} card${cards.length > 1 ? 's' : ''}.`);
     if (cards.length) this.fire('MilledAll', { Cards: cards, Player: p.id, Amount: cards.length });
+    if (cards.length) this.fire('MilledOnce', { Cards: cards, Player: p.id, Amount: cards.length });
     return cards;
   }
 
-  shuffle(p) { this.rng.shuffle(p.library); this.touch(); }
+  shuffle(p, sa = null) {
+    this.rng.shuffle(p.library); this.touch();
+    if (sa && sa.controller === p.id) this.fire('Shuffled', { Player: p.id, Cause: sa });
+  }
 
   async destroy(card, sa, opts = {}) {
     if (!card || card.zone !== 'battlefield') return false;
@@ -1338,8 +1545,38 @@ export class Game {
     return true;
   }
 
+  // Space sculptor: while one is on the battlefield, each creature's controller assigns it to a sector
+  async assignSectors() {
+    if (!this.battlefield.some(c => !c.phasedOut && this.hasKeyword(c, 'Space sculptor'))) return;
+    const SECTORS = ['Alpha', 'Beta', 'Gamma'];
+    for (const c of [...this.battlefield]) {
+      if (c.sector || c.phasedOut || c.zone !== 'battlefield' || !this.chars(c).types.has('Creature')) continue;
+      const v = await this.ask(c.controller, { type: 'option', prompt: `Space sculptor: assign ${this.name(c)} to a sector`, options: SECTORS.map(x => ({ label: x, value: x })), purpose: 'sector', cardId: c.id });
+      c.sector = SECTORS.includes(v) ? v : 'Alpha';
+      this.log(`${this.name(c)} is assigned to the ${c.sector.toLowerCase()} sector.`);
+      this.touch();
+    }
+  }
+
+  // "can't be sacrificed" / "can't cause you to sacrifice or exile" statics
+  cantByStatic(mode, card, sa, forCost = false) {
+    return this.activeStatics(mode).some(s => {
+      if (!matchValid(this, card, s.p.ValidCard || 'Card', s.ctx)) return false;
+      if (s.p.ForCost === 'False' && forCost) return false;
+      if (s.p.ValidCause) {
+        if (!sa) return false;
+        const root = sa.root ? sa.root() : sa;
+        if (/^Triggered/.test(s.p.ValidCause) && !(sa.isTrigger || root.isTrigger)) return false;
+        if (/YouCtrl/.test(s.p.ValidCause) && sa.controller !== s.ctx.you) return false;
+      }
+      return true;
+    });
+  }
+  cantSacrifice(card, sa, forCost = false) { return this.cantByStatic('CantSacrifice', card, sa, forCost); }
+
   async sacrifice(card, sa) {
     if (!card || card.zone !== 'battlefield') return false;
+    if (this.cantSacrifice(card, sa, !!(sa && sa.payingCost))) return false;
     const lki = this.makeLKI(card);
     const ctrl = card.controller;
     await this.moveCard(card, 'graveyard', { cause: sa, silent: true });
@@ -1357,7 +1594,16 @@ export class Game {
   }
   async untap(card) {
     if (!card.tapped) return false;
+    // stun counters: "if it would become untapped, instead remove a stun counter from it"
+    if ((card.counters.STUN || 0) > 0) {
+      const r = await this.removeCounters(card, 'STUN', 1);
+      this.log(r ? `${this.name(card)} stays tapped and loses a stun counter.` : `${this.name(card)} stays tapped (stunned).`);
+      return false;
+    }
     card.tapped = false;
+    // effects and control changes that last "for as long as CARDNAME remains tapped"
+    for (const c of this.battlefield) if (c.tempControl && c.tempControl.untilUntapOf === card.id) { c.controller = c.tempControl.prev; c.tempControl = null; c.sick = true; }
+    if (this.effects.some(e => e.endsWhenHostUntaps === card.id)) this.effects = this.effects.filter(e => e.endsWhenHostUntaps !== card.id);
     this.touch();
     this.fire('Untaps', { Card: card });
     return true;
@@ -1391,8 +1637,12 @@ export class Game {
   async loseLife(p, n, sa, fromDamage = false) {
     if (n <= 0 || p.lost) return 0;
     if (this.lifeLocked(p)) return 0;
+    if (this.activeStatics('CantLoseLife').some(s => matchValid(this, p, s.p.ValidPlayer || 'You', s.ctx))) return 0;
     p.life -= n;
     p.lifeLostThisTurn += n;
+    // start your engines!: speed rises once each of your turns when an opponent loses life
+    const act = this.players[this.activePlayer];
+    if (act && act.speed > 0 && act.speed < 4 && this.isOpponent(p.id, act.id) && this.turnState.speedUp !== act.id) { act.speed++; this.turnState.speedUp = act.id; this.log(`${act.name}'s speed increases to ${act.speed}.`); }
     this.touch();
     if (!fromDamage) this.log(`${p.name} loses ${n} life.`, { type: 'life' });
     this.fire('LifeLost', { Player: p.id, LifeAmount: n, Source: sa ? sa.host : null });
@@ -1408,23 +1658,47 @@ export class Game {
     const srcCh = source ? this.chars(source.lki ? source : source) : null;
     const srcCtrl = source ? (source.lki ? source.controller : source.controller) : null;
     // protection / prevention
-    if (target.isCard && source && this.hasProtectionFrom(target, source)) return 0;
-    if (target.isPlayer && this.playerChars(target.id).keywords.some(k => k === 'Protection from everything')) return 0;
+    const canPrevent = !this.activeStatics('CantPreventDamage').length;
+    const prevent = () => { this.notePrevented(source, target, amount, !!opts.combat); return 0; };
+    if (canPrevent) {
+      if (target.isCard && source && this.hasProtectionFrom(target, source)) return prevent();
+      if (target.isPlayer && this.playerProtectedFrom(target, source)) return prevent();
+      if (target.isCard && this.preventsDamage(this.chars(target), 'to', !!opts.combat)) return prevent();
+      if (srcCh && this.preventsDamage(srcCh, 'by', !!opts.combat)) return prevent();
+    }
+    // "prevent the next N damage that would be dealt to it this turn"
+    if (canPrevent && this.shields && this.shields.length) {
+      for (const sh of this.shields) {
+        if (sh.turn !== this.turnNumber || sh.amount <= 0) continue;
+        if (target.isPlayer ? sh.player !== target.id : (sh.card !== target.id || sh.zcc !== target.zcc)) continue;
+        const n = Math.min(sh.amount, amount);
+        sh.amount -= n; amount -= n;
+        this.notePrevented(source, target, n, !!opts.combat);
+        if (amount <= 0) return 0;
+      }
+      this.shields = this.shields.filter(sh => sh.amount > 0 && sh.turn === this.turnNumber);
+    }
     let rp = { Affected: target, Source: source, DamageSource: source, DamageAmount: amount, IsCombat: !!opts.combat };
     const prevented = await this.applyDamageReplacements(rp);
-    if (prevented === null) return 0;
+    if (prevented === null) { if (rp.prevented) this.notePrevented(source, target, amount, !!opts.combat); return 0; }
+    if (rp.preventedAmount > 0) this.notePrevented(source, target, rp.preventedAmount, !!opts.combat);
     amount = rp.DamageAmount;
     if (amount <= 0) return 0;
     const infect = srcCh && this.hasKeywordIn(srcCh, 'Infect');
-    const wither = srcCh && this.hasKeywordIn(srcCh, 'Wither');
+    const wither = srcCh && (this.hasKeywordIn(srcCh, 'Wither') || this.activeStatics('WitherDamage').some(s => !s.p.ValidCard || (source && matchValid(this, source, s.p.ValidCard, s.ctx))));
     const deathtouch = srcCh && this.hasKeywordIn(srcCh, 'Deathtouch');
     const lifelink = srcCh && this.hasKeywordIn(srcCh, 'Lifelink');
     if (target.isPlayer) {
+      // "as long as you're the monarch, damage doesn't cause you to lose life"
+      const noLoss = this.replacementsFor('LifeReduced').some(({ p, ctx }) => p.Layer === 'CantHappen' && p.IsDamage === 'True' && (p.Monarch !== 'True' || this.monarch === target.id) && (!p.ValidPlayer || matchValid(this, target, p.ValidPlayer, ctx)));
       if (infect) await this.addCounters(target, 'POISON', amount, null);
-      else await this.loseLife(target, amount, null, true);
+      else if (!noLoss) await this.loseLife(target, amount, null, true);
       this.turnState.damagedPlayers[target.id] = (this.turnState.damagedPlayers[target.id] || 0) + amount;
       if (opts.combat) {
         this.turnState.combatDamagedPlayers[target.id] = true;
+        if (source) { const list = (this.turnState.combatDamageSources[target.id] = this.turnState.combatDamageSources[target.id] || []); const sc = source.lki ? source.card : source; if (sc && !list.some(x => x.id === sc.id)) list.push(source.lki ? source : this.makeLKI(sc)); }
+        // prowl: remember the creature types that dealt combat damage to a player this turn
+        if (srcCh && srcCh.types.has('Creature') && srcCtrl != null) { const pr = (this.turnState.prowl = this.turnState.prowl || {}); (pr[srcCtrl] = pr[srcCtrl] || []).push({ types: [...srcCh.subtypes], all: !!srcCh.allCreatureTypes }); }
         const srcCard = source && (source.lki ? source.card : source);
         if (srcCard && srcCard.isCommander) target.commanderDamage[srcCard.id] = (target.commanderDamage[srcCard.id] || 0) + amount;
         const toxic = srcCh ? srcCh.keywords.filter(k => k.startsWith('Toxic:')).reduce((a, k) => a + (+k.split(':')[1] || 0), 0) : 0;
@@ -1472,6 +1746,15 @@ export class Game {
     for (const t of byTarget.values()) this.fire('DamageDoneOnce', t);
     for (const s of bySource.values()) this.fire('DamageDealtOnce', s);
     if (batch.length) this.fire('DamageAll', { Amount: batch.reduce((a, d) => a + d.DamageAmount, 0), IsCombatDamage: batch[0].IsCombatDamage });
+    const prevented = this.preventBatch || [];
+    this.preventBatch = null;
+    const byPrevTarget = new Map();
+    for (const d of prevented) {
+      const tk = d.Target.isPlayer ? 'p' + d.Target.id : d.Target.id;
+      if (!byPrevTarget.has(tk)) byPrevTarget.set(tk, { ...d, DamageAmount: 0, Sources: [] });
+      const t = byPrevTarget.get(tk); t.DamageAmount += d.DamageAmount; t.Sources.push(d.Source);
+    }
+    for (const t of byPrevTarget.values()) this.fire('DamagePreventedOnce', t);
   }
 
   async applyDamageReplacements(rp) {
@@ -1491,22 +1774,105 @@ export class Game {
         (rp._applied = rp._applied || new Set()).add(h.id + r.key);
         if (p.Prevent === 'True' || p.PreventionEffect === 'True' && !p.ReplaceWith) {
           if (this.activeStatics('CantPreventDamage').length) continue;
+          rp.prevented = true;
           return null;
         }
         const raw = p.ReplaceWith && r.svars[p.ReplaceWith];
         if (!raw) continue;
         const parsed = parseAbility(raw);
         if (parsed.api === 'ReplaceDamage' || parsed.api === 'ReplaceEffect') {
+          if (p.PreventionEffect === 'True' && this.activeStatics('CantPreventDamage').length) continue;
           const v = calcCtx(this, parsed.p.Amount || parsed.p.VarValue, ctx);
+          if (p.PreventionEffect === 'True' && v < rp.DamageAmount) rp.preventedAmount = (rp.preventedAmount || 0) + rp.DamageAmount - Math.max(0, v);
           rp.DamageAmount = Math.max(0, v);
           if (parsed.p.VarName && parsed.p.VarName !== 'DamageAmount') { /* other vars ignored */ }
           if (rp.DamageAmount <= 0) return null;
           continue;
         }
-        if (parsed.api === 'ReplaceSplitDamage' || parsed.api === 'DealDamage') continue;
+        if (p.PreventionEffect === 'True' && parsed.api !== 'ReplaceSplitDamage') {
+          // "prevent that damage and [do something else instead]"
+          if (this.activeStatics('CantPreventDamage').length) continue;
+          rp.prevented = true;
+          const s = new SA(this, { raw, parsed, svars: r.svars, src: h, key: r.key }, h, you, { trig: rp });
+          await this.resolveSAChain(s);
+          return null;
+        }
       }
     }
     return rp;
+  }
+
+  // keyword prevention: "Prevent all [combat] damage that would be dealt to [and dealt by] CARDNAME." (Fog Bank, Guard Gomazoa)
+  preventsDamage(ch, dir, combat) {
+    for (const k of ch.keywords) {
+      const m = k.match(/^(?:HIDDEN )?Prevent all (combat )?damage that would be dealt (to and dealt by|to|by) CARDNAME\.$/);
+      if (!m || (m[1] && !combat)) continue;
+      if (m[2] === 'to and dealt by' || m[2] === dir) return true;
+    }
+    return false;
+  }
+
+  // protection a player has from a damage source ("Protection from everything", protection from a player)
+  playerProtectedFrom(pl, source) {
+    for (const k of this.playerChars(pl.id).keywords) {
+      if (k === 'Protection from everything') return true;
+      if (source && this.protectionFromPlayerKw(k, source)) return true;
+    }
+    return false;
+  }
+
+  // "Protection:Player.PlayerUID_<id>:<name>": protection from everything that player controls
+  protectionFromPlayerKw(k, source) {
+    const m = k.match(/^Protection:Player\.(OpponentOf )?PlayerUID_(\d+)/);
+    if (!m) return false;
+    const ctrl = source.isPlayer ? source.id : source.stackItem ? source.controller : ctrlOf(this, source);
+    return m[1] ? ctrl !== +m[2] : ctrl === +m[2];
+  }
+
+  setDayNight(v) {
+    if (this.dayNight === v) return;
+    this.dayNight = v;
+    this.log(`It becomes ${v.toLowerCase()}.`);
+    for (const c of this.battlefield) {
+      const f = c.def.faces;
+      if (f.length < 2 || c.faceDown) continue;
+      const toBack = v === 'Night' && c.face === 0 && f[0].keywords.includes('Daybound');
+      const toFront = v === 'Day' && c.face === 1 && f[1].keywords.includes('Nightbound');
+      if (!toBack && !toFront) continue;
+      c.face = toBack ? 1 : 0; c.transformed = toBack;
+      this.log(`${this.name(c)} transforms.`);
+      this.fire('Transformed', { Card: c });
+    }
+    this.fire('DayTimeChanges', { DayTime: v });
+    this.touch();
+  }
+
+  // soulbond partner, if still paired (both on the battlefield, same controller, both creatures)
+  pairedPartner(c) {
+    if (!c || c.pairedWith == null) return null;
+    const p = this.cardById(c.pairedWith);
+    if (!p || p.zone !== 'battlefield' || p.controller !== c.controller || p.pairedWith !== c.id || !this.chars(p).types.has('Creature') || !this.chars(c).types.has('Creature')) return null;
+    return p;
+  }
+
+  // Rooms: unlock a door (fires "when you unlock this door" and, once both are open, "fully unlock")
+  unlockDoor(card, door, pid) {
+    if (!card.unlocked || card.unlocked.includes(door) || card.zone !== 'battlefield') return false;
+    card.unlocked = [...card.unlocked, door].sort();
+    this.touch();
+    this.log(`${this.players[pid].name} unlocks ${card.def.faces[door].name}.`, { cardId: card.id });
+    this.fire('UnlockDoor', { Card: card, Player: pid, Door: door });
+    if (card.unlocked.length >= card.def.faces.length) this.fire('FullyUnlock', { Card: card, Player: pid });
+    return true;
+  }
+
+  // record prevented damage for "whenever damage would be dealt to you is prevented" (batched like damage)
+  notePrevented(source, target, amount, combat) {
+    if (amount <= 0) return;
+    const e = { Source: source, DamageSource: source, Target: target, DamageTarget: target, DamageAmount: amount, IsCombatDamage: combat };
+    this.fire('DamagePrevented', e);
+    if (this.damageBatch) (this.preventBatch = this.preventBatch || []).push(e);
+    else this.fire('DamagePreventedOnce', { ...e, Sources: [source] });
   }
 
   hasProtectionFrom(card, source) {
@@ -1515,6 +1881,7 @@ export class Game {
     for (const k of ch.keywords) {
       if (!k.startsWith('Protection')) continue;
       if (k === 'Protection from everything') return true;
+      if (k.startsWith('Protection:Player.')) { if (this.protectionFromPlayerKw(k, source)) return true; continue; }
       let m = k.match(/^Protection from (white|blue|black|red|green|multicolored|monocolored|colorless)$/i);
       if (m) {
         const col = { white: 'W', blue: 'U', black: 'B', red: 'R', green: 'G' }[m[1].toLowerCase()];
@@ -1578,6 +1945,7 @@ export class Game {
     const cap = Math.min(n, 30);
     for (let i = 0; i < cap; i++) this.fire('CounterAdded', { Card: obj.isCard ? obj : null, Player: obj.isPlayer ? obj.id : null, Valid: obj, CounterType: type, CounterAmount: 1, Source: sa ? sa.host : null, Previous: before + i });
     this.fire('CounterAddedOnce', { Card: obj.isCard ? obj : null, Player: obj.isPlayer ? obj.id : null, CounterType: type, Amount: n, CounterAmount: n, Source: sa ? sa.host : null, Previous: before });
+    this.fire('CounterTypeAddedAll', { Object: obj, Card: obj.isCard ? obj : null, Player: obj.isPlayer ? obj.id : null, CounterType: type, Amount: n });
     // saga chapters
     if (type === 'LORE' && obj.isCard) await this.sagaChapters(obj, before, before + n);
     return n;
@@ -1588,9 +1956,12 @@ export class Game {
     const have = obj.counters[type] || 0;
     const r = Math.min(have, n);
     if (r <= 0) return 0;
+    // "stun counters can't be removed from permanents your opponents control"
+    if (obj.isCard && this.replacementsFor('RemoveCounter').some(({ p, ctx }) => p.Layer === 'CantHappen' && (!p.ValidCard || matchValid(this, obj, p.ValidCard, ctx)) && (!p.ValidCounterType || p.ValidCounterType.split(',').map(normalizeCounter).includes(type)))) return 0;
     obj.counters[type] = have - r;
     this.touch();
-    this.fire('CounterRemoved', { Card: obj.isCard ? obj : null, CounterType: type, Amount: r });
+    this.fire('CounterRemoved', { Card: obj.isCard ? obj : null, CounterType: type, Amount: r, NewCounterAmount: obj.counters[type] });
+    this.fire('CounterRemovedOnce', { Card: obj.isCard ? obj : null, Player: obj.isPlayer ? obj.id : null, CounterType: type, Amount: r });
     return r;
   }
 

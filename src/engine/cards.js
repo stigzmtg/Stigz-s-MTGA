@@ -161,6 +161,21 @@ export class Card {
     this.manaSpent = null;
     this.optionalCosts = [];
     this.lkiCause = null;
+    this.promisedGift = null;
+    this.unlocked = null; // Room doors unlocked on the battlefield (face indices)
+    this.manifested = false; // face-down via manifest / cloak: can be turned up for its mana cost
+    this.cloaked = false;
+    this.disguised = false;
+    this.pairedWith = null;
+    this.impending = false;
+    this.textChanges = null; // "change the text by replacing all instances of one creature type with another"
+    this.textSwap = null; // exchanged text boxes (Exchange of Words)
+    this.sector = null; // Space sculptor: 'Alpha' | 'Beta' | 'Gamma'
+    this.attackedPlayers = null; // { turn, pids } players this creature attacked this turn
+    this.hadToAttack = null; // { turn, combat } it was required to attack
+    this.surveilledTurn = null;
+    this.enteredController = null;
+    this.meldedWith = null; // melded permanent: the other card it's made of
   }
   get faceDef() {
     if (this.copyOf && this.copyOf.def) return this.copyOf.def.faces[this.copyOf.face || 0] || this.copyOf.def.faces[0];

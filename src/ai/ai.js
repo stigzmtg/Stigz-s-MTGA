@@ -1,9 +1,10 @@
 // Heuristic AI agent. Answers every engine prompt ("ask") for its player.
 import { SA, getActions, spellOptions, buildSpellSA, targetSpec, targetCandidates, refOf, fromRef, manaSourcesFor, parseCost, activatedAbilities, producedUnits, canAfford } from '../engine/abilities.js';
-import { canBlock, canAttack, combatPower, blockRules, attackTax } from '../engine/combat.js';
+import { canBlock, canAttack, combatPower, blockRules, attackTax, canAttackDefender, playerInDirection } from '../engine/combat.js';
 import { matchValid, calc, ctxOf, ctrlOf } from '../engine/filters.js';
 import { parseAbility } from '../engine/forge.js';
 import { sleep, COLORS, BASIC_LAND_TYPES } from '../engine/util.js';
+import { addCosts } from '../engine/mana.js';
 
 const HARMFUL = new Set(['Destroy', 'DestroyAll', 'DealDamage', 'DamageAll', 'Counter', 'Sacrifice', 'SacrificeAll', 'Discard', 'LoseLife', 'Mill', 'GainControl', 'Tap', 'TapAll', 'Goad', 'Fight', 'Phases', 'ExchangeControl', 'RemoveCounter']);
 const BENEFICIAL = new Set(['Pump', 'PumpAll', 'PutCounter', 'PutCounterAll', 'GainLife', 'Draw', 'Untap', 'UntapAll', 'Attach', 'Regenerate', 'Animate', 'Token', 'CopyPermanent', 'Clone', 'Investigate', 'Scry', 'Surveil', 'Proliferate', 'Dig', 'BecomeMonarch', 'Explore', 'Connive', 'Amass', 'MultiplyCounter', 'Mana']);
@@ -137,7 +138,8 @@ export class AIAgent {
     const myTurn = game.activePlayer === pid;
     const stackTop = game.stack[game.stack.length - 1];
     // quick exit: nothing castable at all
-    const actions = getActions(game, pid);
+    // (never cast a permanent "as though it had flash" only to sacrifice it at the next cleanup)
+    const actions = getActions(game, pid).filter(a => !/sacrifice it at the next cleanup/.test(a.label || ''));
     // something of someone else's on the stack: take a moment, as a person would, before letting it resolve
     const pass = async () => { if (stackTop && stackTop.kind === 'spell' && stackTop.controller !== pid) await this.pause('respond'); return { type: 'pass' }; };
     if (!actions.length) return pass();
@@ -398,6 +400,14 @@ export class AIAgent {
       case 'Regenerate': return 0;
       case 'Goad': return 1.5;
       case 'AddPhase': return 2;
+      case 'RollPlanarDice': case 'Planeswalk': case 'ChaosEnsues': return -1;
+      // Time Stop: only to stop an opponent's spell on their turn
+      case 'EndTurn': return game.activePlayer !== pid && game.stack.some(s => s.controller !== pid && s.kind === 'spell') ? 4 : -5;
+      // Mandate of Peace: only while being attacked
+      case 'EndCombatPhase': return game.combat && game.activePlayer !== pid && game.combat.attackers.some(a => a.defenderPlayer === pid) ? 3 : -5;
+      case 'BlankLine': return 0;
+      case 'Meld': return 4;
+      case 'UnlockDoor': { const f = sa.host && sa.host.def && sa.host.def.faces[+p.Door || 0]; return f ? 3 + f.cmc * 0.6 + f.triggers.length + f.statics.length : 2; }
       default: return 1;
     }
   }
@@ -586,6 +596,49 @@ export class AIAgent {
       return bad.slice(0, max).map(c => c.id);
     }
     if (purpose === 'tap') return pick(cards.filter(c => c.controller !== pid).sort((a, b) => v(b) - v(a)), max);
+    if (purpose === 'gainControlChoice') return pick(cards.slice().sort((a, b) => v(b) - v(a)), Math.max(min, 1));
+    if (purpose === 'chooseSource') {
+      // the opposing source most likely to hurt us
+      const score = c => (c.controller === pid ? -100 : 0) + (game.isAttacking(c) && game.attackTargetOf(c) === pid ? 20 : 0) + (game.chars(c).types.has('Creature') ? Math.max(0, combatPower(game, c)) : c.zone === 'stack' ? 3 : 0);
+      return pick(cards.slice().sort((a, b) => score(b) - score(a)), 1);
+    }
+    if (purpose === 'pair') return pick(cards.slice().sort((a, b) => v(b) - v(a)), 1);
+    if (purpose === 'pile') {
+      // spread value evenly over the piles: one of them is lost at random
+      const left = (req.piles || 3) - (req.pile || 1) + 1;
+      const sorted = cards.slice().sort((a, b) => v(b) - v(a));
+      return sorted.filter((_, i) => i % left === 0).map(c => c.id);
+    }
+    if (purpose === 'attachChoice') {
+      // curses and pacifism-style auras go on the opponents' best; everything else on our own
+      const host = req.sa && req.sa.host;
+      const hostile = !!host && host.isCard && (game.chars(host).subtypes.has('Curse') || /Curse|Pacifism|KeepTapped/.test(String((req.sa.p && req.sa.p.AILogic) || '')) || game.chars(host).statics.some(s => /CantAttack|CantBlock|AddPower\$ -/.test(s.raw || '')));
+      const pool = cards.filter(c => hostile ? c.controller !== pid : c.controller === pid);
+      const list = (pool.length ? pool : cards).slice().sort((a, b) => v(b) - v(a));
+      return pick(list, Math.max(min, 1));
+    }
+    if (purpose === 'enlist') {
+      // tap a creature that isn't doing much else: prefer high power, keep a blocker back when we're low
+      const me = game.players[pid];
+      const untappedOthers = game.battlefield.filter(c => c.controller === pid && !c.tapped && game.chars(c).types.has('Creature')).length;
+      const ok = cards.filter(c => game.chars(c).power >= 2 && (me.life > 15 || untappedOthers > 2)).sort((a, b) => game.chars(b).power - game.chars(a).power);
+      return ok.length ? [ok[0].id] : [];
+    }
+    if (purpose === 'champion') return pick(cards.slice().sort((a, b) => v(a) - v(b)), Math.min(1, cards.length));
+    if (purpose === 'harmonize') return pick(cards.slice().sort((a, b) => (game.chars(b).power - (canAttack(game, b) && game.step === 'main1' ? 3 : 0)) - (game.chars(a).power - (canAttack(game, a) && game.step === 'main1' ? 3 : 0))), 1);
+    if (purpose === 'cipher') {
+      // encode on the creature most likely to connect
+      const evasive = c => ['Flying', 'Menace', 'Shadow', 'Horsemanship', 'Fear', 'Intimidate', 'Skulk'].some(k => game.hasKeyword(c, k)) || game.chars(c).keywords.some(k => /can't be blocked/.test(k));
+      const score = c => (evasive(c) ? 4 : 0) + Math.max(0, combatPower(game, c)) * 0.3 - (game.hasKeyword(c, 'Defender') ? 6 : 0);
+      return pick(cards.slice().sort((a, b) => score(b) - score(a)), 1);
+    }
+    if (purpose === 'casualty') { const ok = cards.filter(c => c.token || v(c) <= 4).sort((a, b) => v(a) - v(b)); return ok.length ? [ok[0].id] : []; }
+    if (purpose === 'emerge') return pick(cards.slice().sort((a, b) => (game.chars(b).cmc - v(b) * 0.4 + (b.token ? 2 : 0)) - (game.chars(a).cmc - v(a) * 0.4 + (a.token ? 2 : 0))), 1);
+    if (purpose === 'blight') {
+      const n = 1;
+      const score = c => (game.chars(c).toughness > n ? 0 : 8) + (c.token ? -2 : 0) + v(c) * 0.5 - (c.controller !== pid ? 20 : 0);
+      return pick(cards.slice().sort((a, b) => score(a) - score(b)), Math.max(1, min));
+    }
     if (purpose === 'untap') return pick(cards.filter(c => c.controller === pid), max);
     if (purpose === 'discardOpponent') return pick(cards.slice().sort((a, b) => v(b) - v(a)), max);
     if (purpose === 'costTapXType' || purpose === 'costtapXType') return pick(cards.slice().sort((a, b) => v(a) - v(b)), min);
@@ -620,11 +673,91 @@ export class AIAgent {
       }
       return best;
     }
+    if (req.purpose === 'chooseEvenOdd') {
+      // board wipes by parity (Extinction Event): hit the opponents' side hardest; otherwise follow our own deck
+      const wipe = req.sa && req.sa.chain().some(s => /cmcChosenEvenOdd/.test(s.p.ChangeType || s.p.ValidCards || ''));
+      const score = parity => {
+        const odd = parity === 'Odd';
+        if (wipe) return game.battlefield.filter(c => game.chars(c).types.has('Creature') && (game.chars(c).cmc % 2 === 1) === odd).reduce((s, c) => s + (c.controller === pid ? -1.2 : 1) * this.value(c), 0);
+        return game.players[pid].library.filter(c => !game.chars(c).types.has('Land') && (game.chars(c).cmc % 2 === 1) === odd).length;
+      };
+      return score('Odd') >= score('Even') ? 'Odd' : 'Even';
+    }
+    if (req.purpose === 'sector') {
+      // keep our creatures together, away from a sculptor-wielding opponent's
+      const sculptor = game.battlefield.find(x => game.hasKeyword(x, 'Space sculptor'));
+      const mineIn = s => game.battlefield.filter(x => x.controller === pid && x.sector === s).length;
+      if (sculptor && sculptor.controller !== pid) {
+        const theirs = s => game.battlefield.filter(x => x.controller === sculptor.controller && x.sector === s).length;
+        return opts.slice().sort((a, b) => theirs(a.value) - theirs(b.value))[0].value;
+      }
+      return opts.slice().sort((a, b) => mineIn(b.value) - mineIn(a.value))[0].value;
+    }
+    if (req.purpose === 'chooseSector') {
+      const worth = (s, mine) => game.battlefield.filter(x => game.chars(x).types.has('Creature') && x.sector === s && (x.controller === pid) === mine).reduce((t, x) => t + this.value(x), 0);
+      const score = s => req.ai === 'Destroy' ? worth(s, false) - worth(s, true) * 1.5 : worth(s, true) - worth(s, false);
+      return opts.slice().sort((a, b) => score(b.value) - score(a.value))[0].value;
+    }
+    if (req.purpose === 'assignGroup') {
+      // friend for ourselves, foe for everyone else
+      const friendly = req.forPlayer === pid;
+      const isFriend = o => /friend/i.test(o.value) || /friend/i.test(o.label);
+      return (opts.find(o => isFriend(o) === friendly) || opts[friendly ? 0 : opts.length - 1]).value;
+    }
     if (req.purpose === 'castMode') {
       const nonAlt = opts.find(o => !/Evoke|Morph|face down/i.test(o.label));
       return (nonAlt || opts[0]).value;
     }
+    if (req.purpose === 'chooseDirection') return this.direction(game, pid, req);
+    if (req.purpose === 'gift') {
+      // promise only cheap gifts (a card, a small token), to the least threatening opponent
+      const g = req.gift;
+      const cheap = g && (g.api === 'Draw' && !(+g.p.NumCards > 1) || g.api === 'Token' && /_1_1_|treasure|food|clue/i.test(g.p.TokenScript || ''));
+      if (!cheap) return -1;
+      const opps = opts.filter(o => o.value !== -1).map(o => o.value);
+      return opps.sort((a, b) => this.threat(a) - this.threat(b))[0] ?? -1;
+    }
+    if (req.purpose === 'dredge') {
+      // dredge when the library can afford it; lands back only while we still want land drops
+      const me = game.players[pid];
+      const lands = game.battlefield.filter(c => c.controller === pid && game.chars(c).types.has('Land')).length;
+      const best = opts.filter(o => o.value !== 0).map(o => game.cardById(o.value)).filter(Boolean)
+        .filter(c => me.library.length > 25 && (!game.chars(c).types.has('Land') || lands < 6 && !me.hand.some(h => game.chars(h).types.has('Land'))))
+        .sort((a, b) => this.value(b) - this.value(a))[0];
+      return best ? best.id : 0;
+    }
+    if (req.purpose === 'altAdditionalCost') {
+      const me = game.players[pid];
+      const rank = o => /^Reveal/.test(o.value) ? 0 : /^\d+$|^[WUBRGC ]+$/.test(o.value) ? 1 : /^PayLife/.test(o.value) ? (me.life > 15 ? 1.5 : 5) : /^Discard/.test(o.value) ? (me.hand.length > 3 ? 2 : 4) : 3;
+      return opts.slice().sort((a, b) => rank(a) - rank(b))[0].value;
+    }
+    if (req.purpose === 'changeCombatants') {
+      // send the attacker at whoever we like least: never at ourselves, preferably at the weakest-defended threat
+      const c = game.cardById(req.cardId);
+      const mine = c && c.controller === pid;
+      const score = o => {
+        const ref = o.value; const obj = fromRef(game, ref);
+        if (!obj) return -99;
+        const owner = obj.isPlayer ? obj.id : obj.controller;
+        if (owner === pid) return -100;
+        return mine ? (obj.isPlayer ? 40 - obj.life + this.threat(owner) * 0.2 : 5) : this.threat(owner) + (obj.isPlayer ? 0 : -3);
+      };
+      return opts.slice().sort((a, b) => score(b) - score(a))[0].value;
+    }
     return opts[0].value;
+  }
+
+  // left or right: for control swaps take the richer neighbour's side, for attack limits face the weaker attacker
+  direction(game, pid, req) {
+    const worth = (q, valid) => q == null ? 0 : game.battlefield.filter(c => c.controller === q && valid(c)).reduce((s, c) => s + this.value(c), 0);
+    const left = playerInDirection(game, pid, 'Left'), right = playerInDirection(game, pid, 'Right');
+    if (req.ai === 'Aminatou' || req.ai === 'GainControl') {
+      // we take what the player in the chosen direction controls ... and give ours to the other side
+      const valid = req.ai === 'GainControl' ? (c => game.chars(c).types.has('Creature')) : (c => !game.chars(c).types.has('Land'));
+      return worth(left, valid) >= worth(right, valid) ? 'Left' : 'Right';
+    }
+    // everyone may attack only their nearest opponent in that direction: with Left we're attacked from our right
+    return this.threat(right ?? pid) <= this.threat(left ?? pid) ? 'Left' : 'Right';
   }
 
   modes(game, pid, req) {
@@ -639,6 +772,20 @@ export class AIAgent {
       return { v: o.value, s };
     }).sort((a, b) => b.s - a.s);
     const n = Math.max(req.min, Math.min(req.max, scored.filter(x => x.s > 0).length || req.min));
+    if (req.baseMana && req.options.some(o => o.cost)) {
+      // spree / tiered: add modes while their costs stay affordable
+      let acc = req.baseMana.x ? { ...req.baseMana, x: 0 } : req.baseMana;
+      const out = [];
+      const ex = new Set(sa && sa.host ? [sa.host.id] : []);
+      for (const x of scored) {
+        if (out.length >= req.max || (out.length >= Math.max(1, req.min) && x.s <= 0)) break;
+        const o = req.options.find(y => y.value === x.v);
+        const next = o.cost ? addCosts(acc, o.cost) : acc;
+        if (!canAfford(game, pid, next, { spellCard: sa && sa.host, exclude: ex })) continue;
+        acc = next; out.push(x.v);
+      }
+      return out.length >= req.min ? out : scored.slice(0, req.min).map(x => x.v);
+    }
     if (req.repeat) return Array(n).fill(scored[0].v);
     return scored.slice(0, n).map(x => x.v);
   }
@@ -657,6 +804,48 @@ export class AIAgent {
       case 'shuffle': return false;
       case 'reveal': return true;
       case 'exploreGrave': { const c = req.cards && game.cardById(req.cards[0]); return c ? game.chars(c).cmc > 5 : false; }
+      case 'entwine': return true;
+      case 'buyback': return true;
+      case 'exert': {
+        // only when the "when you do" part has something to do
+        const t = req.trigger;
+        if (!t || !t.p.ValidTgts) return true;
+        const s = new SA(game, { raw: t.raw, parsed: t, svars: {}, src: null, key: 'x' }, game.cardById(req.cardId), pid);
+        const spec = targetSpec(game, s);
+        return !spec || targetCandidates(game, s, spec).some(o => (o.isPlayer ? o.id : ctrlOf(game, o)) !== pid);
+      }
+      case 'keepTapped': {
+        // keep it tapped while something depends on it staying tapped
+        const c = game.cardById(req.cardId);
+        return !!c && (game.battlefield.some(x => x.tempControl && x.tempControl.untilUntapOf === c.id) || game.effects.some(e => e.endsWhenHostUntaps === c.id));
+      }
+      case 'cumulativeUpkeep': return (req.age || 1) <= 4;
+      case 'optionalCost': {
+        const c = String(req.cost || '');
+        if (/^Blight/.test(c)) return game.battlefield.some(x => x.controller === pid && game.chars(x).types.has('Creature') && (x.token || game.chars(x).toughness > 1));
+        return true;
+      }
+      case 'triggerCost': {
+        if (!sa || !sa.p.Cost) return true;
+        const me = game.players[pid];
+        const cost = parseCost(sa.p.Cost);
+        for (const pt of cost.parts) {
+          const n = +pt.amount || 1;
+          if (pt.type === 'PayLife' && me.life - n < 12) return false;
+          if (pt.type === 'Discard' && me.hand.length < 3) return false;
+          if (pt.type === 'Sac' && !/^(CARDNAME|Card\.Self)$/.test(pt.valid || '')) {
+            const pool = game.battlefield.filter(c => c.controller === pid && matchValid(game, c, pt.valid, ctxOf(game, sa)));
+            if (!pool.some(c => c.token || this.value(c) < 3)) return false;
+          }
+        }
+        return true;
+      }
+      case 'clashBottom': {
+        const c = req.cards && game.cardById(req.cards[0]);
+        if (!c) return false;
+        const lands = game.battlefield.filter(x => x.controller === pid && game.chars(x).types.has('Land')).length;
+        return game.chars(c).types.has('Land') ? lands >= 6 : game.chars(c).cmc > lands + 3;
+      }
       case 'unlessCost': {
         if (!sa) return false;
         if (sa.api === 'Counter') return true;
@@ -668,6 +857,13 @@ export class AIAgent {
       case 'optionalTrigger': case 'optional': case 'optionalSearch': case 'etbOptional': {
         if (!sa) return true;
         const api = sa.api;
+        if (api === 'MoveCounter' && sa.p.AILogic === 'Graft') {
+          // graft: only onto our own creatures, and never if the counter is what keeps the grafter alive
+          const dst = sa.trig && sa.trig.Card, src = sa.host;
+          if (!dst || dst.controller !== pid || !src || src.zone !== 'battlefield') return false;
+          const sch = game.chars(src);
+          return !sch.types.has('Creature') || sch.toughness > 1;
+        }
         if (api === 'Sacrifice' && (!sa.p.Defined || sa.p.Defined === 'You')) return false;
         if (api === 'Discard' && (!sa.p.Defined || sa.p.Defined === 'You')) return game.players[pid].hand.length > 3;
         if (api === 'LoseLife' && (!sa.p.Defined || sa.p.Defined === 'You')) return game.players[pid].life > 15;
@@ -679,6 +875,8 @@ export class AIAgent {
   }
 
   number(game, pid, req) {
+    if (req.purpose === 'readAhead') return req.min;
+    if (req.purpose === 'chorus') return Math.min(req.max, game.step === 'main2' ? req.max : Math.floor(req.max / 2));
     if (req.purpose === 'xValue' && req.xCost === 'PayLife') {
       const opp = game.battlefield.filter(c => c.controller !== pid && game.chars(c).types.has('Creature'));
       const need = opp.length ? Math.max(...opp.map(c => game.chars(c).toughness)) : 0;
@@ -734,7 +932,8 @@ export class AIAgent {
   attackers(game, pid, req) {
     const me = game.players[pid];
     const cands = req.candidates.map(id => game.cardById(id)).filter(Boolean);
-    const opps = game.opponents(pid);
+    // only opponents some creature may legally attack (Mystic Barrier & co. limit who can be attacked)
+    const opps = game.opponents(pid).filter(o => !cands.length || cands.some(c => canAttackDefender(game, c, o.id, null)));
     if (!opps.length) return [];
     // potential damage opponents could swing back with
     const backswing = opps.reduce((m, o) => Math.max(m, game.battlefield.filter(c => c.controller === o.id && game.chars(c).types.has('Creature') && !game.hasKeyword(c, 'Defender')).reduce((s, c) => s + strikeDamage(game, c), 0)), 0);

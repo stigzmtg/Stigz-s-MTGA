@@ -15,7 +15,7 @@ function defFor(kw, face) {
   switch (name) {
     case 'Equip': {
       const cost = a || '0';
-      const valid = looksLikeFilter(b) ? 'Creature.YouCtrl+' + b.replace(/^Creature\.?/, '').replace(/^\+/, '') : 'Creature.YouCtrl';
+      const valid = looksLikeFilter(b) ? 'Creature.YouCtrl+' + b.replace(/^Creature\.?/, '').replace(/^\+/, '').replace(/\./g, '+') : 'Creature.YouCtrl';
       A.push(`AB$ Attach | Cost$ ${cost} | ValidTgts$ ${valid.replace(/\+$/, '')} | TgtPrompt$ Select target creature you control | SorcerySpeed$ True | IsEquip$ True | AILogic$ Pump | SpellDescription$ Equip ${costText(cost)}`);
       break;
     }
@@ -220,6 +220,70 @@ function defFor(kw, face) {
       S.KWRenowned = 'Count$Renowned';
       S.KWRenown = `DB$ PutCounter | Defined$ Self | CounterType$ P1P1 | CounterNum$ ${a} | Renown$ True`;
       break;
+    case 'Graft':
+      T.push('Mode$ ChangesZone | Origin$ Any | Destination$ Battlefield | ValidCard$ Creature.Other | TriggerZones$ Battlefield | OptionalDecider$ You | IsPresent$ Card.Self+counters_GE1_P1P1 | Execute$ KWGraft | TriggerDescription$ Graft — you may move a +1/+1 counter from CARDNAME onto the entering creature');
+      S.KWGraft = 'DB$ MoveCounter | Source$ Self | Defined$ TriggeredCard | CounterType$ P1P1 | CounterNum$ 1 | AILogic$ Graft';
+      break;
+    case 'Flanking':
+      T.push('Mode$ AttackerBlockedByCreature | ValidCard$ Card.Self | ValidBlocker$ Creature.withoutFlanking | Execute$ KWFlanking | TriggerDescription$ Flanking (the blocking creature gets -1/-1 until end of turn)');
+      S.KWFlanking = 'DB$ Pump | Defined$ TriggeredBlocker | NumAtt$ -1 | NumDef$ -1 | IsCurse$ True';
+      break;
+    case 'Station':
+      A.push(`AB$ PutCounter | Cost$ tapXType<1/Creature.Other/another untapped creature you control> | Defined$ Self | CounterType$ CHARGE | CounterNum$ KWStationX | SorcerySpeed$ True | Station$ True | SpellDescription$ Station (tap another creature you control: put charge counters equal to its power on CARDNAME)`);
+      S.KWStationX = 'Tapped$CardPower';
+      break;
+    case 'Vanishing':
+      T.push('Mode$ Phase | Phase$ Upkeep | ValidPlayer$ You | TriggerZones$ Battlefield | IsPresent$ Card.Self+counters_GE1_TIME | Execute$ KWVanishRemove | TriggerDescription$ Vanishing — remove a time counter from CARDNAME');
+      T.push('Mode$ CounterRemoved | ValidCard$ Card.Self | CounterType$ TIME | NewCounterAmount$ 0 | TriggerZones$ Battlefield | Execute$ KWVanishSac | TriggerDescription$ Vanishing — when the last time counter is removed, sacrifice CARDNAME');
+      S.KWVanishRemove = 'DB$ RemoveCounter | Defined$ Self | CounterType$ TIME | CounterNum$ 1';
+      S.KWVanishSac = 'DB$ Sacrifice | Defined$ Self';
+      break;
+    case 'For Mirrodin':
+      T.push(`${etbSelf} | Execute$ KWRebel | TriggerDescription$ For Mirrodin! (create a 2/2 red Rebel creature token, then attach CARDNAME to it)`);
+      S.KWRebel = 'DB$ Token | TokenScript$ r_2_2_rebel | TokenOwner$ You | RememberTokens$ True | SubAbility$ KWRebelAttach';
+      S.KWRebelAttach = 'DB$ Attach | Defined$ Remembered | SubAbility$ KWRebelClean';
+      S.KWRebelClean = 'DB$ Cleanup | ClearRemembered$ True';
+      break;
+    case 'Reinforce':
+      A.push(`AB$ PutCounter | Cost$ ${b} Discard<1/CARDNAME> | ActivationZone$ Hand | ValidTgts$ Creature | TgtPrompt$ Select target creature | CounterType$ P1P1 | CounterNum$ ${a} | SpellDescription$ Reinforce ${a} — ${costText(b)} (discard this: put ${a} +1/+1 counters on target creature)`);
+      break;
+    case 'Plot':
+      A.push(`AB$ Plot | Cost$ ${a} | ActivationZone$ Hand | SorcerySpeed$ True | Static$ True | SpellDescription$ Plot ${costText(a)} (exile it; cast it on a later turn as a sorcery without paying its mana cost)`);
+      break;
+    case 'Gravestorm':
+      T.push('Mode$ SpellCast | ValidCard$ Card.Self | Execute$ KWGravestorm | TriggerDescription$ Gravestorm (copy this spell for each permanent put into a graveyard this turn)');
+      S.KWGravestorm = 'DB$ CopySpellAbility | Defined$ TriggeredSpellAbility | Amount$ KWGravestormX | MayChooseTarget$ True';
+      S.KWGravestormX = 'Count$ThisTurnEntered_Graveyard_from_Battlefield_Permanent';
+      break;
+    case 'Champion':
+      T.push(`${etbSelf} | Execute$ KWChampion | TriggerDescription$ Champion ${a ? 'a ' + a : 'a creature'} (exile another one you control or sacrifice CARDNAME)`);
+      T.push('Mode$ ChangesZone | Origin$ Battlefield | Destination$ Any | ValidCard$ Card.Self | Execute$ KWChampionBack | TriggerDescription$ Champion — the championed card returns to the battlefield');
+      S.KWChampion = `DB$ Champion | ChampionType$ ${a || 'Creature'}`;
+      S.KWChampionBack = 'DB$ ChangeZone | Defined$ Championed | Origin$ Exile | Destination$ Battlefield';
+      break;
+    case 'Cumulative upkeep':
+      T.push(`Mode$ Phase | Phase$ Upkeep | ValidPlayer$ You | TriggerZones$ Battlefield | Execute$ KWCumUpkeep | TriggerDescription$ Cumulative upkeep — ${parts[2] || costText(a)}`);
+      S.KWCumUpkeep = `DB$ CumulativeUpkeep | UpkeepCost$ ${a}`;
+      break;
+    case 'Soulbond':
+      T.push(`${etbSelf} | IsPresent$ Creature.YouCtrl+Other+unpaired | OptionalDecider$ You | Execute$ KWPairSelf | TriggerDescription$ Soulbond — you may pair CARDNAME with another unpaired creature you control`);
+      T.push('Mode$ ChangesZone | Origin$ Any | Destination$ Battlefield | ValidCard$ Creature.YouCtrl+Other+unpaired | TriggerZones$ Battlefield | IsPresent$ Card.Self+unpaired | OptionalDecider$ You | Execute$ KWPairOther | TriggerDescription$ Soulbond — you may pair the entering creature with CARDNAME');
+      S.KWPairSelf = 'DB$ Pair';
+      S.KWPairOther = 'DB$ Pair | Defined$ TriggeredCard';
+      break;
+    case 'Fortify': {
+      A.push(`AB$ Attach | Cost$ ${a} | ValidTgts$ Land.YouCtrl | TgtPrompt$ Select target land you control | SorcerySpeed$ True | IsEquip$ True | SpellDescription$ Fortify ${costText(a)}`);
+      break;
+    }
+    case 'Impending':
+      T.push('Mode$ Phase | Phase$ End of Turn | ValidPlayer$ You | TriggerZones$ Battlefield | IsPresent$ Card.Self+counters_GE1_TIME | Execute$ KWImpendRemove | TriggerDescription$ Impending — remove a time counter from CARDNAME');
+      S.KWImpendRemove = 'DB$ RemoveCounter | Defined$ Self | CounterType$ TIME | CounterNum$ 1';
+      break;
+    case 'Mobilize':
+      T.push(`Mode$ Attacks | ValidCard$ Card.Self | Execute$ KWMobilize | TriggerDescription$ Mobilize ${a} (create ${a} tapped and attacking 1/1 red Warrior tokens; sacrifice them at the next end step)`);
+      S.KWMobilize = `DB$ Token | TokenAmount$ ${a || 1} | TokenScript$ r_1_1_warrior | TokenOwner$ You | TokenTapped$ True | TokenAttacking$ True | AtEOT$ Sacrifice`;
+      break;
+    case 'MayEffectFromOpeningHand': break;
     case 'Rebound': break;
     case 'Enlist': break;
     case 'Decayed':
@@ -227,7 +291,13 @@ function defFor(kw, face) {
       S.KWDecayed = 'DB$ DelayedTrigger | Mode$ Phase | Phase$ EndCombat | Execute$ KWDecaySac | RememberObjects$ Self';
       S.KWDecaySac = 'DB$ Sacrifice | Defined$ DelayTriggerRemembered';
       break;
-    case 'Gift': break;
+    case 'Gift':
+      // permanents: "when it enters, [the promised opponent gets the gift]"; spells give it as they resolve
+      if (['Artifact', 'Creature', 'Enchantment', 'Land', 'Planeswalker', 'Battle'].some(t => (face.types || []).includes(t))) {
+        T.push(`${etbSelf}+PromisedGift | Execute$ KWGift | TriggerDescription$ Gift — the promised opponent gets the gift`);
+        S.KWGift = 'DB$ GiveGift';
+      }
+      break;
     case 'Offspring':
       T.push(`${etbSelf} | CheckSVar$ KWOffN | SVarCompare$ GE1 | Execute$ KWOffspring | TriggerDescription$ Offspring`);
       S.KWOffN = 'Count$TimesKicked';
@@ -248,6 +318,7 @@ export function synthesizeKeywords(game, card, ch) {
   if (!card || !ch || ch._synth) return;
   ch._synth = true;
   const face = card.faceDef;
+  if (card.faceDown && card.zone === 'battlefield' && (card.disguised || card.cloaked) && !ch.keywords.includes('Ward:2')) ch.keywords.push('Ward:2');
   for (const kw of ch.keywords) {
     let d = cache.get(kw + '|' + face.name);
     if (d === undefined) { d = defFor(kw, face); cache.set(kw + '|' + face.name, d); }
@@ -279,10 +350,17 @@ export function synthesizeKeywords(game, card, ch) {
       const raw = `AB$ SetState | Cost$ ${m[2]} | Defined$ Self | Mode$ TurnFaceUp | Static$ True | Megamorph$ ${m[1] === 'Megamorph'} | SpellDescription$ Turn face up (${m[1]} ${costText(m[2])})`;
       ch.abilities.push({ raw, parsed: parseAbility(raw), svars: card.def.faces[0].svars, src: card, key: 'morphUp' });
     }
-    if (card.disguised) ch.keywords.push('Ward:2');
+    // a manifested or cloaked creature card can be turned face up for its mana cost
+    const front = card.def.faces[0];
+    if (card.manifested && front.types.includes('Creature') && front.manaCostStr) {
+      const raw = `AB$ SetState | Cost$ ${front.manaCostStr} | Defined$ Self | Mode$ TurnFaceUp | Static$ True | SpellDescription$ Turn face up (mana cost ${costText(front.manaCostStr)})`;
+      ch.abilities.push({ raw, parsed: parseAbility(raw), svars: front.svars, src: card, key: 'manifestUp' });
+    }
   }
 }
 
 export function keywordInfo(kw) { return defFor(kw, { svars: {} }); }
 
-export const SUPPORTED_KEYWORDS = new Set(['Flying', 'Equip', 'Trample', 'ETBReplacement', 'Enchant', 'Cycling', 'Vigilance', 'Flash', 'Haste', 'etbCounter', 'Deathtouch', 'Lifelink', 'Menace', 'First Strike', 'Flashback', 'Reach', 'TypeCycling', 'Indestructible', 'Changeling', 'Crew', 'Chapter', 'Defender', 'Kicker', 'Convoke', 'Ward', 'Double Strike', 'Cascade', 'Partner', 'Partner with', 'Evoke', 'Devoid', 'Multikicker', 'Unearth', 'Hexproof', 'Myriad', 'Ravenous', 'Landwalk', 'Fear', 'Intimidate', 'Shroud', 'Annihilator', 'Prowess', 'Persist', 'Undying', 'Exalted', 'Extort', 'Evolve', 'Living Weapon', 'Job select', 'Fabricate', 'Riot', 'Mentor', 'Training', 'Battle cry', 'Melee', 'Bushido', 'Afflict', 'Storm', 'Demonstrate', 'Backup', 'Squad', 'Blitz', 'Dash', 'Echo', 'Hideaway', 'Devour', 'Exploit', 'Dethrone', 'Renown', 'Toxic', 'Infect', 'Wither', 'Affinity', 'Delve', 'Improvise', 'Escape', 'Retrace', 'Overload', 'Split second', 'Umbra armor', 'Totem armor', 'Morph', 'Megamorph', 'Disguise', 'Encore', 'Embalm', 'Eternalize', 'Outlast', 'Scavenge', 'Transmute', 'Ninjutsu', 'CommanderNinjutsu', 'Decayed', 'Offspring', 'Afterlife', 'Squad', 'Protection', 'Shadow', 'Horsemanship', 'Skulk', 'Jump-start', 'Discover', 'Rebound', 'Choose a Background', 'Friends forever', 'Doctor\'s companion', 'Ascend', 'Reconfigure', 'Level up', 'Foretell', 'Suspend', 'Class', 'Madness', 'Miracle', 'Aftermath', 'Undaunted', 'Spectacle', 'Surge', 'Mutate', 'Bestow', 'Strive', 'Escalate', 'Fuse']);
+export const SUPPORTED_KEYWORDS = new Set(['Flying', 'Equip', 'Trample', 'ETBReplacement', 'Enchant', 'Cycling', 'Vigilance', 'Flash', 'Haste', 'etbCounter', 'Deathtouch', 'Lifelink', 'Menace', 'First Strike', 'Flashback', 'Reach', 'TypeCycling', 'Indestructible', 'Changeling', 'Crew', 'Chapter', 'Defender', 'Kicker', 'Convoke', 'Ward', 'Double Strike', 'Cascade', 'Partner', 'Partner with', 'Evoke', 'Devoid', 'Multikicker', 'Unearth', 'Hexproof', 'Myriad', 'Ravenous', 'Landwalk', 'Fear', 'Intimidate', 'Shroud', 'Annihilator', 'Prowess', 'Persist', 'Undying', 'Exalted', 'Extort', 'Evolve', 'Living Weapon', 'Job select', 'Fabricate', 'Riot', 'Mentor', 'Training', 'Battle cry', 'Melee', 'Bushido', 'Afflict', 'Storm', 'Demonstrate', 'Backup', 'Squad', 'Blitz', 'Dash', 'Echo', 'Hideaway', 'Devour', 'Exploit', 'Dethrone', 'Renown', 'Toxic', 'Infect', 'Wither', 'Affinity', 'Delve', 'Improvise', 'Escape', 'Retrace', 'Overload', 'Split second', 'Umbra armor', 'Totem armor', 'Morph', 'Megamorph', 'Disguise', 'Encore', 'Embalm', 'Eternalize', 'Outlast', 'Scavenge', 'Transmute', 'Ninjutsu', 'CommanderNinjutsu', 'Decayed', 'Offspring', 'Afterlife', 'Squad', 'Protection', 'Shadow', 'Horsemanship', 'Skulk', 'Jump-start', 'Discover', 'Rebound', 'Choose a Background', 'Friends forever', 'Doctor\'s companion', 'Ascend', 'Reconfigure', 'Level up', 'Foretell', 'Suspend', 'Class', 'Madness', 'Miracle', 'Aftermath', 'Undaunted', 'Spectacle', 'Surge', 'Mutate', 'Bestow', 'Strive', 'Escalate', 'Fuse',
+  'Graft', 'Flanking', 'Sunburst', 'Mayhem', 'All creatures able to block CARDNAME do so.', 'Gift', 'Casualty', 'Replicate', 'AlternateAdditionalCost', 'Emerge', 'Prowl', 'Entwine', 'MayFlashCost', 'Tiered', 'Spree', 'Dredge', 'Cipher', 'Cloak', 'Station', 'Vanishing', 'For Mirrodin', 'Reinforce', 'Plot', 'Gravestorm', 'Champion', 'Cumulative upkeep', 'Bloodthirst', 'Read ahead', 'Harmonize', 'Offering', 'Buyback', 'You may choose not to untap CARDNAME during your untap step.', 'Soulbond', 'Daybound', 'Nightbound', 'Awaken', 'Space sculptor', 'As an additional cost to cast creature spells, you may pay any amount of mana. If you do, that creature enters with that many additional +1/+1 counters on it.', 'Enlist', 'Fortify', 'Disturb', 'Companion', 'MayEffectFromOpeningHand', 'Unleash', 'Compleated', 'Impending', 'Mobilize', 'Start your engines', 'MayFlashSac',
+  'Prevent all combat damage that would be dealt to and dealt by CARDNAME.', 'Prevent all combat damage that would be dealt to CARDNAME.', 'Prevent all damage that would be dealt to CARDNAME.', 'Prevent all combat damage that would be dealt by CARDNAME.', 'Prevent all damage that would be dealt to and dealt by CARDNAME.']);
