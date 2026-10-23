@@ -42,7 +42,7 @@ const REPLAY_EVERY = +(flags.replay || 50);
 const db = JSON.parse(fs.readFileSync('data/ptcg/cards.json', 'utf8'));
 const decks = JSON.parse(fs.readFileSync('data/ptcg/decks.json', 'utf8'));
 // Abilities you may use as often as you like
-const MULTI_USE = new Set(['Super Cold', 'Psychic Embrace']);
+const MULTI_USE = new Set(['Super Cold', 'Psychic Embrace', 'Solar Transfer']);
 
 class Violation extends Error {}
 
