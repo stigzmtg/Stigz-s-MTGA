@@ -11,6 +11,8 @@ import { RoomStatus } from './online.jsx';
 import { useGameSounds } from './sound.js';
 import { recordGame } from './records.js';
 import { ReplayBar } from './replaybar.jsx';
+import { useEmotes, EmoteButton, WatcherEmotes } from './emotes.jsx';
+import { Coach } from './coach.jsx';
 
 const { useState, useEffect, useRef, useMemo, useSyncExternalStore } = React;
 
@@ -143,6 +145,25 @@ function PromptBar({ game, human, me, mode, ctx, actions, onPass, onEndTurn, spe
   );
 }
 
+// what the guided tips say, depending on what the table is asking you right now
+function mtgTips(game, me, req) {
+  const p = game.players[me];
+  const myTurn = game.activePlayer === me;
+  const t = req && req.type;
+  const top = game.stack[game.stack.length - 1];
+  return [
+    { id: 'mulligan', when: t === 'mulligan', text: 'Keep this hand or take a mulligan for a new one. A good opening hand has 3 or 4 lands and a few cheap spells.' },
+    { id: 'attackers', when: t === 'attackers', text: 'Click your creatures to choose attackers, then pick who each one attacks and confirm. Creatures that arrived this turn can’t attack yet.' },
+    { id: 'blockers', when: t === 'blockers', text: 'You’re being attacked. Click one of your untapped creatures, then the attacker it blocks. Confirm with no blocks to take the damage instead.' },
+    { id: 'targets', when: t === 'targets', text: 'Choose a target: the cards and players you can pick glow on the table. Click one, then confirm.' },
+    { id: 'respond', when: t === 'priority' && top && top.controller !== me, text: 'An opponent’s spell or ability is on the stack. Respond with an instant if you have one, or let it resolve.' },
+    { id: 'main', when: t === 'priority' && myTurn && game.step === 'main1', text: 'Your main phase: cards you can play glow in your hand. Play one land each turn, then cast spells you have the mana for. The game taps your lands for you.' },
+    { id: 'commander', when: t === 'priority' && myTurn && game.isMainPhase() && game.turnNumber >= 5 && p.command.length > 0, text: 'Your commander waits in the command zone on your side of the table. Cast it like any spell; every time it goes back there, it costs 2 more.' },
+    { id: 'combat', when: t === 'priority' && myTurn && game.step === 'main1' && game.turnNumber >= 5, text: 'Ready to attack? Press Go to combat. Your creatures without summoning sickness can attack any opponent.' },
+    { id: 'manual', when: t === 'priority' && game.turnNumber >= 8, text: 'Right-click any card or your life total (or press and hold on a phone) for manual tools: tap, counters, life, moving cards. Handy if a rule needs fixing.' },
+  ];
+}
+
 // ------------------------------------------------------------------ main view
 export function GameView({ session, onExit, onRematch, onReplay, support, imagesOk }) {
   useStore(session.store);
@@ -214,8 +235,9 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
     return run(() => applyOp(game, op));
   };
 
+  const emotes = useEmotes(session);
   const ctx = {
-    game, me, support,
+    game, me, support, emotes: emotes.bubbles,
     onHover: setHover,
     openZone: (p, z) => setZone({ pid: p, zone: z }),
     chosen,
@@ -333,11 +355,14 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
         <RoomStatus session={session} />
         {session.replay ? <ReplayBar ctl={session.replay} /> : null}
         <span className="spacer" />
+        <EmoteButton emotes={emotes} />
         <SoundToggle session={session} />
-        <button className="btn sm" onClick={() => setShowHelp(true)} title="How to play">Help</button>
-        <button className="btn sm" onClick={() => setShowSettings(true)}>Settings</button>
+        <button className="btn sm icon" onClick={() => setShowHelp(true)} title="How to play" aria-label="How to play"><svg viewBox="0 0 24 24" aria-hidden="true"><path fillRule="evenodd" d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm-1 11.5h2V18h-2zM12 6a3.5 3.5 0 0 1 1.7 6.6c-.5.3-.7.6-.7 1V14h-2v-.6c0-1.1.6-2 1.6-2.6A1.5 1.5 0 1 0 10.5 9.5h-2A3.5 3.5 0 0 1 12 6z" /></svg></button>
+        <button className="btn sm icon" onClick={() => setShowSettings(true)} title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path fillRule="evenodd" d="M10.3 2h3.4l.5 2.6c.6.2 1.2.5 1.7.9l2.5-.9 1.7 2.9-2 1.7a7 7 0 0 1 0 1.9l2 1.7-1.7 2.9-2.5-.9c-.5.4-1.1.7-1.7.9l-.5 2.6h-3.4l-.5-2.6c-.6-.2-1.2-.5-1.7-.9l-2.5.9-1.7-2.9 2-1.7a7 7 0 0 1 0-1.9l-2-1.7 1.7-2.9 2.5.9c.5-.4 1.1-.7 1.7-.9zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" transform="translate(0 1)" /></svg></button>
         <button className="btn sm danger" onClick={() => game.over || session.spectator || session.replay ? onExit() : setConfirmExit(true)}>{session.replay ? 'Close replay' : game.over ? (session.online ? 'Back to room' : 'New game') : session.spectator ? 'Stop watching' : 'Leave game'}</button>
       </header>
+      <WatcherEmotes list={emotes.watchers} />
+      {!session.replay && !session.spectator ? <Coach kind="mtg" tips={mtgTips(game, me, req)} /> : null}
       <div className="game">
         <main className={`board opp${opps.length} ${images ? 'with-images' : ''}`} ref={boardRef} onClick={() => setPicked(null)}>
           <div className="opponents">

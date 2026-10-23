@@ -11,6 +11,7 @@ import { Modal } from '../../ui/dialogs.jsx';
 import { Lockstep, LocalSeatAgent, RemoteSeatAgent } from '../../net/lockstep.js';
 import { RoomClient, roomApi, isRoomCode } from '../../net/roomclient.js';
 import { Recorder, ReplayControl, ReplayAgent, pkDelay, loadReplay } from '../../ui/records.js';
+import { resetTips } from '../../ui/coach.jsx';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -105,7 +106,7 @@ export function HowToPlayPk({ onClose }) {
         <section><h3>Playing a friend</h3><p>Pick your deck, choose <b>Play with friends</b>, make a room and send your friend the invite link. They pick their own deck and take the second seat, then you start the battle. Anyone else who opens the link can watch. If a connection drops, opening the link again puts that player back in their seat where the battle left off.</p></section>
         <section><h3>Damage</h3><p>Weakness doubles damage and Resistance takes 30 off, for the Active Pokémon only. Asleep and Paralyzed Pokémon can't attack or retreat, Confused ones may hurt themselves, and Poison and Burns add damage between turns.</p></section>
       </div>
-      <div className="row"><button className="btn primary" onClick={onClose}>Got it</button></div>
+      <div className="row"><button className="btn ghost" onClick={() => { resetTips('pk'); onClose(); }}>Show tips again</button><button className="btn primary" onClick={onClose}>Got it</button></div>
     </Modal>
   );
 }

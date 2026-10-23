@@ -2,6 +2,7 @@
 // the arrow layer (targets, attacks, blocks), the hand fan and small motion cues (enter, damage, life change).
 import { CardFace, CardBack, viewOf, ManaCost, Pip, RulesText } from './cardview.jsx';
 import { imageOf } from './images.js';
+import { EmoteBubble } from './emotes.jsx';
 
 const { useState, useEffect, useLayoutEffect, useRef } = React;
 
@@ -281,6 +282,7 @@ export function Mat({ game, pid, ctx, side, compact }) {
   const classes = ['mat', side, game.activePlayer === pid ? 'active' : '', p.lost ? 'lost' : '', targetable ? (chosen ? 'targeted' : 'targetable') : '', attackTarget ? (ctx.attack.current === ref ? 'targeted' : 'targetable') : '', compact ? 'compact' : ''];
   const plate = (
     <div className="plate">
+      <EmoteBubble b={ctx.emotes && ctx.emotes.get(pid)} />
       <span className="who" data-ref={ref}>
         <span title={`${p.name} · library ${p.library.length} · hand ${p.hand.length}`}><Avatar game={game} p={p} /></span>
         <LifeTotal p={p} onClick={isMe ? (e => { e.stopPropagation(); ctx.onPlayerMenu(pid, e); }) : undefined} />

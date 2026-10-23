@@ -648,3 +648,26 @@ kbd { font: 600 12px/1 'Alegreya Sans', sans-serif; padding: 2px 6px; border-rad
 .replaypos b { position: relative; color: var(--ink); text-shadow: 0 1px 2px #000; }
 .deckrec { font-size: 13.5px; color: var(--ink-dim); margin: 6px 0 0; }
 .deckrec .w { color: #a9e3ab; } .deckrec .l { color: #f2a593; }
+/* emotes: a bubble over the sender's name plate, a picker in the top bar, watchers' lines under the bar */
+.plate, .pk-plate { position: relative; }
+.emote-bubble { position: absolute; z-index: 30; left: 6px; bottom: calc(100% + 4px); display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 14px; background: #fff6df; color: #22180a; font: 800 15px/1.1 var(--font-ui); white-space: nowrap; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55); animation: emotepop 3.6s ease-out both; pointer-events: none; }
+.emote-bubble::after { content: ""; position: absolute; left: 16px; top: 100%; border: 7px solid transparent; border-top-color: #fff6df; }
+.emote-bubble .ei { font-size: 18px; }
+.pk-side.opp .emote-bubble, .mat.top .emote-bubble { bottom: auto; top: calc(100% + 4px); }
+.pk-side.opp .emote-bubble::after, .mat.top .emote-bubble::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: #fff6df; }
+@keyframes emotepop { 0% { opacity: 0; transform: translateY(6px) scale(0.9); } 8% { opacity: 1; transform: none; } 85% { opacity: 1; } 100% { opacity: 0; } }
+.emote-wrap { position: relative; }
+.emote-pick { position: absolute; z-index: 60; right: 0; top: calc(100% + 6px); display: grid; gap: 2px; min-width: 170px; padding: 6px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--panel-solid); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6); }
+.emote-pick button { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: 700 14.5px/1 var(--font-ui); cursor: pointer; text-align: left; }
+.emote-pick button:hover, .emote-pick button:focus-visible { background: rgba(243, 212, 136, 0.12); }
+.emote-pick button span { font-size: 18px; }
+.emote-watchers { position: fixed; z-index: 45; left: 50%; top: calc(54px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); display: grid; gap: 4px; justify-items: center; pointer-events: none; }
+.emote-line { padding: 5px 12px; border-radius: 999px; background: rgba(6, 15, 11, 0.9); border: 1px solid var(--line-strong); font-size: 14px; animation: emotepop 3.6s ease-out both; }
+/* guided tips */
+.coach { position: fixed; z-index: 95; left: max(14px, env(safe-area-inset-left, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 12px; align-items: flex-start; max-width: min(360px, calc(100vw - 28px)); padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(243, 212, 136, 0.55); background: linear-gradient(180deg, #1c3628, #0f2219); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); animation: homerise-c 0.35s ease-out both; }
+.coach-mark { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--brass); color: #1c1407; font: 800 17px/1 var(--font-ui); }
+.coach b { font: 700 12px/1 var(--font-ui); letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-hi); }
+.coach p { margin: 6px 0 10px; font-size: 14.5px; line-height: 1.45; }
+.coach-acts { display: flex; gap: 8px; }
+@keyframes homerise-c { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (max-width: 700px) { .coach { bottom: auto; top: calc(60px + env(safe-area-inset-top, 0px)); } }

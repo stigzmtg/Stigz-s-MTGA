@@ -1,5 +1,6 @@
 // Modal dialogs for engine prompts and app-level panels.
 import { CardFace, viewOf, Pip, RulesText } from './cardview.jsx';
+import { resetTips } from './coach.jsx';
 import { play as playSound } from './sound.js';
 import { loadSettings, saveSettings } from './common.js';
 import { fromRef } from '../engine/abilities.js';
@@ -273,7 +274,7 @@ export function HelpDialog({ onClose }) {
           <p>Everyone starts at 40 life. A player loses at 0 life, at 21 combat damage from a single commander, at 10 poison counters, or by drawing from an empty library. Be the last one standing.</p>
         </section>
       </div>
-      <div className="dlg-actions"><button className="btn primary" onClick={onClose}>Got it</button></div>
+      <div className="dlg-actions"><button className="btn ghost" onClick={() => { resetTips('mtg'); onClose(); }}>Show tips again</button><button className="btn primary" onClick={onClose}>Got it</button></div>
     </Modal>
   );
 }

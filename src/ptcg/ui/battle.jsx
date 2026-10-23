@@ -10,6 +10,8 @@ import { SoundToggle } from '../../ui/dialogs.jsx';
 import { useGameSounds } from '../../ui/sound.js';
 import { recordGame } from '../../ui/records.js';
 import { ReplayBar } from '../../ui/replaybar.jsx';
+import { useEmotes, EmoteButton, EmoteBubble, WatcherEmotes } from '../../ui/emotes.jsx';
+import { Coach } from '../../ui/coach.jsx';
 
 const { useState, useEffect, useRef, useSyncExternalStore } = React;
 const COND_LABEL = { asleep: 'Asleep', confused: 'Confused', paralyzed: 'Paralyzed' };
@@ -236,6 +238,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
   // a finished battle goes into your record (with a replay)
   useEffect(() => { if (game.over && !session.record) session.record = recordGame(session, 'pk'); }, [game.over]);
   const replay = session.replay;
+  const emotes = useEmotes(session);
   useEffect(() => { setMode(null); setSel([]); setConfirmEnd(false); }, [pend && pend.id]);
   useEffect(() => { if (!flash) return; const t = setTimeout(() => setFlash(null), 2200); return () => clearTimeout(t); }, [flash]);
   useEffect(() => {
@@ -306,6 +309,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
     return (
       <section className={`pk-side ${bottom ? 'me' : 'opp'} ${game.current === p.id && !game.over ? 'turn' : ''}`} aria-label={`${whose(p)} side`}>
         <div className="pk-plate">
+          <EmoteBubble b={emotes.bubbles.get(p.id)} />
           <div className="who"><b>{p.name}</b>{game.current === p.id && !game.over ? <span className="turnmark">turn</span> : null}</div>
           <div className="deck">{p.deckName}</div>
           <Prizes n={p.prizes.length} label={p.name} />
@@ -371,6 +375,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
         <RoomStatus session={session} />
         {replay ? <ReplayBar ctl={replay} /> : null}
         <span className="spacer" />
+        <EmoteButton emotes={emotes} />
         <SoundToggle session={session} />
         <button className="btn sm danger" onClick={onExit} title={online && host && !game.over ? 'Ends the battle for both players' : undefined}>{replay ? 'Close replay' : game.over ? (online ? 'Back to room' : 'New battle') : online ? (host ? 'End battle' : watching ? 'Stop watching' : 'Leave battle') : 'Leave battle'}</button>
       </header>
@@ -394,6 +399,17 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
             {!P.hand.length ? <span className="empty">{whose(P)} hand is empty</span> : null}
           </div>
           {fx.banner ? <div key={fx.banner.key} className={`pk-banner ${fx.banner.kind}`}>{fx.banner.text}</div> : null}
+          <WatcherEmotes list={emotes.watchers} />
+          {!replay && !watching ? <Coach kind="pk" tips={[
+            { id: 'active', when: req && req.hint === 'setup-active', text: 'Choose your Active Pokémon: it attacks and gets attacked first. Only Basic Pokémon can start in play.' },
+            { id: 'bench', when: req && req.hint === 'setup-bench', text: 'Put up to 5 more Basic Pokémon on your Bench. They can switch in later, and you can evolve them.' },
+            { id: 'energy', when: mode && mode.kind === 'energy', text: 'Click the Pokémon to attach this Energy to. Attacks need the Energy shown next to them.' },
+            { id: 'attack', when: canAttack, text: 'Your Active Pokémon can attack: press an attack in the bar. Attacking ends your turn, so play everything else first.' },
+            { id: 'main', when: req && req.type === 'main', text: 'Your turn: cards you can play glow in your hand. Each turn you can attach one Energy, play one Supporter and any number of Items.' },
+            { id: 'prizes', when: game.turn > 0 && (P.prizes.length < 6 || O.prizes.length < 6), text: 'Knock Out a Pokémon to take Prize cards: 1 for most, 2 for a Pokémon ex, 3 for a Mega Evolution ex. Take all 6 to win.' },
+            { id: 'retreat', when: retreatActs.length > 0 && game.turn >= 4, text: 'Retreat swaps your Active Pokémon for one on your Bench by discarding Energy equal to its Retreat Cost. Once per turn.' },
+            { id: 'read', when: !myTurn && game.turn >= 2, text: 'While your opponent plays, point at any card to read it in full in the side panel.' },
+          ]} /> : null}
         </main>
         <aside className="rail">
           <section className="preview-sec"><Preview game={game} hover={hover || (P.active ? { mon: P.active.id } : null)} /></section>
