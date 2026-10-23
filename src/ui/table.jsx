@@ -25,6 +25,16 @@ const PHASES = [
   ['beginCombat', 'Combat'], ['declareAttackers', 'Attack'], ['declareBlockers', 'Block'], ['combatDamage', 'Damage'], ['endCombat', 'End combat'], '|', ['main2', 'Main 2'], '|', ['end', 'End'], ['cleanup', 'Cleanup'],
 ];
 
+// "a Goblin", "another artifact", "2 creatures": what a mana ability's sacrifice cost asks for
+function sacrificeWhat(part) {
+  if (part.desc) return part.desc;
+  const n = +part.amount || 1;
+  let word = String(part.valid || 'permanent').split(/[.,+]/)[0];
+  if (['Creature', 'Artifact', 'Enchantment', 'Land', 'Permanent', 'Planeswalker', 'Token'].includes(word)) word = word.toLowerCase();
+  if (n > 1) return `${n} ${word}s`;
+  return `${/^[aeiouAEIOU]/.test(word) ? 'an' : 'a'} ${word}`;
+}
+
 function PhaseTracker({ game }) {
   const step = game.step === 'firstStrikeDamage' ? 'combatDamage' : game.step;
   const steps = PHASES.filter(p => p !== '|').map(p => p[0]);
@@ -323,8 +333,10 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
         const colors = [...new Set(s.units.flat())];
         // Treasures tap and sacrifice, Gold and Eldrazi Spawn only sacrifice
         const cost = parseCost(s.abil.parsed.p.Cost);
-        const sac = cost.parts.some(pt => pt.type === 'Sac');
-        const verb = cost.tap && sac ? 'Tap and sacrifice' : sac ? 'Sacrifice' : 'Tap';
+        const sp = cost.parts.find(pt => pt.type === 'Sac');
+        // Skirk Prospector, Ashnod's Altar: say what gets sacrificed (you pick which one next)
+        const what = !sp || /^(CARDNAME|Self)$/.test(sp.valid) ? '' : ` ${sacrificeWhat(sp)}`;
+        const verb = cost.tap && sp ? `Tap and sacrifice${what}` : sp ? `Sacrifice${what}` : 'Tap';
         if (s.units.length === 1 && colors.length > 1) for (const c of colors) items.push({ label: `${verb} for {${c}}`, run: () => respondAction({ type: 'mana', cardId: card.id, abilityKey: s.abil.key, color: c }) });
         else items.push({ label: `${verb} for ${s.units.map(u => `{${u[0]}}`).join('')}`, run: () => respondAction({ type: 'mana', cardId: card.id, abilityKey: s.abil.key }) });
       }

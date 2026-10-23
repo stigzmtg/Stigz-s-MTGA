@@ -292,6 +292,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, .card:focus-vis
 .pip.C { background: var(--pip-C); }
 .pip.T { background: #cfc8b6; }
 .pip.hy { font-size: 0.55em; }
+.pip.anycolor { background: conic-gradient(var(--pip-W) 0 20%, var(--pip-U) 0 40%, var(--pip-B) 0 60%, var(--pip-R) 0 80%, var(--pip-G) 0); }
 .ms-cost.ms-shadow { box-shadow: -0.04em 0.07em 0 rgba(0, 0, 0, 0.85); }
 .mana .ms { margin: 0; }
 .colorrow .ms { font-size: calc(34px * var(--s)); cursor: pointer; }
@@ -710,6 +711,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .dlg-cards .pick .tick { position: absolute; right: calc(-4px * var(--s)); top: calc(-6px * var(--s)); z-index: 4; background: var(--danger); color: #1b0b07; font: 800 calc(12px * var(--s))/1 var(--font-ui); border-radius: calc(999px * var(--s)); padding: calc(4px * var(--s)) calc(7px * var(--s)); }
 .dlg-actions { display: flex; gap: calc(8px * var(--s)); justify-content: flex-end; flex-wrap: wrap; align-items: center; }
 .dlg-actions .note { flex: 1; color: var(--ink-faint); font-size: calc(13px * var(--s)); }
+.dlg-actions .note .enough { color: var(--good); font-weight: 700; }
 .optlist { display: grid; gap: calc(6px * var(--s)); overflow-y: auto; }
 .optlist .btn { text-align: left; white-space: normal; }
 .optlist .btn.on { border-color: var(--brass); background: rgba(214, 170, 85, 0.16); }

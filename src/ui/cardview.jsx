@@ -28,6 +28,8 @@ function msClass(sym) {
 export function Pip({ s }) {
   const cls = msClass(s);
   const label = `{${String(s).toUpperCase()}}`;
+  // "spend mana as though it were any color" turns a symbol into one any color pays for
+  if (/^w\/u\/b\/r\/g$/i.test(s)) return <span className="pip anycolor" title="Any color" aria-label="any color" />;
   if (cls) return <i className={`ms ${cls} ms-cost ms-shadow`} title={label} aria-label={label} />;
   return <span className="pip" title={label}>{String(s).toUpperCase()}</span>;
 }

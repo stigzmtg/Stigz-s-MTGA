@@ -48,6 +48,8 @@ export function CardsDialog({ game, req, respond, onHover }) {
   const ok = sel.length >= req.min && sel.length <= req.max;
   const title = PURPOSE_TITLES[req.purpose] || 'Choose cards';
   const range = req.min === req.max ? `${req.min}` : req.min === 0 ? `up to ${req.max}` : `${req.min}–${req.max}`;
+  // crewing: the tapped creatures' power has to add up to the crew number
+  const power = req.need ? sel.reduce((a, id) => { const c = game.cardById(id); return a + (c ? Math.max(0, game.chars(c).power || 0) : 0); }, 0) : 0;
   return (
     <Modal label={title}>
       <h2>{title}</h2>
@@ -56,10 +58,10 @@ export function CardsDialog({ game, req, respond, onHover }) {
         {cards.map(c => <CardPick key={c.id} game={game} card={c} picked={sel.includes(c.id)} order={req.purpose === 'scryBottom' ? null : null} onClick={() => toggle(c.id)} onHover={onHover} />)}
       </div>
       <div className="dlg-actions">
-        <span className="note">{sel.length} selected</span>
+        <span className="note">{req.need ? <span className={power >= req.need ? 'enough' : ''}>Power {power} of {req.need}</span> : `${sel.length} selected`}</span>
         {req.cancellable ? <button className="btn ghost" onClick={() => respond(null)}>Cancel</button> : null}
         {req.max > 1 && cards.length <= req.max ? <button className="btn" onClick={() => setSel(cards.map(c => c.id))}>Select all</button> : null}
-        <button className="btn primary" disabled={!ok} onClick={() => respond(sel)}>Confirm</button>
+        <button className="btn primary" disabled={!ok || power < (req.need || 0)} onClick={() => respond(sel)}>Confirm</button>
       </div>
     </Modal>
   );
@@ -136,11 +138,16 @@ export function ConfirmDialog({ game, req, respond, onHover }) {
   );
 }
 
-export function NumberDialog({ req, respond }) {
+export function NumberDialog({ game, req, respond, onHover }) {
   const [n, setN] = useState(req.max);
+  // dividing damage or counters: show which target this amount is for
+  const target = req.purpose === 'divide' && req.target != null ? fromRef(game, req.target) : null;
   return (
     <Modal narrow label="Choose a number">
       <h2>{req.prompt}</h2>
+      {target ? (target.isPlayer
+        ? <div className="sub">For <b>{target.name}</b> ({target.life} life)</div>
+        : target.def ? <div className="dlg-cards one"><div className="cardwrap"><CardFace v={viewOf(game, target)} size="hand" cls="targetable" onEnter={() => onHover && onHover(target.id)} /></div></div> : null) : null}
       <div className="numrow">
         <button className="btn" onClick={() => setN(Math.max(req.min, n - 1))} aria-label="decrease">−</button>
         <span className="val">{n}</span>
