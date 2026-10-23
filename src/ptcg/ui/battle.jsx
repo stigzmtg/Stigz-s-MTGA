@@ -81,10 +81,11 @@ function Prizes({ n, label, sleeve }) {
   );
 }
 
-function Piles({ game, p, onOpen, sleeve }) {
+function Piles({ game, p, onOpen, sleeve, hand = false }) {
   const top = p.discard[p.discard.length - 1];
   return (
     <div className="pk-piles">
+      {hand ? <div className="pile hand" title={`${p.hand.length} cards in hand`}><span className="fan">{Array.from({ length: Math.min(p.hand.length, 3) }, (_, i) => <CardBack key={i} cls="micro" sleeve={sleeve} />)}</span><span><b>{p.hand.length}</b> in hand</span></div> : null}
       <div className="pile" title={`Deck: ${p.deck.length} cards`}><CardBack cls="tiny" sleeve={sleeve} /><span><b>{p.deck.length}</b> Deck</span></div>
       <button className="pile" onClick={() => onOpen('discard')} title="See the discard pile">{top ? <CardArt def={top.def} cls="tiny" /> : <span className="pk-card tiny slot" />}<span><b>{p.discard.length}</b> Discard</span></button>
       {p.lost.length ? <button className="pile" onClick={() => onOpen('lost')} title="See the Lost Zone"><span className="pk-card tiny lostz" /><span><b>{p.lost.length}</b> Lost Zone</span></button> : null}
@@ -344,10 +345,9 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
           <div className="who">{avatarOf(p.id) ? <AnimalAvatar code={avatarOf(p.id)} size={36} /> : null}<b>{p.name}</b>{game.current === p.id && !game.over ? <span className="turnmark">turn</span> : null}</div>
           <div className="deck">{p.deckName}</div>
           <Prizes n={p.prizes.length} label={p.name} sleeve={sleeves[p.id]} />
-          {!bottom ? <div className="opphand" title={`${p.hand.length} cards in hand`}><span className="fan">{Array.from({ length: Math.min(p.hand.length, 8) }, (_, i) => <CardBack key={i} cls="micro" sleeve={sleeves[p.id]} />)}</span><b>{p.hand.length}</b> in hand</div> : null}
         </div>
         <div className="pk-field">{act}{bench}</div>
-        <Piles game={game} p={p} onOpen={z => setZone({ p, z, mine: isMe })} sleeve={sleeves[p.id]} />
+        <Piles game={game} p={p} onOpen={z => setZone({ p, z, mine: isMe })} sleeve={sleeves[p.id]} hand={!bottom} />
       </section>
     );
   };

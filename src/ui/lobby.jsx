@@ -125,23 +125,6 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
           </div>
         </section>
         <div className="setup">
-          <section className="panel" aria-label="Selected deck">
-            <div className="panel-head"><h2>{deck.name}</h2>{deck.custom && onBuild ? <button className="btn sm" onClick={() => onBuild(deck.id)}>Edit this deck</button> : null}</div>
-            <div className="commander-showcase bigcard" style={{ '--cw': deck.commanders.length > 1 ? 'calc(190px * var(--s))' : 'calc(250px * var(--s))' }}>
-              {(() => {
-                const imgs = imagesOk ? (deck.custom ? deck.commanders.map(n => cardImage(n)) : lobbyImages(deck.id)) : [];
-                return deck.commanders.map((n, i) => { const d = db.get(n); return d ? <div className="cardwrap" key={n}><CardFace v={{ ...viewOfDef(d), img: imgs[i] || null }} size="big" /></div> : null; });
-              })()}
-            </div>
-            <DeckStyleButton kind="mtg" deck={deck} colors={identities[deck.id] || []} />
-            <div className="deckstats" style={{ marginTop: 10 }}>
-              <span className="chip">{deck.setName}</span>
-              {Object.entries(stats.counts).filter(([, n]) => n).map(([t, n]) => <span key={t} className="chip">{n} {t === 'Sorcery' ? 'Sorceries' : t + 's'}</span>)}
-              <span className="chip">Avg MV {stats.avgMV}</span>
-            </div>
-            <p className="coverage">Rules automation: <b>{stats.coverage}%</b> of cards fully automated.</p>
-            <DeckRecord kind="mtg" id={deck.id} />
-          </section>
           <div className="seg modeswitch" role="tablist" aria-label="Game mode">
             <button role="tab" aria-selected={!friends} className={!friends ? 'on' : ''} onClick={() => online && online.setMode('solo')}>Solo vs AI</button>
             <button role="tab" aria-selected={friends} className={friends ? 'on' : ''} onClick={() => online && online.setMode('friends')}>Play with friends</button>
@@ -169,6 +152,23 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
             </div>
           </section>
           )}
+          <section className="panel" aria-label="Selected deck">
+            <div className="panel-head"><h2>{deck.name}</h2>{deck.custom && onBuild ? <button className="btn sm" onClick={() => onBuild(deck.id)}>Edit this deck</button> : null}</div>
+            <div className="commander-showcase bigcard" style={{ '--cw': deck.commanders.length > 1 ? 'calc(190px * var(--s))' : 'calc(250px * var(--s))' }}>
+              {(() => {
+                const imgs = imagesOk ? (deck.custom ? deck.commanders.map(n => cardImage(n)) : lobbyImages(deck.id)) : [];
+                return deck.commanders.map((n, i) => { const d = db.get(n); return d ? <div className="cardwrap" key={n}><CardFace v={{ ...viewOfDef(d), img: imgs[i] || null }} size="big" /></div> : null; });
+              })()}
+            </div>
+            <DeckStyleButton kind="mtg" deck={deck} colors={identities[deck.id] || []} />
+            <div className="deckstats" style={{ marginTop: 10 }}>
+              <span className="chip">{deck.setName}</span>
+              {Object.entries(stats.counts).filter(([, n]) => n).map(([t, n]) => <span key={t} className="chip">{n} {t === 'Sorcery' ? 'Sorceries' : t + 's'}</span>)}
+              <span className="chip">Avg MV {stats.avgMV}</span>
+            </div>
+            <p className="coverage">Rules automation: <b>{stats.coverage}%</b> of cards fully automated.</p>
+            <DeckRecord kind="mtg" id={deck.id} />
+          </section>
           <p className="fineprint">Unofficial fan project, not affiliated with Wizards of the Coast. Magic: The Gathering and its card names are trademarks of Wizards of the Coast. Card rules come from the open-source <a href="https://github.com/Card-Forge/forge" target="_blank" rel="noopener">Forge</a> project (GPL-3.0); decklists from <a href="https://github.com/taw/magic-preconstructed-decks" target="_blank" rel="noopener">taw/magic-preconstructed-decks</a>; card images from <a href="https://www.tcgplayer.com" target="_blank" rel="noopener">TCGplayer</a> and <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a>; mana and set symbols from Andrew Gioia's <a href="https://github.com/andrewgioia/mana" target="_blank" rel="noopener">Mana</a> and <a href="https://github.com/andrewgioia/keyrune" target="_blank" rel="noopener">Keyrune</a> fonts.</p>
         </div>
       </div>

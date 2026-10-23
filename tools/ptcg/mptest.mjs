@@ -49,8 +49,8 @@ const summary = (p, myName) => p.evaluate(nm => [...document.querySelectorAll('.
     name, deck: s.querySelector('.pk-plate .deck').textContent,
     prizes: s.querySelector('.pk-prizes .cap b').textContent,
     active: mons('.pk-activespot .pk-mon:not(.empty)').join(), bench: mons('.pk-bench .pk-mon:not(.empty)').join(';'),
-    piles: [...s.querySelectorAll('.pk-piles .pile b')].map(b => b.textContent).join('/'),
-    hand: bottom ? document.querySelectorAll('.pk-hand .pk-handslot').length : +s.querySelector('.opphand b').textContent,
+    piles: [...s.querySelectorAll('.pk-piles .pile:not(.hand) b')].map(b => b.textContent).join('/'),
+    hand: bottom ? document.querySelectorAll('.pk-hand .pk-handslot').length : +s.querySelector('.pk-piles .pile.hand b').textContent,
   };
 }).sort((a, b) => a.name.localeCompare(b.name)), myName);
 // answer whatever this browser's player is being asked, so a battle never waits on a person

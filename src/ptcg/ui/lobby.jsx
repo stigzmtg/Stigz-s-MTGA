@@ -1,5 +1,7 @@
 // Pokémon lobby: pick one of the tournament decks, pick (or randomize) the opponent's, start the battle.
 import { Energy } from './energy.jsx';
+
+const TYPE_ORDER = ['Grass', 'Fire', 'Water', 'Lightning', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Colorless'];
 import { DeckRecord } from '../../ui/replaybar.jsx';
 import { SizeButton } from '../../ui/dialogs.jsx';
 import { DeckStyleButton, subscribeDeckStyles, deckStylesVersion } from '../../ui/deckstyle.jsx';
@@ -50,7 +52,14 @@ export function PkLobby({ data, online, onStart, onHome, onHelp }) {
   const [mine, setMine] = useState(data.decks.some(d => d.id === saved.mine) ? saved.mine : data.decks[0].id);
   const [opp, setOpp] = useState(saved.opp || 'random');
   const [hover, setHover] = useState(null);
+  const [q, setQ] = useState('');
+  const [type, setType] = useState('all');
   const deck = data.decks.find(d => d.id === mine);
+  // a deck's attacking types (decks.json `types`, else its featured Pokémon's type)
+  const typesOf = d => d.types || [(data.cards[d.featured] || {}).type].filter(Boolean);
+  const allTypes = TYPE_ORDER.filter(t => data.decks.some(d => typesOf(d).includes(t)));
+  const qq = q.trim().toLowerCase();
+  const shown = data.decks.filter(d => (type === 'all' || typesOf(d).includes(type)) && (!qq || d.name.toLowerCase().includes(qq) || (d.list || '').toLowerCase().includes(qq) || d.cards.some(([k]) => ((data.cards[k] || {}).name || '').toLowerCase().includes(qq))));
   const friends = online.mode === 'friends';
   // in a room, the deck picked here is the one you bring (with its sleeves and box)
   const styles = useSyncExternalStore(subscribeDeckStyles, deckStylesVersion);
@@ -65,6 +74,28 @@ export function PkLobby({ data, online, onStart, onHome, onHelp }) {
     onStart({ mine: deck, opp: o });
   };
   const preview = hover ? pkImage(hover) : pkImage(deck.featured);
+  // how you'll play, and the button to start: first in the column, so it's always on screen
+  const modeAndStart = <>
+    <div className="seg modeswitch" role="tablist" aria-label="Game mode">
+      <button role="tab" aria-selected={!friends} className={!friends ? 'on' : ''} onClick={() => online.setMode('solo')}>Vs the computer</button>
+      <button role="tab" aria-selected={friends} className={friends ? 'on' : ''} onClick={() => online.setMode('friends')}>Play with friends</button>
+    </div>
+    {friends ? <PkFriendsPanel data={data} online={online} deck={deck} /> : (
+      <section className="panel pk-start" aria-label="Opponent">
+        <div className="pk-start-row">
+          <div className="pk-start-opp">
+            <label className="label" htmlFor="pk-opp">Computer's deck</label>
+            <select id="pk-opp" className="input" value={opp} onChange={e => setOpp(e.target.value)}>
+              <option value="random">Random deck</option>
+              {data.decks.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </div>
+          <button className="btn primary big" onClick={start}>Battle!</button>
+        </div>
+        <p className="note">You play <b>{deck.name}</b>.</p>
+      </section>
+    )}
+  </>;
   return (
     <div className="app pk">
       <header className="topbar">
@@ -82,12 +113,21 @@ export function PkLobby({ data, online, onStart, onHome, onHelp }) {
         </section>
         <div className="pk-lobby-grid">
           <section className="panel" aria-label="Your deck">
-            <h2>Your deck</h2>
+            <div className="panel-head"><h2>Your deck</h2><span className="note">{shown.length === data.decks.length ? `${data.decks.length} decks` : `${shown.length} of ${data.decks.length} decks`}</span></div>
+            <div className="pk-deckfilter">
+              <input className="input search" placeholder="Search decks or cards" value={q} onChange={e => setQ(e.target.value)} aria-label="Search decks" />
+              <div className="pk-types" role="group" aria-label="Filter by type">
+                <button className={type === 'all' ? 'on' : ''} aria-pressed={type === 'all'} onClick={() => setType('all')}>All</button>
+                {allTypes.map(t => <button key={t} className={type === t ? 'on' : ''} aria-pressed={type === t} onClick={() => setType(type === t ? 'all' : t)} title={`${t} decks`}><Energy type={t} size={18} /><span>{t}</span></button>)}
+              </div>
+            </div>
             <div className="pk-decks">
-              {data.decks.map(d => <DeckTile key={d.id} deck={d} cards={data.cards} selected={d.id === mine} onClick={() => setMine(d.id)} />)}
+              {shown.map(d => <DeckTile key={d.id} deck={d} cards={data.cards} selected={d.id === mine} onClick={() => setMine(d.id)} />)}
+              {!shown.length ? <div className="empty">No deck matches.</div> : null}
             </div>
           </section>
           <div className="setup">
+            {modeAndStart}
             <section className="panel pk-chosen" aria-label="Selected deck">
               <h2>{deck.name}</h2>
               <div className="pk-chosen-body">
@@ -101,21 +141,6 @@ export function PkLobby({ data, online, onStart, onHome, onHelp }) {
                 </div>
               </div>
             </section>
-            <div className="seg modeswitch" role="tablist" aria-label="Game mode">
-              <button role="tab" aria-selected={!friends} className={!friends ? 'on' : ''} onClick={() => online.setMode('solo')}>Vs the computer</button>
-              <button role="tab" aria-selected={friends} className={friends ? 'on' : ''} onClick={() => online.setMode('friends')}>Play with friends</button>
-            </div>
-            {friends ? <PkFriendsPanel data={data} online={online} deck={deck} /> : (
-              <section className="panel" aria-label="Opponent">
-                <h2>Opponent</h2>
-                <label className="label" htmlFor="pk-opp">Computer's deck</label>
-                <select id="pk-opp" className="input" value={opp} onChange={e => setOpp(e.target.value)}>
-                  <option value="random">Random deck</option>
-                  {data.decks.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-                <button className="btn primary big" onClick={start}>Battle!</button>
-              </section>
-            )}
           </div>
         </div>
         <p className="foot">Unofficial fan project. Pokémon and the Pokémon TCG are trademarks of Nintendo, Creatures and GAME FREAK. Card data from TCGdex, decklists from Limitless.</p>
