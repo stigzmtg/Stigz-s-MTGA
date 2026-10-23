@@ -641,7 +641,7 @@ Object.assign(ABILITIES, {
     async use(g, m, pid) {
       const n = m.name === 'Dusknoir' ? 13 : 5;
       const t = await g.chooseOneMon(pid, g.inPlay(g.opp(pid)).filter(x => !g.abilityBlocked(pid, x)), `Put ${n} damage counters on which Pokémon?`, 'opp-counters:' + n);
-      if (t) { g.addCounters(t, n); g.log(`${n} damage counters on ${t.name}.`); }
+      if (t && g.addCounters(t, n, { from: pid })) g.log(`${n} damage counters on ${t.name}.`);
       m.damage = Math.max(m.damage, g.maxHp(m));
     },
   },
@@ -1662,3 +1662,526 @@ TRAINERS['Special Red Card'].can = (g, pid) => { const o = g.pl(g.opp(pid)); ret
 TRAINERS.Eri.reveals = true;
 // Larry's Skill with an empty hand and an empty deck does nothing
 TRAINERS["Larry's Skill"].can = handOrDeck;
+
+// ================================================================ Grass, Metal and Dragon decks
+// Pokémon V and VSTAR: a VSTAR Power (an Ability or an attack) can be used once per game per player
+const vstarFree = (g, pid) => !g.pl(pid).vstarUsed;
+function useVstar(g, pid, name) { g.pl(pid).vstarUsed = true; g.log(`${g.pl(pid).name} uses their VSTAR Power: ${name}.`); }
+// "Put N Energy attached to your Pokémon in the Lost Zone"
+async function loseEnergy(g, pid, n, prompt) {
+  const all = g.inPlay(pid).flatMap(m => m.energy);
+  const k = Math.min(n, all.length);
+  if (!k) return [];
+  const got = await g.chooseCards(pid, all, { min: k, max: k, prompt, from: 'energy', hint: 'lose' });
+  for (const c of got) g.moveTo(c, 'lost');
+  if (got.length) g.log(`${got.map(c => c.name).join(' and ')} go${got.length === 1 ? 'es' : ''} to the Lost Zone.`);
+  return got;
+}
+// Regidrago VSTAR's Apex Dragon: the attacks of the Dragon Pokémon in the discard pile that could be used now
+function apexChoices(g, mon) {
+  const out = [];
+  for (const c of g.pl(mon.owner).discard) {
+    if (!isMon(c) || c.def.type !== 'Dragon') continue;
+    for (const atk of c.def.attacks || []) {
+      if (atk.name === 'Apex Dragon' || out.some(x => x.atk.name === atk.name)) continue;
+      const fx = ATTACKS[atk.name];
+      if (fx && fx.can && fx.can(g, mon, atk)) continue;
+      out.push({ def: c.def, atk });
+    }
+  }
+  return out;
+}
+// "Put 1 of your Pokémon (and all attached cards) into your hand": the Active only with a Benched Pokémon to replace it
+const scoopable = (g, pid, filter) => g.inPlay(pid).filter(m => filter(m) && (g.pl(pid).bench.length || !g.isActive(m)));
+async function scoopUp(g, pid, filter, prompt) {
+  const p = g.pl(pid);
+  const m = await g.chooseOneMon(pid, scoopable(g, pid, filter), prompt, 'scoop');
+  if (!m) return null;
+  const wasActive = g.isActive(m), name = m.name;
+  g.removeMon(m, 'hand');
+  g.log(`${p.name} returns ${name} and its attached cards to their hand.`);
+  if (wasActive) await g.promote(pid);
+  return m;
+}
+
+Object.assign(ATTACKS, {
+  // ---- Beedrill ex
+  'Surprise Attack': { run(ctx) { if (ctx.game.flip('Surprise Attack')) ctx.damage(30); else ctx.game.log('Surprise Attack does nothing.'); } },
+  'Rumbling Bees': { base: ctx => 110 * ctx.game.inPlay(ctx.pid).filter(m => m.name === 'Beedrill' || m.name === 'Beedrill ex').length },
+  'Trading Places': { run: ctx => switchOwn(ctx.game, ctx.pid, `Switch ${ctx.attacker.name} with which Benched Pokémon?`) },
+  // ---- Mega Venusaur ex
+  'Growl': { after: ctx => { if (ctx.defender && !ctx.game.effectsBlocked(ctx, ctx.defender)) ctx.effect('charm', { mon: ctx.defender.id }); } },
+  'Giant Bouquet': { base: ctx => ctx.printed + 50 * ctx.game.energyTypes(ctx.attacker).filter(t => ctx.game.provides(t, 'Grass')).length },
+  'Bind Down': { after: defenderNoRetreat },
+  'Jungle Dump': { after: ctx => { if (ctx.attacker.stack.length) ctx.game.heal(ctx.attacker, 30); } },
+  'Hex Hurl': { after: ctx => spreadCounters(ctx.game, ctx.pid, 2, oppBench(ctx.game, ctx.pid), ctx, "Put 2 damage counters on your opponent's Benched Pokémon in any way you like") },
+  // ---- Yanmega ex
+  'Whirlwind': { run: switchOutDefender },
+  'Jet Cyclone': {
+    async after(ctx) {
+      const g = ctx.game, m = ctx.attacker, p = g.pl(ctx.pid);
+      if (!m.stack.length || !m.energy.length || !p.bench.length) return;
+      const to = await g.chooseOneMon(ctx.pid, p.bench, `Move 3 Energy from ${m.name} to which Benched Pokémon?`, 'attach');
+      if (!to) return;
+      const k = Math.min(3, m.energy.length);
+      const got = await g.chooseCards(ctx.pid, m.energy, { min: k, max: k, prompt: `Move which ${k} Energy to ${to.name}?`, from: 'energy', hint: 'move' });
+      for (const c of got) { m.energy.splice(m.energy.indexOf(c), 1); to.energy.push(c); }
+      g.log(`${got.length} Energy move${got.length === 1 ? 's' : ''} from ${m.name} to ${to.name}.`);
+    },
+  },
+  // ---- Steven's Metagross ex
+  'Metal Slash': { after: nextTurnNoAttack },
+  'Call for Support': { run: ctx => search(ctx.game, ctx.pid, c => c.def.trainer === 'Supporter', { max: 1, prompt: 'Search your deck for a Supporter card' }) },
+  'Iron Feathers': { after: ctx => ctx.game.addEffect({ kind: 'guard', mon: ctx.attacker.id, n: 60, turn: ctx.game.turn + 1 }) },
+  'Psyspear': { async after(ctx) { const g = ctx.game; if (g.energyTypes(ctx.attacker).length - g.attackCost(ctx.attacker, ctx.atk).length >= 2) await benchHit(ctx, 120); } },
+  // ---- Archaludon ex
+  'Raging Hammer': { base: ctx => ctx.printed + 10 * ctx.game.counters(ctx.attacker) },
+  'Metal Defender': { after: ctx => ctx.game.addEffect({ kind: 'noWeakness', mon: ctx.attacker.id, turn: ctx.game.turn + 1 }) },
+  'Iron Blaster': { after: nextTurnNoAttack },
+  'Gobble Down': { base: ctx => 80 * ctx.game.prizesTaken(ctx.pid) },
+  'Huge Bite': { base: ctx => (ctx.defender && ctx.defender.damage > 0 ? 30 : ctx.printed) },
+  // ---- Giratina VSTAR
+  'Abyss Seeking': {
+    async run(ctx) {
+      const g = ctx.game, p = g.pl(ctx.pid);
+      const top = lookTop(g, ctx.pid, 4);
+      if (!top.length) { g.log('There are no cards to look at.'); return; }
+      const k = Math.min(2, top.length);
+      const got = await g.chooseCards(ctx.pid, top, { min: k, max: k, prompt: 'Put 2 of the top 4 cards into your hand (the rest go to the Lost Zone)', from: 'deck-top', shown: top });
+      for (const c of got) g.moveTo(c, 'hand');
+      const rest = top.filter(c => !got.includes(c));
+      for (const c of rest) g.moveTo(c, 'lost');
+      g.log(`${p.name} puts ${got.length} card${got.length === 1 ? '' : 's'} into their hand${rest.length ? ` and ${rest.map(c => c.name).join(', ')} in the Lost Zone` : ''}.`);
+    },
+  },
+  'Lost Impact': { after: ctx => loseEnergy(ctx.game, ctx.pid, 2, 'Put 2 Energy attached to your Pokémon in the Lost Zone') },
+  'Star Requiem': {
+    can: (g, mon) => (g.pl(mon.owner).lost.length < 10 ? 'Needs 10 or more cards in the Lost Zone' : !vstarFree(g, mon.owner) ? 'VSTAR Power already used' : null),
+    run(ctx) {
+      const g = ctx.game, d = ctx.defender;
+      useVstar(g, ctx.pid, 'Star Requiem');
+      if (!d || g.effectsBlocked(ctx, d)) { g.log('Star Requiem has no effect.'); return; }
+      g.log(`Star Requiem knocks out ${d.name}!`);
+      d.damage = Math.max(d.damage, g.maxHp(d));
+    },
+  },
+  // ---- Regidrago VSTAR
+  'Celestial Roar': {
+    async run(ctx) {
+      const g = ctx.game, p = g.pl(ctx.pid), m = ctx.attacker;
+      const top = p.deck.slice(0, 3);
+      if (!top.length) { g.log('There are no cards to discard.'); return; }
+      for (const c of top) g.discard(c);
+      g.log(`${p.name} discards ${top.map(c => c.name).join(', ')} from the top of their deck.`);
+      for (const c of top.filter(x => x.def.cat === 'E')) await g.attachEnergy(ctx.pid, m, c);
+    },
+  },
+  'Dragon Laser': { after: ctx => benchHit(ctx, 30) },
+  'Apex Dragon': {
+    can: (g, mon) => (apexChoices(g, mon).length ? null : 'No Dragon Pokémon attack in your discard pile'),
+    run: ctx => useAttackOf(ctx, apexChoices(ctx.game, ctx.attacker), 'Choose an attack of a Dragon Pokémon in your discard pile to use'),
+  },
+  'Rolling Iron': { after: ctx => ctx.game.addEffect({ kind: 'guard', mon: ctx.attacker.id, n: 80, turn: ctx.game.turn + 1 }) },
+  'Combustion Blast': { after: cantUseNext },
+  'Fade Out': {
+    after(ctx) {
+      const g = ctx.game, m = ctx.attacker;
+      if (!m.stack.length) return;
+      g.log(`${m.name} and its attached cards return to ${g.pl(ctx.pid).name}'s hand.`);
+      g.removeMon(m, 'hand');
+    },
+  },
+  // Technical Machine: Devolution
+  'Devolution': {
+    run(ctx) {
+      const g = ctx.game, o = g.pl(ctx.opp);
+      let n = 0;
+      for (const m of g.inPlay(ctx.opp)) {
+        if (m.stack.length < 2 || g.effectsBlocked(ctx, m)) continue;
+        const top = m.stack.pop();
+        o.hand.push(top);
+        m.noEvolveTurn = g.turn;
+        g.clearConditions(m);
+        g.effects = g.effects.filter(e => e.mon !== m.id);
+        g.event('evolve', { mon: m.id });
+        g.log(`${top.name} devolves into ${m.name}; ${top.name} goes back to ${o.name}'s hand.`);
+        n++;
+      }
+      if (!n) g.log('Devolution has no effect.');
+    },
+  },
+});
+
+Object.assign(ABILITIES, {
+  // Mega Venusaur ex: as often as you like, a Basic {G} Energy from one of your Pokémon to another
+  'Solar Transfer': {
+    can: (g, m, pid) => g.inPlay(pid).length > 1 && g.inPlay(pid).some(x => x.energy.some(c => isBasicEnergy(c, 'Grass'))),
+    async use(g, m, pid) {
+      const from = await g.chooseOneMon(pid, g.inPlay(pid).filter(x => x.energy.some(c => isBasicEnergy(c, 'Grass'))), 'Move a Basic {G} Energy from which Pokémon?', 'energy-from');
+      if (!from) return;
+      const c = from.energy.find(x => isBasicEnergy(x, 'Grass'));
+      const to = await g.chooseOneMon(pid, g.inPlay(pid).filter(x => x !== from), `Move ${c.name} to which Pokémon?`, 'attach:Grass');
+      if (!to) return;
+      from.energy.splice(from.energy.indexOf(c), 1);
+      to.energy.push(c);
+      g.log(`${c.name} moves from ${from.name} to ${to.name}.`);
+    },
+  },
+  // Yanmega ex: when it moves from the Bench to the Active Spot during your turn (run by the engine)
+  'Buzzing Boost': {
+    can: (g, m, pid) => g.pl(pid).deck.some(c => isBasicEnergy(c, 'Grass')),
+    async onMoveUp(g, m, pid) {
+      const got = await search(g, pid, c => isBasicEnergy(c, 'Grass'), { max: 3, prompt: 'Search your deck for up to 3 Basic {G} Energy to attach to ' + m.name, to: 'none', hint: 'attach' });
+      for (const c of got) await g.attachEnergy(pid, m, c);
+      if (got.length) g.log(`${got.length} Grass Energy attached to ${m.name}.`);
+    },
+  },
+  // Steven's Metagross ex: a Basic {P} and/or a Basic {M} Energy from the deck onto your {P} and {M} Pokémon
+  'X-Boot': {
+    can: (g, m, pid) => !usedThisTurn(m, 'X-Boot', g) && g.pl(pid).deck.some(c => isBasicEnergy(c, 'Psychic') || isBasicEnergy(c, 'Metal')) && g.inPlay(pid).some(x => x.def.type === 'Psychic' || x.def.type === 'Metal'),
+    async use(g, m, pid) {
+      const p = g.pl(pid);
+      const got = [];
+      for (const t of ['Psychic', 'Metal']) {
+        const [c] = await g.chooseCards(pid, p.deck.filter(x => isBasicEnergy(x, t)), { max: 1, prompt: `Search your deck for a Basic {${t[0] === 'P' ? 'P' : 'M'}} Energy`, from: 'deck', hint: 'attach', shown: p.deck });
+        if (c) got.push(c);
+      }
+      await attachEach(g, pid, got, g.inPlay(pid).filter(x => x.def.type === 'Psychic' || x.def.type === 'Metal'), 'Attach');
+      if (!got.length) g.log(`${p.name} searches their deck.`);
+      g.shuffle(pid);
+    },
+  },
+  // Archaludon ex: as it evolves, up to 2 Basic {M} Energy from the discard pile onto your {M} Pokémon
+  'Assemble Alloy': {
+    can: (g, m, pid) => g.pl(pid).discard.some(c => isBasicEnergy(c, 'Metal')),
+    async onEvolve(g, m, pid) {
+      const p = g.pl(pid);
+      const got = await g.chooseCards(pid, p.discard.filter(c => isBasicEnergy(c, 'Metal')), { max: 2, prompt: 'Attach up to 2 Basic {M} Energy from your discard pile to your {M} Pokémon', from: 'discard', hint: 'attach' });
+      await attachEach(g, pid, got, g.inPlay(pid).filter(x => x.def.type === 'Metal'), 'Attach');
+    },
+  },
+  // VSTAR Powers
+  'Legacy Star': {
+    can: (g, m, pid) => vstarFree(g, pid) && (g.pl(pid).deck.length > 0 || g.pl(pid).discard.length > 0),
+    async use(g, m, pid) {
+      const p = g.pl(pid);
+      let done = false;
+      if (p.deck.length && await g.confirm(pid, 'Legacy Star: discard the top 7 cards of your deck first?', 'legacy-discard')) {
+        const top = p.deck.slice(0, 7);
+        for (const c of top) g.discard(c);
+        g.log(`${p.name} discards ${top.map(c => c.name).join(', ')} from the top of their deck.`);
+        done = true;
+      }
+      const got = await g.chooseCards(pid, p.discard, { max: 2, prompt: 'Legacy Star: put up to 2 cards from your discard pile into your hand', from: 'discard', hint: 'take' });
+      for (const c of got) g.moveTo(c, 'hand');
+      if (got.length) { g.log(`${p.name} puts ${got.map(c => c.name).join(' and ')} into their hand.`); done = true; }
+      if (done) useVstar(g, pid, 'Legacy Star');
+    },
+  },
+  'Moisture Star': {
+    can: (g, m, pid) => vstarFree(g, pid) && m.damage > 0,
+    use(g, m, pid) { useVstar(g, pid, 'Moisture Star'); g.heal(m, m.damage); },
+  },
+});
+
+Object.assign(TRAINERS, {
+  "AZ's Tranquility": {
+    can: (g, pid) => !!g.pl(pid).active && g.pl(pid).bench.length > 0,
+    async play(g, pid) {
+      const old = g.pl(pid).active;
+      const m = await switchOwn(g, pid);
+      if (m && old.stack.length && old.def.ex && !g.isActive(old)) g.heal(old, 80);
+    },
+  },
+  "Morty's Conviction": {
+    can: (g, pid, card) => g.pl(pid).hand.some(c => c !== card) && g.pl(g.opp(pid)).bench.length > 0 && g.pl(pid).deck.length > 0,
+    async play(g, pid, card) {
+      await discardCost(g, pid, 1, card, 'Discard a card from your hand');
+      draw(g, pid, g.pl(g.opp(pid)).bench.length);
+    },
+  },
+  'Penny': {
+    can: (g, pid) => scoopable(g, pid, m => m.stack.length === 1 && m.def.stage === 'Basic').length > 0,
+    play: (g, pid) => scoopUp(g, pid, m => m.stack.length === 1 && m.def.stage === 'Basic', 'Put which of your Basic Pokémon (and its attached cards) into your hand?'),
+  },
+  "Team Rocket's Venture Bomb": {
+    async play(g, pid) {
+      if (g.flip("Team Rocket's Venture Bomb")) {
+        const t = await g.chooseOneMon(pid, g.inPlay(g.opp(pid)), "Put 2 damage counters on which of your opponent's Pokémon?", 'opp-counters:2');
+        if (t && g.addCounters(t, 2)) g.log(`2 damage counters on ${t.name}.`);
+      } else {
+        const a = g.pl(pid).active;
+        if (a && g.addCounters(a, 2)) g.log(`2 damage counters on ${a.name}.`);
+      }
+    },
+  },
+  'Canceling Cologne': {
+    play(g, pid) {
+      g.addEffect({ kind: 'cologne', pid: g.opp(pid), turn: g.turn });
+      g.log(`Until the end of this turn, ${g.pl(g.opp(pid)).name}'s Active Pokémon has no Abilities.`);
+    },
+  },
+  'Technical Machine: Devolution': {},
+  // Stadiums read by the engine
+  'Battle Cage': {}, 'Temple of Sinnoh': {},
+});
+
+// ================================================================ popular decks: Joltik Box to Bloodmoon Ursaluna
+// evolve a Pokémon with a card from the deck (Salvatore, Grand Tree): no "When you play this Pokémon from your hand"
+async function evolveFromDeck(g, pid, mon, card) {
+  await g.evolve(pid, mon, card);
+}
+const evolvesInto = (g, mon, c) => isMon(c) && c.def.stage !== 'Basic' && g.evolvesFrom(mon, c.def);
+
+Object.assign(ATTACKS, {
+  // ---- Joltik Box
+  'Jolting Charge': {
+    async run(ctx) {
+      const g = ctx.game, p = g.pl(ctx.pid);
+      const got = [];
+      for (const t of ['Grass', 'Lightning']) {
+        const picks = await g.chooseCards(ctx.pid, p.deck.filter(c => isBasicEnergy(c, t)), { max: 2, prompt: `Search your deck for up to 2 Basic {${t[0] === 'G' ? 'G' : 'L'}} Energy`, from: 'deck', hint: 'attach', shown: p.deck });
+        got.push(...picks);
+      }
+      await attachEach(g, ctx.pid, got, g.inPlay(ctx.pid), 'Attach');
+      if (!got.length) g.log(`${p.name} searches their deck and finds nothing.`);
+      g.shuffle(ctx.pid);
+    },
+  },
+  'Shocking Web': { base: ctx => ctx.printed + (ctx.game.energyTypes(ctx.attacker).some(t => ctx.game.provides(t, 'Lightning')) ? 80 : 0) },
+  'Comet Punch': { base(ctx) { let n = 0; for (let i = 0; i < 4; i++) if (ctx.game.flip('Comet Punch')) n++; return 30 * n; } },
+  'Wicked Impact': { base: ctx => ctx.printed + (/Team Rocket/.test(ctx.game.pl(ctx.pid).supporterName || '') ? 100 : 0) },
+  // ---- Froslass Munkidori, Mega Starmie ex
+  'Resentful Refrain': { base: ctx => 50 * ctx.game.pl(ctx.opp).hand.length },
+  'Absolute Snow': { after: ctx => ctx.condition('asleep') },
+  'Jetting Blow': { after: ctx => benchHit(ctx, 50) },
+  'Nebula Beam': { opts: { noWeakness: true, noResistance: true, ignoreEffects: true } },
+  // ---- Ceruledge ex
+  'Abyssal Flames': { base: ctx => ctx.printed + 20 * ctx.game.pl(ctx.pid).discard.filter(c => c.def.cat === 'E').length },
+  'Raging Amethyst': { after: ctx => discardAllEnergy(ctx.game, ctx.attacker) },
+  // ---- Rocket's Mewtwo ex
+  'Take Down': { after: ctx => selfDamage(ctx, 10) },
+  'Rocket Rush': { base: ctx => 30 * ctx.game.inPlay(ctx.pid).filter(isTR).length },
+  'Erasure Ball': {
+    async base(ctx) {
+      const g = ctx.game, p = g.pl(ctx.pid);
+      const opts = p.bench.flatMap(m => m.energy);
+      const got = await g.chooseCards(ctx.pid, opts, { min: 0, max: Math.min(2, opts.length), prompt: 'Erasure Ball: discard up to 2 Energy from your Benched Pokémon (60 damage each)', from: 'energy', hint: 'fuel:60' });
+      for (const c of got) g.discard(c);
+      if (got.length) g.log(`${got.length} Energy discarded from the Bench.`);
+      return ctx.printed + 60 * got.length;
+    },
+  },
+  // ---- Flareon ex
+  'Burning Charge': {
+    async after(ctx) {
+      const g = ctx.game, p = g.pl(ctx.pid);
+      const got = await search(g, ctx.pid, c => isBasicEnergy(c), { max: 2, prompt: 'Search your deck for up to 2 Basic Energy to attach to 1 of your Pokémon', to: 'none', hint: 'attach' });
+      if (!got.length) return;
+      const m = await g.chooseOneMon(ctx.pid, g.inPlay(ctx.pid), `Attach ${got.map(c => c.name).join(' and ')} to which Pokémon?`, 'attach:' + got[0].def.provides);
+      if (m) for (const c of got) await g.attachEnergy(ctx.pid, m, c);
+    },
+  },
+  'Carnelian': { after: nextTurnNoAttack },
+  'Verdant Storm': { base: ctx => 60 * ctx.game.inPlay(ctx.opp).reduce((s, m) => s + ctx.game.energyTypes(m).length, 0) },
+  'Moss Agate': { after: ctx => { for (const m of ctx.game.pl(ctx.pid).bench) ctx.game.heal(m, 100); } },
+  'Solar Beatdown': { base: ctx => 30 * ctx.game.inPlay(ctx.pid).length },
+  'Spirited Tackle': { base: ctx => ctx.printed + (ctx.defender && ctx.defender.def.stage === 'Stage1' ? 90 : 0) },
+  // ---- Greninja ex
+  'Summoning Jutsu': { run: ctx => search(ctx.game, ctx.pid, isMon, { max: 3, prompt: 'Search your deck for up to 3 Pokémon' }) },
+  'Shinobi Blade': { after: ctx => search(ctx.game, ctx.pid, () => true, { max: 1, prompt: 'You may search your deck for a card' }) },
+  'Mirage Barrage': {
+    async run(ctx) {
+      const g = ctx.game, m = ctx.attacker;
+      await discardEnergyFrom(g, ctx.pid, m, 2, `Discard 2 Energy from ${m.name}`);
+      const opts = g.inPlay(ctx.opp);
+      const ts = await g.chooseMon(ctx.pid, opts, { min: Math.min(2, opts.length), max: 2, prompt: "Choose 2 of your opponent's Pokémon to take 120 damage", hint: 'opp-damage:120' });
+      for (const t of ts) ctx.damageTo(t, 120);
+    },
+  },
+  // ---- Ethan's Typhlosion
+  'Ember': { after: ctx => discardEnergyFrom(ctx.game, ctx.pid, ctx.attacker, 1, `Discard an Energy from ${ctx.attacker.name}`) },
+  'Buddy Blast': { base: ctx => ctx.printed + 60 * ctx.game.pl(ctx.pid).discard.filter(c => c.name === "Ethan's Adventure").length },
+  // ---- Bloodmoon Ursaluna
+  'Mad Bite': { base: ctx => ctx.printed + (ctx.defender ? 30 * ctx.game.counters(ctx.defender) : 0) },
+  'Ninja Spinner': {
+    async base(ctx) {
+      const g = ctx.game, m = ctx.attacker;
+      const w = m.energy.find(c => g.energyLive(c) && (c.def.provides === 'Water' || c.def.anyType));
+      if (w && await g.confirm(ctx.pid, `Put a {W} Energy attached to ${m.name} into your hand for 80 more damage?`, 'more-damage')) {
+        g.moveTo(w, 'hand');
+        g.log(`${g.pl(ctx.pid).name} puts ${w.name} into their hand.`);
+        return ctx.printed + 80;
+      }
+      return ctx.printed;
+    },
+  },
+});
+
+Object.assign(ABILITIES, {
+  // Team Rocket's Spidops: a Basic Energy from the discard pile onto itself
+  'Charging Up': {
+    can: (g, m, pid) => !usedThisTurn(m, 'Charging Up', g) && g.pl(pid).discard.some(c => isBasicEnergy(c)),
+    async use(g, m, pid) {
+      const [c] = await g.chooseCards(pid, g.pl(pid).discard.filter(x => isBasicEnergy(x)), { min: 1, max: 1, prompt: `Attach a Basic Energy from your discard pile to ${m.name}`, from: 'discard', hint: 'attach' });
+      if (c) await g.attachEnergy(pid, m, c);
+    },
+  },
+  // Ethan's Quilava: an Ethan's Adventure from the deck
+  'Bonded by the Journey': {
+    can: (g, m, pid) => !usedThisTurn(m, 'Bonded by the Journey', g) && g.pl(pid).deck.some(c => c.name === "Ethan's Adventure"),
+    use: (g, m, pid) => search(g, pid, c => c.name === "Ethan's Adventure", { max: 1, prompt: "Search your deck for an Ethan's Adventure" }),
+  },
+  // Bloodmoon Ursaluna: as it's benched from the hand, up to 2 Basic {F} Energy from the hand
+  'Battle-Hardened': {
+    can: (g, m, pid) => g.pl(pid).hand.some(c => isBasicEnergy(c, 'Fighting')),
+    async onBench(g, m, pid) {
+      const got = await g.chooseCards(pid, g.pl(pid).hand.filter(c => isBasicEnergy(c, 'Fighting')), { max: 2, prompt: `Attach up to 2 Basic {F} Energy from your hand to ${m.name}`, from: 'hand', hint: 'attach' });
+      for (const c of got) await g.attachEnergy(pid, m, c);
+    },
+  },
+  // Drilbur: as it's benched from the hand, up to 3 Basic {F} Energy from the deck into the discard pile
+  'Dig Dig Dig': {
+    can: (g, m, pid) => g.pl(pid).deck.some(c => isBasicEnergy(c, 'Fighting')),
+    async onBench(g, m, pid) {
+      const p = g.pl(pid);
+      const got = await g.chooseCards(pid, p.deck.filter(c => isBasicEnergy(c, 'Fighting')), { max: 3, prompt: 'Search your deck for up to 3 Basic {F} Energy to discard', from: 'deck', hint: 'discard-deck', shown: p.deck });
+      for (const c of got) g.discard(c);
+      if (got.length) g.log(`${p.name} discards ${got.length} Fighting Energy from their deck.`);
+      g.shuffle(pid);
+    },
+  },
+  // Mega Greninja ex: discard a Basic {W} Energy from the hand for 6 damage counters (Active Spot only)
+  'Mortal Shuriken': {
+    can: (g, m, pid) => !usedThisTurn(m, 'Mortal Shuriken', g) && g.isActive(m) && g.pl(pid).hand.some(c => isBasicEnergy(c, 'Water')),
+    async use(g, m, pid) {
+      const p = g.pl(pid);
+      const [c] = await g.chooseCards(pid, p.hand.filter(x => isBasicEnergy(x, 'Water')), { min: 1, max: 1, prompt: 'Discard a Basic {W} Energy from your hand', from: 'hand', hint: 'discard' });
+      if (!c) return;
+      g.discard(c);
+      const t = await g.chooseOneMon(pid, g.inPlay(g.opp(pid)).filter(x => !g.abilityBlocked(pid, x)), 'Put 6 damage counters on which Pokémon?', 'opp-counters:6');
+      if (t && g.addCounters(t, 6, { from: pid })) g.log(`6 damage counters on ${t.name}.`);
+    },
+  },
+});
+
+Object.assign(TRAINERS, {
+  // ---- Items
+  'Pokémon Catcher': {
+    can: (g, pid) => gustable(g, pid),
+    async play(g, pid) { if (g.flip('Pokémon Catcher')) await gust(g, pid); },
+  },
+  'Brilliant Blender': {
+    async play(g, pid) {
+      const p = g.pl(pid);
+      const got = await g.chooseCards(pid, [...p.deck], { min: 0, max: 5, prompt: 'Search your deck for up to 5 cards to discard', from: 'deck', hint: 'discard-deck', shown: p.deck });
+      for (const c of got) g.discard(c);
+      g.log(`${p.name} discards ${got.length ? got.map(c => c.name).join(', ') : 'nothing'} from their deck.`);
+      g.shuffle(pid);
+    },
+  },
+  'Tera Orb': { play: (g, pid) => search(g, pid, c => isMon(c) && c.def.tera, { max: 1, prompt: 'Search your deck for a Tera Pokémon' }) },
+  'Redeemable Ticket': {
+    can: (g, pid) => g.pl(pid).prizes.length > 0,
+    play(g, pid) {
+      const p = g.pl(pid);
+      const n = p.prizes.length;
+      g.rng.shuffle(p.prizes);
+      p.deck.push(...p.prizes.splice(0));
+      p.prizes = p.deck.splice(0, n);
+      g.log(`${p.name} puts their ${n} Prize card${n > 1 ? 's' : ''} on the bottom of their deck and takes ${p.prizes.length} new ones from the top.`);
+    },
+  },
+  'Energy Retrieval': {
+    can: (g, pid) => g.pl(pid).discard.some(c => isBasicEnergy(c)),
+    async play(g, pid) {
+      const p = g.pl(pid);
+      const got = await g.chooseCards(pid, p.discard.filter(c => isBasicEnergy(c)), { max: 2, prompt: 'Put up to 2 Basic Energy from your discard pile into your hand', from: 'discard', hint: 'take' });
+      for (const c of got) g.moveTo(c, 'hand');
+      if (got.length) g.log(`${p.name} puts ${got.map(c => c.name).join(' and ')} into their hand.`);
+    },
+  },
+  // play 2 at once: a Basic Pokémon from the discard pile takes the place of a Basic Pokémon in play
+  'Transformation Tome': {
+    can: (g, pid, card) => { const p = g.pl(pid); return p.hand.filter(c => c.name === 'Transformation Tome' && c !== card).length > 0 && p.discard.some(isBasicMon) && g.inPlay(pid).some(m => m.stack.length === 1 && m.def.stage === 'Basic'); },
+    async play(g, pid, card) {
+      const p = g.pl(pid);
+      const other = p.hand.find(c => c.name === 'Transformation Tome' && c !== card);
+      if (other) g.discard(other);
+      const [c] = await g.chooseCards(pid, p.discard.filter(isBasicMon), { min: 1, max: 1, prompt: 'Choose a Basic Pokémon in your discard pile', from: 'discard', hint: 'take' });
+      const m = c && await g.chooseOneMon(pid, g.inPlay(pid).filter(x => x.stack.length === 1 && x.def.stage === 'Basic'), `Switch ${c.name} with which of your Basic Pokémon?`, 'transform');
+      if (!c || !m) return;
+      const old = m.stack[0];
+      p.discard.splice(p.discard.indexOf(c), 1);
+      m.stack[0] = c;
+      p.discard.push(old);
+      g.log(`${old.name} turns into ${c.name}; ${old.name} goes to the discard pile.`);
+      g.event('evolve', { mon: m.id });
+    },
+  },
+  // ---- Tools (read by the engine)
+  'Light Ball': {}, 'Maximum Belt': {},
+  // ---- Supporters
+  'Salvatore': {
+    can: (g, pid) => g.inPlay(pid).some(m => g.pl(pid).deck.some(c => evolvesInto(g, m, c) && !(c.def.abilities || []).length)),
+    async play(g, pid) {
+      const p = g.pl(pid);
+      const fits = c => !(c.def.abilities || []).length && g.inPlay(pid).some(m => evolvesInto(g, m, c));
+      const [c] = await g.chooseCards(pid, p.deck.filter(fits), { min: 0, max: 1, prompt: 'Search your deck for a card with no Abilities to evolve 1 of your Pokémon', from: 'deck', hint: 'evolve', shown: p.deck });
+      if (c) {
+        const m = await g.chooseOneMon(pid, g.inPlay(pid).filter(x => evolvesInto(g, x, c)), `Evolve which Pokémon into ${c.name}?`, 'evolve');
+        if (m) await evolveFromDeck(g, pid, m, c);
+      } else g.log(`${p.name} searches their deck.`);
+      g.shuffle(pid);
+    },
+  },
+  'Lucian': {
+    can: (g, pid, card) => g.players.some(q => q.hand.some(c => c !== card)),
+    play(g) {
+      let any = false;
+      for (const q of g.players) { if (q.hand.length) any = true; g.rng.shuffle(q.hand); q.deck.push(...q.hand.splice(0)); }
+      g.log('Each player puts their hand on the bottom of their deck.');
+      if (!any) return;
+      for (const q of g.players) { const n = g.flip(`${q.name} (Lucian)`) ? 6 : 3; draw(g, q.id, n); }
+    },
+  },
+  'Kieran': {
+    async play(g, pid) {
+      const p = g.pl(pid);
+      const opts = [{ value: 'boost', label: 'This turn, 30 more damage to the Active Pokémon ex or V' }];
+      if (p.bench.length && p.active) opts.unshift({ value: 'switch', label: 'Switch your Active Pokémon with a Benched one' });
+      const v = await g.chooseOption(pid, opts, 'Kieran: choose 1', 'kieran');
+      if (v === 'switch') await switchOwn(g, pid);
+      else { g.addEffect({ kind: 'kieran', pid, turn: g.turn }); g.log('This turn, attacks do 30 more damage to the opponent’s Active Pokémon ex and Pokémon V.'); }
+    },
+  },
+  "Colress's Tenacity": {
+    async play(g, pid) {
+      await search(g, pid, c => c.def.trainer === 'Stadium', { max: 1, prompt: 'Search your deck for a Stadium card' });
+      await search(g, pid, c => c.def.cat === 'E', { max: 1, prompt: 'Search your deck for an Energy card' });
+    },
+  },
+  "Ethan's Adventure": { play: (g, pid) => search(g, pid, c => (isMon(c) && c.name.startsWith("Ethan's ")) || isBasicEnergy(c, 'Fire'), { max: 3, prompt: "Search your deck for up to 3 in any combination of Ethan's Pokémon and Basic {R} Energy" }) },
+  // ---- Stadiums
+  'Grand Tree': {
+    stadiumCan: (g, pid) => g.pl(pid).turns > 1 && g.pl(pid).deck.length > 0 && g.inPlay(pid).some(m => m.def.stage === 'Basic' && m.playedTurn !== g.turn && g.pl(pid).deck.some(c => c.def.stage === 'Stage1' && evolvesInto(g, m, c))),
+    async stadiumUse(g, pid) {
+      const p = g.pl(pid);
+      const bases = g.inPlay(pid).filter(m => m.def.stage === 'Basic' && m.playedTurn !== g.turn);
+      const [s1] = await g.chooseCards(pid, p.deck.filter(c => c.def.stage === 'Stage1' && bases.some(m => evolvesInto(g, m, c))), { min: 0, max: 1, prompt: 'Grand Tree: search your deck for a Stage 1 Pokémon to evolve 1 of your Basic Pokémon', from: 'deck', hint: 'evolve', shown: p.deck });
+      if (s1) {
+        const m = await g.chooseOneMon(pid, bases.filter(x => evolvesInto(g, x, s1)), `Evolve which Pokémon into ${s1.name}?`, 'evolve');
+        if (m) {
+          await evolveFromDeck(g, pid, m, s1);
+          const [s2] = await g.chooseCards(pid, p.deck.filter(c => c.def.stage === 'Stage2' && evolvesInto(g, m, c)), { min: 0, max: 1, prompt: `Grand Tree: evolve ${m.name} into a Stage 2 Pokémon too?`, from: 'deck', hint: 'evolve', shown: p.deck });
+          if (s2) await evolveFromDeck(g, pid, m, s2);
+        }
+      } else g.log(`${p.name} searches their deck.`);
+      g.shuffle(pid);
+    },
+  },
+  'Nighttime Mine': {},
+});
+ENERGIES['Bubbly Water Energy'] = {};
+for (const n of ['Brilliant Blender', 'Tera Orb', "Colress's Tenacity", "Ethan's Adventure"]) TRAINERS[n].needsDeck = true;
+for (const n of ['Bonded by the Journey', 'Dig Dig Dig']) ABILITIES[n].needsDeck = true;

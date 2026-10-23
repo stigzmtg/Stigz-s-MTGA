@@ -1214,6 +1214,560 @@ test('An empty answer to a question that needs a card still does the effect (a S
   expect(T.A.deck[0].name === 'Psychic Energy', 'a card went on top (Academy at Night needs exactly 1)');
   expect(!act(), 'and the action is used up');
 });
+// ---- Grass, Metal and Dragon decks
+const heads = (T, v) => { T.g.flip = () => v; };
+test('Surprise Attack: 30 on heads, nothing on tails', async T => {
+  T.mon(0, 'Weedle', { active: true, energy: ['Grass'] }); const d = T.mon(1, 'Budew', { active: true }); T.mon(1, 'Lunatone');
+  heads(T, false); await T.attack('Surprise Attack');
+  expect(d.damage === 0, `nothing on tails (${d.damage})`);
+  T.g.turn += 2; heads(T, true); await T.attack('Surprise Attack');
+  expect(d.stack.length === 0 || d.damage >= 30, '30 on heads');
+});
+test("Kakuna's Exoskeleton: 20 less damage from attacks", async T => {
+  T.mon(0, 'Lunatone', { active: true, energy: ['Fighting', 'Fighting'] }); const k = evolved(T, 1, ['Weedle', 'Kakuna'], { active: true });
+  await T.attack('Power Gem');
+  expect(k.damage === 30, `50 - 20 = 30 (${k.damage})`);
+});
+test('Rumbling Bees: 110 for each Beedrill and Beedrill ex in play', async T => {
+  evolved(T, 0, ['Weedle', 'Kakuna', 'Beedrill ex'], { active: true, energy: ['Grass'] }); evolved(T, 0, ['Weedle', 'Kakuna', 'Beedrill ex']);
+  const d = T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  await T.attack('Rumbling Bees');
+  expect(d.damage === 220, `2 × 110 (${d.damage})`);
+});
+test("Dunsparce's Trading Places switches it with a Benched Pokémon", async T => {
+  T.mon(0, 'JTG-120', { active: true, energy: ['Grass'] }); const b = T.mon(0, 'Budew'); T.mon(1, 'Budew', { active: true });
+  await T.attack('Trading Places');
+  expect(T.A.active === b, 'Budew is Active');
+});
+test("Chikorita's Growl: the Defending Pokémon's attacks do 20 less next turn", async T => {
+  const c = T.mon(0, 'ASC-8', { active: true, energy: ['Grass'] }); T.mon(1, 'Lunatone', { active: true, energy: ['Fighting', 'Fighting'] });
+  await T.attack('Growl');
+  T.g.turn += 1; T.g.current = 1;
+  await T.attack('Power Gem', 1);
+  expect(c.damage === 30, `50 - 20 = 30 (${c.damage})`);
+});
+test('Giant Bouquet: 70 + 50 for each {G} Energy (Wild Growth doubles them)', async T => {
+  const m = evolved(T, 0, ['Chikorita', 'Bayleef', 'Mega Meganium ex'], { active: true, energy: ['Grass', 'Grass', 'Grass'] });
+  const d = T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  await T.attack('Giant Bouquet');
+  expect(d.damage === 220, `70 + 150 (${d.damage})`);
+  evolved(T, 0, ['Chikorita', 'Bayleef', 'Meganium']);
+  d.damage = 0; T.g.turn += 2;
+  await T.attack('Giant Bouquet');
+  expect(d.damage === 370, `70 + 300 with Wild Growth (${d.damage}, ${m.name})`);
+});
+test("Bulbasaur's Bind Down: the Defending Pokémon can't retreat", async T => {
+  T.mon(0, 'Bulbasaur', { active: true, energy: ['Grass'] }); T.mon(1, 'Budew', { active: true, energy: ['Psychic'] }); T.mon(1, 'Lunatone');
+  await T.attack('Bind Down');
+  T.g.turn += 1; T.g.current = 1;
+  expect(!T.g.legalActions(1).some(a => a.t === 'retreat'), 'no retreat');
+});
+test("Mega Venusaur ex: Solar Transfer moves Grass Energy as often as you like; Jungle Dump heals 30", async T => {
+  const v = evolved(T, 0, ['Bulbasaur', 'Ivysaur', 'Mega Venusaur ex'], { active: true, damage: 50 });
+  const b = T.mon(0, 'Budew', { energy: ['Grass', 'Grass', 'Grass', 'Grass'] }); T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  T.a.on('energy-from', () => [b.id]); T.a.on('attach:Grass', () => [v.id]);
+  for (let i = 0; i < 4; i++) await T.ability(v, 'Solar Transfer');
+  expect(v.energy.length === 4 && !b.energy.length, `4 moved (${v.energy.length})`);
+  await T.attack('Jungle Dump');
+  expect(T.B.active.damage === 240 && v.damage === 20, `240 and healed 30 (${T.B.active.damage}, ${v.damage})`);
+});
+test("Flutter Mane: Midnight Fluttering switches off the opposing Active's Abilities; Hex Hurl puts 2 counters on the Bench", async T => {
+  T.mon(0, 'Flutter Mane', { active: true, energy: ['Psychic', 'Psychic', 'Psychic'] });
+  const k = T.mon(1, 'Mega Kangaskhan ex', { active: true }); const b = T.mon(1, 'Budew');
+  expect(!T.g.abilitiesOf(k).length, 'Run Errand switched off');
+  T.g.turn += 1; T.g.current = 1;
+  expect(!T.g.legalActions(1).some(a => a.t === 'ability'), 'no Ability to use');
+  T.g.turn += 1; T.g.current = 0;
+  T.a.on('distribute', req => ({ [b.id]: 2 }));
+  await T.attack('Hex Hurl');
+  expect(k.damage === 90 && b.damage === 20, `90 and 2 counters (${k.damage}, ${b.damage})`);
+});
+test("AZ's Tranquility switches, healing 80 from a Pokémon ex moved to the Bench", async T => {
+  const k = T.mon(0, 'Mega Kangaskhan ex', { active: true, damage: 100 }); T.mon(0, 'Budew'); T.mon(1, 'Budew', { active: true });
+  await T.play(T.hand(0, "AZ's Tranquility"));
+  expect(T.A.active.name === 'Budew' && k.damage === 20, `switched and healed (${k.damage})`);
+});
+test("Yanma's Whirlwind: the opponent switches their Active", async T => {
+  T.mon(0, 'Yanma', { active: true, energy: ['Grass'] }); const d = T.mon(1, 'Budew', { active: true }); T.mon(1, 'Lunatone');
+  await T.attack('Whirlwind');
+  expect(T.B.active.name === 'Lunatone' && T.B.bench.includes(d), 'switched');
+});
+test('Yanmega ex: Buzzing Boost attaches 3 Grass Energy when it moves up; Jet Cyclone moves 3 Energy to the Bench', async T => {
+  T.mon(0, 'Budew', { active: true }); const y = evolved(T, 0, ['Yanma', 'Yanmega ex'], { energy: ['Grass'] }); const b = T.mon(0, 'Lunatone');
+  T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  for (let i = 0; i < 3; i++) T.A.deck.unshift(T.card(0, 'Grass Energy'));
+  T.a.on('confirm', () => true); T.a.on('switch', () => [y.id]); T.a.on('attach', req => req.options);
+  await T.play(T.hand(0, 'Switch'));
+  expect(T.A.active === y && y.energy.length === 4, `Active with 4 Energy (${y.energy.length})`);
+  T.a.on('attach', () => [b.id]);
+  await T.attack('Jet Cyclone');
+  expect(T.B.active.damage === 210 && b.energy.length === 3 && y.energy.length === 1, `210, 3 moved (${b.energy.length})`);
+});
+test('Battle Cage: no damage counters on Benched Pokémon from the opponent’s attacks and Abilities', async T => {
+  T.mon(0, 'Flutter Mane', { active: true, energy: ['Psychic', 'Psychic', 'Psychic'] }); T.mon(1, 'Budew', { active: true }); const b = T.mon(1, 'Lunatone');
+  T.g.stadium = { card: T.card(1, 'Battle Cage'), owner: 1 };
+  T.a.on('distribute', () => ({ [b.id]: 2 }));
+  await T.attack('Hex Hurl');
+  expect(b.damage === 0, `no counters (${b.damage})`);
+});
+test("Steven's Metang's Metal Slash: it can't attack next turn", async T => {
+  evolved(T, 0, ["Steven's Beldum", "Steven's Metang"], { active: true, energy: ['Metal', 'Metal'] }); T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  await T.attack('Metal Slash');
+  T.g.turn += 2;
+  expect(!canAttack(T, 'Metal Slash') && !canAttack(T, 'Ram'), "can't attack");
+});
+test("Steven's Metagross ex's X-Boot: a Basic {P} and a Basic {M} Energy from the deck", async T => {
+  const m = evolved(T, 0, ["Steven's Beldum", "Steven's Metang", "Steven's Metagross ex"], { active: true }); const dx = T.mon(0, 'Deoxys');
+  T.mon(1, 'Budew', { active: true });
+  T.A.deck.push(T.card(0, 'Metal Energy'));
+  T.a.on('attach', req => req.options.slice(0, 1)); T.a.on('attach:Psychic', () => [dx.id]); T.a.on('attach:Metal', () => [m.id]);
+  await T.ability(m, 'X-Boot');
+  expect(dx.energy.length === 1 && m.energy.length === 1 && m.energy[0].name === 'Metal Energy', 'one each');
+});
+test("Piplup's Call for Support finds a Supporter", async T => {
+  T.mon(0, 'Piplup', { active: true, energy: ['Water'] }); T.mon(1, 'Budew', { active: true });
+  T.A.deck.push(T.card(0, 'Judge'));
+  await T.attack('Call for Support');
+  expect(T.A.hand.some(c => c.name === 'Judge'), 'Judge in hand');
+});
+test("Empoleon ex: Emperor's Stance blocks attack effects; Iron Feathers takes 60 less next turn", async T => {
+  const e = evolved(T, 0, ['Piplup', 'Empoleon ex'], { active: true, energy: ['Metal', 'Metal', 'Metal'] });
+  T.mon(1, 'Lunatone', { active: true, energy: ['Fighting', 'Fighting'] }); T.mon(0, 'Budew'); T.mon(1, 'Lunatone', { energy: ['Fighting', 'Fighting'] });
+  expect(T.g.effectsBlocked({ pid: 1 }, e), 'effects blocked');
+  await T.attack('Iron Feathers');
+  T.g.turn += 1; T.g.current = 1;
+  await T.attack('Power Gem', 1);
+  expect(e.damage === 0, `50 - 60 = 0 (${e.damage})`);
+});
+test("Deoxys's Psyspear: 120, and 120 to the Bench with 2 extra Energy", async T => {
+  T.mon(0, 'Deoxys', { active: true, energy: ['Psychic', 'Psychic', 'Psychic'] }); T.mon(1, 'Mega Kangaskhan ex', { active: true }); const b = T.mon(1, 'Mega Kangaskhan ex');
+  await T.attack('Psyspear');
+  expect(T.B.active.damage === 120 && b.damage === 0, 'no Bench damage without extra Energy');
+  T.A.active.energy.push(T.card(0, 'Psychic Energy'), T.card(0, 'Psychic Energy'));
+  T.g.turn += 2; T.a.on('opp-damage:120', () => [b.id]);
+  await T.attack('Psyspear');
+  expect(b.damage === 120, `120 on the Bench (${b.damage})`);
+});
+test("Duraludon's Raging Hammer: 80 + 10 for each damage counter on it", async T => {
+  T.mon(0, 'Duraludon', { active: true, energy: ['Metal', 'Metal', 'Metal'], damage: 50 }); const d = T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  await T.attack('Raging Hammer');
+  expect(d.damage === 130, `80 + 50 (${d.damage})`);
+});
+test("Archaludon ex: Assemble Alloy attaches Metal Energy from the discard pile; Metal Defender leaves it with no Weakness", async T => {
+  const a = T.mon(0, 'Duraludon', { active: true, energy: ['Metal'] }); T.mon(1, 'PAF-7', { active: true, energy: ['Fire', 'Fire'] }); T.mon(0, 'Budew');
+  T.A.discard.push(T.card(0, 'Metal Energy'), T.card(0, 'Metal Energy'));
+  T.a.on('confirm', () => true); T.a.on('attach', req => req.options);
+  await T.play(T.hand(0, 'Archaludon ex'));
+  expect(a.name === 'Archaludon ex' && a.energy.length === 3, `3 Energy (${a.energy.length})`);
+  await T.attack('Metal Defender');
+  expect(T.g.weaknessOf(a) === 'Fire', 'still weak this turn');
+  T.g.turn += 1;
+  expect(T.g.weaknessOf(a) === null, 'no Weakness next turn');
+});
+test("Archaludon: Metal Bridge — Pokémon with {M} Energy have no Retreat Cost; Iron Blaster can't attack next turn", async T => {
+  const a = evolved(T, 0, ['Duraludon', 'Archaludon'], { active: true, energy: ['Metal', 'Metal', 'Metal'] }); const k = T.mon(0, 'Mega Kangaskhan ex', { energy: ['Metal'] }); const b = T.mon(0, 'Budew');
+  T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  expect(T.g.retreatCost(a) === 0 && T.g.retreatCost(k) === 0 && T.g.retreatCost(b) === b.def.retreat, 'free with Metal');
+  await T.attack('Iron Blaster');
+  T.g.turn += 2;
+  expect(!canAttack(T, 'Iron Blaster'), "can't attack");
+});
+test("Mega Mawile ex: Gobble Down 80 per Prize taken; Huge Bite is 30 against a damaged Pokémon", async T => {
+  T.mon(0, 'Mega Mawile ex', { active: true, energy: ['Metal', 'Metal', 'Metal'] }); const d = T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  T.A.prizes.splice(0, 2);
+  await T.attack('Gobble Down');
+  expect(d.damage === 160, `2 × 80 (${d.damage})`);
+  T.g.turn += 2;
+  await T.attack('Huge Bite');
+  expect(d.damage === 190, `+30 (${d.damage})`);
+});
+test("Morty's Conviction: discard a card, draw one for each of the opponent's Benched Pokémon", async T => {
+  T.mon(0, 'Budew', { active: true }); T.mon(1, 'Budew', { active: true }); T.mon(1, 'Lunatone'); T.mon(1, 'Solrock');
+  const m = T.hand(0, "Morty's Conviction"); T.hand(0, 'Psychic Energy');
+  await T.play(m);
+  expect(T.A.hand.length === 2 && T.A.discard.some(c => c.name === 'Psychic Energy'), `drew 2 (${T.A.hand.length})`);
+});
+test("Giratina V's Abyss Seeking: 2 of the top 4 into hand, the rest to the Lost Zone", async T => {
+  T.mon(0, 'Giratina V', { active: true, energy: ['Grass'] }); T.mon(1, 'Budew', { active: true });
+  await T.attack('Abyss Seeking');
+  expect(T.A.hand.length === 2 && T.A.lost.length === 2, `2 and 2 (${T.A.hand.length}, ${T.A.lost.length})`);
+});
+test('Giratina VSTAR: Lost Impact puts 2 Energy in the Lost Zone; Star Requiem needs 10 Lost Zone cards and the VSTAR Power', async T => {
+  const g = evolved(T, 0, ['Giratina V', 'Giratina VSTAR'], { active: true, energy: ['Grass', 'Psychic', 'Psychic', 'Psychic'] });
+  T.mon(1, 'Mega Kangaskhan ex', { active: true }); T.mon(1, 'Budew');
+  T.a.on('lose', req => req.options.filter(id => T.g.cardById(id).name === 'Psychic Energy').slice(0, 2));
+  await T.attack('Lost Impact');
+  expect(T.B.active.damage === 280 && T.A.lost.length === 2 && g.energy.length === 2, `280, 2 lost (${T.A.lost.length})`);
+  T.g.turn += 2;
+  expect(!canAttack(T, 'Star Requiem'), 'not with 2 cards in the Lost Zone');
+  for (let i = 0; i < 8; i++) T.A.lost.push(T.card(0, 'Psychic Energy'));
+  expect(canAttack(T, 'Star Requiem'), 'with 10');
+  await T.attack('Star Requiem');
+  expect(T.A.vstarUsed && T.B.active.name === 'Budew', 'knocked out, VSTAR Power used');
+  T.g.turn += 2;
+  expect(!canAttack(T, 'Star Requiem'), 'once a game');
+});
+test('A Pokémon V gives up 2 Prize cards, a Radiant Pokémon 1', async T => {
+  T.mon(0, 'Roaring Moon ex', { active: true, energy: ['Darkness', 'Darkness', 'Darkness'] });
+  T.mon(1, 'Giratina V', { active: true }); T.mon(1, 'Radiant Charizard');
+  await T.attack('Frenzied Gouging');
+  expect(T.A.prizes.length === 4, `2 for the V (${T.A.prizes.length})`);
+  T.A.active.damage = 0; T.g.turn += 2;
+  T.mon(1, 'Budew');
+  await T.attack('Frenzied Gouging');
+  expect(T.A.prizes.length === 3, `1 for the Radiant (${T.A.prizes.length})`);
+});
+test("Manaphy's Wave Veil: no damage to Benched Pokémon from attacks", async T => {
+  T.mon(0, 'Regidrago V', { active: true, energy: ['Grass', 'Grass', 'Fire'] }); T.mon(1, 'Mega Kangaskhan ex', { active: true }); const b = T.mon(1, 'Budew'); T.mon(1, 'Manaphy');
+  T.a.on('opp-damage:30', () => [b.id]);
+  await T.attack('Dragon Laser');
+  expect(T.B.active.damage === 130 && b.damage === 0, `130 and nothing on the Bench (${b.damage})`);
+});
+test('Technical Machine: Devolution devolves every evolved opposing Pokémon; it is discarded at the end of the turn', async T => {
+  const a = T.mon(0, 'Budew', { active: true, energy: ['Psychic'] }); a.tool = T.card(0, 'Technical Machine: Devolution');
+  const k = evolved(T, 1, ['Dreepy', 'Drakloak', 'Dragapult ex'], { active: true }); const m = evolved(T, 1, ['Weedle', 'Kakuna']);
+  await T.attack('Devolution');
+  expect(k.name === 'Drakloak' && m.name === 'Weedle' && T.B.hand.filter(c => c.name === 'Dragapult ex' || c.name === 'Kakuna').length === 2, 'devolved');
+  await T.g.endTurn(0);
+  expect(!a.tool && T.A.discard.some(c => c.name === 'Technical Machine: Devolution'), 'discarded');
+});
+test('Temple of Sinnoh: Special Energy provides {C} and has no other effect', async T => {
+  const m = T.mon(0, 'Budew', { active: true }); m.energy.push(T.card(0, 'Mist Energy'), T.card(0, "Team Rocket's Energy"));
+  T.mon(1, 'Budew', { active: true });
+  expect(T.g.effectsBlocked({ pid: 1 }, m) && T.g.energyTypes(m).length === 3, 'Mist protects; TR Energy is 2');
+  T.g.stadium = { card: T.card(1, 'Temple of Sinnoh'), owner: 1 };
+  expect(!T.g.effectsBlocked({ pid: 1 }, m) && T.g.energyTypes(m).join() === 'Colorless,Colorless', `no effects, {C} each (${T.g.energyTypes(m)})`);
+});
+test("Regidrago V's Celestial Roar attaches the Energy among the top 3 cards", async T => {
+  const r = T.mon(0, 'Regidrago V', { active: true, energy: ['Grass'] }); T.mon(1, 'Budew', { active: true });
+  T.A.deck.unshift(T.card(0, 'Grass Energy'), T.card(0, 'Judge'), T.card(0, 'Fire Energy'));
+  await T.attack('Celestial Roar');
+  expect(r.energy.length === 3 && T.A.discard.some(c => c.name === 'Judge'), `2 attached (${r.energy.length})`);
+});
+test('Regidrago VSTAR: Apex Dragon uses an attack of a Dragon Pokémon in the discard pile; Legacy Star once a game', async T => {
+  const r = evolved(T, 0, ['Regidrago V', 'Regidrago VSTAR'], { active: true, energy: ['Grass', 'Grass', 'Fire'] }); T.mon(1, 'Mega Kangaskhan ex', { active: true }); T.mon(1, 'Budew');
+  expect(!canAttack(T, 'Apex Dragon'), 'nothing to copy');
+  T.A.discard.push(T.card(0, 'Giratina VSTAR'));
+  T.a.on('copy-attack', req => req.options.find(o => o.atk === 'Lost Impact').value);
+  T.a.on('lose', req => req.options.slice(0, 2));
+  await T.attack('Apex Dragon');
+  expect(T.B.active.damage === 280 && T.A.lost.length === 2, `Lost Impact copied (${T.B.active.damage})`);
+  T.a.on('legacy-discard', () => true); T.a.on('take', req => req.options.slice(0, 2));
+  const deck = T.A.deck.length;
+  await T.ability(r, 'Legacy Star');
+  expect(T.A.vstarUsed && T.A.deck.length === deck - 7 && T.A.hand.length === 2, `discarded 7, took 2 (${T.A.hand.length})`);
+  T.g.turn += 2;
+  expect(!T.g.legalActions(0).some(a => a.name === 'Legacy Star'), 'once a game');
+});
+test('Hisuian Goodra VSTAR: Rolling Iron takes 80 less next turn; Moisture Star heals everything', async T => {
+  const h = T.mon(0, 'Hisuian Goodra VSTAR', { active: true, energy: ['Water', 'Metal', 'Metal'], damage: 100 }); T.mon(1, 'Lunatone', { active: true, energy: ['Fighting', 'Fighting'] }); T.mon(1, 'Lunatone', { energy: ['Fighting', 'Fighting'] });
+  await T.attack('Rolling Iron');
+  T.g.turn += 1; T.g.current = 1;
+  await T.attack('Power Gem', 1);
+  expect(h.damage === 100, `50 - 80 = 0 (${h.damage})`);
+  T.g.turn += 1; T.g.current = 0;
+  await T.ability(h, 'Moisture Star');
+  expect(h.damage === 0 && T.A.vstarUsed, 'healed');
+});
+test("Radiant Charizard: Excited Heart takes {C} off per Prize the opponent took; Combustion Blast can't be used next turn", async T => {
+  T.mon(0, 'Radiant Charizard', { active: true, energy: ['Fire'] }); T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  expect(!canAttack(T, 'Combustion Blast'), 'needs 5 Energy');
+  T.B.prizes.splice(0, 4);
+  expect(canAttack(T, 'Combustion Blast'), 'costs {R} after 4 Prizes');
+  await T.attack('Combustion Blast');
+  T.g.turn += 2;
+  expect(!canAttack(T, 'Combustion Blast'), 'not next turn');
+});
+test("Canceling Cologne: the opponent's Active Pokémon has no Abilities this turn", async T => {
+  T.mon(0, 'Budew', { active: true }); const s = T.mon(1, 'Shaymin', { active: true }); const b = T.mon(1, 'Budew');
+  await T.play(T.hand(0, 'Canceling Cologne'));
+  expect(!T.g.abilitiesOf(s).length, 'Flower Curtain off');
+  T.g.switchActive(1, b);
+  expect(T.g.abilitiesOf(s).length, 'back on the Bench, it has its Ability');
+  T.g.turn += 1;
+  T.g.switchActive(1, s);
+  expect(T.g.abilitiesOf(s).length, 'next turn it has it again');
+});
+test('Penny puts a Basic Pokémon and its attached cards into the hand', async T => {
+  T.mon(0, 'Budew', { active: true }); const l = T.mon(0, 'Lunatone', { energy: ['Fighting'] }); T.mon(1, 'Budew', { active: true });
+  T.a.on('scoop', () => [l.id]);
+  await T.play(T.hand(0, 'Penny'));
+  expect(!T.A.bench.length && T.A.hand.some(c => c.name === 'Lunatone') && T.A.hand.some(c => c.name === 'Fighting Energy'), 'in hand');
+});
+test("Team Rocket's Venture Bomb: 2 counters on an opposing Pokémon on heads, on your Active on tails", async T => {
+  const a = T.mon(0, 'Budew', { active: true }); const d = T.mon(1, 'Lunatone', { active: true });
+  heads(T, true); await T.play(T.hand(0, "Team Rocket's Venture Bomb"));
+  expect(d.damage === 20 && a.damage === 0, 'heads');
+  heads(T, false); await T.play(T.hand(0, "Team Rocket's Venture Bomb"));
+  expect(a.damage === 20, 'tails');
+});
+test("Spiritomb: Fettered in Misfortune switches off Basic Pokémon V's Abilities; Fade Out returns it to the hand", async T => {
+  const s = T.mon(0, 'PAL-89', { active: true, energy: ['Psychic'] }); T.mon(0, 'Budew');
+  const m = T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  const v = T.mon(1, 'Regidrago V'); v.stack[0].def = { ...v.def, abilities: [{ name: 'Test', text: '' }] };
+  expect(!T.g.abilitiesOf(v).length && T.g.abilitiesOf(m).length, 'Basic V off, others on');
+  await T.attack('Fade Out');
+  expect(m.damage === 10 && T.A.hand.some(c => c.name === 'Spiritomb') && T.A.active && T.A.active.name === 'Budew', 'in hand, Budew in');
+});
+
+// ---- popular decks: Joltik Box to Bloodmoon Ursaluna
+test("Joltik's Jolting Charge attaches up to 2 Grass and 2 Lightning Energy from the deck", async T => {
+  T.mon(0, 'Joltik', { active: true, energy: ['Grass'] }); const p = T.mon(0, 'Pikachu ex'); T.mon(1, 'Budew', { active: true });
+  T.A.deck.push(T.card(0, 'Grass Energy'), T.card(0, 'Grass Energy'), T.card(0, 'Lightning Energy'), T.card(0, 'Lightning Energy'));
+  T.a.on('attach', req => req.options); T.a.on('attach:Grass', () => [p.id]); T.a.on('attach:Lightning', () => [p.id]);
+  await T.attack('Jolting Charge');
+  expect(p.energy.length === 4, `4 attached (${p.energy.length})`);
+});
+test("Galvantula: Compound Eyes adds 50 against a Pokémon with an Ability; Shocking Web adds 80 with Lightning Energy", async T => {
+  T.mon(0, 'Galvantula', { active: true, energy: ['Grass', 'Grass'] }); const d = T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  await T.attack('Shocking Web');
+  expect(d.damage === 100, `50 + 50 (${d.damage})`);
+  T.A.active.energy.push(T.card(0, 'Lightning Energy')); d.damage = 0; T.g.turn += 2;
+  await T.attack('Shocking Web');
+  expect(d.damage === 180, `50 + 80 + 50 (${d.damage})`);
+});
+test("Team Rocket's Kangaskhan ex: Comet Punch 30 per heads of 4; Wicked Impact +100 after a Team Rocket Supporter", async T => {
+  T.mon(0, "Team Rocket's Kangaskhan ex", { active: true, energy: ['Psychic', 'Psychic', 'Psychic'] }); const d = T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  let n = 0; T.g.flip = () => (n++ % 2 === 0);
+  await T.attack('Comet Punch');
+  expect(d.damage === 60, `2 heads (${d.damage})`);
+  d.damage = 0; T.g.turn += 2; T.A.supporterName = "Team Rocket's Petrel";
+  await T.attack('Wicked Impact');
+  expect(d.damage === 220, `120 + 100 (${d.damage})`);
+});
+test('Light Ball: +50 for Pikachu ex against an Active Pokémon ex; Maximum Belt: +50 against an Active Pokémon ex', async T => {
+  const p = T.mon(0, 'Pikachu ex', { active: true, energy: ['Grass', 'Lightning', 'Metal'] }); p.tool = T.card(0, 'Light Ball');
+  T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  expect(T.g.attackBonus({ pid: 0, opp: 1 }, p, T.B.active) === 50, 'Light Ball');
+  p.tool = T.card(0, 'Maximum Belt');
+  expect(T.g.attackBonus({ pid: 0, opp: 1 }, p, T.B.active) === 50, 'Maximum Belt');
+  const b = T.mon(1, 'Budew');
+  expect(T.g.attackBonus({ pid: 0, opp: 1 }, p, b) === 0, 'not against a non-ex');
+});
+test("Mega Froslass ex: Resentful Refrain 50 per card in the opponent's hand; Absolute Snow makes it Asleep", async T => {
+  T.mon(0, 'Mega Froslass ex', { active: true, energy: ['Water', 'Water', 'Water'] }); const d = T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  for (let i = 0; i < 3; i++) T.hand(1, 'Psychic Energy');
+  await T.attack('Resentful Refrain');
+  expect(d.damage === 150, `3 × 50 (${d.damage})`);
+  T.g.turn += 2;
+  await T.attack('Absolute Snow');
+  expect(d.special === 'asleep', 'Asleep');
+});
+test("Mega Starmie ex: Jetting Blow hits the Bench for 50; Nebula Beam ignores Weakness and effects", async T => {
+  T.mon(0, 'Mega Starmie ex', { active: true, energy: ['Water', 'Water', 'Water'] }); const d = T.mon(1, 'Mega Kangaskhan ex', { active: true }); const b = T.mon(1, 'Lunatone');
+  T.a.on('opp-damage:50', () => [b.id]);
+  await T.attack('Jetting Blow');
+  expect(d.damage === 120 && b.damage === 50, 'Active and Bench');
+  T.g.turn += 2; d.damage = 0; T.g.addEffect({ kind: 'protect', mon: d.id, turn: T.g.turn });
+  await T.attack('Nebula Beam');
+  expect(d.damage === 210, `210 through the protection (${d.damage})`);
+});
+test('Salvatore evolves a Pokémon put into play this turn with a card that has no Abilities', async T => {
+  T.mon(1, 'Budew', { active: true }); const s = T.mon(0, 'Staryu', { active: true, played: 3 });
+  T.A.deck.push(T.card(0, 'Mega Starmie ex'));
+  T.a.on('evolve', req => (req.type === 'cards' ? req.options.slice(0, 1) : [s.id]));
+  await T.play(T.hand(0, 'Salvatore'));
+  expect(s.name === 'Mega Starmie ex', 'evolved the turn it was played');
+});
+test('Lucian: both hands go to the bottom; each player draws 6 on heads, 3 on tails', async T => {
+  T.mon(0, 'Budew', { active: true }); T.mon(1, 'Budew', { active: true });
+  const l = T.hand(0, 'Lucian'); T.hand(0, 'Judge'); T.hand(1, 'Judge');
+  let n = 0; T.g.flip = () => (n++ === 0);
+  await T.play(l);
+  expect(T.A.hand.length === 6 && T.B.hand.length === 3, `6 and 3 (${T.A.hand.length}, ${T.B.hand.length})`);
+});
+test('Ceruledge ex: Abyssal Flames +20 per Energy card in the discard pile; Raging Amethyst discards its Energy', async T => {
+  const c = T.mon(0, 'Ceruledge ex', { active: true, energy: ['Fire', 'Psychic', 'Metal'] }); const d = T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  for (let i = 0; i < 5; i++) T.A.discard.push(T.card(0, 'Fighting Energy'));
+  await T.attack('Abyssal Flames');
+  expect(d.damage === 130, `30 + 100 (${d.damage})`);
+  T.g.turn += 2; d.damage = 0;
+  await T.attack('Raging Amethyst');
+  expect(d.damage === 280 && !c.energy.length, 'discarded');
+});
+test('Pokémon Catcher gusts on heads only; Brilliant Blender discards up to 5 cards from the deck', async T => {
+  T.mon(0, 'Budew', { active: true }); T.mon(1, 'Budew', { active: true }); const b = T.mon(1, 'Lunatone');
+  heads(T, false); await T.play(T.hand(0, 'Pokémon Catcher'));
+  expect(T.B.active.name === 'Budew', 'tails: nothing');
+  heads(T, true); T.a.on('gust', () => [b.id]); await T.play(T.hand(0, 'Pokémon Catcher'));
+  expect(T.B.active === b, 'heads: switched in');
+  const n = T.A.deck.length; T.a.on('discard-deck', req => req.options.slice(0, 5));
+  await T.play(T.hand(0, 'Brilliant Blender'));
+  expect(T.A.deck.length === n - 5 && T.A.discard.length >= 5, `5 discarded (${n - T.A.deck.length})`);
+});
+test("Rocket's Mewtwo ex: Take Down, Charging Up, Rocket Rush, Power Saver and Erasure Ball", async T => {
+  const t = T.mon(0, "Team Rocket's Tarountula", { active: true, energy: ['Grass'] }); T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  await T.attack('Take Down');
+  expect(t.damage === 10, 'Take Down does 10 to itself');
+  const sp = evolved(T, 0, ["Team Rocket's Tarountula", "Team Rocket's Spidops"]); T.A.discard.push(T.card(0, 'Grass Energy'));
+  await T.ability(sp, 'Charging Up');
+  expect(sp.energy.length === 1, 'Charging Up');
+  const mw = T.mon(0, "Team Rocket's Mewtwo ex", { energy: ['Psychic', 'Psychic', 'Psychic'] });
+  T.g.switchActive(0, mw); T.g.turn += 2;
+  expect(!canAttack(T, 'Erasure Ball'), 'Power Saver: 3 Team Rocket Pokémon');
+  T.mon(0, "Team Rocket's Mimikyu");
+  expect(canAttack(T, 'Erasure Ball'), 'with 4');
+  T.a.on('fuel:60', req => req.options.slice(0, 1));
+  await T.attack('Erasure Ball');
+  expect(T.B.active.damage === 30 + 220 && !sp.energy.length, `30 from Take Down, then 160 + 60 (${T.B.active.damage})`);
+  T.g.switchActive(0, sp); sp.energy.push(T.card(0, 'Grass Energy'), T.card(0, 'Grass Energy')); T.B.active.damage = 0; T.g.turn += 2;
+  await T.attack('Rocket Rush');
+  expect(T.B.active.damage === 120, `4 × 30 (${T.B.active.damage})`);
+});
+test("Eevee's Boosted Evolution: in the Active Spot it evolves the turn it's played, even on the first turn", async T => {
+  T.mon(1, 'Budew', { active: true });
+  const e = T.mon(0, 'Eevee', { active: true, played: 3 }); const f = T.hand(0, 'Flareon ex');
+  T.A.turns = 1;
+  expect(canPlay(T, f), 'can evolve');
+  const b = T.mon(0, 'Eevee', { played: 3 });
+  expect(T.g.legalActions(0).filter(a => a.card === f.id).length === 1, 'not the Benched one');
+  await T.play(f, { target: e.id });
+  expect(e.name === 'Flareon ex' && b.name === 'Eevee', 'evolved');
+});
+test("Eevee ex's Rainbow DNA: it evolves into any Pokémon ex that evolves from Eevee", async T => {
+  T.mon(1, 'Budew', { active: true }); const e = T.mon(0, 'Eevee ex', { active: true, played: 1 });
+  const l = T.hand(0, 'Leafeon ex');
+  await T.play(l);
+  expect(e.name === 'Leafeon ex', 'evolved');
+});
+test('Flareon ex: Burning Charge attaches 2 Basic Energy from the deck; Carnelian can’t attack next turn', async T => {
+  const f = T.mon(0, 'Flareon ex', { active: true, energy: ['Fire', 'Water', 'Lightning'] }); const b = T.mon(0, 'Budew'); T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  T.a.on('attach', req => req.options.slice(0, 2)); T.a.on('attach:Psychic', () => [b.id]);
+  await T.attack('Burning Charge');
+  expect(b.energy.length === 2, `2 on Budew (${b.energy.length})`);
+  T.g.turn += 2;
+  await T.attack('Carnelian');
+  T.g.turn += 2;
+  expect(!canAttack(T, 'Carnelian') && !canAttack(T, 'Burning Charge'), "can't attack");
+});
+test('Leafeon ex: Verdant Storm 60 per Energy on the opponent’s Pokémon; Moss Agate heals 100 from each Benched Pokémon', async T => {
+  T.mon(0, 'Leafeon ex', { active: true, energy: ['Grass', 'Fire', 'Water'] }); const b = T.mon(0, 'Budew', { damage: 20 }); const k = T.mon(0, 'Mega Kangaskhan ex', { damage: 150 });
+  const d = T.mon(1, 'Mega Kangaskhan ex', { active: true, energy: ['Psychic', 'Psychic'] }); T.mon(1, 'Lunatone', { energy: ['Fighting'] });
+  await T.attack('Verdant Storm');
+  expect(d.damage === 180, `3 × 60 (${d.damage})`);
+  T.g.turn += 2;
+  await T.attack('Moss Agate');
+  expect(b.damage === 0 && k.damage === 50, 'healed');
+});
+test('Espeon ex: Solar Beatdown 30 per Pokémon in play; Victini: +10 for Evolution Fire attacks; Spirited Tackle +90 on a Stage 1', async T => {
+  T.mon(0, 'Espeon ex', { active: true, energy: ['Psychic', 'Psychic'] }); T.mon(0, 'Budew'); T.mon(0, 'Victini'); const d = T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  await T.attack('Solar Beatdown');
+  expect(d.damage === 90, `3 × 30 (${d.damage})`);
+  const f = T.mon(0, 'Flareon ex');
+  expect(T.g.attackBonus({ pid: 0, opp: 1 }, f, d) === 10 && T.g.attackBonus({ pid: 0, opp: 1 }, T.A.active, d) === 0, 'Victory Cheer on Evolution Fire Pokémon only');
+  const t = T.mon(0, 'Paldean Tauros', { energy: ['Fire', 'Fire', 'Fire'] }); T.g.switchActive(0, t);
+  const s = evolved(T, 1, ['Staryu', 'Mega Starmie ex']); T.g.switchActive(1, s); T.g.turn += 2;
+  await T.attack('Spirited Tackle');
+  expect(s.damage === 180, `90 + 90 (${s.damage})`);
+});
+test('Kieran: switch, or 30 more damage to Pokémon ex and V this turn; Tera Orb finds a Tera Pokémon', async T => {
+  const a = T.mon(0, 'Lunatone', { active: true, energy: ['Fighting', 'Fighting'] }); T.mon(0, 'Budew'); const d = T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  T.a.on('kieran', () => 'boost');
+  await T.play(T.hand(0, 'Kieran'));
+  await T.attack('Power Gem');
+  expect(d.damage === 160, `(50 + 30) × 2 Weakness (${d.damage})`);
+  T.A.deck.push(T.card(0, 'Flareon ex'));
+  await T.play(T.hand(0, 'Tera Orb'));
+  expect(T.A.hand.some(c => c.name === 'Flareon ex'), 'Flareon ex in hand');
+});
+test("Frogadier's Summoning Jutsu finds 3 Pokémon; Greninja ex: Shinobi Blade finds a card, Mirage Barrage hits two Pokémon", async T => {
+  T.mon(0, 'Frogadier', { active: true, energy: ['Water'] }); T.mon(1, 'Mega Starmie ex', { active: true }); const b = T.mon(1, 'Lunatone');
+  for (let i = 0; i < 3; i++) T.A.deck.push(T.card(0, 'Froakie'));
+  await T.attack('Summoning Jutsu');
+  expect(T.A.hand.filter(c => c.name === 'Froakie').length === 3, '3 Froakie');
+  const g = T.mon(0, 'Greninja ex', { energy: ['Water', 'Water', 'Water'] }); T.g.switchActive(0, g); T.g.turn += 2;
+  T.A.deck.push(T.card(0, 'Judge')); T.a.on('take', req => req.options.filter(id => T.g.cardById(id).name === 'Judge'));
+  await T.attack('Shinobi Blade');
+  expect(T.B.active.damage === 170 && T.A.hand.some(c => c.name === 'Judge'), '170 and a card');
+  T.g.turn += 2; T.B.active.damage = 0;
+  T.a.on('opp-damage:120', req => req.options);
+  await T.attack('Mirage Barrage');
+  expect(T.B.active.damage === 120 && b.damage === 120 && g.energy.length === 1, 'two hit, 2 Energy discarded');
+});
+test("Colress's Tenacity finds a Stadium and an Energy; Grand Tree evolves a Basic into Stage 1 and Stage 2", async T => {
+  const f = T.mon(0, 'Froakie', { active: true, played: 1 }); T.mon(1, 'Budew', { active: true });
+  T.A.deck.push(T.card(0, 'Grand Tree'), T.card(0, 'Frogadier'), T.card(0, 'Greninja ex'));
+  T.a.on('take', req => req.options.slice(0, 1));
+  await T.play(T.hand(0, "Colress's Tenacity"));
+  expect(T.A.hand.some(c => c.name === 'Grand Tree') && T.A.hand.some(c => c.def.cat === 'E'), 'Stadium and Energy');
+  T.g.stadium = { card: T.A.hand.find(c => c.name === 'Grand Tree'), owner: 0 }; T.A.hand.splice(T.A.hand.indexOf(T.g.stadium.card), 1);
+  T.a.on('evolve', req => (req.type === 'cards' ? req.options.slice(0, 1) : [f.id]));
+  await T.g.doAction(0, T.g.legalActions(0).find(a => a.t === 'stadium'));
+  expect(f.name === 'Greninja ex' && f.stack.length === 3, `evolved twice (${f.name})`);
+});
+test('Bubbly Water Energy: the Water Pokémon recovers from and can’t be affected by Special Conditions', async T => {
+  const s = T.mon(0, 'Staryu', { active: true }); s.poisoned = true; T.mon(1, 'Budew', { active: true });
+  await T.play(T.hand(0, 'Bubbly Water Energy'));
+  expect(!s.poisoned && !T.g.setCondition(s, 'asleep'), 'recovered and protected');
+});
+test("Ethan's Pokémon: Ember, Bonded by the Journey, Buddy Blast and Ethan's Adventure", async T => {
+  const c = T.mon(0, "Ethan's Cyndaquil", { active: true, energy: ['Fire', 'Fire'] }); T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  await T.attack('Ember');
+  expect(c.energy.length === 1, 'Ember discards an Energy');
+  const q = evolved(T, 0, ["Ethan's Cyndaquil", "Ethan's Quilava"]); T.A.deck.push(T.card(0, "Ethan's Adventure"));
+  await T.ability(q, 'Bonded by the Journey');
+  expect(T.A.hand.some(c2 => c2.name === "Ethan's Adventure"), 'found');
+  T.A.deck.push(T.card(0, "Ethan's Typhlosion"), T.card(0, 'Fire Energy'));
+  T.a.on('take', req => req.options.slice(0, 3));
+  await T.play(T.A.hand.find(c2 => c2.name === "Ethan's Adventure"));
+  expect(T.A.hand.some(c2 => c2.name === "Ethan's Typhlosion"), "Ethan's Adventure finds the line");
+  const t = evolved(T, 0, ["Ethan's Cyndaquil", "Ethan's Quilava", "Ethan's Typhlosion"], { energy: ['Fire'] }); T.g.switchActive(0, t); T.g.turn += 2;
+  T.A.discard.push(T.card(0, "Ethan's Adventure"));
+  T.B.active.damage = 0;
+  await T.attack('Buddy Blast');
+  expect(T.B.active.damage === 160, `40 + 2 × 60 (${T.B.active.damage})`);
+});
+test('Redeemable Ticket swaps the Prize cards with the top of the deck', async T => {
+  T.mon(0, 'Budew', { active: true }); T.mon(1, 'Budew', { active: true });
+  const old = [...T.A.prizes]; const top = T.A.deck.slice(0, 6);
+  await T.play(T.hand(0, 'Redeemable Ticket'));
+  expect(T.A.prizes.length === 6 && T.A.prizes.every(c => top.includes(c)) && old.every(c => T.A.deck.slice(-6).includes(c)), 'swapped');
+});
+test("Bloodmoon Ursaluna: Battle-Hardened attaches 2 Fighting Energy from the hand; Mad Bite +30 per damage counter", async T => {
+  T.mon(0, 'Lunatone', { active: true }); T.mon(1, 'Mega Starmie ex', { active: true, damage: 50 });
+  const u = T.hand(0, 'PRE-54'); T.hand(0, 'Fighting Energy'); T.hand(0, 'Fighting Energy');
+  T.a.on('confirm', () => true); T.a.on('attach', req => req.options);
+  await T.play(u);
+  const m = T.A.bench.find(x => x.name === 'Bloodmoon Ursaluna');
+  expect(m && m.energy.length === 2, 'two attached');
+  m.energy.push(T.card(0, 'Fighting Energy')); T.g.switchActive(0, m);
+  await T.attack('Mad Bite');
+  expect(T.B.active.damage === 50 + 100 + 150, `100 + 5 × 30 (${T.B.active.damage})`);
+});
+test('Mega Greninja ex: Mortal Shuriken places 6 counters for a Water Energy from the hand; Ninja Spinner +80 for returning a Water Energy', async T => {
+  const g = T.mon(0, 'Mega Greninja ex', { active: true, energy: ['Water', 'Water'] }); const d = T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  T.hand(0, 'Water Energy');
+  await T.ability(g, 'Mortal Shuriken');
+  expect(d.damage === 60 && T.A.discard.some(c => c.name === 'Water Energy'), '6 counters');
+  T.a.on('more-damage', () => true);
+  await T.attack('Ninja Spinner');
+  expect(d.damage === 260 && g.energy.length === 1 && T.A.hand.some(c => c.name === 'Water Energy'), `200 (${d.damage})`);
+});
+test('Energy Retrieval and Transformation Tome', async T => {
+  const b = T.mon(0, 'Budew', { active: true, damage: 10, energy: ['Psychic'] }); T.mon(1, 'Budew', { active: true });
+  T.A.discard.push(T.card(0, 'Grass Energy'), T.card(0, 'Fire Energy'), T.card(0, 'Lunatone'));
+  await T.play(T.hand(0, 'Energy Retrieval'));
+  expect(T.A.hand.filter(c => c.def.cat === 'E').length === 2, '2 Energy back');
+  const t1 = T.hand(0, 'Transformation Tome');
+  expect(!canPlay(T, t1), 'needs 2 at once');
+  T.hand(0, 'Transformation Tome');
+  await T.play(t1);
+  expect(b.name === 'Lunatone' && b.damage === 10 && b.energy.length === 1 && T.A.discard.some(c => c.name === 'Budew') && T.A.discard.filter(c => c.name === 'Transformation Tome').length === 2, 'swapped with everything attached');
+});
+test('Nighttime Mine: attacks by Tera Pokémon cost {C} more', async T => {
+  T.mon(0, 'Flareon ex', { active: true, energy: ['Fire', 'Fire'] }); T.mon(1, 'Budew', { active: true });
+  expect(canAttack(T, 'Burning Charge'), 'FC payable');
+  T.g.stadium = { card: T.card(1, 'Nighttime Mine'), owner: 1 };
+  expect(!canAttack(T, 'Burning Charge'), 'now FCC');
+});
+test("Drilbur's Dig Dig Dig discards up to 3 Fighting Energy from the deck as it's benched", async T => {
+  T.mon(0, 'Budew', { active: true }); T.mon(1, 'Budew', { active: true });
+  for (let i = 0; i < 3; i++) T.A.deck.push(T.card(0, 'Fighting Energy'));
+  T.a.on('confirm', () => true); T.a.on('discard-deck', req => req.options);
+  await T.play(T.hand(0, 'TEF-85'));
+  expect(T.A.discard.filter(c => c.name === 'Fighting Energy').length === 3, '3 discarded');
+});
+
 let pass = 0, fail = 0;
 for (const t of tests) {
   if (ONLY && !ONLY.test(t.name)) continue;
