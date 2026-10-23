@@ -10,12 +10,17 @@ fs.mkdirSync(OUT, { recursive: true });
 const mock = fs.readFileSync(new URL('./lib/mockroom-browser.js', import.meta.url), 'utf8');
 // P2P=1: no stand-in; the website's real peer-to-peer rooms (public Nostr relays through the proxy, WebRTC between profiles)
 const P2P = !!process.env.P2P;
-const browser = await chromium.launch(P2P ? { args: ['--proxy-server=' + process.env.HTTPS_PROXY, '--disable-features=WebRtcHideLocalIpsWithMdns'] } : {});
+const BASE = process.env.BASE || 'http://localhost:8765/';
+// RELAY=1: the site's own relay (run the Worker locally: wrangler dev --assets dist --port 8787, and BASE=http://localhost:8787/);
+// RELAY=poll: the same, with WebSockets treated as blocked
+const RELAY = process.env.RELAY || '';
+const browser = await chromium.launch(P2P || RELAY ? { args: ['--proxy-server=' + process.env.HTTPS_PROXY, '--proxy-bypass-list=localhost;127.0.0.1', '--disable-features=WebRtcHideLocalIpsWithMdns'] } : {});
 const pages = [];
 const errors = [];
 async function newPlayer(label) {
   const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 } });
-  if (!P2P) {
+  await ctx.addInitScript(([p2p, relay]) => { if (p2p) window.__paTransport = 'p2p'; if (relay) window.__paTransport = 'relay'; if (relay === 'poll') window.__paRelayPoll = true; }, [P2P, RELAY]);
+  if (!P2P && !RELAY) {
     await ctx.exposeBinding('__relay', async (src, name, msg) => {
       for (const p of pages) if (p !== src.page) p.evaluate(([n, m]) => window.__relayIn && window.__relayIn(n, m), [name, msg]).catch(() => {});
     });
@@ -30,7 +35,7 @@ async function newPlayer(label) {
 }
 const host = await newPlayer('host');
 const guest = await newPlayer('guest');
-for (const p of [host, guest]) { await p.goto('http://localhost:8765/#mtg'); await p.waitForSelector('text=Pick a precon', { timeout: 60000 }); }
+for (const p of [host, guest]) { await p.goto(BASE + '#mtg'); await p.waitForSelector('text=Pick a precon', { timeout: 60000 }); }
 
 await host.click('button:has-text("Play with friends")');
 await host.fill('#nick', 'Hana');
@@ -76,7 +81,7 @@ console.log(JSON.stringify(sa) === JSON.stringify(sb) ? 'boards match' : 'BOARDS
 const LATER = TURNS + 6;
 await guest.context().addInitScript(t => { window.__paAutoplay = t; }, LATER);
 await host.evaluate(t => { window.__paAutoplay = t; }, LATER);
-await guest.goto(link.replace('https://claude.ai/artifact/8rchJZPk18aNQxnKKrsKts', 'http://localhost:8765/#mtg'));
+await guest.goto(BASE + '#' + link.split('#')[1]);
 await guest.reload(); // the link may differ from the current address only by its #, which doesn't reload the page
 // the host's own pending choice is still on screen: answer it so its AI stand-in takes over again
 const nudge = async (p) => {
@@ -86,7 +91,7 @@ const nudge = async (p) => {
   if (b) return b.click().catch(() => {});
 };
 const watcher = await newPlayer('watcher');
-await watcher.goto('http://localhost:8765/#mtg');
+await watcher.goto(BASE + '#mtg');
 await watcher.waitForSelector('text=Pick a precon', { timeout: 60000 });
 await watcher.click('button:has-text("Play with friends")');
 await watcher.fill('#nick', 'Wren');

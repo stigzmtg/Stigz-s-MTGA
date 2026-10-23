@@ -26,7 +26,7 @@ export function PkFriendsPanel({ data, online, deck }) {
     return (
       <section className="panel" aria-label="Play with friends">
         <h2>Play with friends</h2>
-        <p className="note">{onClaude() ? 'Rooms need the page opened on claude.ai, signed in. Open this game’s claude.ai link (not a downloaded copy) to create or join a room.' : 'This browser can’t open peer-to-peer connections, so rooms aren’t available here. Try an up-to-date Chrome, Edge, Firefox or Safari.'}</p>
+        <p className="note">{onClaude() ? 'Rooms need the page opened on claude.ai, signed in. Open this game’s claude.ai link (not a downloaded copy) to create or join a room.' : 'Couldn’t reach the room server from here. Check your connection and reload the page.'}</p>
       </section>
     );
   }
@@ -53,7 +53,7 @@ export function PkFriendsPanel({ data, online, deck }) {
           {err ? <p className="warnline">{err === 'not_permitted' ? 'This page can’t open rooms for you. Ask the owner to share it with you by email from the Share menu.' : 'Couldn’t reach the room. Check your connection and try again.'}</p> : null}
           {onClaude()
             ? <p className="note">You each play in your own browser on claude.ai. Your friend must be signed in and invited to this page from its Share menu (by email; a public link can’t join rooms).</p>
-            : <p className="note">You each play in your own browser, and nobody needs an account. Send your friend the invite link; each of you brings the deck you picked. Browsers connect to each other directly, so a few very strict networks (some school or office Wi-Fi) may block it.</p>}
+            : <p className="note">You each play in your own browser, and nobody needs an account. Send your friend the invite link; each of you brings the deck you picked. Rooms run through this site’s own server, so they work on school and office Wi-Fi too.</p>}
         </div>
       </section>
     );

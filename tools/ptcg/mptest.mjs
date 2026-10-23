@@ -10,15 +10,19 @@ const TURNS = +(process.argv[3] || 8);
 fs.mkdirSync(OUT, { recursive: true });
 const mock = fs.readFileSync(new URL('../lib/mockroom-browser.js', import.meta.url), 'utf8');
 const P2P = !!process.env.P2P;
+// RELAY=1: the site's own relay (run the Worker locally: wrangler dev --assets dist --port 8787, and BASE=http://localhost:8787/);
+// RELAY=poll: the same, with WebSockets treated as blocked
+const RELAY = process.env.RELAY || '';
 const BASE = process.env.BASE || 'http://localhost:8765/'; // BASE=https://... to test a live copy of the site
-const browser = await chromium.launch(P2P ? { args: ['--proxy-server=' + process.env.HTTPS_PROXY, '--disable-features=WebRtcHideLocalIpsWithMdns'] } : {});
+const browser = await chromium.launch(P2P || RELAY ? { args: ['--proxy-server=' + process.env.HTTPS_PROXY, '--proxy-bypass-list=localhost;127.0.0.1', '--disable-features=WebRtcHideLocalIpsWithMdns'] } : {});
 const pages = [];
 const errors = [];
 let failed = false;
 const check = (ok, msg) => { console.log((ok ? 'ok   ' : 'FAIL ') + msg); if (!ok) failed = true; };
 async function newPlayer(label, deck) {
   const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 } });
-  if (!P2P) {
+  await ctx.addInitScript(([p2p, relay]) => { if (p2p) window.__paTransport = 'p2p'; if (relay) window.__paTransport = 'relay'; if (relay === 'poll') window.__paRelayPoll = true; }, [P2P, RELAY]);
+  if (!P2P && !RELAY) {
     await ctx.exposeBinding('__relay', async (src, name, msg) => {
       for (const p of pages) if (p !== src.page) p.evaluate(([n, m]) => window.__relayIn && window.__relayIn(n, m), [name, msg]).catch(() => {});
     });

@@ -100,7 +100,7 @@ const FEATURES = [
   ['ai', 'Opponents that think', 'Computer players take a moment over each play, put lands down and tap them one at a time, and pick their attacks to win.'],
   ['rules', 'Every rule handled', 'Commander damage, tax and the command zone. Weakness, Resistance, special conditions and Prize cards. The table applies them as you play.'],
   ['art', 'Real card art', 'Every card shows its real printed picture, and pointing at one shows its full text in the side panel.'],
-  ['friends', 'Rooms for friends', 'Make a room for either game and send the link. Browsers connect straight to each other, so nobody needs an account.'],
+  ['friends', 'Rooms for friends', 'Make a room for either game and send the link. Rooms run through this site’s own server, so they work on school Wi-Fi, and nobody needs an account.'],
   ['rejoin', 'Rejoin and watch', 'Reload or lose your connection and the room link puts you back in your seat. Anyone else with the link can watch.'],
   ['device', 'Plays anywhere', 'Runs in the browser on laptops, Chromebooks, tablets and phones. Nothing to install and nothing to sign up for.'],
 ];
