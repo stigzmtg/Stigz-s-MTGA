@@ -55,7 +55,7 @@ function MonView({ game, mon, big, state, fx, onClick, onHover }) {
       {conds.length ? <span className="pk-conds">{conds.map(c => <span key={c} className={`c ${c.toLowerCase()}`}>{c}</span>)}</span> : null}
       <div className="pk-hp" title={`${left} / ${max} HP`}><i style={{ width: pct + '%' }} className={pct <= 30 ? 'low' : pct <= 60 ? 'mid' : ''} /><span>{left}</span></div>
       <div className="pk-attached">
-        {mon.energy.map(c => <Energy key={c.id} type={c.def.provides || 'Colorless'} size={big ? 18 : 14} title={c.name} />)}
+        {mon.energy.map(c => <Energy key={c.id} type={c.def.anyType ? 'Any' : c.def.provides || 'Colorless'} size={big ? 18 : 14} title={c.def.anyType ? `${c.name}: counts as every type` : c.name} />)}
         {mon.tool ? <span className="pk-tool" title={mon.tool.name}>{mon.tool.name.replace('Technical Machine: ', 'TM ')}</span> : null}
       </div>
     </div>
@@ -200,7 +200,7 @@ function Preview({ game, hover }) {
           {(def.abilities || []).map(a => <p key={a.name}><b className="ab">Ability · {a.name}</b> {a.text}</p>)}
           {(def.attacks || []).map(a => <p key={a.name}><Cost cost={a.cost} size={14} /> <b>{a.name}</b>{a.damage ? <b className="dmg"> {a.damage}</b> : null} {a.text}</p>)}
           <p className="wr">{def.weak ? <>Weakness <Energy type={def.weak} size={13} /> ×2 · </> : null}{def.resist ? <>Resistance <Energy type={def.resist} size={13} /> −30 · </> : null}Retreat {def.retreat}{def.ex ? ` · Knocked Out: opponent takes ${def.mega ? 3 : 2} Prizes` : ''}</p>
-        </> : <p>{def.text || (def.cat === 'E' ? `Provides ${def.provides} Energy.` : '')}</p>}
+        </> : <p>{def.text || (def.cat === 'E' ? (def.anyType ? 'Provides Energy of every type.' : `Provides ${def.provides} Energy.`) : '')}</p>}
         {mon ? <p className="state">{game.hpLeft(mon)}/{game.maxHp(mon)} HP{mon.energy.length ? ` · ${mon.energy.length} Energy` : ''}{mon.tool ? ` · ${mon.tool.name}` : ''}</p> : null}
       </div>
     </div>
@@ -246,6 +246,8 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
   const emotes = useEmotes(session);
   // friends' avatars (online battles)
   const avatarOf = pid => (session.online && session.cfg.seats[pid] ? session.cfg.seats[pid].a : null);
+  // an option about a card (a copied attack, a Rare Candy evolution) shows that card in the side panel
+  const optHover = o => { if (o.key) setHover({ key: o.key }); else if (o.mon != null) setHover({ mon: o.mon }); };
   // card sleeves: everyone's online; yours otherwise
   const sleeves = useMemo(() => game.players.map((p, pid) => (session.online
     ? (session.cfg.seats[pid] && session.cfg.seats[pid].sl ? { code: session.cfg.seats[pid].sl, av: session.cfg.seats[pid].a } : null)
@@ -340,7 +342,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
   } else if (req && req.type === 'confirm') {
     bar = <><div className="msg"><div className="txt">{req.prompt}</div></div><div className="acts"><button className="btn primary" onClick={() => respond(true)}>Yes</button><button className="btn" onClick={() => respond(false)}>No</button></div></>;
   } else if (req && req.type === 'option' && req.options.length <= 6) {
-    bar = <><div className="msg"><div className="txt">{req.prompt}</div></div><div className="acts">{req.options.map(o => <button key={String(o.value)} className="btn" onClick={() => respond(o.value)}>{o.label}</button>)}</div></>;
+    bar = <><div className="msg"><div className="txt">{req.prompt}</div></div><div className="acts">{req.options.map(o => <button key={String(o.value)} className="btn" onClick={() => respond(o.value)} onMouseEnter={() => optHover(o)}>{o.label}</button>)}</div></>;
   } else if (monReq) {
     bar = <><div className="msg"><div className="step">Choose</div><div className="txt">{monReq.prompt}</div></div>
       <div className="acts">{monReq.max > 1 || monReq.min === 0 ? <button className="btn primary" disabled={sel.length < monReq.min} onClick={() => respond(sel)}>Done{sel.length ? ` (${sel.length})` : ''}</button> : null}</div></>;
@@ -430,7 +432,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
       {req && req.type === 'cards' ? <CardsDialog key={pend.id} game={game} req={req} respond={respond} onHover={setHover} /> : null}
       {req && req.type === 'distribute' ? <DistributeDialog key={pend.id} game={game} req={req} respond={respond} onHover={setHover} /> : null}
       {req && req.type === 'option' && req.options.length > 6 ? (
-        <Modal label={req.prompt}><h2>{req.prompt}</h2><div className="pk-optlist">{req.options.map(o => <button key={String(o.value)} className="btn" onClick={() => respond(o.value)}>{o.label}</button>)}</div></Modal>
+        <Modal label={req.prompt}><h2>{req.prompt}</h2><div className="pk-optlist">{req.options.map(o => <button key={String(o.value)} className="btn" onClick={() => respond(o.value)} onMouseEnter={() => optHover(o)}>{o.label}</button>)}</div></Modal>
       ) : null}
       {zone ? <ZoneDialog game={game} p={zone.p} mine={zone.mine} zone={zone.z} onClose={() => setZone(null)} onHover={setHover} /> : null}
       {result && !dismissed ? (

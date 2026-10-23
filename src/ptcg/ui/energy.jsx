@@ -14,12 +14,15 @@ const GLYPH = {
   Metal: 'M12 2l8 4.5v9L12 20l-8-4.5v-9L12 2zm0 6a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
   Dragon: 'M4 18c3-1 5-4 6-8l-3 1 5-7 1 5 3-2-1 5c3 0 5 2 5 5-3-2-6-2-9 0-2 1-4 2-7 1z',
   Colorless: 'M12 2l2.6 6.9L22 10l-5.6 4.6L18 22l-6-4-6 4 1.6-7.4L2 10l7.4-1.1L12 2z',
+  // Energy that counts as every type (Legacy Energy): a ring on a rainbow disc
+  Any: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm0 3.2a4.8 4.8 0 1 1 0 9.6 4.8 4.8 0 0 1 0-9.6z',
 };
 export function Energy({ type, size = 18, title }) {
   const t = GLYPH[type] ? type : 'Colorless';
   const dark = t === 'Lightning' || t === 'Colorless';
+  const name = t === 'Any' ? 'Energy of every type' : `${t} Energy`;
   return (
-    <span className="pk-en" style={{ '--en': TYPE_COLORS[t], width: size, height: size }} title={title || `${t} Energy`} aria-label={`${t} Energy`}>
+    <span className={`pk-en ${t === 'Any' ? 'any' : ''}`} style={{ '--en': TYPE_COLORS[t] || '#888', width: size, height: size }} title={title || name} aria-label={name}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d={GLYPH[t]} fill={dark ? '#3a3220' : '#fff'} /></svg>
     </span>
   );
