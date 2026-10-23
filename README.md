@@ -3,7 +3,7 @@
 Two card battle simulators in one site:
 
 - **Magic: The Gathering Commander** against AI opponents, or with friends, using any of the **194 preconstructed Commander decks** (Commander 2013 through 2026, including Universes Beyond and Secret Lair precons). 1v1 or up to 4-player free-for-all.
-- **Pokémon TCG battles** against a computer opponent or a friend with **10 of the most-played tournament decks** (Dragapult ex, Charizard ex, Gardevoir ex, Raging Bolt ex, Gholdengo ex, Miraidon ex, Mega Absol Box, Chien-Pao Baxcalibur, Roaring Moon ex, Lost Zone Box), card for card from Limitless decklists.
+- **Pokémon TCG battles** against a computer opponent or a friend with **18 of the most-played tournament decks** (Dragapult ex, Charizard ex, Gardevoir ex, Raging Bolt ex, Gholdengo ex, Miraidon ex, Mega Absol Box, Chien-Pao Baxcalibur, Roaring Moon ex, Lost Zone Box, Slowking, N's Zoroark ex, Festival Lead, Alakazam Dusknoir, Hydrapple ex, Dhelmise, Mega Lopunny ex, Crustle), card for card from Limitless decklists.
 
 **Play it:** https://stigzmtg.github.io/Stigz-s-MTGA/ (GitHub Pages; see [Hosting](#hosting) to put it on a non-GitHub address)
 

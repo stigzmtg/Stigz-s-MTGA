@@ -295,8 +295,8 @@ export function Home({ onPick, onJoin }) {
           <h1 className="title">Stigz’s TCG Arena</h1>
           <p className="lede">Bring a ready-made deck, take your seat, and battle the computer or your friends. Every card plays by the rules, right in your browser.</p>
           <dl className="stats">
-            <div><dt>Decks ready to play</dt><dd>204</dd></div>
-            <div><dt>Cards with rules</dt><dd>6,570</dd></div>
+            <div><dt>Decks ready to play</dt><dd>212</dd></div>
+            <div><dt>Cards with rules</dt><dd>6,644</dd></div>
             <div><dt>Players a table</dt><dd>2–4</dd></div>
             <div><dt>Accounts needed</dt><dd>0</dd></div>
           </dl>
@@ -316,8 +316,8 @@ export function Home({ onPick, onJoin }) {
           <Gate game="pk" title="Pokémon TCG" kind="Tournament decks" keystone={<span className="ball" />}
             pips={PK_TYPES.map(t => <Energy key={t} type={t} size={19} />)}
             fan={PK_FAN.map(pkImage)} fanLabel="Miraidon ex, Gardevoir ex, Charizard ex, Dragapult ex, Raging Bolt ex"
-            blurb="Ten of the most-played decks from top tournaments, card for card as their players built them. One on one, six Prize cards each."
-            facts={[['10', 'top decks'], ['1v1', 'vs computer or a friend'], ['148', 'cards coded']]}
+            blurb="Eighteen of the most-played decks from top tournaments, card for card as their players built them. One on one, six Prize cards each."
+            facts={[['18', 'top decks'], ['1v1', 'vs computer or a friend'], ['222', 'cards coded']]}
             points={['Weakness, Resistance and special conditions', 'Coin flips, Abilities and every Trainer', 'Evolution, Rare Candy and retreat', 'Knock Out an ex for 2 Prizes, a Mega ex for 3']}
             onPlay={mode => open('pokemon', mode)} />
         </div>
