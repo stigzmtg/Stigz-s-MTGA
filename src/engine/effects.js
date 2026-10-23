@@ -419,8 +419,9 @@ export const E = {
       if (opts.length) type = opts.length === 1 ? opts[0] : await game.ask(sa.controller, { type: 'option', prompt: 'Choose a counter type', options: opts.map(o => ({ label: o, value: o })), purpose: 'counterType', sa });
     }
     const n = num(game, sa, 'CounterNum', 1);
-    if (p.Monstrosity === 'True') {
-      for (const c of cardsOf(list)) { if (c.monstrous) continue; await game.addCounters(c, 'P1P1', n, sa); c.monstrous = true; game.fire('BecomeMonstrous', { Card: c }); }
+    if (p.Monstrosity) {
+      const mn = p.Monstrosity === 'True' ? n : calc(game, p.Monstrosity, sa);
+      for (const c of cardsOf(list)) { if (c.monstrous) continue; await game.addCounters(c, 'P1P1', mn, sa); c.monstrous = true; game.fire('BecomeMonstrous', { Card: c }); }
       return;
     }
     if (p.Adapt === 'True') { for (const c of cardsOf(list)) if (!(c.counters.P1P1 > 0)) await game.addCounters(c, 'P1P1', n, sa); return; }
@@ -1089,8 +1090,10 @@ export const E = {
       for (const x of d) { if (x && x.stackItem) items.push(x); else if (x && x.isCard) { const it = game.stack.find(s => s.card === x); if (it) items.push(it); } }
       if (!items.length && sa.trig && sa.trig.StackItem) items = [sa.trig.StackItem];
     }
-    const n = num(game, sa, 'Amount', 1);
+    let n = num(game, sa, 'Amount', 1);
     const controller = sa.p.Controller ? (playersOf(resolveDefined(game, sa.p.Controller, ctx))[0] || game.players[sa.controller]).id : sa.controller;
+    // "if you would copy a spell one or more times, instead copy it that many times plus an additional time"
+    if (n > 0 && items.some(it => it.kind === 'spell')) { const rp = await game.applySimpleReplacement('CopySpell', { Affected: game.players[controller], Player: controller, Amount: n }, sa); if (rp && rp.Amount > n) { game.log(`${game.players[controller].name} makes an additional copy.`); n = rp.Amount; } }
     for (const item of items) for (let i = 0; i < n; i++) await copyStackItem(game, item, controller, sa.p.MayChooseTarget === 'True' || sa.p.MayChooseNewTargets === 'True');
   },
 
@@ -1431,14 +1434,18 @@ export const E = {
   async Vote(game, sa) {
     const choices = (sa.p.Choices || '').split(',').map(s => s.trim()).filter(n => sa.svars[n]);
     if (!choices.length) return;
-    const tally = {};
+    const tally = {}, votes = {};
     for (const pl of game.livingPlayers()) {
       const v = await game.ask(pl.id, { type: 'option', prompt: `Vote: ${desc(game, sa)}`, options: choices.map(n => ({ label: parseAbility(sa.svars[n]).p.SpellDescription || n, value: n })), sa, purpose: 'vote' });
-      tally[v || choices[0]] = (tally[v || choices[0]] || 0) + 1;
+      const pick = choices.includes(v) ? v : choices[0];
+      tally[pick] = (tally[pick] || 0) + 1;
+      votes[pl.id] = [pick];
     }
     const best = Object.entries(tally).sort((a, b) => b[1] - a[1]);
     const winners = best.filter(x => x[1] === best[0][1]).map(x => x[0]);
-    for (const w of winners) await resolveChain(game, makeSA(game, sa.svars[w], sa.svars, sa.host, sa.controller, { parent: sa }));
+    game.fire('Vote', { Player: sa.controller, Votes: votes });
+    const resolveThese = winners.length > 1 && sa.p.VoteTiedAbility && sa.svars[sa.p.VoteTiedAbility] ? [sa.p.VoteTiedAbility] : winners;
+    for (const w of resolveThese) await resolveChain(game, makeSA(game, sa.svars[w], sa.svars, sa.host, sa.controller, { parent: sa }));
   },
 
   async Repeat(game, sa) {
@@ -1728,7 +1735,8 @@ export const E = {
         const cands = targetCandidates(game, s, spec).filter(c => c !== item);
         if (!cands.length) continue;
         const max = Math.min(spec.max, cands.length);
-        const ans = await game.ask(sa.controller, { type: 'targets', prompt: `Choose new targets for ${item.description}`, cands: cands.map(refOf), min: Math.min(spec.min, max), max, sa: s, spec, purpose: 'changeTargets' });
+        const chooser = sa.p.Chooser ? (playersOf(resolveDefined(game, sa.p.Chooser, ctx))[0] || game.players[sa.controller]) : game.players[sa.controller];
+        const ans = await game.ask(chooser.id, { type: 'targets', prompt: `Choose new targets for ${item.description}`, cands: cands.map(refOf), min: Math.min(spec.min, max), max, sa: s, spec, purpose: 'changeTargets' });
         const picked = (ans || []).map(r => fromRef(game, r)).filter(o => o && cands.includes(o));
         if (picked.length < spec.min) continue;
         s.targets = picked; s.targetZcc = picked.map(o => (o.isCard ? o.zcc : null)); changed = true;
@@ -2032,6 +2040,54 @@ export const E = {
     c.foretoldTurn = game.turnNumber;
     game.log(`${game.players[sa.controller].name} foretells a card.`);
   },
+  // soulbond: pair the host with another unpaired creature you control
+  async Pair(game, sa) {
+    const host = sa.host;
+    const ok = c => c && c.zone === 'battlefield' && c.controller === sa.controller && game.chars(c).types.has('Creature') && !game.pairedPartner(c);
+    if (!ok(host)) return;
+    let partner = sa.p.Defined ? cardsOf(resolveDefined(game, sa.p.Defined, ctxOf(game, sa))).find(c => c !== host && ok(c)) : null;
+    if (!sa.p.Defined) partner = (await chooseCards(game, sa.controller, game.battlefield.filter(c => c !== host && ok(c)), 1, 1, `Soulbond: pair ${game.name(host)} with`, sa, 'pair'))[0];
+    if (!partner) return;
+    host.pairedWith = partner.id; partner.pairedWith = host.id;
+    game.touch();
+    game.log(`${game.name(host)} is paired with ${game.name(partner)}.`);
+  },
+
+  // empower <type> N: loyalty counters on your <type> token, creating one first if needed
+  async Empower(game, sa) {
+    const type = sa.p.Type || 'Jace';
+    const n = num(game, sa, 'Num', 1);
+    let tok = game.battlefield.find(c => c.controller === sa.controller && c.token && game.chars(c).subtypes.has(type) && game.chars(c).types.has('Planeswalker'));
+    if (!tok) { tok = (await makeTokens(game, sa, `u_empower_${type.toLowerCase()}`, sa.controller, 1))[0]; }
+    if (tok) await game.addCounters(tok, 'LOYALTY', n, sa);
+  },
+
+  // gain control of target spell
+  async ControlSpell(game, sa) {
+    const ctx = ctxOf(game, sa);
+    const to = sa.p.NewController ? playersOf(resolveDefined(game, sa.p.NewController, ctx))[0] : game.players[sa.controller];
+    if (!to) return;
+    const items = (hasTgtSpec(sa) ? sa.targets : resolveDefined(game, sa.p.Defined || 'Targeted', ctx)).map(x => (x && x.stackItem) ? x : game.stack.find(s => s.card === x)).filter(it => it && game.stack.includes(it));
+    for (const it of items) {
+      if (it.controller === to.id) continue;
+      it.controller = to.id;
+      for (const s of it.sa.chain()) s.controller = to.id;
+      if (it.card) it.card.controller = to.id;
+      game.touch();
+      game.log(`${to.name} gains control of ${it.description}.`);
+    }
+  },
+
+  // choose a source (Deflecting Palm)
+  async ChooseSource(game, sa) {
+    const pool = [...game.battlefield, ...game.stack.filter(s => s.card).map(s => s.card)];
+    const pick = (await chooseCards(game, sa.controller, pool, 1, 1, sa.p.ChoiceTitle || 'Choose a source', sa, 'chooseSource'))[0];
+    if (!pick) return;
+    const target = sa.etbCard || sa.host;
+    target.chosen = { ...(target.chosen || {}), cards: [pick.id] };
+    game.log(`${game.players[sa.controller].name} chooses ${game.name(pick)}.`);
+  },
+
   async UnlockDoor(game, sa) {
     const c = sa.host;
     if (c && c.isCard) game.unlockDoor(c, num(game, sa, 'Door', 0), sa.controller);

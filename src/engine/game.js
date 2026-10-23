@@ -1,6 +1,6 @@
 // Core game state and flow: zones, turns, priority, the stack, state-based actions and triggers.
 import { Card, Player, newTimestamp } from './cards.js';
-import { RNG, COLORS, BASIC_LAND_TYPES, sleep } from './util.js';
+import { RNG, COLORS, BASIC_LAND_TYPES, NAME_TO_COLOR, sleep, compare } from './util.js';
 import { computeAll, charsOutside, isRoom } from './chars.js';
 import { matchValid, resolveDefined, calcCtx, checkPresence, ctrlOf, zoneMap, findTargets } from './filters.js';
 import { synthesizeKeywords, keywordInfo } from './keywords.js';
@@ -302,6 +302,13 @@ export class Game {
     this.turnNumber++;
     const ap = this.activePlayer;
     const p = this.players[ap];
+    // day / night: night if the previous turn's active player cast no spells, day again after two or more
+    if (this.dayNight && this.lastActive != null && this.players[this.lastActive]) {
+      const cast = this.players[this.lastActive].spellsCastThisTurn.length;
+      if (this.dayNight === 'Day' && cast === 0) this.setDayNight('Night');
+      else if (this.dayNight === 'Night' && cast >= 2) this.setDayNight('Day');
+    }
+    this.lastActive = ap;
     this.turnState = this.freshTurnState();
     this.turnState.turnsTaken[ap] = (this.turnState.turnsTaken[ap] || 0) + 1;
     for (const pl of this.players) { pl.landsPlayed = 0; pl.lifeGainedThisTurn = 0; pl.lifeLostThisTurn = 0; pl.cardsDrawnThisTurn = 0; pl.spellsCastThisTurn = []; pl.manaExpended = 0; }
@@ -386,7 +393,7 @@ export class Game {
     this.touch();
     const ap = this.activePlayer;
     const p = this.players[ap];
-    for (const pl of this.players) pl.pool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+    this.emptyPools();
     this.notify();
     switch (step) {
       case 'untap': {
@@ -469,6 +476,24 @@ export class Game {
       this.combat = null;
       this.touch();
     }
+  }
+
+  // mana empties between steps, except what "you don't lose unspent mana" keeps; Omnath turns lost mana colorless
+  emptyPools() {
+    for (const pl of this.players) {
+      const keep = {};
+      for (const s of this.activeStatics('UnspentMana')) {
+        if (!matchValid(this, pl, s.p.ValidPlayer || 'You', s.ctx)) continue;
+        const t = s.p.ManaType;
+        for (const k of Object.keys(pl.pool)) if (!t || t === 'All' || t.split(',').some(x => (NAME_TO_COLOR[x.trim().toLowerCase()] || x.trim()) === k)) keep[k] = true;
+      }
+      const lost = Object.keys(pl.pool).filter(k => !keep[k]).reduce((a, k) => a + (pl.pool[k] || 0), 0);
+      const np = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+      for (const k of Object.keys(np)) if (keep[k]) np[k] = pl.pool[k] || 0;
+      if (lost > 0 && this.replacementsFor('LoseMana').some(({ p, ctx }) => !p.ValidPlayer || matchValid(this, pl, p.ValidPlayer, ctx))) np.C += lost;
+      pl.pool = np;
+    }
+    this.touch();
   }
 
   async expireDurations(kind, pid = null) {
@@ -1046,7 +1071,8 @@ export class Game {
     // tokens cease to exist outside the battlefield
     const isToken = card.token;
     const prevController = card.controller;
-    const keepCounters = opts.keepCounters ? { ...card.counters } : null;
+    const countersRemain = dest !== 'hand' && dest !== 'library' && card.faceDef.statics.some(s => /Mode\$ CountersRemain/.test(s));
+    const keepCounters = opts.keepCounters || countersRemain ? { ...card.counters } : null;
     card.reset();
     card.zcc++;
     if (isToken && dest !== 'battlefield') {
@@ -1055,6 +1081,7 @@ export class Game {
       this.recordMove(card, lki, from, dest, opts, ZONE_NAME);
       return null;
     }
+    if (keepCounters && dest !== 'battlefield') card.counters = keepCounters;
     card.enteredFrom = from; card.movedTurn = this.turnNumber;
     card.controller = dest === 'battlefield' ? (opts.controller != null ? opts.controller : (from === 'stack' ? prevController : card.owner)) : card.owner;
     card.zone = dest;
@@ -1214,6 +1241,11 @@ export class Game {
     }
     if (ch.types.has('Battle') && card.faceDef.defense) await this.addCounters(card, 'DEFENSE', +card.faceDef.defense || 0, null, { etb: true });
     if (this.hasKeywordIn(ch, 'Ravenous') && card.xPaid) await this.addCounters(card, 'P1P1', card.xPaid, null, { etb: true });
+    // daybound: it becomes day if it's neither; at night it enters transformed
+    if (card.def.faces.length > 1 && card.def.faces[0].keywords.includes('Daybound') && !card.faceDown) {
+      if (!this.dayNight) this.setDayNight('Day');
+      else if (this.dayNight === 'Night' && card.face === 0) { card.face = 1; card.transformed = true; this.touch(); }
+    }
     // vanishing N: enters with N time counters; bloodthirst N: +1/+1 counters if an opponent was dealt damage this turn
     for (const k of ch.keywords) {
       let m;
@@ -1290,6 +1322,23 @@ export class Game {
   // ---------------------------------------------------------------- basic actions
   async drawCards(p, n, sa, silent = false) {
     const drawn = [];
+    // "if an opponent would draw two or more cards, instead ..."
+    if (n >= 2 && this.turnNumber > 0) {
+      for (const { h, r, p: rp, ctx } of this.replacementsFor('DrawCards')) {
+        const key = h.id + ':' + r.key;
+        if (this.activeRepl.has(key)) continue;
+        if (rp.ValidPlayer && !matchValid(this, p, rp.ValidPlayer, ctx)) continue;
+        const m = (rp.Number || '').match(/^(EQ|NE|LT|LE|GT|GE)(\d+)$/);
+        if (m && !compare(n, m[1], +m[2])) continue;
+        const raw = rp.ReplaceWith && r.svars[rp.ReplaceWith];
+        if (!raw) continue;
+        this.log(`${this.name(h)} replaces ${p.name}'s draw.`);
+        const s = new SA(this, { raw, parsed: parseAbility(raw), svars: r.svars, src: h, key: r.key }, h, h.controller, { trig: { Affected: p, Player: p.id, Number: n } });
+        this.activeRepl.add(key);
+        try { await this.resolveSAChain(s); } finally { this.activeRepl.delete(key); }
+        return drawn;
+      }
+    }
     for (let i = 0; i < n; i++) {
       // dredge N: instead of drawing, mill N and return the dredge card from the graveyard to hand
       if (this.turnNumber > 0) {
@@ -1619,7 +1668,14 @@ export class Game {
           if (rp.DamageAmount <= 0) return null;
           continue;
         }
-        if (parsed.api === 'ReplaceSplitDamage' || parsed.api === 'DealDamage') continue;
+        if (p.PreventionEffect === 'True' && parsed.api !== 'ReplaceSplitDamage') {
+          // "prevent that damage and [do something else instead]"
+          if (this.activeStatics('CantPreventDamage').length) continue;
+          rp.prevented = true;
+          const s = new SA(this, { raw, parsed, svars: r.svars, src: h, key: r.key }, h, you, { trig: rp });
+          await this.resolveSAChain(s);
+          return null;
+        }
       }
     }
     return rp;
@@ -1650,6 +1706,32 @@ export class Game {
     if (!m) return false;
     const ctrl = source.isPlayer ? source.id : source.stackItem ? source.controller : ctrlOf(this, source);
     return m[1] ? ctrl !== +m[2] : ctrl === +m[2];
+  }
+
+  setDayNight(v) {
+    if (this.dayNight === v) return;
+    this.dayNight = v;
+    this.log(`It becomes ${v.toLowerCase()}.`);
+    for (const c of this.battlefield) {
+      const f = c.def.faces;
+      if (f.length < 2 || c.faceDown) continue;
+      const toBack = v === 'Night' && c.face === 0 && f[0].keywords.includes('Daybound');
+      const toFront = v === 'Day' && c.face === 1 && f[1].keywords.includes('Nightbound');
+      if (!toBack && !toFront) continue;
+      c.face = toBack ? 1 : 0; c.transformed = toBack;
+      this.log(`${this.name(c)} transforms.`);
+      this.fire('Transformed', { Card: c });
+    }
+    this.fire('DayTimeChanges', { DayTime: v });
+    this.touch();
+  }
+
+  // soulbond partner, if still paired (both on the battlefield, same controller, both creatures)
+  pairedPartner(c) {
+    if (!c || c.pairedWith == null) return null;
+    const p = this.cardById(c.pairedWith);
+    if (!p || p.zone !== 'battlefield' || p.controller !== c.controller || p.pairedWith !== c.id || !this.chars(p).types.has('Creature') || !this.chars(c).types.has('Creature')) return null;
+    return p;
   }
 
   // Rooms: unlock a door (fires "when you unlock this door" and, once both are open, "fully unlock")

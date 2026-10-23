@@ -169,6 +169,7 @@ export function canPayNonMana(game, sa, cost, exclude = new Set()) {
       }
       case 'AddCounter': break;
       case 'Blight': if (!costCandidates(game, sa, part).length) return false; break;
+      case 'RollDice': break;
       case 'RevealChosen': if (!(host.chosen && host.chosen.player != null)) return false; break;
       case 'ExileSameGrave': {
         const cands = costCandidates(game, sa, part).filter(c => !exclude.has(c.id));
@@ -336,6 +337,15 @@ async function applyCostParts(game, sa, cost, choices) {
         break;
       case 'ExileFromGrave': case 'ExileFromHand': case 'Exile': case 'ExileAnyGrave': case 'ExileSameGrave': for (const c of ch.cards) { paid.Exiled.push(c); await game.moveCard(c, 'exile', { cause: sa, exiledWith: sa.isSpell && host.isCard ? host.id : undefined }); } break;
       case 'ExiledMoveToGrave': for (const c of ch.cards) { (paid.MovedToGrave = paid.MovedToGrave || []).push(c); await game.moveCard(c, 'graveyard', { cause: sa }); } break;
+      case 'RollDice': {
+        const k = +part.args[0] || 1, sides = +part.args[1] || 6;
+        let total = 0;
+        for (let i = 0; i < k; i++) total += 1 + game.rng.int(sides);
+        if (part.args[2] === 'X') sa.root().x = total;
+        game.log(`${p.name} rolls ${k > 1 ? k : 'a'} d${sides}: ${total}.`);
+        game.fire('RolledDie', { Player: pid, Result: total, Sides: sides });
+        break;
+      }
       case 'Blight': for (const c of ch.cards) await game.addCounters(c, 'M1M1', ch.n, sa); game.log(`${p.name} blights ${ch.n}${ch.cards[0] ? ' (' + game.name(ch.cards[0]) + ')' : ''}.`); break;
       case 'RevealChosen': if (host.chosen && host.chosen.player != null) { host.chosenRevealed = true; game.log(`${p.name} reveals the chosen player: ${game.players[host.chosen.player].name}.`); } break;
       case 'Return': for (const c of ch.cards) await game.moveCard(c, 'hand', { cause: sa }); break;
@@ -481,7 +491,15 @@ export async function produceMana(game, card, abil, colors, pid, reserve = null)
     if (part.type === 'Sac') await game.sacrifice(card, null);
     if (part.type === 'PayLife') { const n = +part.amount || 1; player.life -= n; player.lifeLostThisTurn += n; }
   }
-  for (const c of colors) player.pool[c] = (player.pool[c] || 0) + 1;
+  // "if you tap a permanent for mana, it produces twice as much of that mana instead"
+  let mult = 1;
+  if (cost.tap) for (const { r, p: rp, ctx } of game.replacementsFor('ProduceMana')) {
+    if (rp.ValidActivator && !matchValid(game, player, rp.ValidActivator, ctx)) continue;
+    if (rp.ValidCard && !matchValid(game, card, rp.ValidCard, ctx)) continue;
+    const w = rp.ReplaceWith && r.svars[rp.ReplaceWith];
+    if (w) mult *= +(parseAbility(w).p.ReplaceAmount || 1);
+  }
+  for (const c of colors) player.pool[c] = (player.pool[c] || 0) + mult;
   card.abilityUses[abil.key] = (card.abilityUses[abil.key] || 0) + 1;
   game.touch();
   // sub-abilities (pain lands, talismans)
@@ -899,6 +917,7 @@ export function spellOptions(game, pid, card, { anyZone = false } = {}) {
       if ((m = k.match(/^(Morph|Megamorph|Disguise):(.*)$/))) opts.push({ key: 'morph', label: `Cast ${f.name} face down (${m[1]})`, face: 0, permanent: true, faceDown: true, altManaStr: '3', altCost: 'Morph', from, disguise: m[1] === 'Disguise' });
       if ((m = k.match(/^Spectacle:(.*)$/)) && game.opponents(pid).some(o => o.lifeLostThisTurn > 0)) pushFace(0, { altCost: 'Spectacle', altManaStr: m[1], label: `Spectacle ${f.name}` });
       if ((m = k.match(/^Surge:(.*)$/)) && game.players[pid].spellsCastThisTurn.length > 0) pushFace(0, { altCost: 'Surge', altManaStr: m[1], label: `Surge ${f.name}` });
+      if ((m = k.match(/^Awaken:(\d+):(.+)$/))) pushFace(0, { altCost: 'Awaken', altManaStr: m[2], awaken: +m[1], label: `Awaken ${m[1]} — ${f.name}` });
       if ((m = k.match(/^Emerge:(.*)$/))) pushFace(0, { altCost: 'Emerge', altManaStr: m[1].split(':')[0], label: `Emerge ${f.name} (sacrifice a creature)` });
       if ((m = k.match(/^Offering:(\w+)$/)) && game.battlefield.some(c => c.controller === pid && matchValid(game, c, m[1], { host: card, you: pid }))) pushFace(0, { altCost: 'Offering', offering: m[1], mayFlash: true, label: `Cast ${f.name} with offering (sacrifice a ${m[1]})` });
       if ((m = k.match(/^Prowl:(.*)$/)) && prowlReady(game, pid, card)) pushFace(0, { altCost: 'Prowl', altManaStr: m[1].split(':')[0], label: `Prowl ${f.name}` });
@@ -972,6 +991,13 @@ function buildSpellSA(game, pid, card, opt) {
   sa.permanent = !!opt.permanent || /^SP\$ Permanent/.test(raw) || (abil.parsed.api === 'Attach' && face.subtypes.includes('Aura'));
   sa.face = opt.face;
   sa.opt = opt;
+  // awaken N: also put N +1/+1 counters on target land you control; it becomes a 0/0 Elemental creature with haste
+  if (opt.awaken) {
+    const svars2 = { ...face.svars, KWAwakenAnimate: 'DB$ Animate | Defined$ ParentTarget | Power$ 0 | Toughness$ 0 | Types$ Creature,Elemental | Keywords$ Haste | Duration$ Permanent' };
+    const raw2 = `DB$ PutCounter | ValidTgts$ Land.YouCtrl | TgtPrompt$ Select target land you control to awaken | CounterType$ P1P1 | CounterNum$ ${opt.awaken} | SubAbility$ KWAwakenAnimate`;
+    let last = sa; while (last.sub) last = last.sub;
+    last.sub = new SA(game, { raw: raw2, parsed: parseAbility(raw2), svars: svars2, src: card, key: `cast:${opt.key}>awaken` }, card, pid, { parent: last });
+  }
   return sa;
 }
 

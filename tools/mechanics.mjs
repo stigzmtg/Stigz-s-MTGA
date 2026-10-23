@@ -737,4 +737,141 @@ test('Mana Expend: Teapot Slinger on the fourth mana spent on spells', async T =
   expect(T.B.life === 38, `expend 4 (on the 6th mana total): 2 damage (${T.B.life})`);
 });
 
+// ------------------------------------------------------------ mana, copies, day/night and other replacements
+test('Mana Reflection: tapping a permanent for mana produces twice as much', async T => {
+  await T.put(0, 'Mana Reflection');
+  const f = await T.put(0, 'Forest');
+  T.noMana(0);
+  const { activateManaAbility, manaAbilitiesOf } = await import('../src/engine/abilities.js');
+  await activateManaAbility(T.game, 0, f, manaAbilitiesOf(T.game, f)[0].key);
+  expect(T.A.pool.G === 2, `two green (${T.A.pool.G})`);
+});
+test("Leyline Tyrant keeps red mana; Omnath turns lost mana colorless and grows", async T => {
+  await T.put(0, 'Leyline Tyrant');
+  T.noMana(0); T.A.pool.R = 2; T.A.pool.G = 1;
+  T.game.emptyPools();
+  expect(T.A.pool.R === 2 && T.A.pool.G === 0, 'red kept, green lost');
+  const o = await T.put(0, 'Omnath, Locus of the Void');
+  T.A.pool.G = 3;
+  T.game.emptyPools();
+  expect(T.A.pool.R === 2 && T.A.pool.C === 3 && T.game.chars(o).power === 6 + 5, `green became colorless; Omnath ${T.game.chars(o).power}`);
+});
+test('Twinning Staff: copying a spell makes one more copy', async T => {
+  const staff = await T.put(0, 'Twinning Staff');
+  const ns = await T.put(0, "Night's Whisper", 'hand');
+  T.mana(0); T.game.priority = 0;
+  await castSpell(T.game, 0, ns, {});
+  const h = T.A.hand.length;
+  T.a.on('targets', req => [req.cands.find(r => r[0] === 's')]);
+  await T.activate(staff, 0, a => a.parsed.api === 'CopySpellAbility');
+  expect(T.A.hand.length === h + 6, `original + 2 copies drew 6 (${T.A.hand.length - h})`);
+});
+test('Seeker of Slaanesh: an opponent must attack with at least one creature', async T => {
+  await T.put(0, 'Seeker of Slaanesh');
+  const e = await T.put(1, 'Llanowar Elves');
+  T.game.activePlayer = 1;
+  T.game.combat = { attackers: [], blockers: new Map(), firstStrikeDone: new Set() };
+  T.b.on('attackers', () => []);
+  await combat.declareAttackers(T.game);
+  expect(T.game.combat.attackers.length === 1 && T.game.combat.attackers[0].card === e.id, 'forced to attack');
+});
+test('Skullbriar: counters stay on it in the graveyard and when it returns', async T => {
+  const s = await T.put(0, 'Skullbriar, the Walking Grave');
+  await T.game.addCounters(s, 'P1P1', 3, null);
+  await T.game.destroy(s, null); await T.resolve();
+  expect(s.zone === 'graveyard' && s.counters.P1P1 === 3, 'counters kept in the graveyard');
+  await T.game.moveCard(s, 'battlefield', { controller: 0 });
+  expect(T.game.chars(s).power === 4, `returns as a 4/4 (${T.game.chars(s).power})`);
+  await T.game.moveCard(s, 'hand');
+  expect(!s.counters.P1P1, 'counters removed in hand');
+});
+test('Soulbond: Silverblade Paladin pairs and both gain double strike', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  const sp = await T.cast('Silverblade Paladin');
+  expect(T.game.pairedPartner(sp) === elf, 'paired with the elf');
+  expect(T.game.hasKeyword(sp, 'Double Strike') && T.game.hasKeyword(elf, 'Double Strike'), 'both have double strike');
+  await T.game.destroy(elf, null); await T.resolve();
+  expect(!T.game.hasKeyword(sp, 'Double Strike'), 'unpaired when the partner leaves');
+  const e2 = await T.put(0, 'Llanowar Elves'); await T.resolve();
+  expect(T.game.pairedPartner(sp) === e2, 'pairs with a creature entering later');
+});
+test('Vote: Model of Unity lets players who voted with you scry; ties use the tied ability', async T => {
+  await T.put(0, 'Model of Unity');
+  T.a.on('vote', req => req.options[1].value); T.b.on('vote', req => req.options[1].value);
+  const h = T.A.hand.length;
+  await T.cast('Plea for Power');
+  expect(T.A.hand.length === h + 3, 'knowledge: drew three');
+  expect(T.logged(/B scries 2/) && T.logged(/A scries 2/), 'both scried');
+  T.a.on('vote', req => req.options[0].value); T.b.on('vote', req => req.options[1].value);
+  const h2 = T.A.hand.length;
+  await T.cast('Plea for Power');
+  expect(T.A.hand.length === h2 + 3 && !T.game.extraTurns.length, 'tie: knowledge (VoteTiedAbility)');
+});
+test('Empower: Plan for All Outcomes creates a Jace token', async T => {
+  await T.put(0, 'Plan for All Outcomes'); await T.resolve();
+  await T.cast("Night's Whisper");
+  const jace = T.game.battlefield.find(c => c.token && T.game.chars(c).subtypes.has('Jace'));
+  expect(jace && jace.counters.LOYALTY === 1, `Jace token with 1 loyalty (${jace && jace.counters.LOYALTY})`);
+});
+test("Day and night: Tovolar's Huntmaster makes it day, then transforms at night", async T => {
+  const h = await T.cast("Tovolar's Huntmaster");
+  expect(T.game.dayNight === 'Day' && h.face === 0, 'it became day');
+  T.game.lastActive = 0; T.A.spellsCastThisTurn = [];
+  T.game.activePlayer = 1;
+  await T.game.takeTurn();
+  expect(T.game.dayNight === 'Night' && h.face === 1 && T.game.name(h) === "Tovolar's Packleader", `night: transformed (${T.game.dayNight}, ${T.game.name(h)})`);
+});
+test('Awaken: Ruinous Path destroys and awakens a land', async T => {
+  const a = await T.put(1, 'Serra Angel');
+  const land = await T.put(0, 'Forest');
+  const c = await T.put(0, 'Ruinous Path', 'hand');
+  T.mana(0);
+  const act = getActions(T.game, 0).find(x => x.cardId === c.id && /Awaken/.test(x.label));
+  expect(act, 'awaken offered');
+  T.a.on('targets', req => req.cands.includes(refOf(a)) ? [refOf(a)] : [refOf(land)]);
+  await T.game.performAction(0, act); await T.resolve();
+  expect(a.zone === 'graveyard' && T.isCreature(land) && T.game.chars(land).power === 4 && T.game.hasKeyword(land, 'Haste') && T.isLand(land), 'land is a 4/4 haste creature');
+});
+test('Aethersnatch: gain control of a creature spell', async T => {
+  const spell = await T.put(1, 'Serra Angel', 'hand');
+  T.mana(1); T.game.priority = 1; T.game.activePlayer = 1;
+  await castSpell(T.game, 1, spell, {});
+  T.game.activePlayer = 0;
+  T.a.on('targets', req => req.cands.slice(0, 1));
+  await T.cast('Aethersnatch', 0, { resolve: false });
+  await T.resolve();
+  expect(spell.zone === 'battlefield' && spell.controller === 0, 'it entered under A');
+});
+test('Alms Collector: an opponent drawing two instead makes each of you draw one', async T => {
+  await T.put(0, 'Alms Collector');
+  const ha = T.A.hand.length, hb = T.B.hand.length;
+  await T.game.drawCards(T.B, 2, null);
+  expect(T.A.hand.length === ha + 1 && T.B.hand.length === hb + 1, 'one each');
+  await T.game.drawCards(T.A, 2, null);
+  expect(T.A.hand.length === ha + 3, 'you still draw two');
+});
+test('Clay Golem: roll a d8 for monstrosity X', async T => {
+  const g = await T.put(0, 'Clay Golem');
+  const ring = await T.put(1, 'Sol Ring');
+  T.a.on('targets', () => [refOf(ring)]);
+  await T.activate(g, 0, a => a.parsed.p.Monstrosity);
+  expect(g.monstrous && g.counters.P1P1 >= 1 && g.counters.P1P1 <= 8 && ring.zone === 'graveyard', `monstrous with ${g.counters.P1P1}, berserk destroyed the ring`);
+});
+test('Deflecting Palm: prevent damage from a source and deal it to its controller', async T => {
+  const angel = await T.put(1, 'Serra Angel');
+  T.a.on('chooseSource', () => [angel.id]);
+  await T.cast('Deflecting Palm');
+  const r = await T.game.dealDamage(angel, T.A, 4, { combat: true });
+  await T.resolve();
+  expect(r === 0 && T.A.life === 40 && T.B.life === 36, `prevented and reflected (A ${T.A.life}, B ${T.B.life})`);
+  await T.game.dealDamage(angel, T.A, 4, { combat: true });
+  expect(T.A.life === 36, 'only the next time');
+});
+test('Phantom Nantuko: damage to it is prevented and it loses a counter', async T => {
+  const p = await T.put(0, 'Phantom Nantuko');
+  const angel = await T.put(1, 'Serra Angel');
+  await T.game.dealDamage(angel, p, 5, {}); await T.resolve();
+  expect(p.zone === 'battlefield' && p.counters.P1P1 === 1 && p.damage === 0, `prevented, one counter left (${p.counters.P1P1})`);
+});
+
 process.exit(await run(tests) ? 1 : 0);

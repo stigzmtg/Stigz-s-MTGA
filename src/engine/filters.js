@@ -320,6 +320,9 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'suspended': return card.zone === 'exile' && (card.counters.TIME || 0) > 0;
     case 'madness': return false;
     case 'CastSaSource': return !!host && card.id === host.id;
+    case 'unpaired': return !card.lki && !game.pairedPartner(card);
+    case 'Paired': return !card.lki && !!game.pairedPartner(card);
+    case 'PairedWith': { const p = host && !host.lki ? game.pairedPartner(host) : null; return !!p && p.id === card.id; }
     case 'notExertedThisTurn': return card.exertedTurn !== game.turnNumber;
     case 'exertedThisTurn': return card.exertedTurn === game.turnNumber;
     case 'EffectSource': return !!host && !!host.hostCard && host.hostCard.id === card.id;
@@ -526,6 +529,8 @@ export function resolveDefined(game, defined, ctx) {
     case 'NonTargeted': return game.livingPlayers().filter(p => !(sa && findTargets(sa).includes(p)));
     case 'NonRememberedController': case 'OppNonRememberedController': { const r = refList(game, ctx, 'Remembered').map(x => x.isPlayer ? x.id : ctrlOf(game, x)); return game.livingPlayers().filter(p => !r.includes(p.id) && (defined.startsWith('Opp') ? p.id !== ctx.you : true)); }
     case 'Returned': return (sa && sa.root().returned) || [];
+    case 'TargetedSource': return sa ? findTargets(sa).map(t => (t && t.stackItem ? (t.card || t.source) : t)).filter(Boolean) : [];
+    case 'EffectSource': return host && host.hostCard ? [host.hostCard] : [];
     case 'Championed': return host && host.championed ? host.championed.map(r => { const c = game.cardById(r.id); return c && c.zcc === r.zcc && c.zone === 'exile' ? c : null; }).filter(Boolean) : [];
     case 'Promised': { const r = sa && sa.root ? sa.root() : null; const g = r && r.promisedGift != null ? r.promisedGift : host && host.promisedGift; return g != null ? [P(g)] : []; }
     case 'CorrectedSelf': return host ? [host] : [];
@@ -594,6 +599,10 @@ function triggeredRef(game, what, trig, lkiCopy, ctx) {
     case 'TargetController': { const t = trig.Target; if (!t) return []; return [t.isPlayer ? t : P(ctrlOf(game, t))]; }
     case 'SpellAbility': case 'SA': case 'SourceSA': return trig.StackItem ? [trig.StackItem] : (trig.Card ? [trig.Card] : []);
     case 'Remembered': return ctx.sa && ctx.sa.trigRemembered || [];
+    case 'OpponentVotedSame': case 'OpponentVotedDiff': {
+      const votes = trig.Votes || {}, mine = votes[ctx.you] || [];
+      return game.livingPlayers().filter(p => game.isOpponent(p.id, ctx.you) && votes[p.id] && (what === 'OpponentVotedSame' ? votes[p.id].some(v => mine.includes(v)) : votes[p.id].some(v => !mine.includes(v))));
+    }
   }
   const key = cardKeys[what] || what;
   const v = trig[key];
@@ -757,6 +766,7 @@ export function evalExpr(game, expr, ctx, depth) {
       break;
     }
     case 'TriggerCount': n = +(trig[rest] != null ? trig[rest] : 0) || 0; break;
+    case 'TriggeredPlayersOpponentVotedSame': case 'TriggeredPlayersOpponentVotedDiff': n = resolveDefined(game, head.replace('TriggeredPlayers', 'Triggered'), ctx).length; break;
     case 'ReplaceCount': n = +(trig[rest] != null ? trig[rest] : 0) || 0; break;
     case 'TriggeredPlayer': { const p = trig.Player != null ? game.players[trig.Player] : null; n = p ? (rest === 'LifeTotal' ? p.life : rest === 'CardsInHand' ? p.hand.length : 0) : 0; break; }
     case 'TriggerRemembered': n = (sa && sa.trigRemembered || []).length; break;
@@ -871,13 +881,15 @@ function countExpr(game, rest, ctx, depth) {
     case 'SpellsCastThisTurn': return game.turnState.spellsCast.length;
     case 'YouCastThisTurn': return you.spellsCastThisTurn.length;
     case 'StormCount': return Math.max(0, game.turnState.spellsCast.length - 1);
-    case 'Night': case 'Day': return 0;
+    case 'Night': return game.dayNight === 'Night' ? 1 : 0;
+    case 'Day': return game.dayNight === 'Day' ? 1 : 0;
     case 'CardCounters.ALL': return host ? Object.values(host.counters || {}).reduce((a, b) => a + b, 0) : 0;
     case 'YourDamageThisTurn': return 0;
     case 'Devotion': return 0;
     case 'NumOpponents': return game.livingPlayers().filter(p => game.isOpponent(p.id, youId)).length;
     case 'CreaturesDiedThisTurn': return game.turnState.creaturesDied || 0;
     case 'Initiative': return game.initiative === youId ? 1 : 0;
+    case 'ManaPool:All': return Object.values(you.pool).reduce((a, b) => a + b, 0);
     case 'Speed': return you.speed || 0;
     case 'CardTypesInGraveyard': return graveyardTypes(game, you);
     case 'OpponentsAttacked': return game.combat ? Math.max(1, new Set(game.combat.attackers.map(a => a.defenderPlayer)).size) : 1;

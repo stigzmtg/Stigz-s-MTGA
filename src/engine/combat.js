@@ -115,6 +115,13 @@ export async function declareAttackers(game) {
     if (!d) d = defenders.find(x => !x.card && canAttackDefender(game, c, x.player, null)) || defenders.find(x => !x.card);
     if (d && canAttackDefender(game, c, d.player, null)) { used.add(c.id); decl.push({ c, d, forced: true }); }
   }
+  // "each opponent must attack with at least one creature each combat if able"
+  if (!decl.length && game.activeStatics('PlayerMustAttack').some(s => matchValid(game, game.players[ap], s.p.ValidPlayer || 'Opponent', s.ctx))) {
+    for (const c of cands) {
+      const d = defenders.find(x => !x.card && canAttackDefender(game, c, x.player, null));
+      if (d) { decl.push({ c, d, forced: true }); game.log(`${game.players[ap].name} must attack with at least one creature.`); break; }
+    }
+  }
   // "no more than N creatures can attack [you / this planeswalker] each combat"
   for (const s of game.activeStatics('AttackRestrict')) {
     const max = s.p.MaxAttackers != null ? calcCtx(game, s.p.MaxAttackers, s.ctx) : 99;

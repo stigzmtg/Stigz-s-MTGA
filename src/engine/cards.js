@@ -166,6 +166,7 @@ export class Card {
     this.manifested = false; // face-down via manifest / cloak: can be turned up for its mana cost
     this.cloaked = false;
     this.disguised = false;
+    this.pairedWith = null;
   }
   get faceDef() {
     if (this.copyOf && this.copyOf.def) return this.copyOf.def.faces[this.copyOf.face || 0] || this.copyOf.def.faces[0];

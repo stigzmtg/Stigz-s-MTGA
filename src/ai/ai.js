@@ -589,6 +589,12 @@ export class AIAgent {
     }
     if (purpose === 'tap') return pick(cards.filter(c => c.controller !== pid).sort((a, b) => v(b) - v(a)), max);
     if (purpose === 'gainControlChoice') return pick(cards.slice().sort((a, b) => v(b) - v(a)), Math.max(min, 1));
+    if (purpose === 'chooseSource') {
+      // the opposing source most likely to hurt us
+      const score = c => (c.controller === pid ? -100 : 0) + (game.isAttacking(c) && game.attackTargetOf(c) === pid ? 20 : 0) + (game.chars(c).types.has('Creature') ? Math.max(0, combatPower(game, c)) : c.zone === 'stack' ? 3 : 0);
+      return pick(cards.slice().sort((a, b) => score(b) - score(a)), 1);
+    }
+    if (purpose === 'pair') return pick(cards.slice().sort((a, b) => v(b) - v(a)), 1);
     if (purpose === 'champion') return pick(cards.slice().sort((a, b) => v(a) - v(b)), Math.min(1, cards.length));
     if (purpose === 'harmonize') return pick(cards.slice().sort((a, b) => (game.chars(b).power - (canAttack(game, b) && game.step === 'main1' ? 3 : 0)) - (game.chars(a).power - (canAttack(game, a) && game.step === 'main1' ? 3 : 0))), 1);
     if (purpose === 'cipher') {
