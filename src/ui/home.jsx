@@ -102,7 +102,7 @@ const FEATURES = [
   ['ai', 'Opponents that think', 'Computer players take a moment over each play, put lands down and tap them one at a time, and pick their attacks to win.'],
   ['rules', 'Every rule handled', 'Commander damage, tax and the command zone. Weakness, Resistance, special conditions and Prize cards. The table applies them as you play.'],
   ['art', 'Real card art', 'Every card shows its real printed picture, and pointing at one shows its full text in the side panel.'],
-  ['friends', 'Rooms for friends', 'Make a room for either game and send the link. Everyone shows up as an animal avatar they dress up themselves. Rooms run through this site’s own server, so they work on school Wi-Fi, and nobody needs an account.'],
+  ['friends', 'Rooms for friends', 'Make a room for either game and send the link. Everyone shows up as an animal avatar they dress up themselves, with their own card sleeves and deck box. Rooms run through this site’s own server, so they work on school Wi-Fi, and nobody needs an account.'],
   ['rejoin', 'Rejoin and watch', 'Reload or lose your connection and the room link puts you back in your seat. Anyone else with the link can watch.'],
   ['device', 'Plays anywhere', 'Runs in the browser on laptops, Chromebooks, tablets and phones. Nothing to install and nothing to sign up for.'],
 ];
@@ -295,8 +295,8 @@ export function Home({ onPick, onJoin }) {
           <h1 className="title">Stigz’s TCG Arena</h1>
           <p className="lede">Bring a ready-made deck, take your seat, and battle the computer or your friends. Every card plays by the rules, right in your browser.</p>
           <dl className="stats">
-            <div><dt>Decks ready to play</dt><dd>212</dd></div>
-            <div><dt>Cards with rules</dt><dd>6,644</dd></div>
+            <div><dt>Decks ready to play</dt><dd>213</dd></div>
+            <div><dt>Cards with rules</dt><dd>6,646</dd></div>
             <div><dt>Players a table</dt><dd>2–4</dd></div>
             <div><dt>Accounts needed</dt><dd>0</dd></div>
           </dl>
@@ -316,8 +316,8 @@ export function Home({ onPick, onJoin }) {
           <Gate game="pk" title="Pokémon TCG" kind="Tournament decks" keystone={<span className="ball" />}
             pips={PK_TYPES.map(t => <Energy key={t} type={t} size={19} />)}
             fan={PK_FAN.map(pkImage)} fanLabel="Miraidon ex, Gardevoir ex, Charizard ex, Dragapult ex, Raging Bolt ex"
-            blurb="Eighteen of the most-played decks from top tournaments, card for card as their players built them. One on one, six Prize cards each."
-            facts={[['18', 'top decks'], ['1v1', 'vs computer or a friend'], ['222', 'cards coded']]}
+            blurb="Nineteen of the most-played decks from top tournaments, card for card as their players built them. One on one, six Prize cards each."
+            facts={[['19', 'top decks'], ['1v1', 'vs computer or a friend'], ['224', 'cards coded']]}
             points={['Weakness, Resistance and special conditions', 'Coin flips, Abilities and every Trainer', 'Evolution, Rare Candy and retreat', 'Knock Out an ex for 2 Prizes, a Mega ex for 3']}
             onPlay={mode => open('pokemon', mode)} />
         </div>
