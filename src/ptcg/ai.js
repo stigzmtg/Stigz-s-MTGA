@@ -11,8 +11,11 @@ const ruleBox = d => !!(d.ex || d.radiant || d.v);
 const hasAbil = (d, name) => (d.abilities || []).some(a => a.name === name);
 const isNs = m => /^N's /.test(m.name);
 const SNEAK = "Hide 'n' Sneak";
-const DRAW_SUPPORTERS = new Set(["Professor's Research", "Lillie's Determination", 'Iono', 'Carmine', 'Judge', 'Roxanne', "Colress's Experiment", "Explorer's Guidance", 'Gwynn', 'Naveen', 'Surfer']);
-const SETUP_SUPPORTERS = new Set(['Arven', 'Dawn', "Team Rocket's Petrel", 'Cyrano', 'Crispin', "Professor Sada's Vitality", "Rosa's Encouragement", "Ciphermaniac's Codebreaking", "Lana's Aid", 'Hilda', "Brock's Scouting", "Janine's Secret Art"]);
+const DRAW_SUPPORTERS = new Set(["Professor's Research", "Lillie's Determination", 'Iono', 'Carmine', 'Judge', 'Roxanne', "Colress's Experiment", "Explorer's Guidance", 'Gwynn', 'Naveen', 'Surfer', 'Harlequin', "Iris's Fighting Spirit", "Team Rocket's Ariana", "Team Rocket's Archer", 'Hassel']);
+const SETUP_SUPPORTERS = new Set(['Arven', 'Dawn', "Team Rocket's Petrel", 'Cyrano', 'Crispin', "Professor Sada's Vitality", "Rosa's Encouragement", "Ciphermaniac's Codebreaking", "Lana's Aid", 'Hilda', "Brock's Scouting", "Janine's Secret Art", "Team Rocket's Proton", "Larry's Skill"]);
+const trSupporter = c => c.def.trainer === 'Supporter' && /Team Rocket/.test(c.name);
+// "This Pokémon also does N damage to itself"
+const SELF_DAMAGE = { 'Iron Tackle': 10, 'Wild Press': 70, 'Reckless Charge': 10, 'Dynamic Press': 80 };
 // attacks that develop the board rather than deal damage: worth something while the Bench is thin
 const SETUP_ATTACKS = new Set(['Call for Family', 'Call Sign', 'Find a Friend', 'Minor Errand-Running', 'Kaleidowaltz', 'Collect', 'Burst Roar', 'Magnetic Charge', 'Evolution', 'Come and Get You', 'Ascension', 'Traverse Time', 'Dangle Tail']);
 // attacks that place damage counters (no Weakness, Resistance or damage reduction; stopped by effect protection)
@@ -113,15 +116,27 @@ export class PokemonAI {
       case 'Mirror Attack': d = printed + (target.def.type === 'Psychic' ? 30 : 0); break;
       case 'Twin Shotels': d = 50; break;
       case 'Coordinated Throwing': d = 20 * g.inPlay(pid).filter(m => m.def.stage === 'Basic').length; break;
+      // the third wave of decks
+      case 'Maximum Drilling': d = printed + (g.energyTypes(mon).length - g.attackCost(mon, atk).length >= 2 ? 130 : 0); break;
+      case 'Hungry Jaws': d = printed + (mon.damage > 0 ? 150 : 0); break;
+      case 'Rocket Feathers': d = 60 * me.hand.filter(trSupporter).length; break;
+      case 'R Command': d = 20 * me.discard.filter(trSupporter).length; break;
+      case 'Dark Frost': d = printed + (mon.energy.some(c => c.name === "Team Rocket's Energy") ? 60 : 0); break;
+      case 'Raging Curse': d = 10 * me.bench.filter(m => m.name.startsWith("Cynthia's ")).reduce((s, m) => s + g.counters(m), 0); break;
+      case 'Orichalcum Fang': d = printed + (g.koDuring(pid, { byAttack: true }) ? 120 : 0); break;
+      case 'Horrifying Revenge': d = printed + (g.koDuring(pid, { byAttack: true, filter: n => n.startsWith("Hop's ") }) ? 100 : 0); break;
+      case 'Fickle Spitting': d = [3, 4].includes(g.prizesLeft(opp)) ? printed : 0; break;
+      case 'Sonic Ripper': d = 220; break;
+      case 'Gemstone Mimicry': return depth || !target.def.tera ? 0 : this.copyBest(g, pid, mon, target, target.def.attacks || []).dmg;
     }
     if (COUNTER_ATTACKS.has(atk.name)) return blocked ? 0 : Math.max(0, d);
     if (d > 0) d += g.attackBonus({ pid, opp }, mon, target);
-    if (d > 0 && !['Cosmic Beam', 'Demolish', 'Spit Innocently', 'Twin Shotels'].includes(atk.name)) {
-      if (g.weaknessOf(target) === mon.def.type) d *= 2;
-      if (target.def.resist === mon.def.type) d -= 30;
+    if (d > 0 && !['Cosmic Beam', 'Demolish', 'Spit Innocently', 'Twin Shotels', 'Swift'].includes(atk.name)) {
+      if (g.weaknessOf(target) === mon.def.type && atk.name !== 'Raging Curse') d *= 2;
+      if (target.def.resist === mon.def.type && atk.name !== 'Rock Hurl') d -= 30;
     }
     // protections on the target
-    const ignore = ['Spiky Hopper', 'Demolish', 'Shred', 'Superb Scissors', 'Twin Shotels'].includes(atk.name);
+    const ignore = ['Spiky Hopper', 'Demolish', 'Shred', 'Superb Scissors', 'Twin Shotels', 'Swift'].includes(atk.name);
     if (!ignore && g.hasAbility(target, 'Cornerstone Stance') && g.abilitiesOf(mon).length) return 0;
     if (!ignore && g.hasEffect('dig', { mon: target })) return 0;
     if (!ignore && g.hasEffect('protect', { mon: target })) d -= 30;
@@ -200,7 +215,10 @@ export class PokemonAI {
       if (SETUP_ATTACKS.has(atk.name)) v = Math.max(v, g.pl(pid).bench.length < 3 ? 60 : 15);
       if (['Itchy Pollen', 'Oceanic Gloom'].includes(atk.name)) v += 25;
       const ko = target && v >= g.hpLeft(target);
-      const score = v + (ko ? 200 * g.prizeValue(target) : 0) + this.benchValue(g, pid, mon, atk);
+      let score = v + (ko ? 200 * g.prizeValue(target) : 0) + this.benchValue(g, pid, mon, atk);
+      // attacks that also damage the attacker: don't Knock Out our own Pokémon unless it wins the game
+      const self = SELF_DAMAGE[atk.name];
+      if (self && g.hpLeft(mon) <= self && !(ko && g.prizesLeft(pid) <= g.prizeValue(target))) score -= 100 + 200 * g.prizeValue(mon);
       if (!best || score > best.score) best = { atk, v, ko, score };
     }
     return best;
@@ -213,8 +231,10 @@ export class PokemonAI {
     const payable = atk => types.has('Any') || atk.cost.every(t => types.has(t)) || !g.attackCost(mon, atk).length;
     // and not the ones blocked for another reason (Lost Mine before 10 cards in the Lost Zone)
     const usable = atk => { const why = g.attackBlock(mon, { ...atk, src: 'own' }); return !why || /Energy|Active|first turn|asleep|paralyzed|can't attack/i.test(why); };
-    const atks = (mon.def.attacks || []).filter(a => payable(a) && usable(a));
-    for (const atk of atks.length ? atks : mon.def.attacks || []) {
+    // Mew ex's Memory Helix: the Benched Pokémon's attacks count too
+    const printed = [...(mon.def.attacks || []), ...(g.hasAbility(mon, 'Memory Helix') ? g.pl(mon.owner).bench.filter(b => b !== mon).flatMap(b => b.def.attacks || []) : [])];
+    const atks = printed.filter(a => payable(a) && usable(a));
+    for (const atk of atks.length ? atks : printed) {
       // what the attack can reach: "60×" attacks scale with what you pay into them, "200+" ones grow
       const n = parseInt(atk.damage, 10) || 0;
       const dmg = NOMINAL[atk.name] || (/×/.test(atk.damage) ? n * 3 : /\+/.test(atk.damage) ? n + 60 : n || 30);
@@ -290,6 +310,11 @@ export class PokemonAI {
         case 'Metallic Signal': return has(c => isMon(c) && c.def.stage !== 'Basic' && c.def.type === 'Metal');
         case 'Fan Call': return has(c => isMon(c) && c.def.type === 'Colorless' && c.def.hp <= 100);
         case 'Shivery Chill': return has(c => isBasicEnergy(c) && c.def.provides === 'Water');
+        // Metang: more {M} Energy is never wasted on Mega Excadrill ex (Maximum Drilling wants 2 extra)
+        case 'Metal Maker': return !deckLow && has(c => isBasicEnergy(c) && c.def.provides === 'Metal');
+        case "Champion's Call": return has(c => isMon(c) && c.name.startsWith("Cynthia's ") && this.wantsFromDeck(g, pid, c));
+        // Tatsugiri in the Active Spot: dig for a Supporter when there's none to play
+        case 'Attract Customers': return !me.supporter && !me.hand.some(c => c.def.trainer === 'Supporter') && !deckLow;
         case 'Trade': return me.hand.length >= 1 && me.deck.length > 10 && !handAttack;
         // Gladion decks keep the hand small: search when it is small, or for Gladion itself
         case 'Boom Boom Groove': return !this.plays(g, pid, "Gladion's Final Battle", 'trainer') || me.hand.length <= 3 || (!me.supporter && !me.hand.some(c => c.name === "Gladion's Final Battle"));
@@ -299,7 +324,7 @@ export class PokemonAI {
     const DRAWS = ['Recon Directive', 'Flower Selecting', 'Run Errand', 'Coin Bonus', 'Flip the Script', 'Lunar Cycle', 'Quick Search', 'Teal Dance', 'Boom Boom Groove', 'Trade'];
     let a = pickAbility(['Fan Call', 'Squawk and Seize', 'Transformative Start']);
     if (a && finds(a.name) && (a.name !== 'Squawk and Seize' || me.hand.length <= 5)) return a;
-    a = abil.find(x => ['Tandem Unit', 'Metallic Signal', 'Shivery Chill', ...DRAWS].includes(x.name) && finds(x.name) && !(deckLow && DRAWS.includes(x.name) && x.name !== 'Teal Dance' && me.hand.length > 1) && !(gladion && DRAWS.includes(x.name)) && once('ab:' + x.mon + x.name));
+    a = abil.find(x => ['Tandem Unit', 'Metallic Signal', 'Shivery Chill', 'Metal Maker', "Champion's Call", 'Attract Customers', ...DRAWS].includes(x.name) && finds(x.name) && !(deckLow && DRAWS.includes(x.name) && x.name !== 'Teal Dance' && me.hand.length > 1) && !(gladion && DRAWS.includes(x.name)) && once('ab:' + x.mon + x.name));
     if (a) return a;
     if (me.hand.length <= 2 && !deckLow) { a = pickAbility(['Restart', 'Run Away Draw', 'Concealed Cards']); if (a) return a; }
     // Lost Zone: bring a Benched Comfey up to use Flower Selecting when we can switch back afterwards
@@ -314,8 +339,11 @@ export class PokemonAI {
     const benchRoom = me.bench.length < g.benchLimit(pid);
     let t = item(['Rare Candy']);
     if (t) return t;
-    if (benchRoom && me.bench.length < 4) { t = item(['Buddy-Buddy Poffin', 'Nest Ball', 'Precious Trolley']); if (t) return t; }
-    t = item(['Poké Pad', 'Fighting Gong', 'Energy Search', 'Pokégear 3.0', 'Electric Generator', 'Mirage Gate', 'Glass Trumpet', 'Bug Catching Set', 'Wondrous Patch', "N's PP Up"]);
+    if (benchRoom && me.bench.length < 4) { t = item(['Buddy-Buddy Poffin', 'Nest Ball', 'Precious Trolley', "Hop's Bag"]); if (t) return t; }
+    // Supporter finders: when there's no Supporter to play (Rocket Feathers decks always want more Team Rocket ones)
+    const feathers = this.plays(g, pid, 'Rocket Feathers');
+    if (!me.supporter && (!me.hand.some(c => c.def.trainer === 'Supporter') || feathers)) { t = item(["Team Rocket's Transceiver", 'Roto-Stick', 'Miracle Headset']); if (t) return t; }
+    t = item(['Poké Pad', 'Fighting Gong', 'Energy Search', 'Pokégear 3.0', 'Electric Generator', 'Mirage Gate', 'Glass Trumpet', 'Bug Catching Set', 'Wondrous Patch', "N's PP Up", 'Dusk Ball']);
     if (t && (t.c.name !== 'Wondrous Patch' || g.inPlay(pid).some(m => m.def.type === 'Psychic' && !g.isActive(m) && this.needs(g, m).missing.length))) return t;
     if (me.hand.length >= 4) { t = item(['Ultra Ball', 'Earthen Vessel']); if (t && this.hasJunk(g, pid, t.c, t.c.name === 'Ultra Ball' ? 2 : 1)) return t; }
     if (me.hand.length >= 5) { t = item(['Secret Box', 'Superior Energy Retrieval']); if (t && this.hasJunk(g, pid, t.c, t.c.name === 'Secret Box' ? 3 : 2)) return t; }
@@ -326,7 +354,18 @@ export class PokemonAI {
     if (t && active && active.damage >= 80) return t;
     if (me.discard.some(isMon) && me.deck.length < 25) { t = item(['Super Rod']); if (t) return t; }
     if (me.discard.filter(isMon).length >= 3 && me.deck.length < 20 && !me.deck.some(isMon)) { t = item(['Sacred Ash']); if (t) return t; }
-    if (me.hand.filter(isMon).length === 0 && me.discard.some(c => isMon(c) && ruleBox(c.def))) { t = item(['Night Stretcher']); if (t) return t; }
+    if (me.hand.filter(isMon).length === 0 && me.discard.some(c => isMon(c) && (ruleBox(c.def) || this.wantsFromDeck(g, pid, c)))) { t = item(['Night Stretcher']); if (t) return t; }
+    // Special Red Card (the opponent is down to 3 Prizes or fewer): a big hand goes to the bottom for 3 new cards
+    if (g.pl(opp).hand.length >= 5) { t = item(['Special Red Card']); if (t) return t; }
+    // Unfair Stamp after a Knock Out: when we'd rather have 5 new cards and the opponent 2
+    if (me.hand.length <= 4 || g.pl(opp).hand.length >= 5) { t = item(['Unfair Stamp']); if (t) return t; }
+    // Picnic Basket heals 30 from every Pokémon: when ours have more damage to heal
+    t = trainers.find(x => x.c && x.c.name === 'Picnic Basket');
+    if (t) { const healed = q => g.inPlay(q).reduce((s2, m) => s2 + Math.min(30, m.damage), 0); if (healed(pid) >= healed(opp) + 40 && once('picnic')) return t; }
+    // Energy Recycler: Energy back into a deck running out of it
+    if (me.deck.filter(isBasicEnergy).length <= 3 && me.discard.filter(isBasicEnergy).length >= 3) { t = item(['Energy Recycler']); if (t) return t; }
+    // Premium Power Pro: +30 for a {F} attacker about to attack
+    if (active && active.def.type === 'Fighting' && this.canAttackNow(g, active) && !g.hasEffect('premiumPower', { pid })) { t = item(['Premium Power Pro']); if (t) return t; }
     // Hisuian Heavy Ball: a Basic Pokémon from the Prize cards when we have none to play
     if (!me.hand.some(c => isMon(c) && c.def.stage === 'Basic') && me.bench.length < 4) { t = item(['Hisuian Heavy Ball']); if (t) return t; }
     // Lost Vacuum: the opponent's Tool or Stadium goes, and a card from hand fills the Lost Zone
@@ -400,7 +439,7 @@ export class PokemonAI {
       if (choice) return choice;
     }
     // more acceleration abilities once there is something to power
-    a = pickAbility(['Psychic Embrace', 'Super Cold', 'Overvolt Discharge', 'Ripening Charge']);
+    a = pickAbility(['Psychic Embrace', 'Super Cold', 'Overvolt Discharge', 'Ripening Charge', 'Sinister Surge']);
     if (a && this.accelUseful(g, pid, a)) return a;
 
     // 9. damage tricks: Munkidori, Cursed Blast, Hyper Blower, Teleporter
@@ -569,6 +608,7 @@ export class PokemonAI {
     if (name === 'Surfing Beach') { const b = this.betterAttacker(g, pid); return !!(b && b.def.type === 'Water'); }
     if (name === 'Prism Tower') return me.deck.length > 10 && this.junk(g, pid, me.hand).length >= 2 && !(me.active && g.attacksOf(me.active).some(a => a.name === 'Powerful Hand'));
     if (name === "Team Rocket's Factory") return me.deck.length > 8;
+    if (name === 'Spikemuth Gym') return me.deck.some(c => isMon(c) && /^Marnie's /.test(c.name)) && me.hand.filter(isMon).length <= 1;
     return false;
   }
   hasJunk(g, pid, except, n) { return g.pl(pid).hand.filter(c => c !== except).length >= n; }
@@ -583,6 +623,12 @@ export class PokemonAI {
     if (n === 'Forest of Vitality') return me.hand.some(x => isMon(x) && x.def.stage !== 'Basic' && x.def.type === 'Grass');
     if (n === "N's Castle") return g.inPlay(pid).some(isNs);
     if (n === 'Jamming Tower') { const tools = q => g.inPlay(q).filter(m => m.tool).length; return tools(g.opp(pid)) > tools(pid) && !all.some(x => x.def.trainer === 'Tool'); }
+    // Stadiums that hit both sides: only when they hurt the opponent more
+    const count = (q, f) => g.inPlay(q).filter(f).length;
+    if (n === 'Gravity Mountain') return count(g.opp(pid), m => m.def.stage === 'Stage2') > count(pid, m => m.def.stage === 'Stage2');
+    if (n === "Team Rocket's Watchtower") { const c = m => m.def.type === 'Colorless' && (m.def.abilities || []).length; return count(g.opp(pid), c) >= count(pid, c); }
+    if (n === 'Postwick') return g.inPlay(pid).some(m => /^Hop's /.test(m.name));
+    if (n === 'Spikemuth Gym') return all.some(x => isMon(x) && /^Marnie's /.test(x.name));
     return true;
   }
   toolFits(g, pid, c, m) {
@@ -601,6 +647,8 @@ export class PokemonAI {
     if (n === 'Brave Bangle') return !ruleBox(m.def) && this.needs(g, m).dmg >= 50;
     if (n === 'Binding Mochi') return me.active === m && (m.poisoned || g.inPlay(pid).some(x => g.hasAbility(x, 'Subjugating Chains')));
     if (n === "Hero's Cape") return this.needs(g, m).dmg >= 100 && (me.active === m || m.def.stage !== 'Basic');
+    if (n === "Cynthia's Power Weight") return /^Cynthia's /.test(m.name) && (m.def.stage !== 'Basic' || me.active === m);
+    if (n === "Hop's Choice Band") return /^Hop's /.test(m.name) && this.needs(g, m).dmg >= 50;
     return true;
   }
   pickSupporter(g, pid, sup, { handAttack = false, affordable = () => true } = {}) {
@@ -618,8 +666,14 @@ export class PokemonAI {
       return null;
     }
     // Boss's Orders when a Benched target can be Knocked Out for more Prizes than the Active
-    const boss = named("Boss's Orders") || named("Lisia's Appeal");
+    const boss = named("Boss's Orders") || named("Lisia's Appeal") || named("Team Rocket's Giovanni");
     if (boss && this.gustTarget(g, pid)) return boss;
+    // Wally's Compassion: a badly damaged Mega Evolution Pokémon ex is healed (its Energy comes back to hand)
+    const wally = named("Wally's Compassion");
+    if (wally && g.inPlay(pid).some(m => m.def.mega && m.damage >= 150)) return wally;
+    // Professor Turo's Scenario: pick up a badly damaged Pokémon ex before it gives up Prizes
+    const turo = named("Professor Turo's Scenario");
+    if (turo && g.inPlay(pid).some(m => ruleBox(m.def) && m.damage >= g.maxHp(m) / 2 && g.hpLeft(m) <= 120 && (me.bench.length || !g.isActive(m))) && me.bench.length >= 2) return turo;
     if (named('Briar')) return named('Briar');
     // Lost Zone decks: Colress's Experiment fills the Lost Zone (Cramorant at 4, Mirage Gate at 7, Lost Mine at 10)
     const colress = named("Colress's Experiment");
@@ -654,6 +708,11 @@ export class PokemonAI {
   drawUseful(g, pid, c) {
     const me = g.pl(pid);
     if (c.name === "Lillie's Determination") return true;
+    // Rocket Feathers decks keep Team Rocket Supporters in hand as fuel: draw only with a small hand
+    if (c.name === "Team Rocket's Ariana") return me.hand.length <= (this.plays(g, pid, 'Rocket Feathers') ? 3 : 4);
+    if (c.name === "Team Rocket's Archer" || c.name === 'Harlequin') return me.hand.length <= 3 || g.pl(g.opp(pid)).hand.length >= 6;
+    if (c.name === "Iris's Fighting Spirit") return me.hand.length <= 4;
+    if (c.name === 'Hassel') return true;
     if (c.name === 'Gwynn') return me.hand.some(x => isMon(x) && !ruleBox(x.def) && this.cardScore(g, pid, x) < 60) || me.hand.length <= 3;
     if (c.name === 'Naveen') return me.hand.length <= 3;
     if (c.name === "Colress's Experiment" && g.inPlay(pid).some(m => g.hasAbility(m, 'Lost Provisions') || (m.def.attacks || []).some(a => a.name === 'Lost Mine'))) return me.hand.length <= 8;
@@ -661,6 +720,7 @@ export class PokemonAI {
   }
   setupUseful(g, pid, c) {
     const me = g.pl(pid);
+    if (c.name === "Larry's Skill") return me.hand.length <= 3;
     if (c.name === "Janine's Secret Art") return g.inPlay(pid).some(m => m.def.type === 'Darkness' && this.needs(g, m).missing.length) && me.deck.some(x => isBasicEnergy(x) && x.def.provides === 'Darkness');
     return true;
   }
@@ -786,7 +846,16 @@ export class PokemonAI {
     if (a.name === 'Psychic Embrace') return g.inPlay(pid).some(m => m.def.type === 'Psychic' && this.needs(g, m).missing.length && g.hpLeft(m) > 60);
     if (a.name === 'Super Cold') return g.inPlay(pid).some(m => m.energy.filter(c => c.def.provides === 'Water').length < 4 && (this.needs(g, m).dmg >= 100 || m.name === 'Chien-Pao ex'));
     if (a.name === 'Ripening Charge') return true;
+    // Toxtricity: the Benched {D} Pokémon takes 2 damage counters, so only onto one that needs it and survives well
+    if (a.name === 'Sinister Surge') return g.pl(pid).bench.some(m => m.def.type === 'Darkness' && this.needs(g, m).missing.length && g.hpLeft(m) > 60);
     return true;
+  }
+  // a Pokémon worth taking from the deck: something to evolve into, or a Basic for an empty Bench spot
+  wantsFromDeck(g, pid, c) {
+    const me = g.pl(pid);
+    if (me.hand.some(x => x.name === c.name)) return false;
+    if (c.def.stage === 'Basic') return me.bench.length < g.benchLimit(pid) && g.inPlay(pid).filter(m => m.name === c.name).length < 2;
+    return g.inPlay(pid).some(m => m.name === c.def.from);
   }
   adrenaUseful(g, pid) {
     const opp = g.pl(g.opp(pid));
@@ -924,6 +993,8 @@ export class PokemonAI {
       }
       if (d.name === "Boss's Orders" && g.pl(g.opp(pid)).bench.length) s += 10;
       if (d.name === "Gladion's Final Battle" && me.active && !ruleBox(me.active.def) && g.festivalLead(me.active) && !handNames.has(d.name)) s += 40;
+      // Rocket Feathers: each Team Rocket Supporter in hand is 60 damage
+      if (trSupporter(c) && this.plays(g, pid, 'Rocket Feathers')) s += 30;
       if (handNames.has(d.name)) s -= 15;
     }
     return s;
@@ -998,7 +1069,9 @@ export class PokemonAI {
     if (hint === 'quadruple') return pickN([...opts].sort((a, b) => ((4 * b.damage >= g.maxHp(b)) - (4 * a.damage >= g.maxHp(a))) * 1000 + (b.damage - a.damage)));
     if (hint.startsWith('attach') || hint === 'attach-embrace') {
       const type = hint.split(':')[1];
-      const ranked = [...opts].sort((a, b) => this.attachScore(g, pid, b, type) - this.attachScore(g, pid, a, type));
+      // Sinister Surge's 2 damage counters: never onto a Pokémon they'd Knock Out
+      const safe = opts.filter(m => !hint.startsWith('attach-surge') || g.hpLeft(m) > 20);
+      const ranked = [...(safe.length ? safe : opts)].sort((a, b) => this.attachScore(g, pid, b, type) - this.attachScore(g, pid, a, type));
       return pickN(ranked);
     }
     if (hint === 'own-damaged' || hint === 'scoop') return [opts.sort((a, b) => b.damage - a.damage)[0].id];
@@ -1048,6 +1121,10 @@ export class PokemonAI {
     if (hint === 'bench-snipe') return g.pl(g.opp(pid)).bench.some(m => g.hpLeft(m) <= 120);
     if (hint === 'more-damage') return true;
     if (/Snow Sink/.test(req.prompt)) return !!(g.stadium && g.stadium.owner !== pid);
+    // Corkscrew Dive: draw up to 6 unless the deck is about to run out
+    if (hint === 'draw-to-6') { const me = g.pl(pid); return me.deck.length - Math.max(0, 6 - me.hand.length) >= 4; }
+    // Teleportation Burst: switch only to something better placed in the Active Spot
+    if (hint === 'teleport') { const me = g.pl(pid); return !!me.active && me.bench.some(b => this.switchScore(g, pid, b) > this.switchScore(g, pid, me.active) + 20); }
     return true;
   }
   option(g, pid, req) {
@@ -1095,6 +1172,19 @@ export class PokemonAI {
       return (opts.find(o => o.value === want) || opts[0]).value;
     }
     if (req.hint === 'devolve-n') return opts[opts.length - 1].value;
+    if (req.hint === 'torment') {
+      // Torment: lock the attack the opponent's Active would most want to use next turn
+      const opp = g.opp(pid), d = g.pl(opp).active, target = me.active;
+      let best = opts[0].value, bv = -Infinity;
+      for (const o of opts) {
+        const atk = d && (d.def.attacks || []).find(x => x.name === o.atk);
+        if (!atk) continue;
+        const missing = g.attackCost(d, atk).length - g.energyTypes(d).length;
+        const v = this.estimate(g, opp, d, atk, target, 1) + (missing <= 1 ? 100 : 0) - 20 * Math.max(0, missing);
+        if (v > bv) { bv = v; best = o.value; }
+      }
+      return best;
+    }
     if (/attacks to use/.test(req.prompt)) {
       let best = opts[0].value, bv = -1;
       for (const o of opts) { const d = parseInt((/\((\d+)/.exec(o.label) || [])[1], 10) || 0; if (d > bv) { bv = d; best = o.value; } }
