@@ -238,6 +238,8 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
   const emotes = useEmotes(session);
   const ctx = {
     game, me, support, emotes: emotes.bubbles,
+    // friends' avatars, by seat (online games)
+    avatars: session.online ? session.cfg.seats.map(s => (s.k === 'h' && s.c ? s.a : null)) : null,
     onHover: setHover,
     openZone: (p, z) => setZone({ pid: p, zone: z }),
     chosen,

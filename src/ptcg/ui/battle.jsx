@@ -12,6 +12,7 @@ import { recordGame } from '../../ui/records.js';
 import { ReplayBar } from '../../ui/replaybar.jsx';
 import { useEmotes, EmoteButton, EmoteBubble, WatcherEmotes } from '../../ui/emotes.jsx';
 import { Coach } from '../../ui/coach.jsx';
+import { AnimalAvatar } from '../../ui/avatar.jsx';
 
 const { useState, useEffect, useRef, useSyncExternalStore } = React;
 const COND_LABEL = { asleep: 'Asleep', confused: 'Confused', paralyzed: 'Paralyzed' };
@@ -239,6 +240,8 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
   useEffect(() => { if (game.over && !session.record) session.record = recordGame(session, 'pk'); }, [game.over]);
   const replay = session.replay;
   const emotes = useEmotes(session);
+  // friends' avatars (online battles)
+  const avatarOf = pid => (session.online && session.cfg.seats[pid] ? session.cfg.seats[pid].a : null);
   useEffect(() => { setMode(null); setSel([]); setConfirmEnd(false); }, [pend && pend.id]);
   useEffect(() => { if (!flash) return; const t = setTimeout(() => setFlash(null), 2200); return () => clearTimeout(t); }, [flash]);
   useEffect(() => {
@@ -310,7 +313,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
       <section className={`pk-side ${bottom ? 'me' : 'opp'} ${game.current === p.id && !game.over ? 'turn' : ''}`} aria-label={`${whose(p)} side`}>
         <div className="pk-plate">
           <EmoteBubble b={emotes.bubbles.get(p.id)} />
-          <div className="who"><b>{p.name}</b>{game.current === p.id && !game.over ? <span className="turnmark">turn</span> : null}</div>
+          <div className="who">{avatarOf(p.id) ? <AnimalAvatar code={avatarOf(p.id)} size={36} /> : null}<b>{p.name}</b>{game.current === p.id && !game.over ? <span className="turnmark">turn</span> : null}</div>
           <div className="deck">{p.deckName}</div>
           <Prizes n={p.prizes.length} label={p.name} />
           {!bottom ? <div className="opphand" title={`${p.hand.length} cards in hand`}><span className="fan">{Array.from({ length: Math.min(p.hand.length, 8) }, (_, i) => <CardBack key={i} cls="micro" />)}</span><b>{p.hand.length}</b> in hand</div> : null}

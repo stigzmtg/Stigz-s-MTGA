@@ -3,6 +3,7 @@
 import { CopyLink } from '../../ui/online.jsx';
 import { isRoomCode, onClaude } from '../../net/roomclient.js';
 import { Energy } from './energy.jsx';
+import { AnimalAvatar, Lineup, Watchers, MyAvatarRow, AvatarButton, myAvatar } from '../../ui/avatar.jsx';
 
 const { useState } = React;
 
@@ -20,6 +21,8 @@ export function PkFriendsPanel({ data, online, deck }) {
   const [code, setCode] = useState(invite || '');
   const [nick, setNick] = useState(room ? room.nick : online.nick || '');
   const [busy, setBusy] = useState(false);
+  const [av, setAv] = useState(() => (room && room.extra.av) || myAvatar());
+  const changeAv = c => { setAv(c); if (room) room.setAvatar(c); };
 
   if (api === undefined) return <section className="panel"><h2>Play with friends</h2><p className="note">Connecting…</p></section>;
   if (!api) {
@@ -38,8 +41,13 @@ export function PkFriendsPanel({ data, online, deck }) {
       <section className="panel" aria-label="Play with friends">
         <h2>Play with friends</h2>
         <div className="friends-form">
-          <label className="label" htmlFor="nick">Your name</label>
-          <input id="nick" className="input" maxLength={24} value={nick} placeholder="Name shown to the other player" onChange={e => setNick(e.target.value)} />
+          <div className="nick-row">
+            <AvatarButton code={av} onChange={changeAv} />
+            <div>
+              <label className="label" htmlFor="nick">Your name</label>
+              <input id="nick" className="input" maxLength={24} value={nick} placeholder="Name shown to the other player" onChange={e => setNick(e.target.value)} />
+            </div>
+          </div>
           <div className="friends-actions">
             <button className="btn primary" disabled={busy || !nick.trim()} onClick={() => go(() => onCreate(nick.trim()))}>Create a room</button>
           </div>
@@ -88,20 +96,21 @@ export function PkFriendsPanel({ data, online, deck }) {
         {inGame ? <span className="chip pk-chip">Battle on</span> : null}
       </div>
       <CopyLink code={room.code} kind="pk" />
+      <Lineup seats={cfg.seats} cid={room.cid} host={cfg.host} vs />
       <ol className="seats">
         {cfg.seats.map((s, i) => {
           const m = s.c ? members.get(s.c) : null;
           const mine = s.c === room.cid;
           return (
             <li key={i} className={`seat-row ${mine ? 'mine' : ''}`}>
-              <span className="seat-no">{i + 1}</span>
+              {s.c ? <AnimalAvatar code={s.a} size={34} /> : <span className="seat-no">{i + 1}</span>}
               <span className="seat-who">
                 {s.c ? <b>{s.n || 'Player'}{s.c === cfg.host ? ' (host)' : ''}{mine ? ' · you' : ''}</b> : <b className="muted">Open seat</b>}
                 {s.c ? <SeatDeck decks={data.decks} id={s.d} /> : <span className="seat-deck muted">Waiting for a friend</span>}
               </span>
               <span className="seat-act">
                 {s.c && !m ? <span className="chip">away</span> : null}
-                {!inGame && isHost && i > 0 && s.c ? <button className="btn sm ghost" onClick={() => room.setSeat(i, { c: null, n: '', d: null })}>Open seat</button> : null}
+                {!inGame && isHost && i > 0 && s.c ? <button className="btn sm ghost" onClick={() => room.setSeat(i, { c: null, n: '', d: null, a: null })}>Open seat</button> : null}
                 {!inGame && !isHost && !s.c ? <button className="btn sm" onClick={() => room.sit(i)}>Sit here</button> : null}
                 {!inGame && !isHost && mine ? <button className="btn sm ghost" onClick={() => room.stand()}>Stand up</button> : null}
               </span>
@@ -109,7 +118,8 @@ export function PkFriendsPanel({ data, online, deck }) {
           );
         })}
       </ol>
-      {watchers.length ? <p className="note">Watching: {watchers.map(w => w.nick + (w.me ? ' (you)' : '')).join(', ')}</p> : null}
+      <Watchers list={watchers} />
+      <MyAvatarRow code={av} onChange={changeAv} />
       {mySeat >= 0 || (!inGame && !isHost) ? <p className="note">Your deck: <b>{deck.name}</b>. Tap another deck to switch{inGame ? ' for the next battle' : ''}.</p> : null}
       <div className="dlg-actions">
         <button className="btn ghost" onClick={onLeave}>Leave room</button>

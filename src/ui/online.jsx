@@ -2,6 +2,7 @@
 import { Pip } from './cardview.jsx';
 import { findDeck } from './customdecks.js';
 import { isRoomCode, onClaude } from '../net/roomclient.js';
+import { AnimalAvatar, Lineup, Watchers, MyAvatarRow, AvatarButton, myAvatar } from './avatar.jsx';
 
 const { useState } = React;
 
@@ -42,6 +43,8 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
   const [code, setCode] = useState(() => (isRoomCode(location.hash.slice(1)) ? location.hash.slice(1) : ''));
   const [nick, setNick] = useState(room ? room.nick : '');
   const [busy, setBusy] = useState(false);
+  const [av, setAv] = useState(() => (room && room.extra.av) || myAvatar());
+  const changeAv = c => { setAv(c); if (room) room.setAvatar(c); };
   const sortedDecks = data.sortedDecks;
 
   if (api === undefined) return <section className="panel"><h2>Play with friends</h2><p className="note">Connecting…</p></section>;
@@ -62,8 +65,13 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
       <section className="panel" aria-label="Play with friends">
         <h2>Play with friends</h2>
         <div className="friends-form">
-          <label className="label" htmlFor="nick">Your name</label>
-          <input id="nick" className="input" maxLength={24} value={nick} placeholder="Name shown to other players" onChange={e => setNick(e.target.value)} />
+          <div className="nick-row">
+            <AvatarButton code={av} onChange={changeAv} />
+            <div>
+              <label className="label" htmlFor="nick">Your name</label>
+              <input id="nick" className="input" maxLength={24} value={nick} placeholder="Name shown to other players" onChange={e => setNick(e.target.value)} />
+            </div>
+          </div>
           <div className="friends-actions">
             <button className="btn primary" disabled={busy || !nick.trim()} onClick={() => go(() => onCreate(nick.trim()))}>Create a room</button>
           </div>
@@ -102,6 +110,7 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
         {isHost ? <span className="chip gold">You host</span> : null}
       </div>
       <CopyLink code={room.code} />
+      <Lineup seats={cfg.seats} cid={room.cid} host={cfg.host} />
       {isHost && !inGame ? (
         <div className="filters"><span className="label">Seats</span>
           <div className="seg" role="group" aria-label="Number of seats">{[2, 3, 4].map(n => <button key={n} className={cfg.seats.length === n ? 'on' : ''} onClick={() => room.setSeatCount(n)}>{n}</button>)}</div>
@@ -113,7 +122,7 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
           const mine = s.c === room.cid;
           return (
             <li key={i} className={`seat-row ${mine ? 'mine' : ''} ${s.k === 'a' ? 'ai' : ''}`}>
-              <span className="seat-no">{i + 1}</span>
+              {s.k === 'h' && s.c ? <AnimalAvatar code={s.a} size={34} /> : <span className="seat-no">{i + 1}</span>}
               <span className="seat-who">
                 {s.k === 'a' ? <b>AI player</b> : s.c ? <b>{s.n || 'Player'}{s.c === cfg.host ? ' (host)' : ''}{mine ? ' · you' : ''}</b> : <b className="muted">Open seat</b>}
                 {s.k === 'a' ? (isHost && !inGame ? (
@@ -130,7 +139,7 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
                     <option value="friend">Friend</option><option value="ai">AI</option>
                   </select>
                 ) : null}
-                {!inGame && isHost && i > 0 && s.k === 'h' && s.c ? <button className="btn sm ghost" onClick={() => room.setSeat(i, { c: null, n: '', d: null })}>Open seat</button> : null}
+                {!inGame && isHost && i > 0 && s.k === 'h' && s.c ? <button className="btn sm ghost" onClick={() => room.setSeat(i, { c: null, n: '', d: null, a: null })}>Open seat</button> : null}
                 {!inGame && !isHost && s.k === 'h' && !s.c ? <button className="btn sm" onClick={() => room.sit(i)}>Sit here</button> : null}
                 {!inGame && !isHost && mine ? <button className="btn sm ghost" onClick={() => room.stand()}>Stand up</button> : null}
               </span>
@@ -138,7 +147,8 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
           );
         })}
       </ol>
-      {watchers.length ? <p className="note">Watching: {watchers.map(w => w.nick + (w.me ? ' (you)' : '')).join(', ')}</p> : null}
+      <Watchers list={watchers} />
+      <MyAvatarRow code={av} onChange={changeAv} />
       <p className="note">Your deck: <b>{deck.name}</b> — pick another from the list.{deck.custom && onClaude() ? ' Custom decks can only be used in rooms on the website, not on claude.ai.' : ''}</p>
       <div className="dlg-actions">
         <button className="btn ghost" onClick={onLeave}>Leave room</button>

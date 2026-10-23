@@ -12,6 +12,7 @@ import { Lockstep, LocalSeatAgent, RemoteSeatAgent } from '../../net/lockstep.js
 import { RoomClient, roomApi, isRoomCode } from '../../net/roomclient.js';
 import { Recorder, ReplayControl, ReplayAgent, pkDelay, loadReplay } from '../../ui/records.js';
 import { resetTips } from '../../ui/coach.jsx';
+import { myAvatar } from '../../ui/avatar.jsx';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -151,7 +152,7 @@ export function PokemonApp({ onHome }) {
   const ensureRoom = (nick) => {
     safeStorage.setItem('pa-nick', nick);
     if (room) { room.setNick(nick); return room; }
-    const r = new RoomClient(api, { cid: storedId(), nick, deck: lobbyDeck() || data.decks[0].id, kind: 'pk', storage: safeStorage });
+    const r = new RoomClient(api, { cid: storedId(), nick, deck: lobbyDeck() || data.decks[0].id, kind: 'pk', storage: safeStorage, avatar: myAvatar() });
     setRoom(r);
     return r;
   };

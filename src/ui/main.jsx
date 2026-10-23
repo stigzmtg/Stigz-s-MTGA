@@ -17,6 +17,7 @@ import { Recorder, ReplayControl, ReplayAgent, mtgDelay, loadReplay } from './re
 import { initApp } from './install.js';
 import { loadCustomDecks, findDeck, registerDeck, unpackDeck, packDeck, customDeck } from './customdecks.js';
 import { DeckBuilder } from './builder.jsx';
+import { myAvatar } from './avatar.jsx';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -190,7 +191,7 @@ function MtgApp({ onHome }) {
   const ensureRoom = (nick) => {
     safeStorage.setItem('pa-nick', nick);
     if (room) { room.setNick(nick); return room; }
-    const r = new RoomClient(api, { cid: storedId(), nick, deck: lobbyDeck() || data.decks[0].id, storage: safeStorage });
+    const r = new RoomClient(api, { cid: storedId(), nick, deck: lobbyDeck() || data.decks[0].id, storage: safeStorage, avatar: myAvatar() });
     setRoom(r);
     return r;
   };

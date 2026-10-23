@@ -3,6 +3,7 @@
 import { CardFace, CardBack, viewOf, ManaCost, Pip, RulesText } from './cardview.jsx';
 import { imageOf } from './images.js';
 import { EmoteBubble } from './emotes.jsx';
+import { AnimalAvatar } from './avatar.jsx';
 import { cssPx, uiScale } from './common.js';
 
 const { useState, useEffect, useLayoutEffect, useRef } = React;
@@ -110,9 +111,11 @@ export function CardSlot({ card, ctx, size = 'mini', count = 1, cards = null }) 
 }
 
 // ------------------------------------------------------------------ player plate
-function Avatar({ game, p }) {
+function Avatar({ game, p, av }) {
   const cmd = p.commanders.map(id => game.cardById(id)).filter(Boolean)[0];
   const img = cmd ? imageOf(game, cmd) : null;
+  // a friend online: their animal, with their commander in a small badge
+  if (av) return <span className="avatar animal" aria-hidden="true"><AnimalAvatar code={av} size={46} />{img ? <span className="cmd-badge" style={{ backgroundImage: `url(${img})` }} /> : null}</span>;
   const initials = (p.name === 'You' ? (cmd ? game.name(cmd) : 'You') : p.name).replace(/[^A-Za-z ]/g, '').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
   return (
     <span className="avatar" style={img ? { backgroundImage: `url(${img})` } : undefined} aria-hidden="true">
@@ -286,7 +289,7 @@ export function Mat({ game, pid, ctx, side, compact }) {
     <div className="plate">
       <EmoteBubble b={ctx.emotes && ctx.emotes.get(pid)} />
       <span className="who" data-ref={ref}>
-        <span title={`${p.name} · library ${p.library.length} · hand ${p.hand.length}`}><Avatar game={game} p={p} /></span>
+        <span title={`${p.name} · library ${p.library.length} · hand ${p.hand.length}`}><Avatar game={game} p={p} av={ctx.avatars && ctx.avatars[pid]} /></span>
         <LifeTotal p={p} onClick={isMe ? (e => { e.stopPropagation(); ctx.onPlayerMenu(pid, e); }) : undefined} />
       </span>
       <span className="ident">

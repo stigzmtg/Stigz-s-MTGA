@@ -734,3 +734,44 @@ kbd { font: 600 12px/1 'Alegreya Sans', sans-serif; padding: 2px 6px; border-rad
 @media (min-width: 2200px) and (min-height: 1100px) { :root { --s: 1.35; } }
 @media (min-width: 2500px) and (min-height: 1250px) { :root { --s: 1.5; } }
 @media (min-width: 3200px) and (min-height: 1650px) { :root { --s: 1.8; } }
+/* ---- avatars */
+.animal-avatar { display: block; flex: none; border-radius: 50%; box-shadow: 0 0 0 2px rgba(243, 212, 136, 0.55), 0 3px 8px rgba(0, 0, 0, 0.45); }
+.av-editor { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: start; }
+.av-preview { display: grid; gap: 10px; justify-items: center; }
+.animal-figure { display: block; flex: none; border-radius: 16px; box-shadow: 0 0 0 2px rgba(243, 212, 136, 0.45), 0 6px 16px rgba(0, 0, 0, 0.45); }
+.av-mini { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-dim); }
+.av-options { display: grid; gap: 12px; min-width: 0; }
+.av-row { display: grid; gap: 6px; }
+.av-animals { display: flex; flex-wrap: wrap; gap: 6px; }
+.av-animals button { padding: 2px; border-radius: 50%; border: 2px solid transparent; background: none; cursor: pointer; }
+.av-animals button.on { border-color: var(--brass-hi); }
+.av-animals .animal-avatar { box-shadow: none; }
+.av-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.av-swatches button { width: 30px; height: 30px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.25); cursor: pointer; }
+.av-swatches button.on { border-color: #fff; box-shadow: 0 0 0 2px var(--brass); }
+.av-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.av-choices .btn.on { background: var(--brass); color: #1c1407; border-color: var(--brass-hi); font-weight: 700; }
+.av-button { display: inline-grid; justify-items: center; gap: 3px; padding: 0; border: 0; background: none; color: var(--ink-dim); font-size: 12px; cursor: pointer; }
+.av-button:hover span { color: var(--brass-hi); }
+@media (max-width: 640px) { .av-editor { grid-template-columns: minmax(0, 1fr); } }
+.lineup { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; margin: 4px 0 10px; }
+.lineup-card { margin: 0; display: grid; justify-items: center; gap: 5px; width: 92px; }
+.lineup-card figcaption { font-size: 13px; font-weight: 600; text-align: center; color: var(--ink); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lineup-card.mine .animal-figure { box-shadow: 0 0 0 3px var(--brass-hi), 0 6px 16px rgba(0, 0, 0, 0.45); }
+.lineup-empty { width: 84px; height: 135px; border-radius: 16px; border: 2px dashed rgba(243, 212, 136, 0.35); display: grid; place-items: center; color: var(--ink-faint); font-size: 30px; font-weight: 700; }
+.lineup-card.ai .lineup-empty { border-style: solid; background: rgba(255, 255, 255, 0.04); color: var(--ink-dim); }
+.lineup-card.open figcaption, .lineup-card.ai figcaption { color: var(--ink-dim); font-weight: 500; }
+.lineup-host { display: block; font-size: 11px; font-weight: 600; color: var(--brass-hi); text-transform: uppercase; letter-spacing: 0.06em; }
+.lineup-vs { font: 700 22px/1 var(--font-display); color: var(--brass-hi); text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6); }
+.watchers { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.watcher { display: inline-flex; align-items: center; gap: 5px; }
+.watcher .animal-avatar { box-shadow: 0 0 0 1px rgba(243, 212, 136, 0.5); }
+.av-me { display: flex; align-items: center; gap: 12px; }
+.av-me .note { margin: 0; }
+.nick-row { display: flex; align-items: flex-end; gap: 12px; }
+.nick-row > div { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.seat-row .animal-avatar { width: 34px; height: 34px; box-shadow: 0 0 0 1.5px rgba(243, 212, 136, 0.55); }
+.avatar.animal { position: relative; background: none; border: 0; box-shadow: none; }
+.avatar.animal .animal-avatar { width: 100%; height: 100%; box-shadow: 0 0 0 2px var(--id-a, rgba(243, 212, 136, 0.6)), 0 2px 8px rgba(0, 0, 0, 0.6); }
+.avatar.animal .cmd-badge { position: absolute; left: -5px; bottom: -5px; width: 46%; height: 46%; border-radius: 50%; background-size: 260% auto; background-position: 50% 21%; border: 1.5px solid var(--id-a, var(--line-strong)); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); }
+.pk-plate .who .animal-avatar { width: 36px; height: 36px; margin-right: 2px; }
