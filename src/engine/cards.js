@@ -172,6 +172,9 @@ export class Card {
     this.textSwap = null; // exchanged text boxes (Exchange of Words)
     this.sector = null; // Space sculptor: 'Alpha' | 'Beta' | 'Gamma'
     this.attackedPlayers = null; // { turn, pids } players this creature attacked this turn
+    this.hadToAttack = null; // { turn, combat } it was required to attack
+    this.surveilledTurn = null;
+    this.enteredController = null;
     this.meldedWith = null; // melded permanent: the other card it's made of
   }
   get faceDef() {

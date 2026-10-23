@@ -104,7 +104,6 @@ export async function declareAttackers(game) {
   }
   // requirements: goaded creatures, "attacks each combat if able"
   for (const c of cands) {
-    if (used.has(c.id)) continue;
     let must = (c.goadedBy && c.goadedBy.length > 0) || c.mustAttack != null;
     let forced = null;
     for (const s of game.activeStatics('MustAttack')) {
@@ -112,7 +111,9 @@ export async function declareAttackers(game) {
       must = true;
       if (s.p.MustAttack) { const t = s.p.MustAttack === 'You' ? s.ctx.you : null; if (t != null) forced = t; }
     }
-    if (!must) continue;
+    // "if that creature had to attack this combat"
+    if (must) c.hadToAttack = { turn: game.turnNumber, combat: game.combatsThisTurn || 0 };
+    if (!must || used.has(c.id)) continue;
     let d = null;
     if (c.mustAttack != null) d = defenders.find(x => x.player === c.mustAttack && !x.card);
     if (!d && forced != null) d = defenders.find(x => x.player === forced && !x.card);

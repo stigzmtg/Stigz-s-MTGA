@@ -155,7 +155,8 @@ function playerProp(game, p, prop, ctx) {
   }
   let m;
   if ((m = prop.match(/^controls(.+)$/))) {
-    const [filter, cmp] = m[1].split(/(?=EQ|GE|LE|GT|LT|NE)/);
+    const us = m[1].match(/^(.+)_((?:EQ|GE|LE|GT|LT|NE)\d+)$/);
+    const [filter, cmp] = us ? [us[1], us[2]] : m[1].split(/(?=EQ|GE|LE|GT|LT|NE)/);
     const n = game.battlefield.filter(c => c.controller === p.id && matchValid(game, c, filter, { ...ctx, you: ctx.you })).length;
     if (cmp) { const mm = cmp.match(/^(EQ|GE|LE|GT|LT|NE)(\d+)$/); if (mm) return compare(n, mm[1], +mm[2]); }
     return n > 0;
@@ -219,9 +220,10 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'nonToken': case 'nontoken': return !card.token;
     case 'tapped': case 'Tapped': return !!card.tapped;
     case 'untapped': case 'Untapped': return !card.tapped;
-    case 'attacking': return game.isAttacking(card);
-    case 'notattacking': return !game.isAttacking(card);
-    case 'blocking': return game.isBlocking(card);
+    // last known information: a creature that left combat by leaving the battlefield "was attacking"
+    case 'attacking': return card.lki ? !!card.wasAttacking : game.isAttacking(card);
+    case 'notattacking': return card.lki ? !card.wasAttacking : !game.isAttacking(card);
+    case 'blocking': return card.lki ? !!card.wasBlocking : game.isBlocking(card);
     case 'blocked': return game.isBlocked(card);
     case 'unblocked': return game.isAttacking(card) && !game.isBlocked(card);
     case 'attackingYou': return game.attackTargetOf(card) === you;
@@ -435,6 +437,23 @@ function cardProp(game, card, ch, prop, ctx) {
     if (!rem.some(x => x.id === card.id)) return false;
     return rem.every(x => charsOf(game, x).cmc <= ch.cmc);
   }
+  // "if it doesn't have the same name as another creature you control or a creature card in your graveyard"
+  if ((m = prop.match(/^doesNotShareNameWith (YourGraveyard|OtherYourBattlefield|YourBattlefield)$/))) {
+    const nm = ch.name;
+    const pool = m[1] === 'YourGraveyard' ? game.players[you].graveyard : game.battlefield.filter(x => x.controller === you && (m[1] !== 'OtherYourBattlefield' || x.id !== card.id));
+    return !pool.some(x => x.id !== card.id && charsOf(game, x).name === nm);
+  }
+  // "if it and at least two other creatures attacked this combat"
+  if ((m = prop.match(/^attackedThisCombat (EQ|GE|LE|GT|LT|NE)(\d+)$/))) {
+    const att = game.turnState.attackedWith || [];
+    return att.includes(card.id) && compare(att.length, m[1], +m[2]);
+  }
+  if (prop === 'blockingEquipped') return !!game.combat && !!host && host.attachedTo != null && game.combat.blockers.get(card.id) === host.attachedTo;
+  if (prop === 'EnteredUnder You') return (card.enteredController != null ? card.enteredController : ctrl) === you;
+  if (prop === 'surveilledThisTurn') return card.zone === 'graveyard' && card.surveilledTurn === game.turnNumber;
+  if (prop === 'hadToAttackThisCombat') { const c0 = card.lki ? card.card : card; const h = c0 && c0.hadToAttack; return !!h && h.turn === game.turnNumber && h.combat === (game.combatsThisTurn || 0); }
+  // "Aura.Other.YouOwn": dotted properties
+  if (/^[A-Za-z]+(\.[A-Za-z]+)+$/.test(prop)) return prop.split('.').every(pr => cardProp(game, card, ch, pr, ctx));
   if (prop === 'yardGreatestPower') return game.players[card.owner].graveyard.filter(x => charsOf(game, x).types.has('Creature')).every(x => charsOf(game, x).power <= ch.power);
   if (prop === 'blockingTriggeredAttacker') {
     const t = ctx.trig || (ctx.sa && ctx.sa.trig) || {};
@@ -770,6 +789,8 @@ function cardStat(game, card, stat, ctx) {
     case 'CardSumPower': return ch.power;
   }
   if ((m = stat.match(/^CardCounters\.(\w+)$/))) return m[1] === 'ALL' ? Object.values(card.counters || {}).reduce((a, b) => a + b, 0) : ((card.counters || {})[m[1]] || 0);
+  // "TriggeredCard$Valid Creature.attacking": 1 if the object matches
+  if ((m = stat.match(/^Valid (.+)$/))) return matchValid(game, card, m[1], ctx) ? 1 : 0;
   return 0;
 }
 
@@ -838,7 +859,11 @@ export function evalExpr(game, expr, ctx, depth) {
       const list = refList(game, ctx, 'Remembered');
       if (rest === 'Amount' || rest === 'Size') n = list.length;
       else if (rest === 'Valid') n = list.length;
-      else if (rest.startsWith('Valid ')) n = list.filter(x => matchValid(game, x, rest.slice(6), ctx)).length;
+      else if (rest.startsWith('Valid ')) {
+        const [v, st] = rest.slice(6).split('$');
+        const l2 = list.filter(x => matchValid(game, x, v, ctx));
+        n = st ? l2.reduce((a, c) => a + cardStat(game, c, st, ctx), 0) : l2.length;
+      }
       else n = list.reduce((a, c) => a + cardStat(game, c, rest, ctx), 0);
       break;
     }
@@ -1001,7 +1026,7 @@ function countExpr(game, rest, ctx, depth) {
     const a = calcCtx(game, m[1], ctx), b = calcCtx(game, m[3], ctx);
     return compare(a, m[2], b) ? calcCtx(game, m[4], ctx) : calcCtx(game, m[5], ctx);
   }
-  if ((m = rest.match(/^(Valid|ValidHand|ValidGraveyard|ValidExile|ValidLibrary|ValidBattlefield|ValidStack|ValidCommand|ValidAll) (.+?)(\$(CardPower|CardToughness|CardManaCost|SumPower|SumToughness|GreatestCardPower|GreatestCardToughness|GreatestCMC|CardCounters\.\w+))?$/))) {
+  if ((m = rest.match(/^(Valid|ValidHand|ValidGraveyard|ValidExile|ValidLibrary|ValidBattlefield|ValidStack|ValidCommand|ValidAll) (.+?)(\$(CardPower|CardToughness|CardManaCost|SumPower|SumToughness|GreatestCardPower|GreatestCardToughness|GreatestCardManaCost|GreatestCMC|CardCounters\.\w+))?$/))) {
     const zone = { Valid: 'battlefield', ValidBattlefield: 'battlefield', ValidHand: 'hand', ValidGraveyard: 'graveyard', ValidExile: 'exile', ValidLibrary: 'library', ValidStack: 'stack', ValidCommand: 'command', ValidAll: 'all' }[m[1]];
     const list = game.cardsInZone(zone).filter(c => matchValid(game, c, m[2], ctx));
     if (!m[4]) return list.length;

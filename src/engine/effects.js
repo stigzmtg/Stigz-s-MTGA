@@ -149,7 +149,7 @@ async function surveil(game, pid, n, sa) {
   const top = p.library.slice(0, n);
   if (!top.length) return;
   const gy = await chooseCards(game, pid, top, 0, top.length, `Surveil ${n}: choose cards to put into your graveyard`, sa, 'surveilGrave', { reveal: true });
-  for (const c of gy) await game.moveCard(c, 'graveyard', { silent: true });
+  for (const c of gy) { const r = await game.moveCard(c, 'graveyard', { silent: true }); if (r && r.zone === 'graveyard') r.surveilledTurn = game.turnNumber; }
   game.log(`${p.name} surveils ${n}${gy.length ? ` (${gy.length} to the graveyard)` : ''}.`);
   game.fire('Surveil', { Player: pid, Amount: n });
 }

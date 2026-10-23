@@ -138,7 +138,8 @@ export class AIAgent {
     const myTurn = game.activePlayer === pid;
     const stackTop = game.stack[game.stack.length - 1];
     // quick exit: nothing castable at all
-    const actions = getActions(game, pid);
+    // (never cast a permanent "as though it had flash" only to sacrifice it at the next cleanup)
+    const actions = getActions(game, pid).filter(a => !/sacrifice it at the next cleanup/.test(a.label || ''));
     // something of someone else's on the stack: take a moment, as a person would, before letting it resolve
     const pass = async () => { if (stackTop && stackTop.kind === 'spell' && stackTop.controller !== pid) await this.pause('respond'); return { type: 'pass' }; };
     if (!actions.length) return pass();
@@ -400,6 +401,10 @@ export class AIAgent {
       case 'Goad': return 1.5;
       case 'AddPhase': return 2;
       case 'RollPlanarDice': case 'Planeswalk': case 'ChaosEnsues': return -1;
+      // Time Stop: only to stop an opponent's spell on their turn
+      case 'EndTurn': return game.activePlayer !== pid && game.stack.some(s => s.controller !== pid && s.kind === 'spell') ? 4 : -5;
+      // Mandate of Peace: only while being attacked
+      case 'EndCombatPhase': return game.combat && game.activePlayer !== pid && game.combat.attackers.some(a => a.defenderPlayer === pid) ? 3 : -5;
       case 'BlankLine': return 0;
       case 'Meld': return 4;
       case 'UnlockDoor': { const f = sa.host && sa.host.def && sa.host.def.faces[+p.Door || 0]; return f ? 3 + f.cmc * 0.6 + f.triggers.length + f.statics.length : 2; }

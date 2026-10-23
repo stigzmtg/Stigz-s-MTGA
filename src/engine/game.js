@@ -1138,6 +1138,7 @@ export class Game {
       card.sick = true;
       card.enteredTurn = this.turnNumber;
       card.timestamp = newTimestamp(this);
+      card.enteredController = card.controller;
       card.tapped = !!opts.tapped;
       if (opts.faceDown) card.faceDown = true;
       if (opts.setProps) Object.assign(card, opts.setProps);

@@ -1393,4 +1393,30 @@ test('Equip restrictions: Lothlórien Blade equips only Elves', async T => {
   expect(cands && cands.includes(refOf(elf)) && !cands.includes(refOf(angel)) && blade.attachedTo === elf.id, 'only the elf');
 });
 
+test('Shatter the Sky: only players with a 4-power creature draw', async T => {
+  await T.put(1, 'Serra Angel'); await T.put(0, 'Llanowar Elves');
+  const ha = T.A.hand.length, hb = T.B.hand.length;
+  await T.cast('Shatter the Sky');
+  expect(T.B.hand.length === hb + 1 && T.A.hand.length === ha && !T.game.battlefield.some(T.isCreature), 'B drew; all creatures destroyed');
+});
+test("Guardian Project: draw for a creature that doesn't share a name", async T => {
+  await T.put(0, 'Guardian Project');
+  const h = T.A.hand.length;
+  await T.cast('Llanowar Elves');
+  expect(T.A.hand.length === h + 1, 'first elf draws');
+  await T.cast('Llanowar Elves');
+  expect(T.A.hand.length === h + 1, 'second elf does not');
+});
+
+test('"TriggeredCard$Valid ...": Zurgo draws when an attacking token leaves', async T => {
+  const z = await T.put(0, 'Zurgo Stormrender');
+  T.game.combat = { attackers: [], blockers: new Map(), firstStrikeDone: new Set() };
+  T.a.on('attackers', () => [{ attacker: z.id, defender: 'p1' }]);
+  await combat.declareAttackers(T.game); await T.resolve();
+  const tok = T.tokens(0)[0];
+  const h = T.A.hand.length;
+  await T.game.destroy(tok, null); await T.resolve();
+  expect(T.A.hand.length === h + 1 && T.B.life === 40, `drew a card (${T.A.hand.length - h}, ${T.B.life})`);
+});
+
 process.exit(await run(tests) ? 1 : 0);
