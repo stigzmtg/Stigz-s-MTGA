@@ -1782,6 +1782,15 @@ test('Haldan: an exiled red card with fetch counters is cast with blue mana ("ma
   const ok = await castSpell(T.game, 0, bolt, { optionKey: opts[0].key }); await T.resolve();
   expect(ok && isl.tapped && bolt.zone !== 'exile', `cast (${ok}, ${isl.tapped}, ${bolt.zone})`);
 });
+test('Ride the Avalanche: "when you cast your next spell this turn" triggers once', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  T.a.on('targets', req => req.cands.includes(refOf(elf)) ? [refOf(elf)] : req.cands.slice(0, req.min));
+  await T.cast('Ride the Avalanche');
+  await T.cast('Sol Ring');
+  const after1 = elf.counters.P1P1 || 0;
+  await T.cast('Mind Stone');
+  expect(after1 === 1 && (elf.counters.P1P1 || 0) === 1, `counters after the next spell ${after1}, after another ${elf.counters.P1P1 || 0}`);
+});
 test("Nexos: basic lands' {C}{C} pays for {X} costs only", async T => {
   for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
   await T.put(0, 'Nexos');

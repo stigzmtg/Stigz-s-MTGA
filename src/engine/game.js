@@ -664,6 +664,13 @@ export class Game {
         if (n >= lim) continue;
         this.turnState.triggerCounts[k] = n + 1;
       }
+      // "when you NEXT cast a spell this turn" (Ride the Avalanche, Brass Infiniscope, Solar Array): once
+      if (p.OneOff === 'True') {
+        const k = `${host.id}:${t.key}`;
+        const fired = this.turnState.oneOffFired || (this.turnState.oneOffFired = {});
+        if (fired[k]) continue;
+        fired[k] = true;
+      }
       const lk = `${host.id}:${t.key}`;
       const lc = (this.turnState.loopCounts[lk] = (this.turnState.loopCounts[lk] || 0) + 1);
       if (lc > 80) { if (lc === 81) this.log(`Stopped a possible infinite loop from ${this.name(host)}.`, { type: 'info' }); continue; }

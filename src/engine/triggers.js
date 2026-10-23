@@ -90,6 +90,8 @@ export function triggerMatches(game, p, host, rp, ctx) {
       if (p.ValidCard && !vc(game, rp.Card, p.ValidCard, ctx)) return false;
       if (p.ValidActivatingPlayer && !vc(game, playerObj(game, rp.Player), p.ValidActivatingPlayer, ctx)) return false;
       if (p.ValidSA && !validSA(game, rp, p.ValidSA, ctx)) return false;
+      // "a spell with {X} in its mana cost" (Brass Infiniscope, Unbound Flourishing)
+      if (p.HasXManaCost === 'True' && !(rp.Card && rp.Card.def && game.chars(rp.Card).manaCost && game.chars(rp.Card).manaCost.x)) return false;
       if (p.ActivatorThisTurnCast) {
         const n = game.players[rp.Player].spellsCastThisTurn.length;
         const m = p.ActivatorThisTurnCast.match(/^(EQ|NE|LT|LE|GT|GE)(\d+)$/);
