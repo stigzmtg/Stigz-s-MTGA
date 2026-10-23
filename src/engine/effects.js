@@ -498,7 +498,11 @@ export const E = {
     const d = p.NumDef != null ? calc(game, p.NumDef, sa) : 0;
     let kws = kwList(p.KW);
     if (p.KWChoice || p.Choices && p.KWChoice !== undefined) { /* ignore */ }
-    if (p.DefinedKW) kws = kws.concat(kwList(p.DefinedKW));
+    // "Protection:Player.PlayerUID_ChosenPlayerUID:ChosenPlayerName" with DefinedKW$ <player>: fill in that player
+    if (p.DefinedKW) {
+      const who = playersOf(resolveDefined(game, p.DefinedKW, ctxOf(game, sa)))[0];
+      kws = who ? kws.map(k => k.replace(/ChosenPlayerUID/g, String(who.id)).replace(/ChosenPlayerName/g, who.name)) : kws.filter(k => !/ChosenPlayer/.test(k));
+    }
     for (const o of list) {
       if (!o) continue;
       if (o.isPlayer) {
@@ -945,7 +949,7 @@ export const E = {
     if (!ok && r != null && (game.debugLog || game.debugChoose)) console.log('ChoosePlayer: invalid answer', JSON.stringify(r), choices.map(p => p.id));
     target.chosen = { ...(target.chosen || {}), player: ok ? r : choices[0].id };
     if (sa.p.RememberChosen === 'True') remember(sa, [game.players[target.chosen.player]]);
-    game.log(`${chooser.name} chooses ${game.players[target.chosen.player].name}.`);
+    game.log(sa.p.Secretly === 'True' ? `${chooser.name} secretly chooses a player.` : `${chooser.name} chooses ${game.players[target.chosen.player].name}.`);
   },
 
   async ChooseNumber(game, sa) {
@@ -1662,7 +1666,28 @@ export const E = {
     host.monstrous = true;
     game.fire('BecomeMonstrous', { Card: host });
   },
-  async ChangeTargets() {},
+  // choose new targets for target spell or ability (Emissary of Grudges)
+  async ChangeTargets(game, sa) {
+    const ctx = ctxOf(game, sa);
+    const items = (hasTgtSpec(sa) ? sa.targets : resolveDefined(game, sa.p.Defined || 'Targeted', ctx)).filter(t => t && t.stackItem && game.stack.includes(t));
+    for (const item of items) {
+      if (sa.p.ConditionPlayerContains && !matchValid(game, game.players[item.controller], sa.p.ConditionPlayerContains, ctx)) continue;
+      if (sa.p.ConditionTargetValidTargeting && !item.sa.chain().flatMap(s => s.targets || []).some(t => matchValid(game, t, sa.p.ConditionTargetValidTargeting, ctx))) continue;
+      let changed = false;
+      for (const s of item.sa.chain()) {
+        const spec = targetSpec(game, s);
+        if (!spec || !s.targets || !s.targets.length) continue;
+        const cands = targetCandidates(game, s, spec).filter(c => c !== item);
+        if (!cands.length) continue;
+        const max = Math.min(spec.max, cands.length);
+        const ans = await game.ask(sa.controller, { type: 'targets', prompt: `Choose new targets for ${item.description}`, cands: cands.map(refOf), min: Math.min(spec.min, max), max, sa: s, spec, purpose: 'changeTargets' });
+        const picked = (ans || []).map(r => fromRef(game, r)).filter(o => o && cands.includes(o));
+        if (picked.length < spec.min) continue;
+        s.targets = picked; s.targetZcc = picked.map(o => (o.isCard ? o.zcc : null)); changed = true;
+      }
+      if (changed) { game.touch(); game.log(`${game.players[sa.controller].name} changes the targets of ${item.description} (now ${item.sa.chain().flatMap(s => s.targets || []).map(t => game.name(t)).join(', ')}).`); }
+    }
+  },
   async ExchangeZone() {},
   async RearrangeTopOfLibrary(game, sa) {
     const pl = playersOf(objs(game, sa, 'You'))[0] || game.players[sa.controller];
@@ -1958,6 +1983,32 @@ export const E = {
     c.foretoldTurn = game.turnNumber;
     game.log(`${game.players[sa.controller].name} foretells a card.`);
   },
+  async UnlockDoor(game, sa) {
+    const c = sa.host;
+    if (c && c.isCard) game.unlockDoor(c, num(game, sa, 'Door', 0), sa.controller);
+  },
+
+  // blight N: put N -1/-1 counters on a creature you control
+  async Blight(game, sa) {
+    const n = num(game, sa, 'Num', 1);
+    for (const pl of playersOf(objs(game, sa, 'You'))) {
+      const pool = game.battlefield.filter(c => c.controller === pl.id && game.chars(c).types.has('Creature'));
+      const pick = (await chooseCards(game, pl.id, pool, 1, 1, `Blight ${n}: put ${n} -1/-1 counter${n === 1 ? '' : 's'} on a creature you control`, sa, 'blight'))[0];
+      if (pick) { await game.addCounters(pick, 'M1M1', n, sa); game.log(`${pl.name} blights ${n} (${game.name(pick)}).`); }
+    }
+  },
+
+  // the promised opponent gets the card's gift (GiftAbility SVar, Defined$ Promised)
+  async GiveGift(game, sa) {
+    const raw = sa.svars.GiftAbility;
+    const to = playersOf(resolveDefined(game, 'Promised', ctxOf(game, sa)))[0];
+    if (!raw || !to || to.lost) return;
+    game.log(`${game.players[sa.controller].name} gives ${to.name} ${parseAbility(raw).p.GiftDescription || 'a gift'}.`);
+    const sub = makeSA(game, raw, sa.svars, sa.host, sa.controller, { parent: sa, key: sa.key + '>gift' });
+    if (await chooseTargetsForSA(game, sub, { optional: true })) await resolveChain(game, sub);
+    game.fire('GiveGift', { Player: sa.controller, Card: sa.host, Recipient: to.id });
+  },
+
   async ClassLevelUp(game, sa) {
     const c = sa.host;
     c.classLevel = num(game, sa, 'ClassLevel', (c.classLevel || 1) + 1);

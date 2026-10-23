@@ -16,7 +16,7 @@ function zoneIn(spec, zone) {
 function playerObj(game, id) { return id == null ? null : (typeof id === 'object' ? id : game.players[id]); }
 
 export const SUPPORTED_TRIGGER_MODES = new Set(['ChangesZone', 'ChangesZoneAll', 'Phase', 'Attacks', 'AttackersDeclared', 'AttackersDeclaredOneTarget', 'SpellCast', 'SpellCastOrCopy', 'AbilityCast', 'SpellAbilityCast', 'DamageDone', 'DamageDoneOnce', 'DamageDealtOnce', 'DamageAll', 'Drawn', 'Sacrificed', 'Destroyed', 'LifeGained', 'LifeLost', 'LifeLostAll', 'TapsForMana', 'Cycled', 'Discarded', 'DiscardedAll', 'BecomesTarget', 'BecomesTargetOnce', 'Taps', 'Untaps', 'Blocks', 'AttackerBlocked', 'AttackerBlockedByCreature', 'AttackerUnblocked', 'AttackerUnblockedOnce', 'CounterAdded', 'CounterAddedOnce', 'CounterRemoved', 'LandPlayed', 'Always', 'TokenCreated', 'TokenCreatedOnce', 'TurnBegin', 'Milled', 'MilledAll', 'Exiled', 'LosesGame', 'BecomeMonarch', 'TakesInitiative', 'RoomEntered', 'DungeonCompleted', 'Explores', 'Connives', 'Surveil', 'Scry', 'Investigated', 'Fight', 'Attached', 'Unattached', 'ChangesController', 'Transformed', 'SpellCopy', 'BecomesCrewed', 'TurnFaceUp', 'Mutates', 'BecomeMonstrous', 'Evolved', 'CommitCrime', 'FlippedCoin', 'RolledDie', 'RolledDieOnce', 'Exploited', 'AbilityTriggered', 'AbilityResolves', 'CounterPlayerAddedAll', 'ManaAdded',
-  'ClassLevelGained', 'Clashed', 'DamagePrevented', 'DamagePreventedOnce']);
+  'ClassLevelGained', 'Clashed', 'DamagePrevented', 'DamagePreventedOnce', 'GiveGift', 'UnlockDoor', 'FullyUnlock']);
 
 export function triggerMatches(game, p, host, rp, ctx) {
   const mode = rp.Mode;
@@ -149,7 +149,7 @@ export function triggerMatches(game, p, host, rp, ctx) {
       rp.Amount = cards.length;
       return true;
     }
-    case 'Surveil': case 'Scry': case 'BecomeMonarch': case 'TakesInitiative': case 'RoomEntered': case 'DungeonCompleted': case 'LosesGame': case 'CommitCrime': case 'FlippedCoin': case 'RolledDie': case 'RolledDieOnce':
+    case 'GiveGift': case 'Surveil': case 'Scry': case 'BecomeMonarch': case 'TakesInitiative': case 'RoomEntered': case 'DungeonCompleted': case 'LosesGame': case 'CommitCrime': case 'FlippedCoin': case 'RolledDie': case 'RolledDieOnce':
       return !p.ValidPlayer || vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx);
     case 'BecomesTarget': case 'BecomesTargetOnce': {
       if (!vc(game, rp.Target, p.ValidTarget, ctx)) return false;
@@ -194,6 +194,11 @@ export function triggerMatches(game, p, host, rp, ctx) {
     case 'Unattached': return vc(game, rp.AttachSource, p.ValidAttachment, ctx) && vc(game, rp.AttachTarget, p.ValidObject, ctx);
     case 'ChangesController': return vc(game, rp.Card, p.ValidCard, ctx);
     case 'BecomesCrewed': return vc(game, rp.Card, p.ValidVehicle || p.ValidCard, ctx);
+    case 'UnlockDoor': case 'FullyUnlock':
+      if (!vc(game, rp.Card, p.ValidCard, ctx)) return false;
+      if (p.ValidPlayer && !vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx)) return false;
+      if (mode === 'UnlockDoor' && p.ThisDoor === 'True' && ctx.door != null && rp.Door !== ctx.door) return false;
+      return true;
     case 'ClassLevelGained': return vc(game, rp.Card, p.ValidCard, ctx) && (!p.ClassLevel || +p.ClassLevel === rp.ClassLevel);
     case 'Clashed': {
       if (p.ValidPlayer && !vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx)) return false;

@@ -161,6 +161,8 @@ export class Card {
     this.manaSpent = null;
     this.optionalCosts = [];
     this.lkiCause = null;
+    this.promisedGift = null;
+    this.unlocked = null; // Room doors unlocked on the battlefield (face indices)
   }
   get faceDef() {
     if (this.copyOf && this.copyOf.def) return this.copyOf.def.faces[this.copyOf.face || 0] || this.copyOf.def.faces[0];

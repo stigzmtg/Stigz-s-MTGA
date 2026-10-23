@@ -259,4 +259,263 @@ test('Aminatou -6: everyone takes the nonland permanents of the next player to t
   expect(ring.controller === 0 && elf.controller === 1 && mine.controller === 2 && am.controller === 0, `rotated (${ring.controller}, ${elf.controller}, ${mine.controller})`);
 }, { players: 3 });
 
+// ------------------------------------------------------------ casting: gift, casualty, replicate, additional costs
+test('Gift (spell): Wear Down promised destroys two, the opponent draws first', async T => {
+  const r1 = await T.put(1, 'Sol Ring'), r2 = await T.put(1, 'Arcane Signet');
+  T.a.on('gift', req => req.options.find(o => o.value === 1).value);
+  T.a.on('targets', req => req.cands.filter(r => [refOf(r1), refOf(r2)].includes(r)));
+  const h = T.B.hand.length;
+  await T.cast('Wear Down');
+  expect(r1.zone === 'graveyard' && r2.zone === 'graveyard', 'both destroyed');
+  expect(T.B.hand.length === h + 1, 'B drew the gift');
+});
+test('Gift (spell): not promised, one target only', async T => {
+  const r1 = await T.put(1, 'Sol Ring'), r2 = await T.put(1, 'Arcane Signet');
+  T.a.on('gift', () => -1);
+  let max = null;
+  T.a.on('targets', req => { max = req.max; return [refOf(r1)]; });
+  const h = T.B.hand.length;
+  await T.cast('Wear Down');
+  expect(max === 1 && r1.zone === 'graveyard' && r2.zone === 'battlefield' && T.B.hand.length === h, `one target (max ${max})`);
+});
+test('Gift (permanent): Octomancer gives an 8/8 Octopus on entering; Jolly Gerbils draws', async T => {
+  await T.put(0, 'Jolly Gerbils');
+  T.a.on('gift', req => 1);
+  const h = T.A.hand.length;
+  await T.cast('Octomancer');
+  const octo = T.tokens(1).find(t => T.game.chars(t).power === 8);
+  expect(octo, 'B got the octopus');
+  expect(T.A.hand.length === h + 1, 'Jolly Gerbils drew a card');
+});
+test('Gift (permanent): Scrapshooter promised destroys an artifact', async T => {
+  const ring = await T.put(1, 'Sol Ring');
+  T.a.on('gift', () => 1);
+  T.a.on('targets', req => req.cands.includes(refOf(ring)) ? [refOf(ring)] : undefined);
+  const h = T.B.hand.length;
+  await T.cast('Scrapshooter');
+  expect(ring.zone === 'graveyard' && T.B.hand.length === h + 1, 'destroyed, B drew');
+});
+test('Casualty: A Little Chat copied by sacrificing a creature', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  T.a.on('casualty', req => [elf.id]);
+  const h = T.A.hand.length;
+  await T.cast('A Little Chat');
+  expect(elf.zone === 'graveyard', 'elf sacrificed');
+  expect(T.A.hand.length === h + 2, `copy resolved too (+${T.A.hand.length - h})`);
+});
+test('Replicate: Super Combo paid once fights twice', async T => {
+  const angel = await T.put(0, 'Serra Angel');
+  const e1 = await T.put(1, 'Llanowar Elves'), e2 = await T.put(1, 'Wall of Omens');
+  T.a.on('replicate', () => 1);
+  T.a.on('newTargets', () => true);
+  let n = 0;
+  T.a.on('targets', req => { if (req.cands.includes(refOf(angel))) return [refOf(angel)]; n++; return [refOf(n === 1 ? e1 : e2)]; });
+  await T.cast('Super Combo');
+  expect(e1.zone === 'graveyard' && e2.zone === 'graveyard', `both died (${e1.zone}, ${e2.zone})`);
+});
+test('Alternate additional cost: Bitter Triumph pays 3 life or discards', async T => {
+  const a = await T.put(1, 'Serra Angel');
+  T.a.on('altAdditionalCost', req => req.options.find(o => /PayLife/.test(o.value)).value);
+  T.a.on('targets', () => [refOf(a)]);
+  const l = T.A.life;
+  await T.cast('Bitter Triumph');
+  expect(a.zone === 'graveyard' && T.A.life === l - 3, `paid 3 life (${l - T.A.life})`);
+  const b = await T.put(1, 'Serra Angel');
+  T.A.hand.length = 0;
+  T.a.on('targets', () => [refOf(b)]);
+  await T.cast('Bitter Triumph');
+  expect(b.zone === 'graveyard' && T.A.life === l - 6, 'with no card to discard it pays life again');
+});
+test('Optional cost: Redemptor Dreadnought exiles a creature card and pumps by its power', async T => {
+  const angel = await T.put(0, 'Serra Angel', 'graveyard');
+  T.a.on('optionalCost', () => true);
+  const d = await T.cast('Redemptor Dreadnought');
+  expect(angel.zone === 'exile' && angel.exiledWith === d.id, 'exiled with it');
+  d.sick = false;
+  T.game.combat = { attackers: [], blockers: new Map(), firstStrikeDone: new Set() };
+  T.a.on('attackers', () => [{ attacker: d.id, defender: 'p1' }]);
+  await combat.declareAttackers(T.game); await T.resolve();
+  expect(T.game.chars(d).power === 8, `4 + 4 (${T.game.chars(d).power})`);
+});
+test('Optional blight: Burning Curiosity exiles three if blighted', async T => {
+  const angel = await T.put(0, 'Serra Angel');
+  T.a.on('optionalCost', () => true);
+  const ex = T.A.exile.length;
+  await T.cast('Burning Curiosity');
+  expect(angel.counters.M1M1 === 1 && T.A.exile.length === ex + 3, `blighted, exiled 3 (${T.A.exile.length - ex})`);
+});
+test('Blight effect: Sinister Gnarlbark at end step', async T => {
+  const g = await T.put(0, 'Sinister Gnarlbark');
+  T.game.fire('Phase', { Phase: 'End of Turn', Player: 0 }); await T.resolve();
+  expect(g.counters.M1M1 === 1, 'blighted its only creature');
+});
+test('Emerge: Elder Deep-Fiend costs less by the sacrificed creature mana value', async T => {
+  const angel = await T.put(0, 'Serra Angel');
+  for (const c of T.game.battlefield) if (T.isLand(c)) c.tapped = true;
+  T.noMana(0); T.A.pool.U = 2;
+  const c = await T.put(0, 'Elder Deep-Fiend', 'hand');
+  const act = getActions(T.game, 0).find(a => a.cardId === c.id && /Emerge/.test(a.label));
+  expect(act, 'emerge offered for UU with a 5-drop to sacrifice');
+  T.a.on('emerge', () => [angel.id]);
+  await T.game.performAction(0, act); await T.resolve();
+  expect(c.zone === 'battlefield' && angel.zone === 'graveyard' && T.A.pool.U === 0, 'emerged');
+});
+test('Entwine: One Dozen Eyes makes both', async T => {
+  T.a.on('entwine', () => true);
+  await T.cast('One Dozen Eyes');
+  expect(T.tokens(0).length === 6, `beast + five insects (${T.tokens(0).length})`);
+});
+test('Tiered: Cloud\'s Limit Break Omnislash pays {3}{W} more', async T => {
+  const a = await T.put(1, 'Serra Angel'); a.tapped = true;
+  const b = await T.put(1, 'Wall of Omens'); b.tapped = true;
+  T.a.on('modes', req => [req.options.find(o => /Omnislash/.test(o.label)).value]);
+  T.noMana(0); T.A.pool.W = 2; T.A.pool.C = 4;
+  for (const c of T.game.battlefield) if (T.isLand(c)) c.tapped = true;
+  await T.cast("Cloud's Limit Break", 0, { mana: false });
+  expect(a.zone === 'graveyard' && b.zone === 'graveyard', 'tapped creatures destroyed');
+  expect(T.A.pool.W === 0 && T.A.pool.C === 0, `paid {1}{W} + {3}{W} with exactly six mana (${JSON.stringify(T.A.pool)})`);
+});
+test('Spree: Requisition Raid with two modes', async T => {
+  const ring = await T.put(1, 'Sol Ring'), ench = await T.put(1, 'Propaganda');
+  T.a.on('modes', req => req.options.filter(o => /Destroy/.test(o.label)).map(o => o.value));
+  T.a.on('targets', req => req.cands.includes(refOf(ring)) ? [refOf(ring)] : [refOf(ench)]);
+  T.noMana(0); T.A.pool.W = 1; T.A.pool.C = 2;
+  for (const c of T.game.battlefield) if (T.isLand(c)) c.tapped = true;
+  await T.cast('Requisition Raid', 0, { mana: false });
+  expect(ring.zone === 'graveyard' && ench.zone === 'graveyard' && T.A.pool.C === 0, 'both destroyed for {W}+{1}+{1}');
+});
+test('Strive: Launch the Fleet costs {1} more per extra target', async T => {
+  const xs = [await T.put(0, 'Llanowar Elves'), await T.put(0, 'Serra Angel'), await T.put(0, 'Wall of Omens')];
+  T.a.on('targets', () => xs.map(refOf));
+  T.noMana(0); T.A.pool.W = 1; T.A.pool.C = 3;
+  for (const c of T.game.battlefield) if (T.isLand(c)) c.tapped = true;
+  await T.cast('Launch the Fleet', 0, { mana: false });
+  expect(T.A.pool.C === 1, `paid {W} + {2} (${T.A.pool.C} left)`);
+});
+test('Prowl: Latchkey Faerie after a Rogue dealt combat damage', async T => {
+  const rogue = await T.put(0, 'Latchkey Faerie');
+  const c = await T.put(0, 'Latchkey Faerie', 'hand');
+  T.mana(0);
+  expect(!getActions(T.game, 0).some(a => a.cardId === c.id && /Prowl/.test(a.label)), 'no prowl before damage');
+  await T.game.dealDamage(rogue, T.B, 3, { combat: true });
+  const act = getActions(T.game, 0).find(a => a.cardId === c.id && /Prowl/.test(a.label));
+  expect(act, 'prowl offered');
+  const h = T.A.hand.length;
+  await T.game.performAction(0, act); await T.resolve();
+  expect(c.zone === 'battlefield' && T.A.hand.length === h, 'prowled: drew a card on entering (hand unchanged after casting it)');
+});
+test('MayFlashCost: Rout at instant speed for {2} more', async T => {
+  await T.put(1, 'Serra Angel');
+  const c = await T.put(0, 'Rout', 'hand');
+  T.game.activePlayer = 1; T.game.priority = 0; T.game.step = 'end';
+  T.mana(0);
+  const act = getActions(T.game, 0).find(a => a.cardId === c.id);
+  expect(act && /flash/.test(act.label), 'flash option offered');
+  T.noMana(0); T.A.pool.W = 2; T.A.pool.C = 5;
+  for (const x of T.game.battlefield) if (T.isLand(x)) x.tapped = true;
+  await T.game.performAction(0, act); await T.resolve();
+  expect(!T.game.battlefield.some(T.isCreature) && T.A.pool.C === 0, 'wrath at instant speed, paid 7');
+});
+test('Dredge: mill 2 instead of drawing, Dakmor Salvage returns', async T => {
+  const s = await T.put(0, 'Dakmor Salvage', 'graveyard');
+  T.a.on('dredge', () => s.id);
+  const gy = T.A.graveyard.length, lib = T.A.library.length;
+  await T.game.drawCards(T.A, 1, null);
+  expect(s.zone === 'hand' && T.A.library.length === lib - 2 && T.A.graveyard.length === gy - 1 + 2, 'dredged');
+  expect(T.A.cardsDrawnThisTurn === 0, 'not a draw');
+});
+test('Trigger costs: Dawn of Hope pays {2} to draw, or does nothing', async T => {
+  await T.put(0, 'Dawn of Hope');
+  T.mana(0);
+  const h = T.A.hand.length;
+  await T.game.gainLife(T.A, 1, null); await T.resolve();
+  expect(T.A.hand.length === h + 1 && T.A.pool.C + T.A.pool.W < 18, 'paid and drew');
+  T.noMana(0);
+  for (const c of T.game.battlefield) if (T.isLand(c)) c.tapped = true;
+  await T.game.gainLife(T.A, 1, null); await T.resolve();
+  expect(T.A.hand.length === h + 1, 'could not pay: no card');
+});
+test("Exiled-to-graveyard cost: Void Attendant", async T => {
+  const va = await T.put(0, 'Void Attendant');
+  const ex = await T.put(1, 'Serra Angel', 'exile');
+  await T.activate(va);
+  expect(ex.zone === 'graveyard' && T.tokens(0).length === 1, 'card to graveyard, scion made');
+  let threw = false; try { await T.activate(va); } catch { threw = true; }
+  expect(threw, 'no more opponent cards in exile: cannot activate');
+});
+test("Ulamog's Nullifier: put two exiled cards into graveyards to counter a spell", async T => {
+  await T.put(1, 'Serra Angel', 'exile'); await T.put(1, 'Sol Ring', 'exile');
+  const spell = await T.put(1, 'Harmonize', 'hand');
+  T.mana(1); T.game.priority = 1; T.game.activePlayer = 1;
+  await castSpell(T.game, 1, spell, {});
+  T.game.activePlayer = 0;
+  T.a.on('targets', req => req.cands.slice(0, 1));
+  await T.cast('Ulamog\'s Nullifier', 0, { resolve: false });
+  await T.resolve();
+  expect(spell.zone === 'graveyard' && T.B.exile.length === 0, `countered (${spell.zone}), exile emptied`);
+});
+test('Night Soil: exile two creature cards from a single graveyard', async T => {
+  const ns = await T.put(0, 'Night Soil');
+  await T.put(1, 'Serra Angel', 'graveyard'); await T.put(0, 'Llanowar Elves', 'graveyard');
+  let threw = false; try { await T.activate(ns); } catch { threw = true; }
+  expect(threw, 'one creature in each graveyard is not enough');
+  await T.put(1, 'Wall of Omens', 'graveyard');
+  await T.activate(ns);
+  expect(T.B.graveyard.length === 0 && T.tokens(0).length === 1, 'two from B\'s graveyard, saproling');
+});
+test('Reveal the chosen player: Stalking Leonin exiles an attacker of theirs', async T => {
+  T.a.on('choosePlayer', () => 1);
+  const leo = await T.cast('Stalking Leonin');
+  expect(leo.chosen.player === 1 && !T.logged(/A chooses B/), 'secretly chose B');
+  const angel = await T.put(1, 'Serra Angel');
+  T.game.activePlayer = 1;
+  T.combatWith([[angel, 0]]);
+  T.a.on('targets', () => [refOf(angel)]);
+  await T.activate(leo, 0, a => a.parsed.api === 'ChangeZone');
+  expect(angel.zone === 'exile' && leo.chosenRevealed, 'exiled');
+});
+test('Guardian Archon: protection from the chosen player', async T => {
+  T.a.on('choosePlayer', () => 1);
+  const ga = await T.cast('Guardian Archon');
+  const elf = await T.put(0, 'Llanowar Elves');
+  T.a.on('targets', () => [refOf(elf)]);
+  await T.activate(ga, 0, a => a.parsed.api === 'Pump');
+  const angel = await T.put(1, 'Serra Angel');
+  expect(await T.game.dealDamage(angel, elf, 3, {}) === 0, 'elf protected from B');
+  expect(await T.game.dealDamage(angel, T.A, 3, {}) === 0, 'A protected from B');
+});
+test('Emissary of Grudges: redirect an opponent spell that targets you', async T => {
+  T.a.on('choosePlayer', () => 1);
+  const em = await T.cast('Emissary of Grudges');
+  const mine = await T.put(0, 'Serra Angel'), theirs = await T.put(1, 'Serra Angel');
+  const tp = await T.put(1, 'Terminate', 'hand');
+  T.mana(1); T.game.priority = 1; T.game.activePlayer = 1;
+  T.b.on('targets', () => [refOf(mine)]);
+  await castSpell(T.game, 1, tp, {});
+  T.game.activePlayer = 0;
+  T.a.on('targets', req => req.purpose === 'changeTargets' ? [refOf(theirs)] : [req.cands.find(r => r[0] === 's')]);
+  await T.activate(em, 0, a => a.parsed.api === 'ChangeTargets', { resolve: false });
+  await T.resolve();
+  expect(mine.zone === 'battlefield' && theirs.zone === 'graveyard', 'Terminate hit their own angel');
+});
+test('Rooms: cast a door, it unlocks; unlock the other door as a sorcery', async T => {
+  const elf = await T.put(1, 'Llanowar Elves');
+  T.a.on('targets', req => req.cands.includes(refOf(elf)) ? [refOf(elf)] : undefined);
+  await T.put(0, 'Fear of Sleep Paralysis');
+  const c = await T.put(0, 'Bottomless Pool', 'hand');
+  T.mana(0);
+  const act = getActions(T.game, 0).find(a => a.cardId === c.id && /Bottomless Pool/.test(a.label));
+  expect(act, 'cast the Bottomless Pool door');
+  await T.game.performAction(0, act); await T.resolve();
+  expect(elf.zone === 'hand', 'unlock trigger bounced the elf');
+  expect(c.unlocked.join() === '0' && T.game.name(c) === 'Bottomless Pool', `one door open (${T.game.name(c)})`);
+  const unlock = activatedAbilities(T.game, 0, c).find(a => a.parsed.api === 'UnlockDoor');
+  expect(unlock, 'can unlock Locker Room');
+  const angel = await T.put(1, 'Serra Angel');
+  T.a.on('targets', req => req.cands.includes(refOf(angel)) ? [refOf(angel)] : undefined);
+  await T.activate(c, 0, a => a.parsed.api === 'UnlockDoor');
+  expect(c.unlocked.length === 2 && T.game.chars(c).triggers.length === 2, 'both doors open');
+  expect(angel.tapped && angel.counters.STUN === 1, 'fully unlocked: Fear of Sleep Paralysis stunned the angel');
+});
+
 process.exit(await run(tests) ? 1 : 0);

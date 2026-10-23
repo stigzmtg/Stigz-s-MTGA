@@ -4,6 +4,7 @@ import { canBlock, canAttack, combatPower, blockRules, attackTax, canAttackDefen
 import { matchValid, calc, ctxOf, ctrlOf } from '../engine/filters.js';
 import { parseAbility } from '../engine/forge.js';
 import { sleep, COLORS, BASIC_LAND_TYPES } from '../engine/util.js';
+import { addCosts } from '../engine/mana.js';
 
 const HARMFUL = new Set(['Destroy', 'DestroyAll', 'DealDamage', 'DamageAll', 'Counter', 'Sacrifice', 'SacrificeAll', 'Discard', 'LoseLife', 'Mill', 'GainControl', 'Tap', 'TapAll', 'Goad', 'Fight', 'Phases', 'ExchangeControl', 'RemoveCounter']);
 const BENEFICIAL = new Set(['Pump', 'PumpAll', 'PutCounter', 'PutCounterAll', 'GainLife', 'Draw', 'Untap', 'UntapAll', 'Attach', 'Regenerate', 'Animate', 'Token', 'CopyPermanent', 'Clone', 'Investigate', 'Scry', 'Surveil', 'Proliferate', 'Dig', 'BecomeMonarch', 'Explore', 'Connive', 'Amass', 'MultiplyCounter', 'Mana']);
@@ -398,6 +399,7 @@ export class AIAgent {
       case 'Regenerate': return 0;
       case 'Goad': return 1.5;
       case 'AddPhase': return 2;
+      case 'UnlockDoor': { const f = sa.host && sa.host.def && sa.host.def.faces[+p.Door || 0]; return f ? 3 + f.cmc * 0.6 + f.triggers.length + f.statics.length : 2; }
       default: return 1;
     }
   }
@@ -587,6 +589,13 @@ export class AIAgent {
     }
     if (purpose === 'tap') return pick(cards.filter(c => c.controller !== pid).sort((a, b) => v(b) - v(a)), max);
     if (purpose === 'gainControlChoice') return pick(cards.slice().sort((a, b) => v(b) - v(a)), Math.max(min, 1));
+    if (purpose === 'casualty') { const ok = cards.filter(c => c.token || v(c) <= 4).sort((a, b) => v(a) - v(b)); return ok.length ? [ok[0].id] : []; }
+    if (purpose === 'emerge') return pick(cards.slice().sort((a, b) => (game.chars(b).cmc - v(b) * 0.4 + (b.token ? 2 : 0)) - (game.chars(a).cmc - v(a) * 0.4 + (a.token ? 2 : 0))), 1);
+    if (purpose === 'blight') {
+      const n = 1;
+      const score = c => (game.chars(c).toughness > n ? 0 : 8) + (c.token ? -2 : 0) + v(c) * 0.5 - (c.controller !== pid ? 20 : 0);
+      return pick(cards.slice().sort((a, b) => score(a) - score(b)), Math.max(1, min));
+    }
     if (purpose === 'untap') return pick(cards.filter(c => c.controller === pid), max);
     if (purpose === 'discardOpponent') return pick(cards.slice().sort((a, b) => v(b) - v(a)), max);
     if (purpose === 'costTapXType' || purpose === 'costtapXType') return pick(cards.slice().sort((a, b) => v(a) - v(b)), min);
@@ -626,6 +635,28 @@ export class AIAgent {
       return (nonAlt || opts[0]).value;
     }
     if (req.purpose === 'chooseDirection') return this.direction(game, pid, req);
+    if (req.purpose === 'gift') {
+      // promise only cheap gifts (a card, a small token), to the least threatening opponent
+      const g = req.gift;
+      const cheap = g && (g.api === 'Draw' && !(+g.p.NumCards > 1) || g.api === 'Token' && /_1_1_|treasure|food|clue/i.test(g.p.TokenScript || ''));
+      if (!cheap) return -1;
+      const opps = opts.filter(o => o.value !== -1).map(o => o.value);
+      return opps.sort((a, b) => this.threat(a) - this.threat(b))[0] ?? -1;
+    }
+    if (req.purpose === 'dredge') {
+      // dredge when the library can afford it; lands back only while we still want land drops
+      const me = game.players[pid];
+      const lands = game.battlefield.filter(c => c.controller === pid && game.chars(c).types.has('Land')).length;
+      const best = opts.filter(o => o.value !== 0).map(o => game.cardById(o.value)).filter(Boolean)
+        .filter(c => me.library.length > 25 && (!game.chars(c).types.has('Land') || lands < 6 && !me.hand.some(h => game.chars(h).types.has('Land'))))
+        .sort((a, b) => this.value(b) - this.value(a))[0];
+      return best ? best.id : 0;
+    }
+    if (req.purpose === 'altAdditionalCost') {
+      const me = game.players[pid];
+      const rank = o => /^Reveal/.test(o.value) ? 0 : /^\d+$|^[WUBRGC ]+$/.test(o.value) ? 1 : /^PayLife/.test(o.value) ? (me.life > 15 ? 1.5 : 5) : /^Discard/.test(o.value) ? (me.hand.length > 3 ? 2 : 4) : 3;
+      return opts.slice().sort((a, b) => rank(a) - rank(b))[0].value;
+    }
     if (req.purpose === 'changeCombatants') {
       // send the attacker at whoever we like least: never at ourselves, preferably at the weakest-defended threat
       const c = game.cardById(req.cardId);
@@ -667,6 +698,20 @@ export class AIAgent {
       return { v: o.value, s };
     }).sort((a, b) => b.s - a.s);
     const n = Math.max(req.min, Math.min(req.max, scored.filter(x => x.s > 0).length || req.min));
+    if (req.baseMana && req.options.some(o => o.cost)) {
+      // spree / tiered: add modes while their costs stay affordable
+      let acc = req.baseMana.x ? { ...req.baseMana, x: 0 } : req.baseMana;
+      const out = [];
+      const ex = new Set(sa && sa.host ? [sa.host.id] : []);
+      for (const x of scored) {
+        if (out.length >= req.max || (out.length >= Math.max(1, req.min) && x.s <= 0)) break;
+        const o = req.options.find(y => y.value === x.v);
+        const next = o.cost ? addCosts(acc, o.cost) : acc;
+        if (!canAfford(game, pid, next, { spellCard: sa && sa.host, exclude: ex })) continue;
+        acc = next; out.push(x.v);
+      }
+      return out.length >= req.min ? out : scored.slice(0, req.min).map(x => x.v);
+    }
     if (req.repeat) return Array(n).fill(scored[0].v);
     return scored.slice(0, n).map(x => x.v);
   }
@@ -685,6 +730,27 @@ export class AIAgent {
       case 'shuffle': return false;
       case 'reveal': return true;
       case 'exploreGrave': { const c = req.cards && game.cardById(req.cards[0]); return c ? game.chars(c).cmc > 5 : false; }
+      case 'entwine': return true;
+      case 'optionalCost': {
+        const c = String(req.cost || '');
+        if (/^Blight/.test(c)) return game.battlefield.some(x => x.controller === pid && game.chars(x).types.has('Creature') && (x.token || game.chars(x).toughness > 1));
+        return true;
+      }
+      case 'triggerCost': {
+        if (!sa || !sa.p.Cost) return true;
+        const me = game.players[pid];
+        const cost = parseCost(sa.p.Cost);
+        for (const pt of cost.parts) {
+          const n = +pt.amount || 1;
+          if (pt.type === 'PayLife' && me.life - n < 12) return false;
+          if (pt.type === 'Discard' && me.hand.length < 3) return false;
+          if (pt.type === 'Sac' && !/^(CARDNAME|Card\.Self)$/.test(pt.valid || '')) {
+            const pool = game.battlefield.filter(c => c.controller === pid && matchValid(game, c, pt.valid, ctxOf(game, sa)));
+            if (!pool.some(c => c.token || this.value(c) < 3)) return false;
+          }
+        }
+        return true;
+      }
       case 'clashBottom': {
         const c = req.cards && game.cardById(req.cards[0]);
         if (!c) return false;

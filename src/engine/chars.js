@@ -37,8 +37,32 @@ export function baseChars(game, card) {
   if (card.def.isSplit && card.zone !== 'stack' && !card.faceDown) {
     ch.cmc = card.def.faces.reduce((a, x) => a + cmc(x.manaCost), 0);
   }
+  if (card.zone === 'battlefield' && card.unlocked && !card.faceDown && !card.copyOf) roomChars(card, ch);
   if (card.copyOf && card.copyOf.extra) applyCopyExtras(ch, card.copyOf.extra);
   return ch;
+}
+
+// A Room permanent has the characteristics of its unlocked doors; each locked door can be unlocked
+// as a sorcery by paying its mana cost.
+export function isRoom(def) { return def.altMode === 'Split' && def.faces.length > 1 && def.faces.every(f => f.subtypes.includes('Room')); }
+function roomChars(card, ch) {
+  const faces = card.def.faces;
+  const open = faces.filter((_, i) => card.unlocked.includes(i));
+  ch.name = open.map(f => f.name).join(' // ') || faces.map(f => f.name).join(' // ');
+  ch.cmc = open.reduce((a, f) => a + cmc(f.manaCost), 0);
+  ch.colors = new Set(open.flatMap(f => f.colors));
+  ch.svars = Object.assign({}, ...faces.map(f => f.svars).reverse());
+  ch.keywords = open.flatMap(f => f.keywords);
+  ch.oracle = open.map(f => f.oracle).join('\n');
+  for (const [kind, prop] of [['abilities', 'abilities'], ['triggers', 'triggers'], ['statics', 'statics'], ['replacements', 'replacements']]) {
+    ch[kind] = [];
+    faces.forEach((f, i) => { if (card.unlocked.includes(i)) ch[kind].push(...abilityList(f[prop], f.svars, card, `${i}${kind[0].toUpperCase()}`).map(e => ({ ...e, door: i }))); });
+  }
+  faces.forEach((f, i) => {
+    if (card.unlocked.includes(i) || !f.manaCostStr) return;
+    const raw = `AB$ UnlockDoor | Cost$ ${f.manaCostStr} | SorcerySpeed$ True | Static$ True | Door$ ${i} | SpellDescription$ Unlock ${f.name}`;
+    ch.abilities.push({ raw, parsed: parseAbility(raw), svars: f.svars, src: card, key: `unlock${i}` });
+  });
 }
 
 function applyCopyExtras(ch, extra) {

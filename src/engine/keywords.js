@@ -235,7 +235,13 @@ function defFor(kw, face) {
       S.KWDecayed = 'DB$ DelayedTrigger | Mode$ Phase | Phase$ EndCombat | Execute$ KWDecaySac | RememberObjects$ Self';
       S.KWDecaySac = 'DB$ Sacrifice | Defined$ DelayTriggerRemembered';
       break;
-    case 'Gift': break;
+    case 'Gift':
+      // permanents: "when it enters, [the promised opponent gets the gift]"; spells give it as they resolve
+      if (['Artifact', 'Creature', 'Enchantment', 'Land', 'Planeswalker', 'Battle'].some(t => (face.types || []).includes(t))) {
+        T.push(`${etbSelf}+PromisedGift | Execute$ KWGift | TriggerDescription$ Gift — the promised opponent gets the gift`);
+        S.KWGift = 'DB$ GiveGift';
+      }
+      break;
     case 'Offspring':
       T.push(`${etbSelf} | CheckSVar$ KWOffN | SVarCompare$ GE1 | Execute$ KWOffspring | TriggerDescription$ Offspring`);
       S.KWOffN = 'Count$TimesKicked';
@@ -294,5 +300,5 @@ export function synthesizeKeywords(game, card, ch) {
 export function keywordInfo(kw) { return defFor(kw, { svars: {} }); }
 
 export const SUPPORTED_KEYWORDS = new Set(['Flying', 'Equip', 'Trample', 'ETBReplacement', 'Enchant', 'Cycling', 'Vigilance', 'Flash', 'Haste', 'etbCounter', 'Deathtouch', 'Lifelink', 'Menace', 'First Strike', 'Flashback', 'Reach', 'TypeCycling', 'Indestructible', 'Changeling', 'Crew', 'Chapter', 'Defender', 'Kicker', 'Convoke', 'Ward', 'Double Strike', 'Cascade', 'Partner', 'Partner with', 'Evoke', 'Devoid', 'Multikicker', 'Unearth', 'Hexproof', 'Myriad', 'Ravenous', 'Landwalk', 'Fear', 'Intimidate', 'Shroud', 'Annihilator', 'Prowess', 'Persist', 'Undying', 'Exalted', 'Extort', 'Evolve', 'Living Weapon', 'Job select', 'Fabricate', 'Riot', 'Mentor', 'Training', 'Battle cry', 'Melee', 'Bushido', 'Afflict', 'Storm', 'Demonstrate', 'Backup', 'Squad', 'Blitz', 'Dash', 'Echo', 'Hideaway', 'Devour', 'Exploit', 'Dethrone', 'Renown', 'Toxic', 'Infect', 'Wither', 'Affinity', 'Delve', 'Improvise', 'Escape', 'Retrace', 'Overload', 'Split second', 'Umbra armor', 'Totem armor', 'Morph', 'Megamorph', 'Disguise', 'Encore', 'Embalm', 'Eternalize', 'Outlast', 'Scavenge', 'Transmute', 'Ninjutsu', 'CommanderNinjutsu', 'Decayed', 'Offspring', 'Afterlife', 'Squad', 'Protection', 'Shadow', 'Horsemanship', 'Skulk', 'Jump-start', 'Discover', 'Rebound', 'Choose a Background', 'Friends forever', 'Doctor\'s companion', 'Ascend', 'Reconfigure', 'Level up', 'Foretell', 'Suspend', 'Class', 'Madness', 'Miracle', 'Aftermath', 'Undaunted', 'Spectacle', 'Surge', 'Mutate', 'Bestow', 'Strive', 'Escalate', 'Fuse',
-  'Graft', 'Flanking', 'Sunburst', 'Mayhem', 'All creatures able to block CARDNAME do so.',
+  'Graft', 'Flanking', 'Sunburst', 'Mayhem', 'All creatures able to block CARDNAME do so.', 'Gift', 'Casualty', 'Replicate', 'AlternateAdditionalCost', 'Emerge', 'Prowl', 'Entwine', 'MayFlashCost', 'Tiered', 'Spree', 'Dredge',
   'Prevent all combat damage that would be dealt to and dealt by CARDNAME.', 'Prevent all combat damage that would be dealt to CARDNAME.', 'Prevent all damage that would be dealt to CARDNAME.', 'Prevent all combat damage that would be dealt by CARDNAME.', 'Prevent all damage that would be dealt to and dealt by CARDNAME.']);

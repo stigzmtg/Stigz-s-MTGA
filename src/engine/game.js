@@ -1,7 +1,7 @@
 // Core game state and flow: zones, turns, priority, the stack, state-based actions and triggers.
 import { Card, Player, newTimestamp } from './cards.js';
 import { RNG, COLORS, BASIC_LAND_TYPES, sleep } from './util.js';
-import { computeAll, charsOutside } from './chars.js';
+import { computeAll, charsOutside, isRoom } from './chars.js';
 import { matchValid, resolveDefined, calcCtx, checkPresence, ctrlOf, zoneMap, findTargets } from './filters.js';
 import { synthesizeKeywords, keywordInfo } from './keywords.js';
 import { SA, castSpell, activateAbility, resolveStackItem, chooseTargetsForSA, getActions, playLand, manaSourcesFor, activateManaAbility, resolveChain, castAlternative } from './abilities.js';
@@ -580,7 +580,7 @@ export class Game {
       if (!this.triggerZoneOk(p, zone, host, rp)) continue;
       // "When CARDNAME enters during the declare attackers step, ..." (Phase$ on a non-phase trigger)
       if (p.Phase && mode !== 'Phase' && !p.Phase.split(',').map(s => s.trim()).includes(FORGE_PHASE[this.step])) continue;
-      const ctx = { host, you: controller, trig: rp, svars: t.svars, sa: { svars: t.svars, host, controller, trig: rp, root() { return { x: host.xPaid || 0, paid: {} }; }, parent: null, targets: [] } };
+      const ctx = { host, you: controller, trig: rp, svars: t.svars, door: t.door, sa: { svars: t.svars, host, controller, trig: rp, root() { return { x: host.xPaid || 0, paid: {} }; }, parent: null, targets: [] } };
       try {
         if (!triggerMatches(this, p, host, rp, ctx)) continue;
         if (!checkPresence(this, p, ctx)) continue;
@@ -1066,7 +1066,8 @@ export class Game {
       if (opts.faceDown) card.faceDown = true;
       if (opts.transformed) { card.face = 1; card.transformed = true; }
       if (opts.face != null) card.face = opts.face;
-      if (opts.cast) { card.castFrom = opts.cast.from; card.xPaid = opts.cast.x || 0; card.kicked = opts.cast.kicked || 0; card.castSA = opts.cast.sa || null; card.manaSpent = opts.cast.manaSpent || null; card.optionalCosts = opts.cast.optionalCosts || []; card.altCost = opts.cast.altCost || null; card.convokedBy = opts.cast.convokedBy || []; card.squad = opts.cast.squad || 0; card.evoked = card.altCost === 'Evoke'; card.blitzed = card.altCost === 'Blitz'; }
+      if (isRoom(card.def)) card.unlocked = opts.cast ? [opts.face || 0] : [];
+      if (opts.cast) { card.castFrom = opts.cast.from; card.xPaid = opts.cast.x || 0; card.kicked = opts.cast.kicked || 0; card.castSA = opts.cast.sa || null; card.manaSpent = opts.cast.manaSpent || null; card.optionalCosts = opts.cast.optionalCosts || []; card.altCost = opts.cast.altCost || null; card.convokedBy = opts.cast.convokedBy || []; card.squad = opts.cast.squad || 0; card.evoked = card.altCost === 'Evoke'; card.blitzed = card.altCost === 'Blitz'; card.promisedGift = opts.cast.sa && opts.cast.sa.promisedGift != null ? opts.cast.sa.promisedGift : null; }
       if (keepCounters) card.counters = keepCounters;
       if (opts.attachTo != null) card.attachedTo = opts.attachTo;
       this.touch();
@@ -1257,6 +1258,21 @@ export class Game {
   async drawCards(p, n, sa, silent = false) {
     const drawn = [];
     for (let i = 0; i < n; i++) {
+      // dredge N: instead of drawing, mill N and return the dredge card from the graveyard to hand
+      if (this.turnNumber > 0) {
+        const dredgers = p.graveyard.map(c => ({ c, k: c.faceDef.keywords.find(k => /^Dredge:\d+$/.test(k)) })).filter(x => x.k && p.library.length >= +x.k.split(':')[1]);
+        if (dredgers.length) {
+          const pick = await this.ask(p.id, { type: 'option', prompt: 'You would draw a card. Dredge instead?', options: [{ label: 'Draw a card', value: 0 }, ...dredgers.map(x => ({ label: `Dredge ${x.k.split(':')[1]}: mill ${x.k.split(':')[1]} and return ${this.name(x.c)} to your hand`, value: x.c.id }))], purpose: 'dredge', cards: dredgers.map(x => x.c.id) });
+          const d = dredgers.find(x => x.c.id === pick);
+          if (d) {
+            const nm = +d.k.split(':')[1];
+            this.log(`${p.name} dredges ${this.name(d.c)} (mill ${nm}).`);
+            await this.mill(p, nm, sa);
+            if (d.c.zone === 'graveyard') await this.moveCard(d.c, 'hand', { cause: sa });
+            continue;
+          }
+        }
+      }
       // draw replacements
       const repl = await this.applySimpleReplacement('Draw', { Affected: p, Player: p.id }, sa);
       if (repl === null) continue;
@@ -1475,6 +1491,8 @@ export class Game {
       this.turnState.damagedPlayers[target.id] = (this.turnState.damagedPlayers[target.id] || 0) + amount;
       if (opts.combat) {
         this.turnState.combatDamagedPlayers[target.id] = true;
+        // prowl: remember the creature types that dealt combat damage to a player this turn
+        if (srcCh && srcCh.types.has('Creature') && srcCtrl != null) { const pr = (this.turnState.prowl = this.turnState.prowl || {}); (pr[srcCtrl] = pr[srcCtrl] || []).push({ types: [...srcCh.subtypes], all: !!srcCh.allCreatureTypes }); }
         const srcCard = source && (source.lki ? source.card : source);
         if (srcCard && srcCard.isCommander) target.commanderDamage[srcCard.id] = (target.commanderDamage[srcCard.id] || 0) + amount;
         const toxic = srcCh ? srcCh.keywords.filter(k => k.startsWith('Toxic:')).reduce((a, k) => a + (+k.split(':')[1] || 0), 0) : 0;
@@ -1592,10 +1610,21 @@ export class Game {
 
   // "Protection:Player.PlayerUID_<id>:<name>": protection from everything that player controls
   protectionFromPlayerKw(k, source) {
-    const m = k.match(/^Protection:Player\.PlayerUID_(\d+)/);
+    const m = k.match(/^Protection:Player\.(OpponentOf )?PlayerUID_(\d+)/);
     if (!m) return false;
     const ctrl = source.isPlayer ? source.id : source.stackItem ? source.controller : ctrlOf(this, source);
-    return ctrl === +m[1];
+    return m[1] ? ctrl !== +m[2] : ctrl === +m[2];
+  }
+
+  // Rooms: unlock a door (fires "when you unlock this door" and, once both are open, "fully unlock")
+  unlockDoor(card, door, pid) {
+    if (!card.unlocked || card.unlocked.includes(door) || card.zone !== 'battlefield') return false;
+    card.unlocked = [...card.unlocked, door].sort();
+    this.touch();
+    this.log(`${this.players[pid].name} unlocks ${card.def.faces[door].name}.`, { cardId: card.id });
+    this.fire('UnlockDoor', { Card: card, Player: pid, Door: door });
+    if (card.unlocked.length >= card.def.faces.length) this.fire('FullyUnlock', { Card: card, Player: pid });
+    return true;
   }
 
   // record prevented damage for "whenever damage would be dealt to you is prevented" (batched like damage)
