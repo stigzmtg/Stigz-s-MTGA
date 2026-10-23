@@ -664,13 +664,14 @@ kbd { font: 600 12px/1 'Alegreya Sans', sans-serif; padding: 2px 6px; border-rad
 .emote-watchers { position: fixed; z-index: 45; left: 50%; top: calc(54px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); display: grid; gap: 4px; justify-items: center; pointer-events: none; }
 .emote-line { padding: 5px 12px; border-radius: 999px; background: rgba(6, 15, 11, 0.9); border: 1px solid var(--line-strong); font-size: 14px; animation: emotepop 3.6s ease-out both; }
 /* guided tips */
-.coach { position: fixed; z-index: 95; left: max(14px, env(safe-area-inset-left, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 12px; align-items: flex-start; max-width: min(360px, calc(100vw - 28px)); padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(243, 212, 136, 0.55); background: linear-gradient(180deg, #1c3628, #0f2219); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); animation: homerise-c 0.35s ease-out both; }
+/* top left, under the top bar: clear of the hand, and clicks pass through to the table except on its buttons */
+.coach { position: fixed; z-index: 95; pointer-events: none; left: max(14px, env(safe-area-inset-left, 0px)); top: calc(56px + env(safe-area-inset-top, 0px)); display: flex; gap: 12px; align-items: flex-start; max-width: min(360px, calc(100vw - 28px)); padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(243, 212, 136, 0.55); background: linear-gradient(180deg, #1c3628, #0f2219); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6); animation: homerise-c 0.35s ease-out both; }
 .coach-mark { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--brass); color: #1c1407; font: 800 17px/1 var(--font-ui); }
 .coach b { font: 700 12px/1 var(--font-ui); letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-hi); }
 .coach p { margin: 6px 0 10px; font-size: 14.5px; line-height: 1.45; }
 .coach-acts { display: flex; gap: 8px; }
 @keyframes homerise-c { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-@media (max-width: 700px) { .coach { bottom: auto; top: calc(60px + env(safe-area-inset-top, 0px)); } }
+.coach-acts { pointer-events: auto; }
 /* panel headings with a button beside them */
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .panel-head h2 { margin: 0; }

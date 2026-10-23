@@ -16,9 +16,7 @@ export async function roomApi() {
   if (typeof window !== 'undefined' && window.__paRoomMock) return window.__paRoomMock;
   if (onClaude()) { try { return await window.claude.use('room'); } catch { return null; } }
   const want = typeof window !== 'undefined' ? window.__paTransport : null;
-  if (want !== 'p2p') { try { const r = await (await import('./relayroom.js')).relayRoomApi(); if (r) return r; } catch { /* no relay */ } }
-  if (want === 'relay' || typeof RTCPeerConnection === 'undefined') return null;
-  try { return (await import('./p2proom.js')).p2pRoomApi; } catch { return null; }
+  try { return (await import('./relayroom.js')).websiteRoomApi(want); } catch { return null; }
 }
 
 export class RoomClient {

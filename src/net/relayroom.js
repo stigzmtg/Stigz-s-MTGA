@@ -17,7 +17,8 @@ export function findRelay() {
     try { const r = await fetch(origin + '/relay/health', { signal: ctl.signal, cache: 'no-store' }); return r.ok && (await r.text()).trim() === 'ok'; } catch { return false; } finally { clearTimeout(t); }
   };
   found = (async () => {
-    const own = typeof location !== 'undefined' && /^https?:$/.test(location.protocol) ? location.origin : null;
+    // only the Cloudflare site (and a local `wrangler dev` on :8787) has a relay at its own address
+    const own = typeof location !== 'undefined' && /^https?:$/.test(location.protocol) && (/\.workers\.dev$/.test(location.hostname) || location.port === '8787') ? location.origin : null;
     if (own && await ok(own)) return own;
     if (own !== 'https://' + RELAY_HOST && await ok('https://' + RELAY_HOST)) return 'https://' + RELAY_HOST;
     return null;
@@ -25,7 +26,7 @@ export function findRelay() {
   return found;
 }
 
-function relayRoom(origin, name) {
+export function relayRoom(origin, name) {
   const others = new Map();          // peer id -> { presence, updatedAt }
   let mine = Object.freeze({}), myId = null, left = false;
   const listeners = new Set();
@@ -122,7 +123,16 @@ function relayRoom(origin, name) {
   };
 }
 
-export async function relayRoomApi() {
-  const origin = await findRelay();
-  return origin ? { kind: 'relay', join: async name => relayRoom(origin, name) } : null;
+// rooms for the website: the relay when it can be reached, else direct connections; nothing is looked up until a
+// room is actually opened. want: 'relay' or 'p2p' to force one (tests)
+export function websiteRoomApi(want) {
+  return {
+    kind: 'website',
+    async join(name) {
+      const origin = want === 'p2p' ? null : await findRelay();
+      if (origin) return relayRoom(origin, name);
+      if (want === 'relay' || typeof RTCPeerConnection === 'undefined') throw Object.assign(new Error('no room server'), { code: 'join_failed' });
+      return (await import('./p2proom.js')).p2pRoomApi.join(name);
+    },
+  };
 }

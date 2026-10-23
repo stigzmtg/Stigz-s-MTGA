@@ -6,3 +6,6 @@
 
 /app.js
   Cache-Control: public, max-age=300
+
+/sw.js
+  Cache-Control: no-cache
