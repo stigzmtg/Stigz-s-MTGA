@@ -31,6 +31,7 @@ export class RoomClient {
     this.kind = kind;
     this.storage = storage;
     this.want = null;
+    this.extra = {};        // more presence fields (e.g. a custom deck everyone needs)
     this.room = null;
     this.code = null;
     this.cfg = null;        // latest config (host's)
@@ -80,7 +81,7 @@ export class RoomClient {
   announce(extra = {}) {
     if (!this.room) return Promise.resolve();
     if (this.isHost && this.storage) { try { this.storage.setItem(this.cfgKey(this.code), JSON.stringify(this.cfg)); } catch { /* storage blocked */ } }
-    const patch = { pa: PROTOCOL, code: this.code, cid: this.cid, nick: this.nick, deck: this.deck, want: this.want, ...extra };
+    const patch = { pa: PROTOCOL, code: this.code, cid: this.cid, nick: this.nick, deck: this.deck, want: this.want, ...this.extra, ...extra };
     if (this.isHost) patch.cfg = this.cfg;
     return Promise.resolve(this.room.presence(patch)).catch(() => {});
   }
@@ -122,6 +123,7 @@ export class RoomClient {
 
   // ---- what this viewer does in the room
   setNick(nick) { this.nick = nick; if (this.isHost && this.cfg && !this.cfg.started) this.cfg = { ...this.cfg, seats: this.cfg.seats.map((s, i) => i === 0 ? { ...s, n: nick } : s) }; this.announce(); this.bump(); }
+  setExtra(patch) { this.extra = { ...this.extra, ...patch }; this.announce(); }
   setDeck(deck) { this.deck = deck; if (this.isHost && this.cfg && !this.cfg.started) this.cfg = { ...this.cfg, seats: this.cfg.seats.map((s, i) => i === 0 ? { ...s, d: deck } : s) }; this.announce(); this.bump(); }
   sit(i) { this.want = i; this.announce(); this.bump(); }
   stand() { this.want = null; this.announce(); this.bump(); }

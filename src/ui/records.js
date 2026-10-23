@@ -5,6 +5,7 @@
 // paused by a ReplayControl.
 import { packValue, unpackValue } from '../net/lockstep.js';
 import { safeStorage } from './common.js';
+import { customDeck, packDeck } from './customdecks.js';
 
 const REC_KEY = 'pa-records';
 const REPLAY_KEY = id => `pa-replay-${id}`;
@@ -70,7 +71,7 @@ export function recordGame(session, kind) {
   if (rec.replay) {
     const rep = {
       v: 1, kind, seed: game.seed, seat: me, maxTurns: game.maxTurns, cal: !!game.continueAfterHumanLoss,
-      players: game.players.map(q => ({ name: q.name, deckId: q.deckId, human: kind === 'pk' ? !!q.human : !!q.isHuman })),
+      players: game.players.map(q => ({ name: q.name, deckId: q.deckId, human: kind === 'pk' ? !!q.human : !!q.isHuman, ...(customDeck(q.deckId) ? { deck: packDeck(customDeck(q.deckId)) } : {}) })),
       log,
     };
     if (!store(REPLAY_KEY(id), rep)) rec.replay = false;

@@ -7,7 +7,7 @@ import { Lobby } from './lobby.jsx';
 import { GameView } from './table.jsx';
 import { initImages, preloadDecks } from './images.js';
 import { Lockstep, LocalSeatAgent, RemoteSeatAgent, HostAIAgent } from '../net/lockstep.js';
-import { RoomClient, roomApi, isRoomCode } from '../net/roomclient.js';
+import { RoomClient, roomApi, isRoomCode, onClaude } from '../net/roomclient.js';
 import { applyOp } from './manual.js';
 import { makePace, gamePacer } from './pacing.js';
 import { createStore, loadSettings, saveSettings, safeStorage, fetchJSON } from './common.js';
@@ -15,6 +15,8 @@ import { Home } from './home.jsx';
 import { PokemonApp, pkRoomFromHash } from '../ptcg/ui/app.jsx';
 import { Recorder, ReplayControl, ReplayAgent, mtgDelay, loadReplay } from './records.js';
 import { initApp } from './install.js';
+import { loadCustomDecks, findDeck, registerDeck, unpackDeck, packDeck, customDeck } from './customdecks.js';
+import { DeckBuilder } from './builder.jsx';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -64,8 +66,8 @@ function newReplaySession(data, rep) {
   human.pid = rep.seat || 0;
   const ctl = new ReplayControl(rep.log.length, () => store.bump());
   const agent = new ReplayAgent(rep.log, ctl, applyOp, mtgDelay);
-  const byId = Object.fromEntries(data.decks.map(d => [d.id, d]));
-  const players = rep.players.map(p => ({ name: p.name, deck: byId[p.deckId] || data.decks[0], agent, human: p.human }));
+  for (const p of rep.players) if (p.deck) registerDeck(unpackDeck(p.deck));
+  const players = rep.players.map(p => ({ name: p.name, deck: findDeck(data.decks, p.deckId) || data.decks[0], agent, human: p.human }));
   const game = new Game({ db: data.db, seed: rep.seed, players, onUpdate: () => store.bump(), maxTurns: rep.maxTurns || 400 });
   game.continueAfterHumanLoss = !!rep.cal;
   const pace = makePace({ ...settings, aiSpeed: 'normal' });
@@ -98,7 +100,7 @@ function seatsForStart(data, cfg) {
   const names = new Set();
   return cfg.seats.map(s => {
     let d = s.d;
-    if (s.k === 'a' && (!d || d === 'random')) { const pool = data.decks.filter(x => !used.has(x.id)); d = pool[Math.floor(Math.random() * pool.length)].id; used.add(d); }
+    if (s.k === 'a' && (!d || d === 'random')) { const pool = data.decks.filter(x => !x.custom && !used.has(x.id)); d = pool[Math.floor(Math.random() * pool.length)].id; used.add(d); }
     let n = s.k === 'a' ? shortName(data.decks.find(x => x.id === d).commanders[0]) : (s.n || 'Player');
     while (names.has(n)) n += ' II';
     names.add(n);
@@ -129,8 +131,7 @@ function newOnlineSession(data, room, cfg) {
     if (s.k === 'a' && isHost) return new HostAIAgent(net, mkAI());
     return new RemoteSeatAgent(net, applyOp, isHost ? mkAI() : null);
   });
-  const byId = Object.fromEntries(data.decks.map(d => [d.id, d]));
-  const players = cfg.seats.map((s, pid) => ({ name: s.n || `Player ${pid + 1}`, deck: byId[s.d] || data.decks[0], agent: agents[pid], human: s.k === 'h' }));
+  const players = cfg.seats.map((s, pid) => ({ name: s.n || `Player ${pid + 1}`, deck: findDeck(data.decks, s.d) || data.decks[0], agent: agents[pid], human: s.k === 'h' }));
   const game = new Game({ db: data.db, seed: cfg.seed, players, onUpdate: () => store.bump(), maxTurns: 400 });
   human.pid = me != null ? me : 0;
   const session = {
@@ -167,6 +168,8 @@ function MtgApp({ onHome }) {
   const [room, setRoom] = useState(null);
   const [mode, setMode] = useState(() => isRoomCode(location.hash.slice(1)) ? 'friends' : (safeStorage.getItem('pa-mode') || 'solo'));
   const [toast, setToast] = useState(null);
+  const [builder, setBuilder] = useState(null);       // { id } while the deck builder is open
+  const [customVersion, setCustomVersion] = useState(0);
   useEffect(() => {
     (async () => {
       try {
@@ -203,14 +206,26 @@ function MtgApp({ onHome }) {
     if (nick) onJoin(code, nick);
   }, [data, api]);
 
-  // start, follow and end online games as the host's config changes
+  // your custom decks join the precons everywhere decks are listed or looked up
+  const all = React.useMemo(() => {
+    if (!data) return null;
+    const mine = loadCustomDecks().map(d => ({ ...d, custom: true, set: 'YOU', setName: 'Your decks', date: '' }));
+    for (const d of mine) registerDeck(d);
+    const decks = [...mine, ...data.decks];
+    return { ...data, decks, sortedDecks: decks.slice().sort((a, b) => a.name.localeCompare(b.name)) };
+  }, [data, customVersion]);
+  // custom decks other people brought to the room
+  if (room) for (const m of room.members().values()) if (m.presence.dk) registerDeck(unpackDeck(m.presence.dk));
+
+  // start, follow and end online games as the host's config changes (once every seat's deck is known here)
   const cfg = room && room.cfg;
+  const decksKnown = !!(all && cfg && cfg.seats.every(s => !s.d || s.d === 'random' || findDeck(all.decks, s.d)));
   useEffect(() => {
-    if (!data || !room || !cfg) return;
+    if (!all || !room || !cfg) return;
     const cur = session && session.online;
-    if (cfg.started && !cur && room.mySeat() >= 0 && cfg.game !== room.lastAutoStart) { room.lastAutoStart = cfg.game; setSession(newOnlineSession(data, room, cfg)); }
+    if (cfg.started && !cur && decksKnown && room.mySeat() >= 0 && cfg.game !== room.lastAutoStart) { room.lastAutoStart = cfg.game; setSession(newOnlineSession(all, room, cfg)); }
     if (cur && (cur.game !== cfg.game || !cfg.started) && !session.game.over) { endSession(session); setSession(null); setToast('The host ended the game.'); }
-  }, [data, room, cfg && cfg.game, cfg && cfg.started]);
+  }, [all, room, cfg && cfg.game, cfg && cfg.started, decksKnown]);
 
   // a replay picked on the home screen
   useEffect(() => {
@@ -218,18 +233,28 @@ function MtgApp({ onHome }) {
     let id = null;
     try { id = sessionStorage.getItem('pa-open-replay'); sessionStorage.removeItem('pa-open-replay'); } catch { /* storage blocked */ }
     const rep = id && loadReplay(id);
-    if (rep && rep.kind === 'mtg') setSession(newReplaySession(data, { ...rep, id }));
+    if (rep && rep.kind === 'mtg') setSession(newReplaySession(all, { ...rep, id }));
   }, [data]);
 
   if (!data) return <Loading progress={progress} error={error} />;
   const onlineProps = {
     api, room, mode, setMode, onCreate, onJoin, onLeave,
-    onStart: () => { room.start({ seed: (Math.random() * 2 ** 32) >>> 0, seats: seatsForStart(data, room.cfg) }); },
-    onWatch: () => setSession(newOnlineSession(data, room, room.cfg)),
-    onDeck: id => room && room.setDeck(id),
+    onStart: () => { room.start({ seed: (Math.random() * 2 ** 32) >>> 0, seats: seatsForStart(all, room.cfg) }); },
+    onWatch: () => setSession(newOnlineSession(all, room, room.cfg)),
+    onDeck: id => {
+      if (!room) return;
+      room.setDeck(id);
+      // a custom deck travels with you (not on claude.ai, whose room messages are too small for a decklist)
+      const d = customDeck(id);
+      room.setExtra({ dk: d && !onClaude() ? packDeck(d) : null });
+    },
   };
+  if (builder) return <DeckBuilder data={all} editId={builder.id}
+    onHome={onHome}
+    onDone={() => { setBuilder(null); setCustomVersion(v => v + 1); }}
+    onPlay={deck => { try { const s = JSON.parse(safeStorage.getItem('pa-lobby') || '{}'); safeStorage.setItem('pa-lobby', JSON.stringify({ ...s, mine: deck.id })); } catch { /* storage blocked */ } setBuilder(null); setCustomVersion(v => v + 1); }} />;
   if (!session) return <>
-    <Lobby data={data} imagesOk={imagesOk} onStart={cfg => setSession(newSession(data, cfg))} online={onlineProps} onHome={onHome} />
+    <Lobby key={customVersion} data={all} imagesOk={imagesOk} onStart={cfg => setSession(newSession(all, cfg))} online={onlineProps} onHome={onHome} onBuild={id => setBuilder({ id })} />
     {toast ? <div className="toast" role="status">{toast}</div> : null}
   </>;
   return <GameView key={`${session.game.seed}:${session.online ? session.online.game : ''}`} session={session} support={data.support} imagesOk={imagesOk}
@@ -238,8 +263,8 @@ function MtgApp({ onHome }) {
       else if (session.online && room && room.isHost && session.game.over) room.stop();
       endSession(session); setSession(null);
     }}
-    onRematch={() => { endSession(session); setSession(newSession(data, session.cfg)); }}
-    onReplay={id => { const rep = loadReplay(id); if (!rep) return; endSession(session); setSession(newReplaySession(data, { ...rep, id })); }} />;
+    onRematch={() => { endSession(session); setSession(newSession(all, session.cfg)); }}
+    onReplay={id => { const rep = loadReplay(id); if (!rep) return; endSession(session); setSession(newReplaySession(all, { ...rep, id })); }} />;
 }
 
 // which game: the address says (#pokemon, #mtg, or a room invite: #abc123 for Commander, #pk-abc123 for Pokémon),

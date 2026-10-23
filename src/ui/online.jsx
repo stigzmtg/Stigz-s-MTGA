@@ -1,5 +1,6 @@
 // "Play with friends": create or join a room, share the invite link, take seats, pick decks, start.
 import { Pip } from './cardview.jsx';
+import { findDeck } from './customdecks.js';
 import { isRoomCode, onClaude } from '../net/roomclient.js';
 
 const { useState } = React;
@@ -31,7 +32,7 @@ export function CopyLink({ code, kind = '' }) {
 }
 
 function DeckName({ decks, id }) {
-  const d = decks.find(x => x.id === id);
+  const d = findDeck(decks, id);
   return d ? <span className="seat-deck" title={d.commanders.join(' & ')}>{d.name}</span> : <span className="seat-deck muted">Choosing a deck…</span>;
 }
 
@@ -89,7 +90,7 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
   const seated = new Set(cfg.seats.filter(s => s.c).map(s => s.c));
   const watchers = [...members.values()].filter(m => !seated.has(m.cid));
   const humanSeats = cfg.seats.filter(s => s.k === 'h');
-  const ready = cfg.seats.length >= 2 && humanSeats.every(s => s.c && members.has(s.c) && s.d);
+  const ready = cfg.seats.length >= 2 && humanSeats.every(s => s.c && members.has(s.c) && s.d && findDeck(decks, s.d));
   const hostNick = (members.get(cfg.host) || {}).nick || 'the host';
   const inGame = cfg.started;
 
@@ -118,7 +119,7 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
                 {s.k === 'a' ? (isHost && !inGame ? (
                   <select id={`ai-deck-${i}`} className="input sm" value={s.d || 'random'} onChange={e => room.setSeat(i, { d: e.target.value })}>
                     <option value="random">Random precon</option>
-                    {sortedDecks.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    {sortedDecks.filter(d => !d.custom).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 ) : <span className="seat-deck">{s.d && s.d !== 'random' ? (decks.find(d => d.id === s.d) || {}).name : 'Random precon'}</span>) : s.c ? <DeckName decks={decks} id={s.d} /> : <span className="seat-deck muted">Waiting for a friend</span>}
               </span>
@@ -138,7 +139,7 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
         })}
       </ol>
       {watchers.length ? <p className="note">Watching: {watchers.map(w => w.nick + (w.me ? ' (you)' : '')).join(', ')}</p> : null}
-      <p className="note">Your deck: <b>{deck.name}</b> — pick another from the list.</p>
+      <p className="note">Your deck: <b>{deck.name}</b> — pick another from the list.{deck.custom && onClaude() ? ' Custom decks can only be used in rooms on the website, not on claude.ai.' : ''}</p>
       <div className="dlg-actions">
         <button className="btn ghost" onClick={onLeave}>Leave room</button>
         {inGame ? (

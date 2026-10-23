@@ -3,7 +3,7 @@ import { CardFace, viewOfDef, Pip } from './cardview.jsx';
 import { DeckRecord } from './replaybar.jsx';
 import { HelpDialog } from './dialogs.jsx';
 import { FriendsPanel } from './online.jsx';
-import { lobbyImages, subscribeImages, imagesVersion } from './images.js';
+import { lobbyImages, subscribeImages, imagesVersion, cardImage } from './images.js';
 
 const { useState, useMemo, useEffect, useSyncExternalStore } = React;
 
@@ -23,6 +23,7 @@ function Identity({ colors }) {
 
 const NO_SYMBOL = new Set(['frc']);
 function SetMark({ set, name }) {
+  if (set === 'YOU') return <span className="mine-mark" title="Your deck" aria-label="Your deck">★</span>;
   const code = set.toLowerCase();
   if (NO_SYMBOL.has(code)) return <span className="setcode" title={name}>{set}</span>;
   return <i className={`ss ss-${code} setsym`} title={`${name} (${set})`} aria-label={name} />;
@@ -44,7 +45,7 @@ function deckStats(db, deck, support) {
   return { counts, total, coverage: total ? Math.round(100 * (total - flagged) / total) : 100, avgMV: nonland ? (mv / nonland).toFixed(2) : '0' };
 }
 
-export function Lobby({ data, onStart, imagesOk, online, onHome }) {
+export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
   const { db, decks, support } = data;
   useSyncExternalStore(subscribeImages, imagesVersion);
   const saved = storageGet('pa-lobby', {});
@@ -79,7 +80,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome }) {
   const friends = online && online.mode === 'friends';
 
   const start = () => {
-    const pickRandom = (exclude) => { const pool = decks.filter(d => !exclude.includes(d.id)); return pool[Math.floor(Math.random() * pool.length)]; };
+    const pickRandom = (exclude) => { const pool = decks.filter(d => !d.custom && !exclude.includes(d.id)); return pool[Math.floor(Math.random() * pool.length)]; };
     const chosen = [];
     for (let i = 0; i < numOpp; i++) {
       const id = opps[i];
@@ -98,7 +99,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome }) {
           <p>Every Commander precon from Commander 2013 to today, played with full rules automation. Face computer opponents, or open a room and play with friends. Choose your deck and shuffle up.</p>
         </div>
         <section className="panel" aria-label="Your deck">
-          <h2>Your deck</h2>
+          <div className="panel-head"><h2>Your deck</h2>{onBuild ? <button className="btn sm" onClick={() => onBuild(null)}>+ Build a deck</button> : null}</div>
           <div className="filters">
             <input id="deck-search" className="input search" placeholder="Search by deck, commander or set" value={q} onChange={e => setQ(e.target.value)} />
             <div className="colorfilter" role="group" aria-label="Filter by color">
@@ -123,10 +124,10 @@ export function Lobby({ data, onStart, imagesOk, online, onHome }) {
         </section>
         <div className="setup">
           <section className="panel" aria-label="Selected deck">
-            <h2>{deck.name}</h2>
+            <div className="panel-head"><h2>{deck.name}</h2>{deck.custom && onBuild ? <button className="btn sm" onClick={() => onBuild(deck.id)}>Edit this deck</button> : null}</div>
             <div className="commander-showcase bigcard" style={{ '--cw': deck.commanders.length > 1 ? '190px' : '250px' }}>
               {(() => {
-                const imgs = imagesOk ? lobbyImages(deck.id) : [];
+                const imgs = imagesOk ? (deck.custom ? deck.commanders.map(n => cardImage(n)) : lobbyImages(deck.id)) : [];
                 return deck.commanders.map((n, i) => { const d = db.get(n); return d ? <div className="cardwrap" key={n}><CardFace v={{ ...viewOfDef(d), img: imgs[i] || null }} size="big" /></div> : null; });
               })()}
             </div>
@@ -154,7 +155,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome }) {
                   <span className="label">AI {i + 1}</span>
                   <select id={`opp-${i}`} className="input" value={opps[i]} onChange={e => setOpps(o => { const n = o.slice(); n[i] = e.target.value; return n; })}>
                     <option value="random">Random precon</option>
-                    {sortedDecks.map(d => <option key={d.id} value={d.id}>{d.name} — {d.commanders.join(' & ')}</option>)}
+                    {sortedDecks.filter(d => !d.custom).map(d => <option key={d.id} value={d.id}>{d.name} — {d.commanders.join(' & ')}</option>)}
                   </select>
                 </div>
               ))}
