@@ -38,6 +38,9 @@ export class Mon {
 
 const sleep0 = () => Promise.resolve();
 
+// card questions about these zones show the player cards they couldn't see before
+const HIDDEN_ZONES = new Set(['deck', 'deck-top', 'deck-bottom', 'prizes', 'opp-hand']);
+
 export class PokemonGame {
   constructor({ db, players, seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0, onUpdate = null, maxTurns = 120 }) {
     this.db = db;
@@ -95,6 +98,10 @@ export class PokemonGame {
 
   async ask(pid, req) {
     if (this.over) return null;
+    // for telling a card backed out of from one that did something: questions asked, and ones that showed hidden
+    // cards (the deck, Prize cards, the opponent's hand)
+    this.asked = (this.asked || 0) + 1;
+    if (req.type === 'cards' && (req.shown || HIDDEN_ZONES.has(req.from))) this.peeked = (this.peeked || 0) + 1;
     this.pendingAsk = { pid, req };
     this.notify();
     let v;
@@ -432,7 +439,9 @@ export class PokemonGame {
       const a = await this.ask(pid, { type: 'main', actions });
       if (this.over) return;
       const act = this.matchAction(actions, a);
-      if (!act || act.t === 'end') break;
+      // an answer that isn't one of the choices (a stale click) asks again rather than ending the turn
+      if (!act) continue;
+      if (act.t === 'end') break;
       if (act.t === 'attack') {
         const mon = p.active;
         await this.attack(pid, act);
@@ -500,6 +509,8 @@ export class PokemonGame {
         if (d.trainer === 'Item' && itemLock) continue;
         if (d.trainer === 'Stadium' && (p.stadiumDone || (this.stadium && this.stadium.card.name === d.name))) continue;
         if (fx.can && !fx.can(g, pid, c)) continue;
+        // nothing to search or draw
+        if (fx.needsDeck && !p.deck.length) continue;
         out.push({ t: 'trainer', card: c.id });
       }
     }
@@ -510,13 +521,14 @@ export class PokemonGame {
         if (!fx || !fx.use) continue;
         if (fx.selfKO && this.dampActive()) continue;
         if (fx.can && !fx.can(g, m, pid)) continue;
+        if (fx.needsDeck && !p.deck.length) continue;
         out.push({ t: 'ability', mon: m.id, name: a.name });
       }
     }
     // stadium actions (Artazon, Surfing Beach, Mystery Garden, Academy at Night)
     if (this.stadium) {
       const fx = TRAINERS[this.stadium.card.name];
-      if (fx && fx.stadiumUse && !(p.once['stadium'] === this.turn) && (!fx.stadiumCan || fx.stadiumCan(g, pid))) out.push({ t: 'stadium', name: this.stadium.card.name });
+      if (fx && fx.stadiumUse && !(p.once['stadium'] === this.turn) && (!fx.stadiumCan || fx.stadiumCan(g, pid)) && !(fx.needsDeck && !p.deck.length)) out.push({ t: 'stadium', name: this.stadium.card.name });
     }
     // retreat
     const a = p.active;
@@ -556,22 +568,46 @@ export class PokemonGame {
         if (card.name === 'Ancient Booster Energy Capsule' && target.def.ancient) this.clearConditions(target);
         break;
       }
-      case 'trainer': await this.playTrainer(pid, card); break;
+      case 'trainer': {
+        // a Trainer backed out of (nothing chosen, nothing changed, nothing shuffled or revealed) goes back to the hand
+        const t = card.def.trainer, undo = t !== 'Stadium' && !(TRAINERS[card.name] || {}).reveals ? this.snapshot(card.id) : null;
+        const flags = { supporter: p.supporter, supporterName: p.supporterName };
+        await this.playTrainer(pid, card);
+        if (undo && !this.over && this.unchanged(undo, card.id)) {
+          this.removeFromZones(card);
+          p.hand.push(card);
+          Object.assign(p, flags);
+          this.log(`${card.name} does nothing and goes back to ${p.name}'s hand.`, { pid });
+        }
+        break;
+      }
       case 'ability': {
         const m = this.monById(act.mon);
         const fx = ABILITIES[act.name];
         this.log(`${p.name} uses ${m.name}'s ${act.name}.`, { pid, type: 'ability' });
         this.event('ability', { mon: m.id, name: act.name });
+        const undo = this.snapshot(), was = [m.used[act.name], p.once[act.name]];
         m.used[act.name] = this.turn;
         if (fx.oncePerPlayer) p.once[act.name] = this.turn;
         await fx.use(this, m, pid);
+        // backed out of: the Ability isn't used up
+        if (!this.over && this.unchanged(undo)) {
+          m.used[act.name] = was[0];
+          p.once[act.name] = was[1];
+          this.log(`${act.name} does nothing; it can still be used this turn.`, { pid });
+        }
         break;
       }
       case 'stadium': {
         const fx = TRAINERS[act.name];
+        const undo = this.snapshot(), was = p.once['stadium'];
         p.once['stadium'] = this.turn;
         this.log(`${p.name} uses ${act.name}.`, { pid });
         await fx.stadiumUse(this, pid);
+        if (!this.over && this.unchanged(undo)) {
+          p.once['stadium'] = was;
+          this.log(`${act.name} does nothing; it can still be used this turn.`, { pid });
+        }
         break;
       }
       case 'retreat': {
@@ -587,6 +623,25 @@ export class PokemonGame {
     }
     this.festivalSweep();
     this.notify();
+  }
+
+  // a picture of everything a Trainer or an Ability could change (`skip`: the card being played), and the random
+  // generator's state: to tell when one was backed out of without anything happening
+  snapshot(skip = null) {
+    const ids = l => l.filter(c => c.id !== skip).map(c => c.id).join(',');
+    const mon = m => `${m.id}:${m.stack.map(c => c.id).join('>')}:${m.damage}:${ids(m.energy)}:${m.tool ? m.tool.id : ''}:${m.special || ''}${m.poisoned ? 'P' : ''}${m.burned ? 'B' : ''}`;
+    let fx;
+    try { fx = JSON.stringify(this.effects); } catch { fx = String(this.effects.length); }
+    const key = [this.stadium ? `${this.stadium.card.id}@${this.stadium.owner}` : '-', fx, ...this.players.map(p => [
+      ids(p.hand), ids(p.deck), ids(p.discard), ids(p.lost), ids(p.prizes), p.active ? mon(p.active) : '-', p.bench.map(mon).join(';'),
+      p.koTurn, p.legacyUsed, p.briar, p.mulligans,
+    ].join('|'))].join('#');
+    return { key, rng: this.rng.s, asked: this.asked || 0, peeked: this.peeked || 0 };
+  }
+  // backed out of: the player was asked something, chose nothing, saw no hidden card, and nothing changed or was
+  // shuffled. (A card that asks nothing and does nothing, like a search that finds nothing, is still used up.)
+  unchanged(snap, skip = null) {
+    return (this.asked || 0) > snap.asked && (this.peeked || 0) === snap.peeked && this.rng.s === snap.rng && this.snapshot(skip).key === snap.key;
   }
 
   // Festival Grounds: each Pokémon with Energy attached recovers from all Special Conditions
@@ -623,7 +678,7 @@ export class PokemonGame {
     }
     for (const a of this.abilitiesOf(m)) {
       const fx = ABILITIES[a.name];
-      if (fx && fx.onBench && (!fx.can || fx.can(this, m, pid))) {
+      if (fx && fx.onBench && (!fx.can || fx.can(this, m, pid)) && !(fx.needsDeck && !this.players[pid].deck.length)) {
         if (!(await this.confirm(pid, `Use ${m.name}'s ${a.name}?`))) continue;
         this.log(`${this.players[pid].name} uses ${m.name}'s ${a.name}.`, { pid, type: 'ability' });
         m.used[a.name] = this.turn;
@@ -644,7 +699,7 @@ export class PokemonGame {
     if (!fromHand) return;
     for (const a of this.abilitiesOf(mon)) {
       const fx = ABILITIES[a.name];
-      if (fx && fx.onEvolve && (!fx.can || fx.can(this, mon, pid))) {
+      if (fx && fx.onEvolve && (!fx.can || fx.can(this, mon, pid)) && !(fx.needsDeck && !this.players[pid].deck.length)) {
         if (!(await this.confirm(pid, `Use ${card.name}'s ${a.name}?`))) continue;
         this.log(`${this.players[pid].name} uses ${card.name}'s ${a.name}.`, { pid, type: 'ability' });
         mon.used[a.name] = this.turn;

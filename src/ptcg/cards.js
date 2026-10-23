@@ -803,7 +803,7 @@ Object.assign(TRAINERS, {
         p.inPlay = null;
         p.prizes.push(card);
         g.log(`${p.name} takes ${c.name} from their Prize cards and puts Hisuian Heavy Ball in its place.`);
-      }
+      } else g.log(`${p.name} looks at their Prize cards.`);
       g.rng.shuffle(p.prizes);
     },
   },
@@ -1637,3 +1637,28 @@ Object.assign(TRAINERS, {
     stadiumUse: (g, pid) => search(g, pid, c => isMon(c) && c.name.startsWith("Marnie's "), { max: 1, prompt: "Search your deck for a Marnie's Pokémon" }),
   },
 });
+
+// ---- Cards that can't do anything aren't playable (a person could otherwise use one up for nothing)
+// Trainers, Abilities and Stadium actions that only search, look at or draw from the deck: not with an empty deck.
+// The engine checks `needsDeck` in legalActions and before "when you play this Pokémon" Abilities.
+for (const n of ['Crispin', 'Buddy-Buddy Poffin', 'Poké Pad', 'Ultra Ball', 'Dawn', 'Nest Ball', 'Arven', 'Earthen Vessel', 'Secret Box',
+  'Cyrano', 'Fighting Gong', 'Electric Generator', "Team Rocket's Petrel", "Team Rocket's Transceiver", 'Precious Trolley', 'Energy Search',
+  'Mirage Gate', "Janine's Secret Art", 'Hilda', "Brock's Scouting", "Team Rocket's Proton", "Hop's Bag", 'Artazon', 'Spikemuth Gym']) TRAINERS[n].needsDeck = true;
+for (const n of ['Last-Ditch Catch', 'Flip the Script', 'Infernal Reign', 'Jewel Seeker', 'Fan Call', 'Transformative Start', 'Run Errand',
+  'Coin Bonus', 'Metallic Signal', 'Tandem Unit', 'Shivery Chill', 'Psychic Draw', 'Punk Up']) ABILITIES[n].needsDeck = true;
+// "discard (or shuffle in) your hand and draw": not with an empty hand and an empty deck
+const handOrDeck = (g, pid, card) => g.pl(pid).hand.some(c => c !== card) || g.pl(pid).deck.length > 0;
+for (const n of ["Professor's Research", 'Carmine', "Lillie's Determination"]) TRAINERS[n].can = handOrDeck;
+ABILITIES['Squawk and Seize'].can = (g, m, pid) => turnOne(g, pid) && !playerUsed(g, pid, 'Squawk and Seize') && handOrDeck(g, pid);
+// Team Rocket's Ariana draws up to 5 (8 with only Team Rocket's Pokémon in play): not with that many in hand already
+TRAINERS["Team Rocket's Ariana"].can = (g, pid, card) => g.pl(pid).deck.length > 0 && g.pl(pid).hand.filter(c => c !== card).length < (g.inPlay(pid).every(isTR) ? 8 : 5);
+// Professor Turo's Scenario: the Active Pokémon can only go back with a Benched one to replace it
+TRAINERS["Professor Turo's Scenario"].can = (g, pid) => g.pl(pid).bench.length > 0;
+// Iono with both hands empty does nothing
+TRAINERS.Iono.can = (g, pid, card) => g.players.some(q => q.hand.some(c => c !== card));
+// Special Red Card does nothing to an empty hand, and into an empty deck just gives the same cards back
+TRAINERS['Special Red Card'].can = (g, pid) => { const o = g.pl(g.opp(pid)); return g.prizesLeft(g.opp(pid)) <= 3 && o.hand.length > 0 && (o.deck.length > 0 || o.hand.length > 3); };
+// Eri shows the opponent's hand even when there's no Item to discard: playing it is never "nothing happened"
+TRAINERS.Eri.reveals = true;
+// Larry's Skill with an empty hand and an empty deck does nothing
+TRAINERS["Larry's Skill"].can = handOrDeck;

@@ -899,8 +899,11 @@ export class PokemonAI {
     if (hint === 'move' && this.eswitch && this.eswitch.turn === g.turn && opts.some(c => c.id === this.eswitch.card)) return [this.eswitch.card];
     if (hint === 'discard-draw') {
       // Gwynn: Pokémon we can spare, 3 cards each
-      const spare = this.rankCards(g, pid, opts, req).reverse().filter(c => this.cardScore(g, pid, c) < 70 || hasAbil(c.def, SNEAK));
-      return spare.slice(0, Math.max(req.min, Math.min(req.max, spare.length || 1))).map(c => c.id);
+      const ranked = this.rankCards(g, pid, opts, req).reverse();
+      const spare = ranked.filter(c => this.cardScore(g, pid, c) < 70 || hasAbil(c.def, SNEAK));
+      // nothing to spare: Gwynn was still worth playing for a small hand, so the least useful Pokémon goes
+      const pool = spare.length ? spare : ranked.slice(0, 1);
+      return pool.slice(0, Math.max(req.min, Math.min(req.max, pool.length))).map(c => c.id);
     }
     if (hint === 'discard-any') return this.junk(g, pid, opts).slice(0, Math.max(0, opts.length - 2)).map(c => c.id);
     if (hint === 'topdeck') return this.topdeck(g, pid, opts, req);
