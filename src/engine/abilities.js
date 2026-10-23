@@ -590,6 +590,7 @@ function restrictionAllows(game, host, restrict, pid, { spellCard = null, abilit
   const ctx = { host, you: pid };
   if (restrict === 'CantCastNonArtifactSpells') return spellCard ? game.chars(spellCard).types.has('Artifact') : !!abilityHost;
   if (restrict === 'CostContainsX') return spellCard ? !!game.chars(spellCard).manaCost?.x : !!abilityHost && costHasX;
+  if (restrict === 'CantPayGenericCosts') return !!(spellCard || abilityHost); // Jegantha: the planner keeps it off generic mana
   if (spellCard) {
     // "Spell.Creature": the spell's own characteristics, wherever it is cast from (it only moves to the stack
     // once its costs are paid)
@@ -635,7 +636,7 @@ export function manaSourcesFor(game, pid, { exclude = new Set(), spellCard = nul
       if (extra) penalty += 1;
       if (!cost.tap && !cost.parts.length && !extra) continue; // free mana abilities with no cost: ignore
       // manualOnly: tapped by hand only (it sacrifices another permanent, which automatic payment never does)
-      out.push({ key: card.id + ':' + abil.key, card, abil, units, penalty, extraCost: extra, manualOnly, excl: cost.tap ? 'tap' + card.id : null, sig: card.def.name + '|' + abil.key + '|' + units.map(u => u.join('')).join(',') + (card.tapped ? 't' : '') });
+      out.push({ key: card.id + ':' + abil.key, card, abil, units, penalty, extraCost: extra, manualOnly, noGeneric: p.RestrictValid === 'CantPayGenericCosts', excl: cost.tap ? 'tap' + card.id : null, sig: card.def.name + '|' + abil.key + '|' + units.map(u => u.join('')).join(',') + (card.tapped ? 't' : '') });
     }
   }
   // a Signet or filter land is only a source if its own {1} / {W/U} can be paid (from the pool or other sources)

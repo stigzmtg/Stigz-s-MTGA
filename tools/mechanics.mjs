@@ -1631,6 +1631,19 @@ test('Ancient Ziggurat and Unclaimed Territory pay for the creature spells they 
   const bear = await T.put(0, 'Birds of Paradise', 'hand');
   expect(castableOptions(T.game, 0, elf2).length > 0 && castableOptions(T.game, 0, bear).length === 0, 'an Elf is castable with Territory (Elf) mana, a Bird is not');
 });
+test("Jegantha's {W}{U}{B}{R}{G} pays colored symbols, never generic", async T => {
+  for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
+  const jeg = await T.put(0, 'Jegantha, the Wellspring');
+  T.noMana(0); T.game.priority = 0;
+  const gs = await T.put(0, 'Growth Spiral', 'hand');
+  const ste = await T.put(0, 'Sakura-Tribe Elder', 'hand');
+  expect(castableOptions(T.game, 0, gs).length > 0, '{G}{U} is castable from Jegantha');
+  expect(castableOptions(T.game, 0, ste).length === 0, '{1}{G} is not castable from Jegantha alone');
+  const w = await T.put(0, 'Wastes');
+  expect(castableOptions(T.game, 0, ste).length > 0, '{1}{G} is castable from Jegantha and Wastes');
+  const ok = await castSpell(T.game, 0, ste, {}); await T.resolve();
+  expect(ok && jeg.tapped && w.tapped && ste.zone === 'battlefield', `cast with both (${ok}, ${jeg.tapped}, ${w.tapped}, ${ste.zone})`);
+});
 test("Nexos: basic lands' {C}{C} pays for {X} costs only", async T => {
   for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
   await T.put(0, 'Nexos');

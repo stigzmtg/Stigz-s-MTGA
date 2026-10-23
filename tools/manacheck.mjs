@@ -76,7 +76,7 @@ for (const s of subjects) {
     const cost = parseCost(p.Cost);
     const conditional = p.IsPresent || p.Planeswalker || cost.parts.some(pt => pt.type === 'Sac' && !/^(CARDNAME|Card\.Self)$/.test(pt.valid || ''));
     if (!spells && !abilities && amountOk && !conditional) out.neverSpendable.push(`${s.name} (${p.RestrictValid})`);
-    if (spellsInHand === pool.length && p.RestrictValid !== 'Spell') failure(s.name, `restricted mana (${p.RestrictValid}) pays for any spell`);
+    if (spellsInHand === pool.length && !['Spell', 'CantPayGenericCosts'].includes(p.RestrictValid)) failure(s.name, `restricted mana (${p.RestrictValid}) pays for any spell`);
   }
   let good = false;
   for (const a of abils) {
