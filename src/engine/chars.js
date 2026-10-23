@@ -38,6 +38,8 @@ export function baseChars(game, card) {
     ch.cmc = card.def.faces.reduce((a, x) => a + cmc(x.manaCost), 0);
   }
   if (card.zone === 'battlefield' && card.unlocked && !card.faceDown && !card.copyOf) roomChars(card, ch);
+  // impending: not a creature while it has time counters
+  if (card.impending && card.zone === 'battlefield' && (card.counters.TIME || 0) > 0) ch.types.delete('Creature');
   if (card.copyOf && card.copyOf.extra) applyCopyExtras(ch, card.copyOf.extra);
   return ch;
 }
@@ -72,6 +74,8 @@ function applyCopyExtras(ch, extra) {
   if (extra.toughness != null) ch.toughnessStr = String(extra.toughness);
   if (extra.keywords) ch.keywords.push(...extra.keywords);
   if (extra.colors) ch.colors = new Set(extra.colors);
+  if (extra.addColors) for (const c of extra.addColors) ch.colors.add(c);
+  if (extra.name) ch.name = extra.name;
 }
 
 const CARD_TYPES = new Set(['Artifact', 'Battle', 'Creature', 'Enchantment', 'Instant', 'Land', 'Planeswalker', 'Sorcery', 'Kindred']);
@@ -354,12 +358,17 @@ export function computeAll(game) {
   for (const { st, ctx } of active) {
     const p = st.parsed.p;
     if (!(p.AddPower || p.AddToughness)) continue;
-    const ap = p.AddPower ? calcCtx(game, p.AddPower, ctx) : 0;
-    const at = p.AddToughness ? calcCtx(game, p.AddToughness, ctx) : 0;
+    const perCard = /^Affected/.test(p.AddPower || '') || /^Affected/.test(p.AddToughness || '');
+    const ap = p.AddPower && !perCard ? calcCtx(game, p.AddPower, ctx) : 0;
+    const at = p.AddToughness && !perCard ? calcCtx(game, p.AddToughness, ctx) : 0;
     for (const c of affectedCards(game, st, ctx, map)) {
       const ch = map.get(c.id);
       if (!ch) continue;
-      ch.power += ap; ch.toughness += at;
+      if (perCard) {
+        const cctx = { ...ctx, host: c, sa: { ...ctx.sa, host: c } };
+        if (p.AddPower) ch.power += calcCtx(game, p.AddPower, cctx);
+        if (p.AddToughness) ch.toughness += calcCtx(game, p.AddToughness, cctx);
+      } else { ch.power += ap; ch.toughness += at; }
     }
   }
   for (const c of all) {

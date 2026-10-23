@@ -595,6 +595,21 @@ export class AIAgent {
       return pick(cards.slice().sort((a, b) => score(b) - score(a)), 1);
     }
     if (purpose === 'pair') return pick(cards.slice().sort((a, b) => v(b) - v(a)), 1);
+    if (purpose === 'attachChoice') {
+      // curses and pacifism-style auras go on the opponents' best; everything else on our own
+      const host = req.sa && req.sa.host;
+      const hostile = !!host && host.isCard && (game.chars(host).subtypes.has('Curse') || /Curse|Pacifism|KeepTapped/.test(String((req.sa.p && req.sa.p.AILogic) || '')) || game.chars(host).statics.some(s => /CantAttack|CantBlock|AddPower\$ -/.test(s.raw || '')));
+      const pool = cards.filter(c => hostile ? c.controller !== pid : c.controller === pid);
+      const list = (pool.length ? pool : cards).slice().sort((a, b) => v(b) - v(a));
+      return pick(list, Math.max(min, 1));
+    }
+    if (purpose === 'enlist') {
+      // tap a creature that isn't doing much else: prefer high power, keep a blocker back when we're low
+      const me = game.players[pid];
+      const untappedOthers = game.battlefield.filter(c => c.controller === pid && !c.tapped && game.chars(c).types.has('Creature')).length;
+      const ok = cards.filter(c => game.chars(c).power >= 2 && (me.life > 15 || untappedOthers > 2)).sort((a, b) => game.chars(b).power - game.chars(a).power);
+      return ok.length ? [ok[0].id] : [];
+    }
     if (purpose === 'champion') return pick(cards.slice().sort((a, b) => v(a) - v(b)), Math.min(1, cards.length));
     if (purpose === 'harmonize') return pick(cards.slice().sort((a, b) => (game.chars(b).power - (canAttack(game, b) && game.step === 'main1' ? 3 : 0)) - (game.chars(a).power - (canAttack(game, a) && game.step === 'main1' ? 3 : 0))), 1);
     if (purpose === 'cipher') {
@@ -643,6 +658,22 @@ export class AIAgent {
         if (s > bs) { bs = s; best = o.value; }
       }
       return best;
+    }
+    if (req.purpose === 'chooseEvenOdd') {
+      // board wipes by parity (Extinction Event): hit the opponents' side hardest; otherwise follow our own deck
+      const wipe = req.sa && req.sa.chain().some(s => /cmcChosenEvenOdd/.test(s.p.ChangeType || s.p.ValidCards || ''));
+      const score = parity => {
+        const odd = parity === 'Odd';
+        if (wipe) return game.battlefield.filter(c => game.chars(c).types.has('Creature') && (game.chars(c).cmc % 2 === 1) === odd).reduce((s, c) => s + (c.controller === pid ? -1.2 : 1) * this.value(c), 0);
+        return game.players[pid].library.filter(c => !game.chars(c).types.has('Land') && (game.chars(c).cmc % 2 === 1) === odd).length;
+      };
+      return score('Odd') >= score('Even') ? 'Odd' : 'Even';
+    }
+    if (req.purpose === 'assignGroup') {
+      // friend for ourselves, foe for everyone else
+      const friendly = req.forPlayer === pid;
+      const isFriend = o => /friend/i.test(o.value) || /friend/i.test(o.label);
+      return (opts.find(o => isFriend(o) === friendly) || opts[friendly ? 0 : opts.length - 1]).value;
     }
     if (req.purpose === 'castMode') {
       const nonAlt = opts.find(o => !/Evoke|Morph|face down/i.test(o.label));

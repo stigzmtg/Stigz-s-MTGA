@@ -320,6 +320,9 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'suspended': return card.zone === 'exile' && (card.counters.TIME || 0) > 0;
     case 'madness': return false;
     case 'CastSaSource': return !!host && card.id === host.id;
+    case 'cmcChosenEvenOdd': return !!host && !!host.chosen && !!host.chosen.evenOdd && (ch.cmc % 2 === 0) === (host.chosen.evenOdd === 'Even');
+    case 'FortifiedBy': return !!host && host.attachedTo === card.id;
+    case 'enlistedThisCombat': return card.enlistedTurn === game.turnNumber;
     case 'unpaired': return !card.lki && !game.pairedPartner(card);
     case 'Paired': return !card.lki && !!game.pairedPartner(card);
     case 'PairedWith': { const p = host && !host.lki ? game.pairedPartner(host) : null; return !!p && p.id === card.id; }
@@ -329,7 +332,6 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'prowled': return card.altCost === 'Prowl' || !!(card.castSA && card.castSA.altCost === 'Prowl');
     case 'PromisedGift': return card.promisedGift != null;
     case 'copiedSpell': return !!card.isSpellCopy;
-    case 'enlistedThisCombat': return false;
     case 'milledThisTurn': return game.turnState.moves.some(m => m.card === card && m.from === 'library' && m.to === 'graveyard');
     case 'wasDealtExcessDamageThisTurn': return false;
     case 'blockedBySource': return !!(ctx.host && game.combat && game.combat.blockers.get(ctx.host.id) === card.id);
@@ -363,6 +365,10 @@ function cardProp(game, card, ch, prop, ctx) {
   if ((m = prop.match(/^(ControlledBy|OwnedBy) (.+)$/))) {
     const who = resolveDefined(game, m[2], ctx).map(x => x.isPlayer ? x.id : ctrlOf(game, x));
     return who.includes(m[1] === 'ControlledBy' ? ctrl : card.owner);
+  }
+  if (prop === 'SharesColorWith TriggeredProduced' || prop === 'sharesColorWith TriggeredProduced') {
+    const produced = String((ctx.trig && ctx.trig.Produced) || (ctx.sa && ctx.sa.trig && ctx.sa.trig.Produced) || '').split(/\s+/);
+    return produced.some(c => ch.colors.has(c));
   }
   if ((m = prop.match(/^(sharesCreatureTypeWith|sharesColorWith|sharesCardTypeWith|sharesNameWith|sharesLandTypeWith) ?(.*)$/))) {
     const others = m[2] === 'Commander' || m[2] === 'YourCommander'
@@ -890,6 +896,7 @@ function countExpr(game, rest, ctx, depth) {
     case 'CreaturesDiedThisTurn': return game.turnState.creaturesDied || 0;
     case 'Initiative': return game.initiative === youId ? 1 : 0;
     case 'ManaPool:All': return Object.values(you.pool).reduce((a, b) => a + b, 0);
+    case 'CardNumAttacksThisTurn': return host ? ((game.turnState.attackCounts || {})[host.id] || 0) : 0;
     case 'Speed': return you.speed || 0;
     case 'CardTypesInGraveyard': return graveyardTypes(game, you);
     case 'OpponentsAttacked': return game.combat ? Math.max(1, new Set(game.combat.attackers.map(a => a.defenderPlayer)).size) : 1;
@@ -956,14 +963,16 @@ function countExpr(game, rest, ctx, depth) {
     return game.turnState.moves.filter(e => e.to === dest && (!orig || e.from === orig) && matchValid(game, e.lki || e.card, m[3], ctx)).length;
   }
   if ((m = rest.match(/^ThisTurnCast_(.+)$/))) return game.turnState.spellsCast.filter(s => matchValid(game, s.lki, m[1], ctx)).length;
-  if ((m = rest.match(/^Devotion(\w+)?\.?(\w+)?/))) {
-    const colors = (m[2] || m[1] || '').split('').filter(c => COLORS.includes(c));
+  if ((m = rest.match(/^Devotion(?:Dual)?((?:\.\w+)+)/))) {
+    // Devotion.Blue, DevotionDual.Black.Red, Devotion.Chosen
+    const colors = [...new Set(m[1].split('.').filter(Boolean).flatMap(x => x === 'Chosen' ? ((host && host.chosen && host.chosen.colors) || []) : [CAP_COLOR[x]]).filter(c => COLORS.includes(c)))];
     let n = 0;
     for (const c of game.battlefield) if (c.controller === youId) {
       const cost = game.chars(c).manaCost;
       if (!cost) continue;
       for (const col of colors) { n += cost.colored[col] || 0; n += cost.hybrid.filter(h => h.includes(col)).length; n += cost.phyrexian.filter(x => x === col).length; }
     }
+    n += game.activeStatics('Devotion').filter(s => matchValid(game, you, s.p.ValidPlayer || 'You', s.ctx)).length;
     return n;
   }
   if ((m = rest.match(/^ColorsCtrl (.+)$/))) {
@@ -1091,6 +1100,7 @@ export function checkPresence(game, p, ctx) {
       case 'Delirium': if (!countExpr(game, 'Delirium', ctx, 0)) return false; break;
       case 'Hellbent': if (game.players[ctx.you].hand.length) return false; break;
       case 'Monarch': if (game.monarch !== ctx.you) return false; break;
+      case 'MaxSpeed': if (!(game.players[ctx.you].speed >= 4)) return false; break;
       default: break;
     }
   }

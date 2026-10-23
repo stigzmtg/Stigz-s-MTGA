@@ -151,6 +151,22 @@ export async function declareAttackers(game) {
   const names = decl.map(({ c, d }) => `${game.name(c)} → ${d.card ? game.name(game.cardById(d.card)) : game.players[d.player].name}`);
   game.log(`${game.players[ap].name} attacks: ${names.join(', ')}`, { type: 'attack' });
   game.turnState.attackedWith = decl.map(x => x.c.id);
+  for (const { c } of decl) game.turnState.attackCounts = { ...(game.turnState.attackCounts || {}), [c.id]: ((game.turnState.attackCounts || {})[c.id] || 0) + 1 };
+  // enlist: as it attacks, you may tap a nonattacking creature without summoning sickness to add its power
+  for (const { c } of decl) {
+    if (!kw(game, c, 'Enlist')) continue;
+    const pool = game.battlefield.filter(x => x.controller === ap && x !== c && !x.tapped && game.chars(x).types.has('Creature') && !decl.some(d => d.c === x) && (!x.sick || kw(game, x, 'Haste')));
+    if (!pool.length) continue;
+    const ids = await game.ask(ap, { type: 'cards', prompt: `Enlist: you may tap a creature to add its power to ${game.name(c)}`, cards: pool.map(x => x.id), min: 0, max: 1, purpose: 'enlist', cardId: c.id });
+    const e = ids && ids.length ? game.cardById(ids[0]) : null;
+    if (!e || !pool.includes(e)) continue;
+    await game.tap(e);
+    c.enlistedTurn = game.turnNumber;
+    const pw = game.chars(e).power;
+    if (pw) c.temp.push({ power: pw, until: 'EOT' });
+    game.touch();
+    game.log(`${game.name(c)} enlists ${game.name(e)} (+${pw}/+0).`);
+  }
   // optional attack costs: "you may exert CARDNAME as it attacks. When you do, ..."
   for (const { c } of decl) {
     for (const st of game.chars(c).statics) {
@@ -184,6 +200,7 @@ export function canBlockAny(game, b) {
   if (!game.chars(b).types.has('Creature')) return false;
   if (hidden(game, b, "CARDNAME can't block.") || hidden(game, b, "CARDNAME can't attack or block.") || hidden(game, b, "CARDNAME can't block creatures.")) return false;
   if (b.suspected) return false;
+  if ((b.counters.P1P1 || 0) > 0 && game.hasKeyword(b, 'Unleash')) return false;
   for (const s of game.activeStatics('CantBlock')) if (matchValid(game, b, s.p.ValidCard || 'Card.Self', s.ctx)) return false;
   return true;
 }

@@ -3,6 +3,7 @@
 import { setup, expect, run, db } from './lib/testkit.mjs';
 import { castSpell, getActions, refOf, activatedAbilities, castableOptions } from '../src/engine/abilities.js';
 import * as combat from '../src/engine/combat.js';
+import { calcCtx } from '../src/engine/filters.js';
 
 const tests = [];
 const test = (name, fn, opts) => tests.push({ name, fn, opts });
@@ -872,6 +873,294 @@ test('Phantom Nantuko: damage to it is prevented and it loses a counter', async 
   const angel = await T.put(1, 'Serra Angel');
   await T.game.dealDamage(angel, p, 5, {}); await T.resolve();
   expect(p.zone === 'battlefield' && p.counters.P1P1 === 1 && p.damage === 0, `prevented, one counter left (${p.counters.P1P1})`);
+});
+
+// ------------------------------------------------------------ long tail: turn structure, odd costs, odd replacements
+const spyRng = T => { const calls = []; const orig = T.game.rng.int.bind(T.game.rng); T.game.rng.int = n => { const r = orig(n); calls.push([n, r]); return r; }; return calls; };
+test('Extinction Event: exile each creature with mana value of the chosen parity', async T => {
+  const elf = await T.put(1, 'Llanowar Elves'), angel = await T.put(1, 'Serra Angel'), wall = await T.put(0, 'Wall of Omens');
+  T.a.on('chooseEvenOdd', () => 'Odd');
+  await T.cast('Extinction Event');
+  expect(elf.zone === 'exile' && angel.zone === 'exile' && wall.zone === 'battlefield', 'odd creatures exiled, the even one stays');
+});
+test("Narset, Parter of Veils: opponents can't draw more than one card each turn", async T => {
+  await T.put(0, 'Narset, Parter of Veils');
+  const hb = T.B.hand.length, ha = T.A.hand.length;
+  await T.game.drawCards(T.B, 3, null);
+  await T.game.drawCards(T.B, 1, null);
+  expect(T.B.hand.length === hb + 1, `B drew one (${T.B.hand.length - hb})`);
+  await T.game.drawCards(T.A, 2, null);
+  expect(T.A.hand.length === ha + 2, 'A is unaffected');
+});
+test("Hushwing Gryff: creatures entering don't cause abilities to trigger", async T => {
+  await T.put(0, 'Hushwing Gryff');
+  const h = T.A.hand.length;
+  await T.put(0, 'Wall of Omens'); await T.resolve();
+  expect(T.A.hand.length === h, 'Wall of Omens drew nothing');
+});
+test('Time Stop: exile the stack and end the turn', async T => {
+  const spell = await T.put(1, 'Serra Angel', 'hand');
+  T.mana(1); T.game.priority = 1; T.game.activePlayer = 1;
+  await castSpell(T.game, 1, spell, {});
+  T.game.activePlayer = 0;
+  const ts = await T.cast('Time Stop', 0, { resolve: false });
+  await T.game.resolveTop();
+  expect(spell.zone === 'exile' && ts.zone === 'exile' && !T.game.stack.length && T.game.endTurnNow, `stack exiled (${spell.zone}, ${ts.zone}), turn ending`);
+});
+test('Mandate of Peace: end the combat phase', async T => {
+  const angel = await T.put(0, 'Serra Angel');
+  T.game.step = 'declareBlockers';
+  T.combatWith([[angel, 1]]);
+  T.game.activePlayer = 1;
+  await T.cast('Mandate of Peace', 0);
+  expect(!T.game.combat.attackers.length && T.game.endCombatNow, 'attackers removed, combat ends');
+});
+test("Archon of Coronation: as the monarch, damage doesn't make you lose life", async T => {
+  await T.put(0, 'Archon of Coronation'); await T.resolve();
+  const angel = await T.put(1, 'Serra Angel');
+  expect(T.game.monarch === 0, 'A is the monarch');
+  await T.game.dealDamage(angel, T.A, 4, { combat: true }); await T.resolve();
+  expect(T.A.life === 40, `no life lost (${T.A.life})`);
+});
+test('Angel of Salvation: prevent the next 5 damage, divided', async T => {
+  T.a.on('targets', req => req.cands.includes('p0') ? ['p0'] : req.cands.slice(0, req.min));
+  await T.cast('Angel of Salvation');
+  const angel = await T.put(1, 'Serra Angel');
+  await T.game.dealDamage(angel, T.A, 3, {});
+  expect(T.A.life === 40, 'first 3 prevented');
+  await T.game.dealDamage(angel, T.A, 4, {});
+  expect(T.A.life === 38, `2 more prevented, 2 dealt (${T.A.life})`);
+});
+test('Enlist: Aradesh adds the power of a tapped creature, gains double strike and draws', async T => {
+  const ar = await T.put(0, 'Aradesh, the Founder');
+  const angel = await T.put(0, 'Serra Angel');
+  T.game.combat = { attackers: [], blockers: new Map(), firstStrikeDone: new Set() };
+  T.a.on('attackers', () => [{ attacker: ar.id, defender: 'p1' }]);
+  T.a.on('enlist', () => [angel.id]);
+  const h = T.A.hand.length;
+  await combat.declareAttackers(T.game); await T.resolve();
+  expect(angel.tapped && T.game.chars(ar).power === 5, `enlisted (power ${T.game.chars(ar).power})`);
+  expect(T.game.hasKeyword(ar, 'Double Strike') && T.A.hand.length === h + 1, 'double strike and a card');
+});
+test('Moraug: +1/+0 per attack this turn; landfall adds a combat that untaps creatures', async T => {
+  await T.put(0, 'Moraug, Fury of Akoum');
+  const elf = await T.put(0, 'Llanowar Elves');
+  T.game.turnState.attackCounts = { [elf.id]: 2 }; T.game.touch();
+  expect(T.game.chars(elf).power === 3, `elf attacked twice: 3 power (${T.game.chars(elf).power})`);
+  await T.put(0, 'Forest'); await T.resolve();
+  expect(T.game.extraCombats === 1, 'an additional combat phase');
+  elf.tapped = true;
+  T.game.combatsThisTurn = 0;
+  await T.game.runStep('beginCombat'); await T.resolve();
+  expect(!elf.tapped, 'untapped at the beginning of that combat');
+});
+test('Necromancy: cast with flash, sacrificed at the next cleanup', async T => {
+  const angel = await T.put(1, 'Serra Angel', 'graveyard');
+  const n = await T.put(0, 'Necromancy', 'hand');
+  T.game.activePlayer = 1; T.mana(0);
+  const act = getActions(T.game, 0).find(x => x.cardId === n.id && /flash/i.test(x.label));
+  expect(act, 'flash cast offered');
+  T.a.on('targets', req => req.cands.includes(refOf(angel)) ? [refOf(angel)] : req.cands.slice(0, req.min));
+  await T.game.performAction(0, act); await T.resolve();
+  expect(angel.zone === 'battlefield' && angel.controller === 0, 'reanimated');
+  T.game.step = 'cleanup';
+  await T.game.runStep('cleanup'); await T.resolve();
+  expect(n.zone === 'graveyard' && angel.zone === 'graveyard', `both gone at cleanup (${n.zone}, ${angel.zone})`);
+});
+test('Impending: Overlord of the Mistmoors enters as a non-creature with time counters', async T => {
+  const o = await T.put(0, 'Overlord of the Mistmoors', 'hand');
+  T.mana(0);
+  const act = getActions(T.game, 0).find(x => x.cardId === o.id && /impending/i.test(x.label));
+  expect(act, 'impending offered');
+  await T.game.performAction(0, act); await T.resolve();
+  expect(o.zone === 'battlefield' && !T.isCreature(o) && o.counters.TIME === 4 && T.tokens(0).length === 2, `non-creature with 4 time counters and two insects (${o.counters.TIME})`);
+  await T.game.runStep('end'); await T.resolve();
+  expect(o.counters.TIME === 3, `a counter removed at the end step (${o.counters.TIME})`);
+});
+test('Fortify: C.A.M.P. fortifies a land; tapping it puts a counter and makes Junk', async T => {
+  const camp = await T.put(0, 'C.A.M.P.');
+  const forest = await T.put(0, 'Forest');
+  const elf = await T.put(0, 'Llanowar Elves');
+  T.a.on('targets', req => req.cands.includes(refOf(forest)) ? [refOf(forest)] : req.cands.includes(refOf(elf)) ? [refOf(elf)] : req.cands.slice(0, req.min));
+  await T.activate(camp, 0, a => a.parsed.api === 'Attach');
+  expect(camp.attachedTo === forest.id, 'fortifying the forest');
+  T.noMana(0);
+  const { activateManaAbility, manaAbilitiesOf } = await import('../src/engine/abilities.js');
+  await activateManaAbility(T.game, 0, forest, manaAbilitiesOf(T.game, forest)[0].key); await T.resolve();
+  expect(elf.counters.P1P1 === 1 && T.tokens(0).some(t => T.game.chars(t).subtypes.has('Junk')), 'counter on the green elf and a Junk token');
+});
+test('Sanctuary Blade: choose a color as it becomes attached', async T => {
+  const blade = await T.put(0, 'Sanctuary Blade');
+  const elf = await T.put(0, 'Llanowar Elves');
+  T.a.on('targets', () => [refOf(elf)]);
+  T.a.on('color', () => 'B');
+  await T.activate(blade, 0, a => a.parsed.api === 'Attach');
+  expect(blade.attachedTo === elf.id && T.game.chars(elf).power === 3, 'equipped: +2/+0');
+  expect(blade.chosen && (blade.chosen.colors || []).includes('B') && T.game.chars(elf).keywords.some(k => /^Protection/.test(k)), 'protection from the chosen color');
+});
+test('Behold: Sarkhan, Dragon Ascendant makes a Treasure when you reveal a Dragon', async T => {
+  await T.put(0, 'Akoum Hellkite', 'hand');
+  await T.cast('Sarkhan, Dragon Ascendant');
+  expect(T.tokens(0).some(t => T.game.chars(t).subtypes.has('Treasure')), 'treasure created');
+  expect(T.logged(/beholds Akoum Hellkite/), 'the dragon was beheld');
+});
+test('Serene Master: exchange power with the creature it blocks', async T => {
+  const m = await T.put(0, 'Serene Master');
+  const angel = await T.put(1, 'Sun Titan');
+  T.game.activePlayer = 1;
+  T.game.combat = { attackers: [], blockers: new Map(), firstStrikeDone: new Set() };
+  T.b.on('attackers', () => [{ attacker: angel.id, defender: 'p0' }]);
+  T.a.on('blockers', () => [{ blocker: m.id, attacker: angel.id }]);
+  T.a.on('targets', () => [refOf(angel)]);
+  await combat.declareAttackers(T.game); await T.resolve();
+  T.game.step = 'declareBlockers';
+  await combat.declareBlockers(T.game); await T.resolve();
+  expect(T.game.chars(m).power === 6 && T.game.chars(angel).power === 0, `powers exchanged (${T.game.chars(m).power}/${T.game.chars(angel).power})`);
+});
+test('Radiation: Strong gains life instead of losing it', async T => {
+  await T.put(0, 'Strong, the Brutish Thespian');
+  for (let i = 0; i < 3; i++) await T.put(0, 'Serra Angel', 'library');
+  T.A.counters.RAD = 3;
+  T.game.step = 'main1';
+  await T.game.runStep('main1');
+  expect(T.A.life === 43 && !T.A.counters.RAD, `gained 3, counters gone (${T.A.life}, ${T.A.counters.RAD})`);
+});
+test('Renown: Relic Seeker becomes renowned and finds an Equipment', async T => {
+  const s = await T.put(0, 'Relic Seeker');
+  const blade = await T.put(0, 'Sanctuary Blade', 'library');
+  T.combatWith([[s, 1]]);
+  await combat.combatDamage(T.game, false); await T.resolve();
+  expect(s.renowned && s.counters.P1P1 === 1 && blade.zone === 'hand', `renowned, blade found (${blade.zone})`);
+});
+test('Widespread Panic: shuffling your own library puts a card from hand on top', async T => {
+  await T.put(0, 'Widespread Panic');
+  const elf = await T.put(0, 'Llanowar Elves', 'hand');
+  T.a.on('cards', req => req.cards.includes(elf.id) ? [elf.id] : undefined);
+  await T.cast('Rampant Growth');
+  expect(T.A.library[0] === elf, 'the elf is on top');
+});
+test('Zellix: milling creature cards makes a Horror', async T => {
+  await T.put(0, 'Zellix, Sanity Flayer');
+  await T.put(1, 'Serra Angel', 'library'); await T.put(1, 'Llanowar Elves', 'library');
+  await T.game.mill(T.B, 2, null); await T.resolve();
+  expect(T.tokens(0).length === 1, `one token for one mill (${T.tokens(0).length})`);
+});
+test('Mobilize: Zurgo creates a tapped and attacking Warrior, sacrificed at end of turn', async T => {
+  const z = await T.put(0, 'Zurgo Stormrender');
+  T.game.combat = { attackers: [], blockers: new Map(), firstStrikeDone: new Set() };
+  T.a.on('attackers', () => [{ attacker: z.id, defender: 'p1' }]);
+  await combat.declareAttackers(T.game); await T.resolve();
+  const tok = T.tokens(0)[0];
+  expect(tok && tok.tapped && T.game.combat.attackers.some(a => a.card === tok.id), 'warrior attacking');
+  const h = T.A.hand.length;
+  T.game.combat = null;
+  await T.game.runStep('end'); await T.resolve();
+  expect(tok.zone !== 'battlefield' && T.B.life === 39 && T.A.hand.length === h, `sacrificed; not attacking anymore so opponents lose 1 (${T.B.life})`);
+});
+test('Compleated: Vraska enters with two fewer loyalty per {B/P} paid with life', async T => {
+  T.noMana(0); T.A.pool.B = 5;
+  const v = await T.cast("Vraska, Betrayal's Sting", 0, { mana: false });
+  expect(T.A.life === 38 && v.counters.LOYALTY === 4, `paid 2 life, 4 loyalty (${T.A.life}, ${v.counters.LOYALTY})`);
+});
+test("Timestream Navigator: put it on the bottom of your library to take an extra turn", async T => {
+  const n = await T.put(0, 'Timestream Navigator');
+  for (let i = 0; i < 9; i++) await T.put(0, 'Forest');
+  await T.activate(n, 0, a => a.parsed.api === 'AddTurn');
+  expect(T.A.library[T.A.library.length - 1] === n && T.game.extraTurns.includes(0), 'on the bottom, extra turn');
+});
+test('Disturb: cast Dennick from the graveyard transformed', async T => {
+  const d = await T.put(0, 'Dennick, Pious Apprentice', 'graveyard');
+  T.mana(0);
+  const act = getActions(T.game, 0).find(x => x.cardId === d.id && /Disturb/.test(x.label));
+  expect(act, 'disturb offered');
+  await T.game.performAction(0, act); await T.resolve();
+  expect(d.zone === 'battlefield' && T.game.name(d) === 'Dennick, Pious Apparition', `entered transformed (${T.game.name(d)})`);
+  await T.game.destroy(d, null); await T.resolve();
+  expect(d.zone === 'exile', 'exiled instead of dying');
+});
+test("Zndrsplt's Judgment: friends copy a creature, foes bounce one", async T => {
+  await T.put(0, 'Llanowar Elves');
+  const angel = await T.put(1, 'Serra Angel');
+  T.a.on('assignGroup', req => req.forPlayer === 0 ? 'FriendRepeat' : 'FoeBounce');
+  await T.cast("Zndrsplt's Judgment");
+  expect(T.tokens(0).length === 1 && angel.zone === 'hand', `A copied, B bounced (${T.tokens(0).length}, ${angel.zone})`);
+});
+test("Unleash: Tesak enters with a counter, can't block, has haste", async T => {
+  T.a.on('unleash', () => true);
+  const t = await T.cast("Tesak, Judith's Hellhound");
+  expect(t.counters.P1P1 === 1 && !combat.canBlockAny(T.game, t) && T.game.hasKeyword(t, 'Haste'), 'unleashed');
+});
+test('Start your engines: speed rises once per turn when an opponent loses life', async T => {
+  await T.cast('Howlsquad Heavy');
+  expect(T.A.speed === 1, 'speed 1');
+  await T.game.loseLife(T.B, 1, null); await T.game.loseLife(T.B, 1, null);
+  expect(T.A.speed === 2, `speed 2 (${T.A.speed})`);
+});
+test('Enhanced Surveillance: look at two more cards when you surveil', async T => {
+  await T.put(0, 'Enhanced Surveillance');
+  for (let i = 0; i < 5; i++) await T.put(0, 'Forest', 'library');
+  await T.cast('Ransom Note');
+  const req = T.a.asked.find(r => /surveil/i.test(r.purpose || '') || /surveil/i.test(r.prompt || ''));
+  expect(req && (req.cards || req.cands || []).length === 3, `three cards seen (${req && (req.cards || req.cands || []).length})`);
+});
+test('Altar of the Pantheon: devotion +1; dual devotion counts both colors', async T => {
+  const ctx = { host: null, you: 0 };
+  await T.put(0, 'Wall of Omens');
+  const before = calcCtx(T.game, 'Count$DevotionDual.White.Black', ctx);
+  await T.put(0, 'Altar of the Pantheon');
+  expect(before === 1 && calcCtx(T.game, 'Count$DevotionDual.White.Black', ctx) === 2, 'Wall of Omens counts, Altar adds one');
+  expect(calcCtx(T.game, 'Count$Devotion.Blue', ctx) === 1, 'blue devotion is not black');
+});
+test("Tekuthal: proliferate twice", async T => {
+  await T.put(0, 'Tekuthal, Inquiry Dominus');
+  const elf = await T.put(0, 'Llanowar Elves');
+  await T.game.addCounters(elf, 'P1P1', 1, null);
+  const bastion = await T.put(0, "Karn's Bastion");
+  T.a.on('proliferate', req => [refOf(elf)]);
+  await T.activate(bastion, 0, a => a.parsed.api === 'Proliferate');
+  expect(elf.counters.P1P1 === 3, `two more counters (${elf.counters.P1P1})`);
+});
+test('Topography Tracker: a creature you control explores twice', async T => {
+  const tr = await T.put(0, 'Topography Tracker'); await T.resolve();
+  await T.put(0, 'Forest', 'library'); await T.put(0, 'Forest', 'library');
+  const map = T.tokens(0).find(t => T.game.chars(t).subtypes.has('Map'));
+  expect(map, 'map token');
+  T.a.on('targets', () => [refOf(tr)]);
+  const h = T.A.hand.length;
+  await T.activate(map, 0, 0);
+  expect(T.A.hand.length === h + 2, `two lands to hand (${T.A.hand.length - h})`);
+});
+test('Barbarian Class: roll one more die and ignore the lowest', async T => {
+  await T.put(0, 'Barbarian Class');
+  const g = await T.put(0, 'Clay Golem');
+  const ring = await T.put(1, 'Sol Ring');
+  T.a.on('targets', () => [refOf(ring)]);
+  const calls = spyRng(T);
+  await T.activate(g, 0, a => a.parsed.p.Monstrosity);
+  const d8 = calls.filter(([n]) => n === 8).map(([, r]) => r + 1);
+  expect(d8.length === 2 && g.counters.P1P1 === Math.max(...d8), `rolled two d8, kept ${Math.max(...d8)} (${g.counters.P1P1})`);
+});
+test("Krark's Thumb: flip two coins and ignore one", async T => {
+  await T.put(0, "Krark's Thumb");
+  const calls = spyRng(T);
+  await T.cast('Stitch in Time');
+  expect(calls.filter(([n]) => n === 2).length === 2, 'two coins flipped');
+});
+test('Leyline of Anticipation: begin the game with it on the battlefield', async T => {
+  const l = await T.put(0, 'Leyline of Anticipation', 'hand');
+  T.a.on('mulligan', () => true); T.b.on('mulligan', () => true);
+  await T.game.mulligans();
+  expect(l.zone === 'battlefield', `on the battlefield (${l.zone})`);
+});
+test("Ludevic: transforms into a copy of an exiled creature card named Olag", async T => {
+  const lu = await T.put(0, 'Ludevic, Necrogenius');
+  await T.resolve();
+  await T.put(0, 'Serra Angel', 'graveyard'); await T.put(0, 'Wall of Omens', 'graveyard');
+  T.a.on('xValue', () => 2); T.a.on('number', () => 2);
+  await T.activate(lu, 0, a => a.parsed.api === 'SetState');
+  expect(T.game.name(lu) === "Olag, Ludevic's Hubris", `named Olag (${T.game.name(lu)})`);
+  const ch = T.game.chars(lu);
+  expect(ch.power === 6 && ch.subtypes.has('Zombie') && ch.colors.has('U') && ch.colors.has('B'), `4/4 + 2 counters, Zombie, blue-black (${ch.power})`);
 });
 
 process.exit(await run(tests) ? 1 : 0);

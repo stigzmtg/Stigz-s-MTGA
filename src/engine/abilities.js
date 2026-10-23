@@ -82,9 +82,12 @@ export function parseCost(str) {
         case 'Exile': case 'ExileFromGrave': case 'ExileFromHand': case 'ExileFromTop': case 'ExileAnyGrave': case 'ExileSameGrave': case 'ExiledMoveToGrave': part.valid = args[1] || 'Card'; break;
         case 'tapXType': case 'untapYType': part.valid = args[1] || 'Creature'; break;
         case 'Return': part.valid = args[1] || 'CARDNAME'; break;
-        case 'Reveal': part.valid = args[1] || 'Card'; break;
+        case 'Reveal': case 'Behold': part.valid = args[1] || 'Card'; break;
+        case 'PutCardToLibFromBattlefield': part.valid = args[2] || 'CARDNAME'; part.libPos = args[1]; break;
         default: break;
       }
+      // "Artifact.Other;Creature.Other": ';' separates alternatives in cost types
+      if (part.valid && part.valid.includes(';')) part.valid = part.valid.replace(/;/g, ',');
       cost.parts.push(part);
       continue;
     }
@@ -131,6 +134,8 @@ function costCandidates(game, sa, part) {
       if (valid === 'Card.Self') return [host];
       return game.battlefield.filter(c => c.controller === pid && matchValid(game, c, valid, ctx));
     case 'Blight': return game.battlefield.filter(c => c.controller === pid && game.chars(c).types.has('Creature'));
+    case 'Behold': return [...game.battlefield.filter(c => c.controller === pid), ...game.players[pid].hand].filter(c => c.id !== host.id && matchValid(game, c, valid, ctx));
+    case 'PutCardToLibFromBattlefield': if (valid === 'Card.Self') return host.zone === 'battlefield' ? [host] : []; return game.battlefield.filter(c => c.controller === pid && matchValid(game, c, valid, ctx));
     case 'ExiledMoveToGrave': return game.cardsInZone('exile').filter(c => matchValid(game, c, valid, ctx));
     case 'ExileSameGrave': return game.cardsInZone('graveyard').filter(c => matchValid(game, c, valid, ctx));
     default: return [];
@@ -245,7 +250,7 @@ async function chooseCostParts(game, sa, cost) {
         choices.push({ part, cards: chosen });
         break;
       }
-      case 'Sac': case 'Discard': case 'ExileFromGrave': case 'ExileFromHand': case 'Return': case 'Exile': case 'tapXType': case 'untapYType': case 'Reveal': case 'ExileAnyGrave': case 'ExiledMoveToGrave': {
+      case 'Sac': case 'Discard': case 'ExileFromGrave': case 'ExileFromHand': case 'Return': case 'Exile': case 'tapXType': case 'untapYType': case 'Reveal': case 'ExileAnyGrave': case 'ExiledMoveToGrave': case 'Behold': case 'PutCardToLibFromBattlefield': {
         let cands = costCandidates(game, sa, part).filter(c => !used.has(c.id));
         let n = n0 === Infinity ? cands.length : n0;
         if (part.type === 'tapXType' && /withTotalPowerGE(\d+)/.test(part.valid || '')) {
@@ -320,6 +325,21 @@ export function humanValid(v) {
   }).join(' or ');
 }
 
+// roll dice for a player: "roll that many plus one and ignore the lowest" replacements (Barbarian Class) apply
+export async function rollDice(game, pid, amount, sides, ignore = 0, sa = null) {
+  const rr = await game.applySimpleReplacement('RollDice', { Affected: game.players[pid], Player: pid, Number: amount, Ignore: ignore }, sa);
+  if (rr) { amount = rr.Number; ignore = rr.Ignore || 0; }
+  const rolls = [];
+  for (let i = 0; i < amount; i++) rolls.push(1 + game.rng.int(sides));
+  // "roll two d20 and ignore the lower roll"
+  if (ignore > 0) { rolls.sort((a, b) => b - a); rolls.splice(Math.max(1, rolls.length - ignore)); }
+  const total = rolls.reduce((a, b) => a + b, 0);
+  game.log(`${game.players[pid].name} rolls ${rolls.length > 1 ? rolls.length : 'a'} d${sides}: ${total}.`);
+  game.fire('RolledDie', { Player: pid, Result: total, Sides: sides });
+  game.fire('RolledDieOnce', { Player: pid, Result: total, Sides: sides });
+  return { rolls, total };
+}
+
 async function applyCostParts(game, sa, cost, choices) {
   const pid = sa.controller;
   const p = game.players[pid];
@@ -335,18 +355,16 @@ async function applyCostParts(game, sa, cost, choices) {
         if (ch.random) { for (let i = 0; i < ch.random && p.hand.length; i++) { const c = p.hand[game.rng.int(p.hand.length)]; paid.Discarded.push(c); await game.discard(c, sa); } }
         else for (const c of ch.cards) { paid.Discarded.push(c); await game.discard(c, sa); }
         break;
-      case 'ExileFromGrave': case 'ExileFromHand': case 'Exile': case 'ExileAnyGrave': case 'ExileSameGrave': for (const c of ch.cards) { paid.Exiled.push(c); await game.moveCard(c, 'exile', { cause: sa, exiledWith: sa.isSpell && host.isCard ? host.id : undefined }); } break;
+      case 'ExileFromGrave': case 'ExileFromHand': case 'Exile': case 'ExileAnyGrave': case 'ExileSameGrave': for (const c of ch.cards) { paid.Exiled.push(c); await game.moveCard(c, 'exile', { cause: sa, exiledWith: host.isCard && (sa.isSpell || host.zone === 'battlefield') ? host.id : undefined }); } break;
       case 'ExiledMoveToGrave': for (const c of ch.cards) { (paid.MovedToGrave = paid.MovedToGrave || []).push(c); await game.moveCard(c, 'graveyard', { cause: sa }); } break;
       case 'RollDice': {
-        const k = +part.args[0] || 1, sides = +part.args[1] || 6;
-        let total = 0;
-        for (let i = 0; i < k; i++) total += 1 + game.rng.int(sides);
+        const { total } = await rollDice(game, pid, +part.args[0] || 1, +part.args[1] || 6, 0, sa);
         if (part.args[2] === 'X') sa.root().x = total;
-        game.log(`${p.name} rolls ${k > 1 ? k : 'a'} d${sides}: ${total}.`);
-        game.fire('RolledDie', { Player: pid, Result: total, Sides: sides });
         break;
       }
       case 'Blight': for (const c of ch.cards) await game.addCounters(c, 'M1M1', ch.n, sa); game.log(`${p.name} blights ${ch.n}${ch.cards[0] ? ' (' + game.name(ch.cards[0]) + ')' : ''}.`); break;
+      case 'Behold': for (const c of ch.cards) paid.Revealed.push(c); game.log(`${p.name} beholds ${ch.cards.map(c => game.name(c)).join(', ')}.`); break;
+      case 'PutCardToLibFromBattlefield': for (const c of ch.cards) await game.moveCard(c, 'library', { cause: sa, pos: part.libPos === '-1' ? 'bottom' : 'top' }); break;
       case 'RevealChosen': if (host.chosen && host.chosen.player != null) { host.chosenRevealed = true; game.log(`${p.name} reveals the chosen player: ${game.players[host.chosen.player].name}.`); } break;
       case 'Return': for (const c of ch.cards) await game.moveCard(c, 'hand', { cause: sa }); break;
       case 'tapXType': case 'Crew': for (const c of ch.cards) { paid.Tapped.push(c); await game.tap(c); } if (part.type === 'Crew') game.fire('BecomesCrewed', { Card: host, Crew: ch.cards }); break;
@@ -611,7 +629,7 @@ export async function payManaCost(game, pid, manaCost, { exclude = new Set(), sp
   for (const k of Object.keys(p.pool)) { const d = p.pool[k] - r.pool[k]; if (d > 0) spent[k] = d; }
   p.pool = r.pool;
   if (r.life) { p.life -= r.life; p.lifeLostThisTurn += r.life; }
-  if (sa) sa.root().manaSpent = spent;
+  if (sa) { sa.root().manaSpent = spent; if (r.life) sa.root().phyrexianLife = Math.floor(r.life / 2); }
   game.touch();
   if (tapped.length) game.log(`${p.name} taps ${tapped.map(c => game.name(c)).join(', ')}.`, { type: 'mana', quiet: true });
   return true;
@@ -876,6 +894,7 @@ export function spellOptions(game, pid, card, { anyZone = false } = {}) {
         if ((m = k.match(/^Escape:(.*)$/))) pushFace(0, { altCost: 'Escape', altManaStr: m[1].split(':')[0], from: 'graveyard', label: `Escape ${f.name}` });
         if (k === 'Retrace') pushFace(0, { altCost: 'Retrace', from: 'graveyard', extraCostStr: 'Discard<1/Land>', label: `Retrace ${f.name}` });
         if ((m = k.match(/^Jump-start$/))) pushFace(0, { altCost: 'Flashback', from: 'graveyard', extraCostStr: 'Discard<1/Card>', label: `Jump-start ${f.name}` });
+        if ((m = k.match(/^Disturb:(.+)$/)) && faces[1]) pushFace(1, { altCost: 'Disturb', altManaStr: m[1].split(':')[0], from: 'graveyard', label: `Disturb ${f.name} (cast ${faces[1].name})` });
         if ((m = k.match(/^Harmonize:(.+)$/))) pushFace(0, { altCost: 'Harmonize', altManaStr: m[1].split(':')[0], from: 'graveyard', label: `Harmonize ${f.name}` });
         // mayhem: cast it from your graveyard for its mayhem cost if you discarded it this turn
         if ((m = k.match(/^Mayhem:(.+)$/)) && card.discarded && card.discarded.turn === game.turnNumber && card.discarded.zcc === card.zcc) pushFace(0, { altCost: 'Mayhem', altManaStr: m[1].split(':')[0], from: 'graveyard', label: `Mayhem ${f.name}` });
@@ -917,6 +936,8 @@ export function spellOptions(game, pid, card, { anyZone = false } = {}) {
       if ((m = k.match(/^(Morph|Megamorph|Disguise):(.*)$/))) opts.push({ key: 'morph', label: `Cast ${f.name} face down (${m[1]})`, face: 0, permanent: true, faceDown: true, altManaStr: '3', altCost: 'Morph', from, disguise: m[1] === 'Disguise' });
       if ((m = k.match(/^Spectacle:(.*)$/)) && game.opponents(pid).some(o => o.lifeLostThisTurn > 0)) pushFace(0, { altCost: 'Spectacle', altManaStr: m[1], label: `Spectacle ${f.name}` });
       if ((m = k.match(/^Surge:(.*)$/)) && game.players[pid].spellsCastThisTurn.length > 0) pushFace(0, { altCost: 'Surge', altManaStr: m[1], label: `Surge ${f.name}` });
+      if ((m = k.match(/^Impending:(\d+):(.+)$/))) pushFace(0, { altCost: 'Impending', altManaStr: m[2], label: `Cast ${f.name} for its impending cost` });
+      if (k === 'MayFlashSac' && !game.canSorcery(pid)) pushFace(0, { mayFlash: true, flashSac: true, label: `Cast ${f.name} as though it had flash (sacrifice it at the next cleanup)` });
       if ((m = k.match(/^Awaken:(\d+):(.+)$/))) pushFace(0, { altCost: 'Awaken', altManaStr: m[2], awaken: +m[1], label: `Awaken ${m[1]} — ${f.name}` });
       if ((m = k.match(/^Emerge:(.*)$/))) pushFace(0, { altCost: 'Emerge', altManaStr: m[1].split(':')[0], label: `Emerge ${f.name} (sacrifice a creature)` });
       if ((m = k.match(/^Offering:(\w+)$/)) && game.battlefield.some(c => c.controller === pid && matchValid(game, c, m[1], { host: card, you: pid }))) pushFace(0, { altCost: 'Offering', offering: m[1], mayFlash: true, label: `Cast ${f.name} with offering (sacrifice a ${m[1]})` });
@@ -1040,7 +1061,7 @@ function spellCost(game, pid, card, opt, sa) {
   }
   const ch = game.chars(card);
   for (const k of ch.keywords) {
-    const m = k.match(/^Affinity:(.+)$/);
+    const m = k.match(/^Affinity:([^:]+)/);
     if (m) reduce += game.battlefield.filter(c => c.controller === pid && matchValid(game, c, m[1], { host: card, you: pid })).length;
   }
   if (game.hasKeywordIn(ch, 'Delve')) sa.delve = true;
@@ -1681,6 +1702,8 @@ export async function resolveStackItem(game, item) {
           game.touch();
         }
         if (sa.altCost === 'Evoke') moved.evoked = true;
+        if (sa.altCost === 'Disturb') { moved.transformed = true; game.touch(); }
+        if (sa.opt && sa.opt.flashSac) game.delayed.push({ id: game.uid++, p: { Mode: 'Phase', Phase: 'Cleanup', Execute: 'FlashSac' }, svars: { FlashSac: 'DB$ SacrificeAll | Defined$ DelayTriggerRemembered' }, host: moved, controller: item.controller, remembered: [moved], turn: game.turnNumber, thisTurnOnly: true });
         if (moved.unlocked && moved.unlocked.length) { const d = moved.unlocked[0]; moved.unlocked = []; game.unlockDoor(moved, d, item.controller); }
         if (sa.squad) moved.squad = sa.squad;
         if (sa.kicked) moved.kicked = sa.kicked;

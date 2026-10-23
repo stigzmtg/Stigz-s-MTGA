@@ -167,6 +167,7 @@ export class Card {
     this.cloaked = false;
     this.disguised = false;
     this.pairedWith = null;
+    this.impending = false;
   }
   get faceDef() {
     if (this.copyOf && this.copyOf.def) return this.copyOf.def.faces[this.copyOf.face || 0] || this.copyOf.def.faces[0];
