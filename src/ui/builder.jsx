@@ -5,6 +5,8 @@ import { CardFace, viewOfDef, Pip } from './cardview.jsx';
 import { cardImage, subscribeImages, imagesVersion } from './images.js';
 import { buildIndex, BASICS, deckProblems, loadCustomDecks, saveCustomDeck, deleteCustomDeck, newDeckId } from './customdecks.js';
 import { Modal } from './dialogs.jsx';
+import { createDeckHelper } from './deckai.js';
+import { DeckHelper } from './deckhelper.jsx';
 
 const { useState, useMemo, useSyncExternalStore } = React;
 const TYPE_FILTERS = [['all', 'All'], ['Creature', 'Creatures'], ['spell', 'Instants & sorceries'], ['Artifact', 'Artifacts'], ['Enchantment', 'Enchantments'], ['Planeswalker', 'Planeswalkers'], ['Land', 'Lands']];
@@ -12,7 +14,7 @@ const GROUPS = ['Creature', 'Planeswalker', 'Battle', 'Instant', 'Sorcery', 'Art
 const BASIC_FOR = { W: 'Plains', U: 'Island', B: 'Swamp', R: 'Mountain', G: 'Forest' };
 const costPip = t => (/^\d+$/.test(t) || t === 'X' ? t : t.length === 2 && /^[WUBRG2][WUBRGP]$/.test(t) ? `${t[0]}/${t[1]}` : t);
 
-function Cost({ cost }) {
+export function Cost({ cost }) {
   return cost.length ? <span className="mana">{cost.map((t, i) => <Pip key={i} s={costPip(t)} />)}</span> : null;
 }
 
@@ -57,6 +59,8 @@ export function DeckBuilder({ data, editId, onDone, onPlay, onHome }) {
   useSyncExternalStore(subscribeImages, imagesVersion);
   const index = useMemo(() => buildIndex(data.db.raw), [data]);
   const byName = useMemo(() => new Map(index.map(c => [c.name, c])), [index]);
+  const helper = useMemo(() => createDeckHelper(index, data.decks, data.support || {}), [index]);
+  const [tab, setTab] = useState('helper');
   const start = editId ? loadCustomDecks().find(d => d.id === editId) : null;
   const [id] = useState(() => (start ? start.id : newDeckId()));
   const [name, setName] = useState(start ? start.name : '');
@@ -147,30 +151,36 @@ export function DeckBuilder({ data, editId, onDone, onPlay, onHome }) {
         <button className="btn sm" onClick={onDone}>Back to decks</button>
       </header>
       <div className="builder-grid">
-        <section className="panel builder-search" aria-label={choosingCommander ? 'Choose a commander' : 'Add cards'}>
-          <h2>{choosingCommander ? (picking === 'partner' ? 'Choose a partner' : 'Choose your commander') : 'Add cards'}</h2>
-          <p className="note">{choosingCommander ? 'Any legendary creature can lead a deck. Its colors decide which cards the deck can use.' : `Only cards the game can play are listed. ${identity.length ? 'Your colors: ' : 'Colorless commander: colorless cards only.'}`}{!choosingCommander && identity.length ? <span className="mana">{identity.map(c => <Pip key={c} s={c} />)}</span> : null}</p>
-          <div className="filters">
-            <input className="input search" placeholder={choosingCommander ? 'Search commanders by name or type' : 'Search by name, type or rules text'} value={q} onChange={e => { setQ(e.target.value); setLimit(60); }} aria-label="Search cards" />
-            {!choosingCommander ? <label className="checkline"><input type="checkbox" checked={inColors} onChange={e => setInColors(e.target.checked)} /> Commander’s colors only</label> : null}
+        <section className="panel builder-search" aria-label={tab === 'helper' ? 'AI deck helper' : choosingCommander ? 'Choose a commander' : 'Add cards'}>
+          <div className="builder-tabs" role="tablist">
+            <button role="tab" aria-selected={tab === 'helper'} className={tab === 'helper' ? 'on' : ''} onClick={() => setTab('helper')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.8 4.6L18.5 8l-4.7 1.5L12 14l-1.8-4.5L5.5 8l4.7-1.4z" /><path d="M18.5 13l.9 2.3 2.3.8-2.3.8-.9 2.3-.9-2.3-2.3-.8 2.3-.8z" /></svg>AI deck helper</button>
+            <button role="tab" aria-selected={tab === 'search'} className={tab === 'search' ? 'on' : ''} onClick={() => setTab('search')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3a7 7 0 015.6 11.2l4.6 4.6-1.4 1.4-4.6-4.6A7 7 0 1110 3zm0 2a5 5 0 100 10 5 5 0 000-10z" /></svg>{choosingCommander ? (picking === 'partner' ? 'Choose a partner' : 'Choose a commander') : 'Search cards'}</button>
           </div>
-          {!choosingCommander ? <div className="seg builder-types" role="group" aria-label="Card type">{TYPE_FILTERS.map(([k, l]) => <button key={k} className={type === k ? 'on' : ''} aria-pressed={type === k} onClick={() => { setType(k); setLimit(60); }}>{l}</button>)}</div> : null}
-          <div className="builder-results" role="list">
-            {results.slice(0, limit).map(c => {
-              const have = cards.get(c.name) || 0;
-              const off = c.ci.some(x => !identity.includes(x));
-              return (
-                <div key={c.name} role="listitem" className={`bres ${have ? 'in' : ''}`} onMouseEnter={() => setHover(c.name)} onFocus={() => setHover(c.name)}>
-                  <span className="bname"><b>{c.name}</b><small>{c.type}</small></span>
-                  <Cost cost={c.cost} />
-                  {choosingCommander
-                    ? <button className="btn sm primary" onClick={() => setCommander(c.name)}>Choose</button>
-                    : <button className="btn sm" disabled={(have && !c.anyNumber) || (!inColors && off)} title={off ? 'Outside your commander’s colors' : have && !c.anyNumber ? 'Already in your deck' : 'Add to deck'} onClick={() => add(c.name)}>{have && !c.anyNumber ? 'In deck' : '+ Add'}</button>}
-                </div>
-              );
-            })}
-            {!results.length ? <div className="empty">Nothing matches.</div> : null}
-            {results.length > limit ? <button className="btn ghost more" onClick={() => setLimit(l => l + 80)}>Show more ({results.length - limit} left)</button> : null}
+          <DeckHelper H={helper} commanders={commanders} cards={cards} setCards={setCards} onChooseCommander={setCommander} onHover={setHover} byName={byName} hidden={tab !== 'helper'} />
+          <div className="builder-searchpane" hidden={tab !== 'search'}>
+            <p className="note">{choosingCommander ? 'Any legendary creature can lead a deck. Its colors decide which cards the deck can use.' : `Only cards the game can play are listed. ${identity.length ? 'Your colors: ' : 'Colorless commander: colorless cards only.'}`}{!choosingCommander && identity.length ? <span className="mana">{identity.map(c => <Pip key={c} s={c} />)}</span> : null}</p>
+            <div className="filters">
+              <input className="input search" placeholder={choosingCommander ? 'Search commanders by name or type' : 'Search by name, type or rules text'} value={q} onChange={e => { setQ(e.target.value); setLimit(60); }} aria-label="Search cards" />
+              {!choosingCommander ? <label className="checkline"><input type="checkbox" checked={inColors} onChange={e => setInColors(e.target.checked)} /> Commander’s colors only</label> : null}
+            </div>
+            {!choosingCommander ? <div className="seg builder-types" role="group" aria-label="Card type">{TYPE_FILTERS.map(([k, l]) => <button key={k} className={type === k ? 'on' : ''} aria-pressed={type === k} onClick={() => { setType(k); setLimit(60); }}>{l}</button>)}</div> : null}
+            <div className="builder-results" role="list">
+              {results.slice(0, limit).map(c => {
+                const have = cards.get(c.name) || 0;
+                const off = c.ci.some(x => !identity.includes(x));
+                return (
+                  <div key={c.name} role="listitem" className={`bres ${have ? 'in' : ''}`} onMouseEnter={() => setHover(c.name)} onFocus={() => setHover(c.name)}>
+                    <span className="bname"><b>{c.name}</b><small>{c.type}</small></span>
+                    <Cost cost={c.cost} />
+                    {choosingCommander
+                      ? <button className="btn sm primary" onClick={() => setCommander(c.name)}>Choose</button>
+                      : <button className="btn sm" disabled={(have && !c.anyNumber) || (!inColors && off)} title={off ? 'Outside your commander’s colors' : have && !c.anyNumber ? 'Already in your deck' : 'Add to deck'} onClick={() => add(c.name)}>{have && !c.anyNumber ? 'In deck' : '+ Add'}</button>}
+                  </div>
+                );
+              })}
+              {!results.length ? <div className="empty">Nothing matches.</div> : null}
+              {results.length > limit ? <button className="btn ghost more" onClick={() => setLimit(l => l + 80)}>Show more ({results.length - limit} left)</button> : null}
+            </div>
           </div>
         </section>
         <aside className="builder-side">
@@ -183,8 +193,8 @@ export function DeckBuilder({ data, editId, onDone, onPlay, onHome }) {
               {commanders.map(n => (
                 <span key={n} className="cmd-chip" onMouseEnter={() => setHover(n)}><b>{n}</b><small>Commander</small></span>
               ))}
-              {commanders.length ? <button className="btn sm ghost" onClick={() => { setPicking(true); setQ(''); }}>Change</button> : null}
-              {commanders.length === 1 && (byName.get(commanders[0]) || {}).partner ? <button className="btn sm ghost" onClick={() => { setPicking('partner'); setQ(''); }}>Add a partner</button> : null}
+              {commanders.length ? <button className="btn sm ghost" onClick={() => { setPicking(true); setQ(''); setTab('search'); }}>Change</button> : null}
+              {commanders.length === 1 && (byName.get(commanders[0]) || {}).partner ? <button className="btn sm ghost" onClick={() => { setPicking('partner'); setQ(''); setTab('search'); }}>Add a partner</button> : null}
             </div>
             <div className="count-row">
               <span className={`count ${total === 100 ? 'full' : total > 100 ? 'over' : ''}`}><b>{total}</b> / 100 cards</span>
