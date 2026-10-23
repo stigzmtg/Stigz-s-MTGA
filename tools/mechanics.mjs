@@ -584,4 +584,157 @@ test('Psionic Ritual: cast a copy of an instant from a graveyard', async T => {
   expect(T.A.hand.length === h + 2 && ns.zone === 'exile', `copy drew two (${T.A.hand.length - h})`);
 });
 
+// ------------------------------------------------------------ more keywords
+test('Station: tap a creature for charge counters equal to its power', async T => {
+  const ship = await T.put(0, 'Exploration Broodship');
+  const angel = await T.put(0, 'Serra Angel');
+  T.a.on('costtapXType', () => [angel.id]);
+  await T.activate(ship, 0, a => a.parsed.p.Station === 'True');
+  expect(ship.counters.CHARGE === 4 && angel.tapped, `four charge counters (${ship.counters.CHARGE})`);
+  expect(T.game.playerChars(0).extraLands === 1, 'station 3+: an additional land each turn');
+  expect(!T.isCreature(ship), 'not a creature below 8');
+});
+test('Vanishing: time counters tick down, then it is sacrificed', async T => {
+  const t = await T.put(0, 'Deadwood Treefolk'); await T.resolve();
+  expect(t.counters.TIME === 3, 'three time counters');
+  for (let i = 0; i < 3; i++) { T.game.fire('Phase', { Phase: 'Upkeep', Player: 0 }); await T.resolve(); }
+  expect(t.zone === 'graveyard', `sacrificed when the last counter left (${t.zone}, ${t.counters.TIME})`);
+});
+test('For Mirrodin!: Glimmer Lens makes a Rebel and attaches to it', async T => {
+  const lens = await T.cast('Glimmer Lens');
+  const rebel = T.tokens(0).find(c => /Rebel/.test(T.game.name(c)));
+  expect(rebel && lens.attachedTo === rebel.id, 'equipped to a new 2/2 Rebel');
+});
+test('Reinforce: discard Hunting Triad to put three counters on a creature', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  const c = await T.put(0, 'Hunting Triad', 'hand');
+  T.a.on('targets', () => [refOf(elf)]);
+  await T.activate(c, 0, a => /Reinforce/.test(a.parsed.p.SpellDescription));
+  expect(elf.counters.P1P1 === 3 && c.zone === 'graveyard', 'reinforced');
+});
+test('Plot: exile now, cast free as a sorcery on a later turn', async T => {
+  const c = await T.put(0, 'Lock and Load', 'hand');
+  await T.activate(c, 0, a => a.parsed.api === 'Plot');
+  expect(c.zone === 'exile' && c.plotted, 'plotted');
+  T.noMana(0);
+  expect(!getActions(T.game, 0).some(a => a.cardId === c.id), 'not castable the turn it was plotted');
+  T.game.turnNumber++;
+  for (const x of T.game.battlefield) if (T.isLand(x)) x.tapped = true;
+  const act = getActions(T.game, 0).find(a => a.cardId === c.id);
+  expect(act, 'castable for free next turn');
+  const h = T.A.hand.length;
+  await T.game.performAction(0, act); await T.resolve();
+  expect(T.A.hand.length === h + 1 && c.zone === 'graveyard', 'drew');
+});
+test('Gravestorm: Follow the Bodies copies for each permanent that died this turn', async T => {
+  const a = await T.put(1, 'Llanowar Elves'), b = await T.put(1, 'Sol Ring');
+  await T.game.destroy(a, null); await T.game.destroy(b, null); await T.resolve();
+  await T.cast('Follow the Bodies');
+  expect(T.tokens(0).filter(c => /Clue/.test(T.game.name(c))).length === 3, `three clues (${T.tokens(0).length})`);
+});
+test("Champion: Wren's Run Packmaster exiles an Elf until it leaves", async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  const pm = await T.cast("Wren's Run Packmaster");
+  expect(elf.zone === 'exile' && pm.zone === 'battlefield', 'elf championed');
+  await T.game.destroy(pm, null); await T.resolve();
+  expect(elf.zone === 'battlefield', 'elf returned');
+  const pm2 = await T.cast("Wren's Run Packmaster");
+  expect(pm2.zone === 'battlefield' || pm2.zone === 'graveyard', 'second one');
+});
+test('Champion: with nothing to champion it is sacrificed', async T => {
+  const pm = await T.cast("Wren's Run Packmaster");
+  expect(pm.zone === 'graveyard', `sacrificed (${pm.zone})`);
+});
+test('Cumulative upkeep: Mystic Remora asks {1} per age counter, else sacrifice', async T => {
+  const r = await T.put(0, 'Mystic Remora');
+  T.mana(0);
+  T.game.fire('Phase', { Phase: 'Upkeep', Player: 0 }); await T.resolve();
+  expect(r.zone === 'battlefield' && r.counters.AGE === 1, 'paid {1}');
+  T.noMana(0); for (const x of T.game.battlefield) if (T.isLand(x)) x.tapped = true;
+  T.game.fire('Phase', { Phase: 'Upkeep', Player: 0 }); await T.resolve();
+  expect(r.zone === 'graveyard', "couldn't pay {2}: sacrificed");
+});
+test('Bloodthirst: Bloodlord of Vaasgoth after an opponent was dealt damage', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  const b1 = await T.cast('Bloodlord of Vaasgoth');
+  expect(!b1.counters.P1P1, 'no counters before damage');
+  await T.game.dealDamage(elf, T.B, 1, {});
+  const b2 = await T.cast('Bloodlord of Vaasgoth');
+  expect(b2.counters.P1P1 === 3, 'three counters');
+});
+test('Read ahead: start Love Song of Night and Day on chapter III', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  T.a.on('readAhead', () => 3);
+  T.a.on('targets', () => [refOf(elf)]);
+  const h = T.B.hand.length;
+  const s = await T.cast('Love Song of Night and Day');
+  expect(elf.counters.P1P1 === 1 && T.B.hand.length === h, 'only chapter III');
+  expect(s.zone === 'graveyard', 'saga finished');
+});
+test('Harmonize: Wild Ride from the graveyard, tapping a creature to pay less', async T => {
+  const c = await T.put(0, 'Wild Ride', 'graveyard');
+  const angel = await T.put(0, 'Serra Angel');
+  T.noMana(0); T.A.pool.R = 1;
+  for (const x of T.game.battlefield) if (T.isLand(x)) x.tapped = true;
+  angel.tapped = true;
+  expect(!getActions(T.game, 0).some(a => a.cardId === c.id), 'not affordable with {R} and no creature to tap');
+  angel.tapped = false;
+  T.a.on('harmonize', () => [angel.id]);
+  T.a.on('targets', () => [refOf(angel)]);
+  const act2 = getActions(T.game, 0).find(a => a.cardId === c.id);
+  expect(act2, '{4}{R} minus the angel\'s power is payable with {R}');
+  await T.game.performAction(0, act2); await T.resolve();
+  expect(c.zone === 'exile' && angel.tapped && T.A.pool.R === 0, 'harmonized and exiled');
+});
+test('Offering: Blast-Furnace Hellkite sacrificing an artifact pays the difference', async T => {
+  const ring = await T.put(0, 'Sol Ring');
+  const c = await T.put(0, 'Blast-Furnace Hellkite', 'hand');
+  T.mana(0);
+  const act = getActions(T.game, 0).find(a => a.cardId === c.id && /offering/.test(a.label));
+  expect(act, 'offering offered');
+  T.a.on('emerge', () => [ring.id]);
+  T.noMana(0); T.A.pool.R = 2; T.A.pool.C = 6;
+  for (const x of T.game.battlefield) if (T.isLand(x)) x.tapped = true;
+  await T.game.performAction(0, act); await T.resolve();
+  expect(c.zone === 'battlefield' && ring.zone === 'graveyard' && T.A.pool.C === 0 && T.A.pool.R === 0, 'cast for {6}{R}{R}');
+});
+test("Buyback: Evincar's Justice returns to hand", async T => {
+  T.a.on('buyback', () => true);
+  const c = await T.cast("Evincar's Justice");
+  expect(c.zone === 'hand' && T.B.life === 38, 'back in hand after dealing 2');
+});
+test('Exert: Glorybringer deals 4 damage to a non-Dragon and stays tapped', async T => {
+  const g = await T.put(0, 'Glorybringer');
+  const angel = await T.put(1, 'Serra Angel');
+  T.game.combat = { attackers: [], blockers: new Map(), firstStrikeDone: new Set() };
+  T.a.on('attackers', () => [{ attacker: g.id, defender: 'p1' }]);
+  T.a.on('targets', () => [refOf(angel)]);
+  await combat.declareAttackers(T.game); await T.resolve();
+  expect(angel.zone === 'graveyard' && g.skipNextUntap, 'angel died, glorybringer exerted');
+  T.game.activePlayer = 0; await T.game.runStep('untap');
+  expect(g.tapped, "doesn't untap during the next untap step");
+  await T.game.runStep('untap');
+  expect(!g.tapped, 'untaps the one after');
+});
+test('Rubinia Soulsinger: stays tapped to keep the stolen creature', async T => {
+  const r = await T.put(0, 'Rubinia Soulsinger');
+  const angel = await T.put(1, 'Serra Angel');
+  T.a.on('targets', () => [refOf(angel)]);
+  await T.activate(r, 0, a => a.parsed.api === 'GainControl');
+  expect(angel.controller === 0 && r.tapped, 'stolen');
+  T.game.activePlayer = 0; await T.game.runStep('untap');
+  expect(r.tapped && angel.controller === 0, 'AI keeps Rubinia tapped');
+  T.a.on('keepTapped', () => false);
+  await T.game.runStep('untap');
+  expect(!r.tapped && angel.controller === 1, 'untapping ends the control change');
+});
+test('Mana Expend: Teapot Slinger on the fourth mana spent on spells', async T => {
+  await T.put(0, 'Teapot Slinger');
+  T.noMana(0); T.A.pool.C = 9; T.A.pool.G = 9; T.A.pool.W = 9;
+  await T.cast('Llanowar Elves', 0, { mana: false });
+  expect(T.B.life === 40, 'expend 1: nothing');
+  await T.cast('Serra Angel', 0, { mana: false });
+  expect(T.B.life === 38, `expend 4 (on the 6th mana total): 2 damage (${T.B.life})`);
+});
+
 process.exit(await run(tests) ? 1 : 0);

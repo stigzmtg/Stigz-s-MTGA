@@ -1,5 +1,6 @@
 // Combat: attacker/blocker legality, declarations and combat damage.
-import { matchValid, calcCtx } from './filters.js';
+import { matchValid, calcCtx, checkPresence } from './filters.js';
+import { parseAbility } from './forge.js';
 import { refOf, fromRef, payManaCost, canAfford } from './abilities.js';
 import { parseMana } from './mana.js';
 import { BASIC_LAND_TYPES } from './util.js';
@@ -143,6 +144,24 @@ export async function declareAttackers(game) {
   const names = decl.map(({ c, d }) => `${game.name(c)} → ${d.card ? game.name(game.cardById(d.card)) : game.players[d.player].name}`);
   game.log(`${game.players[ap].name} attacks: ${names.join(', ')}`, { type: 'attack' });
   game.turnState.attackedWith = decl.map(x => x.c.id);
+  // optional attack costs: "you may exert CARDNAME as it attacks. When you do, ..."
+  for (const { c } of decl) {
+    for (const st of game.chars(c).statics) {
+      const p = st.parsed.p;
+      if (p.Mode !== 'OptionalAttackCost') continue;
+      const ctx = { host: c, you: ap, svars: st.svars, sa: { svars: st.svars, host: c, controller: ap, root() { return { x: 0, paid: {} }; } } };
+      if (p.ValidCard && !matchValid(game, c, p.ValidCard, ctx)) continue;
+      if (!checkPresence(game, p, ctx)) continue;
+      if (!/^Exert/.test(p.Cost || '')) continue;
+      const trigRaw = p.Trigger && st.svars[p.Trigger];
+      const yes = await game.ask(ap, { type: 'confirm', prompt: `${game.name(c)}: ${p.Description || 'exert it as it attacks?'}`, purpose: 'exert', cardId: c.id, trigger: trigRaw ? parseAbility(trigRaw) : null });
+      if (!yes) continue;
+      c.exertedTurn = game.turnNumber; c.skipNextUntap = true;
+      game.log(`${game.players[ap].name} exerts ${game.name(c)}.`);
+      game.fire('Exerted', { Card: c, Player: ap });
+      if (trigRaw) game.pendingTriggers.push({ host: c, t: { parsed: { p: { Execute: p.Trigger, TriggerDescription: (parseAbility(trigRaw).p.SpellDescription || 'When you do, ...').replace(/CARDNAME/g, game.name(c)) } }, svars: st.svars, key: 'exert:' + st.key }, rp: { Card: c, Attacker: c, Player: ap }, controller: ap });
+    }
+  }
   const n = decl.length;
   for (const { c, d } of decl) {
     if (!kw(game, c, 'Vigilance')) game.fire('Taps', { Card: c, Attacker: true });

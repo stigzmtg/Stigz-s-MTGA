@@ -304,7 +304,7 @@ export class Game {
     const p = this.players[ap];
     this.turnState = this.freshTurnState();
     this.turnState.turnsTaken[ap] = (this.turnState.turnsTaken[ap] || 0) + 1;
-    for (const pl of this.players) { pl.landsPlayed = 0; pl.lifeGainedThisTurn = 0; pl.lifeLostThisTurn = 0; pl.cardsDrawnThisTurn = 0; pl.spellsCastThisTurn = []; }
+    for (const pl of this.players) { pl.landsPlayed = 0; pl.lifeGainedThisTurn = 0; pl.lifeLostThisTurn = 0; pl.cardsDrawnThisTurn = 0; pl.spellsCastThisTurn = []; pl.manaExpended = 0; }
     for (const c of this.battlefield) c.abilityUses = {};
     this.log(`Turn ${this.turnNumber}: ${p.name}`, { type: 'turn' });
     // effects lasting "until your next turn"
@@ -390,11 +390,13 @@ export class Game {
     this.notify();
     switch (step) {
       case 'untap': {
-        for (const c of this.battlefield) {
+        for (const c of [...this.battlefield]) {
           if (c.phasedOut && c.controller === ap) { c.phasedOut = false; continue; }
           if (c.controller === ap) {
             c.sick = false;
-            if (c.tapped && !this.hasKeyword(c, "CARDNAME doesn't untap during your untap step.") && !c.doesntUntap && !(c.exertedTurn === this.turnNumber - this.players.length) && !this.untapPrevented(c)) await this.untap(c);
+            if (c.skipNextUntap) { c.skipNextUntap = false; continue; } // exerted
+            if (c.tapped && this.hasKeyword(c, 'You may choose not to untap CARDNAME during your untap step.') && await this.ask(ap, { type: 'confirm', prompt: `Keep ${this.name(c)} tapped?`, purpose: 'keepTapped', cardId: c.id })) continue;
+            if (c.tapped && !this.hasKeyword(c, "CARDNAME doesn't untap during your untap step.") && !c.doesntUntap && !this.untapPrevented(c)) await this.untap(c);
           } else if (c.tapped && this.activeStatics('UntapOtherPlayer').some(s => s.ctx.you === c.controller && matchValid(this, c, s.p.ValidCard || 'Permanent.YouCtrl', s.ctx))) await this.untap(c);
         }
         // goad wears off at goader's next turn
@@ -978,7 +980,7 @@ export class Game {
       castFrom: card.castFrom, exiledWith: card.exiledWith, face: card.face, faceDef: card.faceDef,
       wasAttacking: this.isAttacking(card), wasBlocking: this.isBlocking(card),
       attachments: this.battlefield.filter(a => a.attachedTo === card.id).map(a => a.id),
-      blitzed: card.blitzed, evoked: card.evoked, squad: card.squad, renowned: card.renowned, monstrous: card.monstrous,
+      blitzed: card.blitzed, evoked: card.evoked, squad: card.squad, renowned: card.renowned, monstrous: card.monstrous, championed: card.championed,
     };
   }
 
@@ -1212,6 +1214,12 @@ export class Game {
     }
     if (ch.types.has('Battle') && card.faceDef.defense) await this.addCounters(card, 'DEFENSE', +card.faceDef.defense || 0, null, { etb: true });
     if (this.hasKeywordIn(ch, 'Ravenous') && card.xPaid) await this.addCounters(card, 'P1P1', card.xPaid, null, { etb: true });
+    // vanishing N: enters with N time counters; bloodthirst N: +1/+1 counters if an opponent was dealt damage this turn
+    for (const k of ch.keywords) {
+      let m;
+      if ((m = k.match(/^Vanishing:(\d+)$/))) await this.addCounters(card, 'TIME', +m[1], null, { etb: true });
+      if ((m = k.match(/^Bloodthirst:(\d+)$/)) && this.opponents(card.controller).some(o => this.turnState.damagedPlayers[o.id] > 0)) await this.addCounters(card, 'P1P1', +m[1], null, { etb: true });
+    }
     // graft N: enters with N +1/+1 counters
     for (const k of ch.keywords) { const m = k.match(/^Graft:(\d+)$/); if (m) await this.addCounters(card, 'P1P1', +m[1], null, { etb: true }); }
     // sunburst: a +1/+1 (creature) or charge counter for each color of mana spent to cast it
@@ -1258,8 +1266,16 @@ export class Game {
         if (raw) await this.runETBMod(card, raw, r.svars, e);
       }
     }
-    // saga: first lore counter
-    if (this.chars(card).subtypes.has('Saga') && !this.chars(card).types.has('Creature')) await this.addCounters(card, 'LORE', 1, null);
+    // saga: first lore counter (read ahead: choose the chapter to start on; earlier chapters don't trigger)
+    if (this.chars(card).subtypes.has('Saga') && !this.chars(card).types.has('Creature')) {
+      if (this.hasKeyword(card, 'Read ahead')) {
+        const chapters = this.keywordArgs(card, 'Chapter')[0];
+        const final = chapters ? +chapters[0] : 3;
+        const n = final > 1 ? await this.ask(card.controller, { type: 'number', prompt: `Read ahead: start ${this.name(card)} on which chapter?`, min: 1, max: final, purpose: 'readAhead', cardId: card.id }) : 1;
+        if (n > 1) { card.counters.LORE = Math.min(final, n) - 1; this.touch(); }
+      }
+      await this.addCounters(card, 'LORE', 1, null);
+    }
     this.touch();
   }
 
@@ -1434,6 +1450,9 @@ export class Game {
   async untap(card) {
     if (!card.tapped) return false;
     card.tapped = false;
+    // effects and control changes that last "for as long as CARDNAME remains tapped"
+    for (const c of this.battlefield) if (c.tempControl && c.tempControl.untilUntapOf === card.id) { c.controller = c.tempControl.prev; c.tempControl = null; c.sick = true; }
+    if (this.effects.some(e => e.endsWhenHostUntaps === card.id)) this.effects = this.effects.filter(e => e.endsWhenHostUntaps !== card.id);
     this.touch();
     this.fire('Untaps', { Card: card });
     return true;
@@ -1735,7 +1754,7 @@ export class Game {
     if (r <= 0) return 0;
     obj.counters[type] = have - r;
     this.touch();
-    this.fire('CounterRemoved', { Card: obj.isCard ? obj : null, CounterType: type, Amount: r });
+    this.fire('CounterRemoved', { Card: obj.isCard ? obj : null, CounterType: type, Amount: r, NewCounterAmount: obj.counters[type] });
     return r;
   }
 

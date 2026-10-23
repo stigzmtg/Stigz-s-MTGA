@@ -1,11 +1,11 @@
 // Implementations of Forge ability APIs ("DB$ Draw", "SP$ Destroy", ...).
 import { parseAbility } from './forge.js';
 import { matchValid, resolveDefined, calc, calcCtx, ctxOf, findTargets, liveOrLki, ctrlOf, zoneMap, compareSpec, isPlayer } from './filters.js';
-import { SA, makeSA, resolveChain, chooseTargetsForSA, castSpell, castableOptions, spellOptions, refOf, fromRef, canAfford, payManaCost, parseCost, chooseModes, targetSpec, targetCandidates, producedUnits, buildSpellSA, humanValid } from './abilities.js';
+import { SA, makeSA, resolveChain, chooseTargetsForSA, castSpell, castableOptions, spellOptions, refOf, fromRef, canAfford, payManaCost, parseCost, chooseModes, targetSpec, targetCandidates, producedUnits, buildSpellSA, humanValid, canPayNonMana, payCostParts, costLabel as costLabelOf } from './abilities.js';
 import { normalizeCounter, counterName } from './game.js';
 const counterLabel = k => `${counterName(k)} counter`;
 import { COLORS, COLOR_NAMES, NAME_TO_COLOR, BASIC_LAND_TYPES } from './util.js';
-import { cmc, parseMana } from './mana.js';
+import { cmc, parseMana, addCosts } from './mana.js';
 import { canAttack, defendersFor, playerInDirection } from './combat.js';
 
 const Z = z => (z ? (zoneMap[z] || z.toLowerCase()) : z);
@@ -992,6 +992,7 @@ export const E = {
     if (p.RememberLKI === 'True') e.remembered = e.remembered.map(o => o.isCard ? game.makeLKI(o) : o);
     if (e.duration === 'UntilHostLeavesPlay' || e.duration === 'UntilLoseControlOfHost') { e.endsWhenHostLeaves = sa.host.id; e.duration = 'Permanent'; }
     if (e.duration === 'UntilHostLeavesPlayOrEOT') { e.endsWhenHostLeaves = sa.host.id; e.duration = 'EOT'; }
+    if (e.duration === 'UntilUntaps') { e.endsWhenHostUntaps = sa.host.id; e.endsWhenHostLeaves = sa.host.id; e.duration = 'Permanent'; }
     if (p.Stackable === 'False' && game.effects.some(x => x.effectName === e.effectName && x.controller === e.controller)) return;
     if (p.Duration === 'Permanent' && /Emblem/.test(e.effectName)) e.isEmblem = true;
     game.effects.push(e);
@@ -1056,7 +1057,7 @@ export const E = {
       c.sick = true;
       if (p.LoseControl) {
         const lc = p.LoseControl;
-        c.tempControl = { prev, owner: sa.controller, until: /EOT/.test(lc) ? 'EOT' : /EndOfCombat/.test(lc) ? 'UntilEndOfCombat' : 'Permanent', untilHostLeaves: /LeavesPlay|LoseControl/.test(lc) ? sa.host.id : null };
+        c.tempControl = { prev, owner: sa.controller, until: /EOT/.test(lc) ? 'EOT' : /EndOfCombat/.test(lc) ? 'UntilEndOfCombat' : 'Permanent', untilHostLeaves: /LeavesPlay|LoseControl/.test(lc) ? sa.host.id : null, untilUntapOf: /Untap/.test(lc) ? sa.host.id : null };
       }
       if (p.Untap === 'True') c.tapped = false;
       if (p.RememberControlled === 'True') remember(sa, [c]);
@@ -2034,6 +2035,65 @@ export const E = {
   async UnlockDoor(game, sa) {
     const c = sa.host;
     if (c && c.isCard) game.unlockDoor(c, num(game, sa, 'Door', 0), sa.controller);
+  },
+
+  // plot: exile it from your hand; cast it as a sorcery on a later turn without paying its mana cost
+  async Plot(game, sa) {
+    const c = sa.host;
+    if (!c || c.zone !== 'hand') return;
+    await game.moveCard(c, 'exile', { silent: true });
+    c.plotted = { turn: game.turnNumber, zcc: c.zcc };
+    game.log(`${game.players[sa.controller].name} plots ${game.name(c)}.`);
+  },
+
+  // champion: exile another [type] you control or sacrifice this; it returns when this leaves
+  async Champion(game, sa) {
+    const host = sa.host;
+    if (!host || host.zone !== 'battlefield') return;
+    const type = sa.p.ChampionType || 'Creature';
+    const pool = game.battlefield.filter(c => c !== host && c.controller === sa.controller && matchValid(game, c, type, ctxOf(game, sa)));
+    const pick = (await chooseCards(game, sa.controller, pool, 0, 1, `Champion: exile another ${type} you control (or ${game.name(host)} is sacrificed)`, sa, 'champion'))[0];
+    if (pick) { const r = await game.moveCard(pick, 'exile', { cause: sa, exiledWith: host.id }); host.championed = r ? [{ id: r.id, zcc: r.zcc }] : []; return; }
+    await game.sacrifice(host, sa);
+  },
+
+  // cumulative upkeep: put an age counter, then pay the cost for each age counter or sacrifice it
+  async CumulativeUpkeep(game, sa) {
+    const host = sa.host;
+    if (!host || host.zone !== 'battlefield') return;
+    await game.addCounters(host, 'AGE', 1, sa);
+    const n = host.counters.AGE || 1;
+    const pid = sa.controller;
+    const costStr = sa.p.UpkeepCost || '0';
+    let m;
+    const ask = desc => game.ask(pid, { type: 'confirm', prompt: `Cumulative upkeep for ${game.name(host)}: ${desc}? (otherwise sacrifice it)`, purpose: 'cumulativeUpkeep', sa, cardId: host.id, age: n });
+    if ((m = costStr.match(/^FlipCoin<(\d+)>$/))) {
+      if (await ask(`flip ${n * +m[1]} coin${n * +m[1] === 1 ? '' : 's'}`)) {
+        for (let i = 0; i < n * +m[1]; i++) { const win = game.rng.int(2) === 0; game.log(`${game.players[pid].name} flips a coin: ${win ? 'wins' : 'loses'}.`); game.fire('FlippedCoin', { Player: pid, Result: win }); }
+        return;
+      }
+    } else if ((m = costStr.match(/^PutCardToLibFromSameGrave<(\d+)\/[^/]*\/(\w+)>$/))) {
+      const need = n * +m[1];
+      const owners = game.livingPlayers().filter(pl => pl.graveyard.filter(c => matchValid(game, c, m[2], ctxOf(game, sa))).length >= need);
+      if (owners.length && await ask(`put ${need} cards from a single graveyard on the bottom of their owner's library`)) {
+        let from = owners[0];
+        if (owners.length > 1) { const id = await game.ask(pid, { type: 'player', prompt: 'From whose graveyard?', players: owners.map(o => o.id), sa, purpose: 'cumulativeUpkeepGrave' }); from = owners.find(o => o.id === id) || owners[0]; }
+        const pool = from.graveyard.filter(c => matchValid(game, c, m[2], ctxOf(game, sa)));
+        for (const c of await chooseCards(game, pid, pool, need, need, `Put ${need} cards on the bottom of ${from.name}'s library`, sa, 'cumulativeUpkeepCards')) await game.moveCard(c, 'library', { pos: 'bottom', cause: sa });
+        return;
+      }
+    } else {
+      const cost = parseCost(costStr);
+      let mana = parseMana('0');
+      for (let i = 0; i < n; i++) mana = addCosts(mana, cost.mana);
+      const parts = cost.parts.map(pt => (/^\d+$/.test(pt.amount) ? { ...pt, amount: String(+pt.amount * n), args: [String(+pt.amount * n), ...pt.args.slice(1)] } : pt));
+      const full = { ...cost, mana, parts, tap: false, untap: false };
+      if ((!cost.hasMana || canAfford(game, pid, mana)) && canPayNonMana(game, sa, full) && await ask(`pay ${costLabelOf(costStr)} × ${n}`)) {
+        if ((!cost.hasMana || await payManaCost(game, pid, mana)) && await payCostParts(game, sa, full)) return;
+      }
+    }
+    game.log(`${game.players[pid].name} doesn't pay the cumulative upkeep for ${game.name(host)}.`);
+    await game.sacrifice(host, sa);
   },
 
   // blight N: put N -1/-1 counters on a creature you control

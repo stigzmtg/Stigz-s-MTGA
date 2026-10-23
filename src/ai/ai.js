@@ -589,6 +589,8 @@ export class AIAgent {
     }
     if (purpose === 'tap') return pick(cards.filter(c => c.controller !== pid).sort((a, b) => v(b) - v(a)), max);
     if (purpose === 'gainControlChoice') return pick(cards.slice().sort((a, b) => v(b) - v(a)), Math.max(min, 1));
+    if (purpose === 'champion') return pick(cards.slice().sort((a, b) => v(a) - v(b)), Math.min(1, cards.length));
+    if (purpose === 'harmonize') return pick(cards.slice().sort((a, b) => (game.chars(b).power - (canAttack(game, b) && game.step === 'main1' ? 3 : 0)) - (game.chars(a).power - (canAttack(game, a) && game.step === 'main1' ? 3 : 0))), 1);
     if (purpose === 'cipher') {
       // encode on the creature most likely to connect
       const evasive = c => ['Flying', 'Menace', 'Shadow', 'Horsemanship', 'Fear', 'Intimidate', 'Skulk'].some(k => game.hasKeyword(c, k)) || game.chars(c).keywords.some(k => /can't be blocked/.test(k));
@@ -737,6 +739,21 @@ export class AIAgent {
       case 'reveal': return true;
       case 'exploreGrave': { const c = req.cards && game.cardById(req.cards[0]); return c ? game.chars(c).cmc > 5 : false; }
       case 'entwine': return true;
+      case 'buyback': return true;
+      case 'exert': {
+        // only when the "when you do" part has something to do
+        const t = req.trigger;
+        if (!t || !t.p.ValidTgts) return true;
+        const s = new SA(game, { raw: t.raw, parsed: t, svars: {}, src: null, key: 'x' }, game.cardById(req.cardId), pid);
+        const spec = targetSpec(game, s);
+        return !spec || targetCandidates(game, s, spec).some(o => (o.isPlayer ? o.id : ctrlOf(game, o)) !== pid);
+      }
+      case 'keepTapped': {
+        // keep it tapped while something depends on it staying tapped
+        const c = game.cardById(req.cardId);
+        return !!c && (game.battlefield.some(x => x.tempControl && x.tempControl.untilUntapOf === c.id) || game.effects.some(e => e.endsWhenHostUntaps === c.id));
+      }
+      case 'cumulativeUpkeep': return (req.age || 1) <= 4;
       case 'optionalCost': {
         const c = String(req.cost || '');
         if (/^Blight/.test(c)) return game.battlefield.some(x => x.controller === pid && game.chars(x).types.has('Creature') && (x.token || game.chars(x).toughness > 1));
@@ -792,6 +809,7 @@ export class AIAgent {
   }
 
   number(game, pid, req) {
+    if (req.purpose === 'readAhead') return req.min;
     if (req.purpose === 'xValue' && req.xCost === 'PayLife') {
       const opp = game.battlefield.filter(c => c.controller !== pid && game.chars(c).types.has('Creature'));
       const need = opp.length ? Math.max(...opp.map(c => game.chars(c).toughness)) : 0;

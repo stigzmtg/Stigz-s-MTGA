@@ -228,6 +228,43 @@ function defFor(kw, face) {
       T.push('Mode$ AttackerBlockedByCreature | ValidCard$ Card.Self | ValidBlocker$ Creature.withoutFlanking | Execute$ KWFlanking | TriggerDescription$ Flanking (the blocking creature gets -1/-1 until end of turn)');
       S.KWFlanking = 'DB$ Pump | Defined$ TriggeredBlocker | NumAtt$ -1 | NumDef$ -1 | IsCurse$ True';
       break;
+    case 'Station':
+      A.push(`AB$ PutCounter | Cost$ tapXType<1/Creature.Other/another untapped creature you control> | Defined$ Self | CounterType$ CHARGE | CounterNum$ KWStationX | SorcerySpeed$ True | Station$ True | SpellDescription$ Station (tap another creature you control: put charge counters equal to its power on CARDNAME)`);
+      S.KWStationX = 'Tapped$CardPower';
+      break;
+    case 'Vanishing':
+      T.push('Mode$ Phase | Phase$ Upkeep | ValidPlayer$ You | TriggerZones$ Battlefield | IsPresent$ Card.Self+counters_GE1_TIME | Execute$ KWVanishRemove | TriggerDescription$ Vanishing — remove a time counter from CARDNAME');
+      T.push('Mode$ CounterRemoved | ValidCard$ Card.Self | CounterType$ TIME | NewCounterAmount$ 0 | TriggerZones$ Battlefield | Execute$ KWVanishSac | TriggerDescription$ Vanishing — when the last time counter is removed, sacrifice CARDNAME');
+      S.KWVanishRemove = 'DB$ RemoveCounter | Defined$ Self | CounterType$ TIME | CounterNum$ 1';
+      S.KWVanishSac = 'DB$ Sacrifice | Defined$ Self';
+      break;
+    case 'For Mirrodin':
+      T.push(`${etbSelf} | Execute$ KWRebel | TriggerDescription$ For Mirrodin! (create a 2/2 red Rebel creature token, then attach CARDNAME to it)`);
+      S.KWRebel = 'DB$ Token | TokenScript$ r_2_2_rebel | TokenOwner$ You | RememberTokens$ True | SubAbility$ KWRebelAttach';
+      S.KWRebelAttach = 'DB$ Attach | Defined$ Remembered | SubAbility$ KWRebelClean';
+      S.KWRebelClean = 'DB$ Cleanup | ClearRemembered$ True';
+      break;
+    case 'Reinforce':
+      A.push(`AB$ PutCounter | Cost$ ${b} Discard<1/CARDNAME> | ActivationZone$ Hand | ValidTgts$ Creature | TgtPrompt$ Select target creature | CounterType$ P1P1 | CounterNum$ ${a} | SpellDescription$ Reinforce ${a} — ${costText(b)} (discard this: put ${a} +1/+1 counters on target creature)`);
+      break;
+    case 'Plot':
+      A.push(`AB$ Plot | Cost$ ${a} | ActivationZone$ Hand | SorcerySpeed$ True | Static$ True | SpellDescription$ Plot ${costText(a)} (exile it; cast it on a later turn as a sorcery without paying its mana cost)`);
+      break;
+    case 'Gravestorm':
+      T.push('Mode$ SpellCast | ValidCard$ Card.Self | Execute$ KWGravestorm | TriggerDescription$ Gravestorm (copy this spell for each permanent put into a graveyard this turn)');
+      S.KWGravestorm = 'DB$ CopySpellAbility | Defined$ TriggeredSpellAbility | Amount$ KWGravestormX | MayChooseTarget$ True';
+      S.KWGravestormX = 'Count$ThisTurnEntered_Graveyard_from_Battlefield_Permanent';
+      break;
+    case 'Champion':
+      T.push(`${etbSelf} | Execute$ KWChampion | TriggerDescription$ Champion ${a ? 'a ' + a : 'a creature'} (exile another one you control or sacrifice CARDNAME)`);
+      T.push('Mode$ ChangesZone | Origin$ Battlefield | Destination$ Any | ValidCard$ Card.Self | Execute$ KWChampionBack | TriggerDescription$ Champion — the championed card returns to the battlefield');
+      S.KWChampion = `DB$ Champion | ChampionType$ ${a || 'Creature'}`;
+      S.KWChampionBack = 'DB$ ChangeZone | Defined$ Championed | Origin$ Exile | Destination$ Battlefield';
+      break;
+    case 'Cumulative upkeep':
+      T.push(`Mode$ Phase | Phase$ Upkeep | ValidPlayer$ You | TriggerZones$ Battlefield | Execute$ KWCumUpkeep | TriggerDescription$ Cumulative upkeep — ${parts[2] || costText(a)}`);
+      S.KWCumUpkeep = `DB$ CumulativeUpkeep | UpkeepCost$ ${a}`;
+      break;
     case 'Rebound': break;
     case 'Enlist': break;
     case 'Decayed':
@@ -306,5 +343,5 @@ export function synthesizeKeywords(game, card, ch) {
 export function keywordInfo(kw) { return defFor(kw, { svars: {} }); }
 
 export const SUPPORTED_KEYWORDS = new Set(['Flying', 'Equip', 'Trample', 'ETBReplacement', 'Enchant', 'Cycling', 'Vigilance', 'Flash', 'Haste', 'etbCounter', 'Deathtouch', 'Lifelink', 'Menace', 'First Strike', 'Flashback', 'Reach', 'TypeCycling', 'Indestructible', 'Changeling', 'Crew', 'Chapter', 'Defender', 'Kicker', 'Convoke', 'Ward', 'Double Strike', 'Cascade', 'Partner', 'Partner with', 'Evoke', 'Devoid', 'Multikicker', 'Unearth', 'Hexproof', 'Myriad', 'Ravenous', 'Landwalk', 'Fear', 'Intimidate', 'Shroud', 'Annihilator', 'Prowess', 'Persist', 'Undying', 'Exalted', 'Extort', 'Evolve', 'Living Weapon', 'Job select', 'Fabricate', 'Riot', 'Mentor', 'Training', 'Battle cry', 'Melee', 'Bushido', 'Afflict', 'Storm', 'Demonstrate', 'Backup', 'Squad', 'Blitz', 'Dash', 'Echo', 'Hideaway', 'Devour', 'Exploit', 'Dethrone', 'Renown', 'Toxic', 'Infect', 'Wither', 'Affinity', 'Delve', 'Improvise', 'Escape', 'Retrace', 'Overload', 'Split second', 'Umbra armor', 'Totem armor', 'Morph', 'Megamorph', 'Disguise', 'Encore', 'Embalm', 'Eternalize', 'Outlast', 'Scavenge', 'Transmute', 'Ninjutsu', 'CommanderNinjutsu', 'Decayed', 'Offspring', 'Afterlife', 'Squad', 'Protection', 'Shadow', 'Horsemanship', 'Skulk', 'Jump-start', 'Discover', 'Rebound', 'Choose a Background', 'Friends forever', 'Doctor\'s companion', 'Ascend', 'Reconfigure', 'Level up', 'Foretell', 'Suspend', 'Class', 'Madness', 'Miracle', 'Aftermath', 'Undaunted', 'Spectacle', 'Surge', 'Mutate', 'Bestow', 'Strive', 'Escalate', 'Fuse',
-  'Graft', 'Flanking', 'Sunburst', 'Mayhem', 'All creatures able to block CARDNAME do so.', 'Gift', 'Casualty', 'Replicate', 'AlternateAdditionalCost', 'Emerge', 'Prowl', 'Entwine', 'MayFlashCost', 'Tiered', 'Spree', 'Dredge', 'Cipher', 'Cloak',
+  'Graft', 'Flanking', 'Sunburst', 'Mayhem', 'All creatures able to block CARDNAME do so.', 'Gift', 'Casualty', 'Replicate', 'AlternateAdditionalCost', 'Emerge', 'Prowl', 'Entwine', 'MayFlashCost', 'Tiered', 'Spree', 'Dredge', 'Cipher', 'Cloak', 'Station', 'Vanishing', 'For Mirrodin', 'Reinforce', 'Plot', 'Gravestorm', 'Champion', 'Cumulative upkeep', 'Bloodthirst', 'Read ahead', 'Harmonize', 'Offering', 'Buyback', 'You may choose not to untap CARDNAME during your untap step.',
   'Prevent all combat damage that would be dealt to and dealt by CARDNAME.', 'Prevent all combat damage that would be dealt to CARDNAME.', 'Prevent all damage that would be dealt to CARDNAME.', 'Prevent all combat damage that would be dealt by CARDNAME.', 'Prevent all damage that would be dealt to and dealt by CARDNAME.']);

@@ -319,6 +319,10 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'attackingYouOrYourPW': case 'attackingYouOrYourPWLKI': return game.attackTargetOf(card) === ctx.you;
     case 'suspended': return card.zone === 'exile' && (card.counters.TIME || 0) > 0;
     case 'madness': return false;
+    case 'CastSaSource': return !!host && card.id === host.id;
+    case 'notExertedThisTurn': return card.exertedTurn !== game.turnNumber;
+    case 'exertedThisTurn': return card.exertedTurn === game.turnNumber;
+    case 'EffectSource': return !!host && !!host.hostCard && host.hostCard.id === card.id;
     case 'prowled': return card.altCost === 'Prowl' || !!(card.castSA && card.castSA.altCost === 'Prowl');
     case 'PromisedGift': return card.promisedGift != null;
     case 'copiedSpell': return !!card.isSpellCopy;
@@ -522,6 +526,7 @@ export function resolveDefined(game, defined, ctx) {
     case 'NonTargeted': return game.livingPlayers().filter(p => !(sa && findTargets(sa).includes(p)));
     case 'NonRememberedController': case 'OppNonRememberedController': { const r = refList(game, ctx, 'Remembered').map(x => x.isPlayer ? x.id : ctrlOf(game, x)); return game.livingPlayers().filter(p => !r.includes(p.id) && (defined.startsWith('Opp') ? p.id !== ctx.you : true)); }
     case 'Returned': return (sa && sa.root().returned) || [];
+    case 'Championed': return host && host.championed ? host.championed.map(r => { const c = game.cardById(r.id); return c && c.zcc === r.zcc && c.zone === 'exile' ? c : null; }).filter(Boolean) : [];
     case 'Promised': { const r = sa && sa.root ? sa.root() : null; const g = r && r.promisedGift != null ? r.promisedGift : host && host.promisedGift; return g != null ? [P(g)] : []; }
     case 'CorrectedSelf': return host ? [host] : [];
     case 'Convoked': return host ? (host.convokedBy || []).map(id => game.cardById(id)).filter(Boolean) : [];
@@ -933,7 +938,7 @@ function countExpr(game, rest, ctx, depth) {
     if (m[1].startsWith('Sum')) return list.reduce((a, c) => a + stat(c), 0);
     return list.length ? Math.max(...list.map(stat)) : 0;
   }
-  if ((m = rest.match(/^ThisTurnEntered_(\w+)_(?:from_(\w+)_)?(.+)$/))) {
+  if ((m = rest.match(/^ThisTurnEntered_([A-Za-z]+)_(?:from_([A-Za-z]+)_)?(.+)$/))) {
     const dest = zoneMap[m[1]] || m[1].toLowerCase();
     const orig = m[2] ? (zoneMap[m[2]] || m[2].toLowerCase()) : null;
     return game.turnState.moves.filter(e => e.to === dest && (!orig || e.from === orig) && matchValid(game, e.lki || e.card, m[3], ctx)).length;

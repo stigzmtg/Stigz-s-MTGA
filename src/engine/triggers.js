@@ -16,7 +16,7 @@ function zoneIn(spec, zone) {
 function playerObj(game, id) { return id == null ? null : (typeof id === 'object' ? id : game.players[id]); }
 
 export const SUPPORTED_TRIGGER_MODES = new Set(['ChangesZone', 'ChangesZoneAll', 'Phase', 'Attacks', 'AttackersDeclared', 'AttackersDeclaredOneTarget', 'SpellCast', 'SpellCastOrCopy', 'AbilityCast', 'SpellAbilityCast', 'DamageDone', 'DamageDoneOnce', 'DamageDealtOnce', 'DamageAll', 'Drawn', 'Sacrificed', 'Destroyed', 'LifeGained', 'LifeLost', 'LifeLostAll', 'TapsForMana', 'Cycled', 'Discarded', 'DiscardedAll', 'BecomesTarget', 'BecomesTargetOnce', 'Taps', 'Untaps', 'Blocks', 'AttackerBlocked', 'AttackerBlockedByCreature', 'AttackerUnblocked', 'AttackerUnblockedOnce', 'CounterAdded', 'CounterAddedOnce', 'CounterRemoved', 'LandPlayed', 'Always', 'TokenCreated', 'TokenCreatedOnce', 'TurnBegin', 'Milled', 'MilledAll', 'Exiled', 'LosesGame', 'BecomeMonarch', 'TakesInitiative', 'RoomEntered', 'DungeonCompleted', 'Explores', 'Connives', 'Surveil', 'Scry', 'Investigated', 'Fight', 'Attached', 'Unattached', 'ChangesController', 'Transformed', 'SpellCopy', 'BecomesCrewed', 'TurnFaceUp', 'Mutates', 'BecomeMonstrous', 'Evolved', 'CommitCrime', 'FlippedCoin', 'RolledDie', 'RolledDieOnce', 'Exploited', 'AbilityTriggered', 'AbilityResolves', 'CounterPlayerAddedAll', 'ManaAdded',
-  'ClassLevelGained', 'Clashed', 'DamagePrevented', 'DamagePreventedOnce', 'GiveGift', 'UnlockDoor', 'FullyUnlock']);
+  'ClassLevelGained', 'Clashed', 'DamagePrevented', 'DamagePreventedOnce', 'GiveGift', 'UnlockDoor', 'FullyUnlock', 'ManaExpend', 'Exerted']);
 
 export function triggerMatches(game, p, host, rp, ctx) {
   const mode = rp.Mode;
@@ -137,7 +137,7 @@ export function triggerMatches(game, p, host, rp, ctx) {
       if (p.Produced && !rp.Produced.split(' ').some(x => p.Produced.includes(x))) return false;
       return true;
     }
-    case 'Cycled': case 'Discarded': case 'Milled': case 'Investigated': case 'Explores': case 'Connives': case 'Exploited': case 'TurnFaceUp': case 'Mutates': case 'BecomeMonstrous': case 'Transformed': case 'Evolved': {
+    case 'Exerted': case 'Cycled': case 'Discarded': case 'Milled': case 'Investigated': case 'Explores': case 'Connives': case 'Exploited': case 'TurnFaceUp': case 'Mutates': case 'BecomeMonstrous': case 'Transformed': case 'Evolved': {
       if (!vc(game, rp.Card, p.ValidCard, ctx)) return false;
       if (p.ValidPlayer && !vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx)) return false;
       return true;
@@ -176,7 +176,8 @@ export function triggerMatches(game, p, host, rp, ctx) {
       if (p.CounterAmount) { const m = p.CounterAmount.match(/^(EQ|GE)(\d+)$/); if (m && !(m[1] === 'EQ' ? rp.Previous + 1 === +m[2] : rp.Previous + 1 >= +m[2])) return false; }
       return true;
     }
-    case 'CounterRemoved': return vc(game, rp.Card, p.ValidCard, ctx) && (!p.CounterType || normalizeCounter(p.CounterType) === rp.CounterType);
+    case 'CounterRemoved': return vc(game, rp.Card, p.ValidCard, ctx) && (!p.CounterType || normalizeCounter(p.CounterType) === rp.CounterType) && (p.NewCounterAmount == null || +p.NewCounterAmount === rp.NewCounterAmount);
+    case 'ManaExpend': return (!p.Player || vc(game, playerObj(game, rp.Player), p.Player, ctx)) && (!p.Amount || +p.Amount === rp.Amount);
     case 'CounterPlayerAddedAll': return true;
     case 'LandPlayed': return vc(game, rp.Card, p.ValidCard, ctx);
     case 'TokenCreated': case 'TokenCreatedOnce': {

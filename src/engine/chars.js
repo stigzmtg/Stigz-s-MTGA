@@ -300,6 +300,21 @@ export function computeAll(game) {
       if (p.AddSVar) for (const n of p.AddSVar.split(' & ')) if (st.svars[n]) ch.svars = { ...ch.svars, [n]: st.svars[n] };
     }
   }
+  // continuous statics granted in layer 6 (AddStaticAbility, granted by other statics) apply from layer 7 on
+  const known = new Set(statics.map(st => st.raw + '|' + st.host.id));
+  for (const c of bf) {
+    if (c.phasedOut) continue;
+    for (const st of map.get(c.id).statics) {
+      const p = st.parsed.p;
+      if (p.Mode !== 'Continuous' || known.has(st.raw + '|' + c.id)) continue;
+      const ez = p.EffectZone || 'Battlefield';
+      if (ez !== 'All' && !ez.split(',').some(z => (zoneMap[z] || z.toLowerCase()) === 'battlefield')) continue;
+      known.add(st.raw + '|' + c.id);
+      const entry = { ...st, host: c, ch: map.get(c.id) };
+      const ctx = staticActive(game, entry);
+      if (ctx) active.push({ st: entry, ctx });
+    }
+  }
   for (const c of all) {
     const ch = map.get(c.id);
     // keyword counters (flying, first strike, vigilance, ...) grant their keyword
