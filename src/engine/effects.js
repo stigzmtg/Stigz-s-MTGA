@@ -643,7 +643,7 @@ export const E = {
       for (const c of cards) if (c.zone === 'battlefield') { if (p.RememberSacrificed === 'True') remember(sa, [game.makeLKI(c)]); await game.sacrifice(c, sa); }
       return;
     }
-    const valid = (p.SacValid || 'Card.Self').replace(/CARDNAME/g, 'Card.Self');
+    const valid = (p.SacValid || 'Card.Self').replace(/CARDNAME/g, 'Card.Self').replace(/^Self$/, 'Card.Self'); // "SacValid$ Self" (Uro)
     for (const pl of playersOf(def.length ? def : [game.players[sa.controller]])) {
       const pool = game.battlefield.filter(c => c.controller === pl.id && matchValid(game, c, valid, { ...ctx, you: pl.id }) && !game.cantSacrifice(c, sa));
       const n = p.Amount === 'All' ? pool.length : num(game, sa, 'Amount', 1);

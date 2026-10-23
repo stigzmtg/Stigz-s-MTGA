@@ -1660,6 +1660,19 @@ test('Escalate: the modes prompt offers no more modes than the escalate cost can
   ok = await castSpell(T.game, 0, cr2, {}); await T.resolve();
   expect(ok && maxes[1] === 2, `three Forests: two modes (${ok}, max ${maxes})`);
 });
+test('Demonic Covenant: sacrificed when the two milled cards share all their card types, kept otherwise', async T => {
+  const dc = await T.put(0, 'Demonic Covenant');
+  await T.put(0, 'Sol Ring', 'library'); await T.put(0, 'Forest', 'library');
+  T.game.fire('Phase', { Phase: 'End of Turn', Player: 0 }); await T.resolve();
+  expect(dc.zone === 'battlefield', `a land and an artifact: kept (${dc.zone})`);
+  await T.put(0, 'Forest', 'library'); await T.put(0, 'Island', 'library');
+  T.game.fire('Phase', { Phase: 'End of Turn', Player: 0 }); await T.resolve();
+  expect(dc.zone === 'graveyard', `two lands: sacrificed (${dc.zone})`);
+});
+test("Uro is sacrificed when it enters unless it escaped (SacValid$ Self)", async T => {
+  const uro = await T.cast("Uro, Titan of Nature's Wrath");
+  expect(uro.zone === 'graveyard', `cast from hand: sacrificed (${uro.zone})`);
+});
 test("Nexos: basic lands' {C}{C} pays for {X} costs only", async T => {
   for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
   await T.put(0, 'Nexos');

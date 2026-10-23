@@ -66,6 +66,7 @@ function matchOne(game, obj, spec, ctx) {
   if (!spec) return false;
   let neg = false;
   if (spec.startsWith('!')) { neg = true; spec = spec.slice(1); }
+  if (spec === 'Self') spec = 'Card.Self'; // "ValidCards$ Self"
   const dot = spec.indexOf('.');
   const typePart = dot < 0 ? spec : spec.slice(0, dot);
   const props = dot < 0 ? [] : splitTop(spec.slice(dot + 1), '+');
@@ -395,6 +396,12 @@ function cardProp(game, card, ch, prop, ctx) {
       ? game.players[you].commanders.map(id => game.cardById(id)).filter(Boolean)
       : m[2] ? resolveDefined(game, m[2], ctx).filter(x => !x.isPlayer) : [host];
     return others.some(o => o && shares(game, ch, charsOf(game, o), m[1]));
+  }
+  // "two cards that share all their card types" (Demonic Covenant): same set of card types as another one
+  if ((m = prop.match(/^sharesAllCardTypesWith(Other)? ?(.*)$/))) {
+    const key = c => [...c.types].sort().join(',');
+    const others = (m[2] ? resolveDefined(game, m[2], ctx) : [host]).filter(o => o && !o.isPlayer && o.id !== card.id);
+    return others.some(o => key(charsOf(game, o)) === key(ch));
   }
   if ((m = prop.match(/^in(?:Real)?Zone ?(\w+)$/))) return !card.lki && card.zone === (zoneMap[m[1]] || m[1].toLowerCase());
   if ((m = prop.match(/^ThisTurnEnteredFrom_(\w+)$/))) return card.movedTurn === game.turnNumber && card.enteredFrom === (zoneMap[m[1]] || m[1].toLowerCase());
