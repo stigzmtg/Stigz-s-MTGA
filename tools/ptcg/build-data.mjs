@@ -45,27 +45,41 @@ const DECKS = [
   { name: "Hop's Zacian ex", id: 'hops-zacian', featured: 'JTG-111', blurb: 'Insta-Strike costs one Energy and hits the Active and the Bench; Postwick, Hop’s Choice Band and Snorlax add 30 each. Munkidori moves damage counters around and Cramorant cleans up at 3 or 4 Prizes.' },
   { name: 'Regidrago VSTAR', id: 'regidrago', featured: 'SIT-136', blurb: 'Apex Dragon uses the attack of any Dragon Pokémon in your discard pile: Dragapult ex’s Phantom Dive, Giratina VSTAR’s Lost Impact, Kyurem’s Trifrost. Teal Mask Ogerpon ex and Energy Switch power it up, and Legacy Star brings back two cards.' },
   { name: 'Giratina VSTAR', id: 'giratina', featured: 'LOR-131', blurb: 'Comfey and Colress’s Experiment fill the Lost Zone and Mirage Gate attaches the Energy, then Lost Impact hits for 280. With 10 cards in the Lost Zone, Star Requiem knocks out the Active Pokémon outright.' },
+  { name: 'Joltik Box', id: 'joltik-box', featured: 'SCR-50', blurb: 'Joltik’s Jolting Charge attaches up to 4 Grass and Lightning Energy from the deck on the first turn, powering Pikachu ex, Iron Leaves ex and the Ogerpon. Galvantula hits Pokémon with Abilities for 50 more.' },
+  { name: 'Froslass Munkidori', id: 'froslass-munkidori', featured: 'TWM-53', blurb: 'Froslass puts a damage counter on every Pokémon with an Ability each turn, and Munkidori moves damage where it hurts. Mega Froslass ex hits for 50 per card in the opponent’s hand, and Bronzong jams evolutions.' },
+  { name: 'Ceruledge ex', id: 'ceruledge', featured: 'SSP-36', blurb: 'Abyssal Flames grows by 20 for every Energy card in the discard pile, and Brilliant Blender fills it fast. Lunatone and Solrock keep the cards coming, and Raging Amethyst hits for 280.' },
+  { name: "Rocket's Mewtwo ex", id: 'rockets-mewtwo', featured: 'DRI-81', blurb: 'With 4 Team Rocket’s Pokémon in play Mewtwo ex can attack, and Erasure Ball hits for up to 280. Spidops recharges Energy from the discard pile and Rocket Rush grows with the team.' },
+  { name: 'Flareon ex', id: 'flareon', featured: 'PRE-14', blurb: 'Burning Charge attaches 2 Energy from the deck while it hits for 130, then Carnelian hits for 280. Noctowl and Eevee ex bring out the Eeveelutions, and Victini adds 10 to every Evolution Fire attack.' },
+  { name: 'Greninja ex', id: 'greninja', featured: 'TWM-106', blurb: 'Shinobi Blade hits for 170 and finds any card; Mirage Barrage hits two Pokémon for 120 each. Dusknoir’s Cursed Blast finishes them off, with Mega Starmie ex and Mega Froslass ex on the side.' },
+  { name: 'Mega Starmie ex', id: 'mega-starmie', featured: 'POR-21', blurb: 'Jetting Blow costs one Energy and hits the Bench too; Nebula Beam ignores Weakness, Resistance and every effect. Dusknoir and Munkidori put damage counters where they’re needed.' },
+  { name: "Ethan's Typhlosion", id: 'ethans-typhlosion', featured: 'DRI-34', blurb: 'Every Ethan’s Adventure in the discard pile adds 60 to Buddy Blast. Quilava finds Ethan’s Adventure each turn, and Victini and Brave Bangle add damage.' },
+  { name: 'Bloodmoon Ursaluna', id: 'bloodmoon-ursaluna', featured: 'PRE-54', blurb: 'Mad Bite does 30 more for every damage counter on the Active Pokémon. Mega Greninja ex’s Mortal Shuriken places 6 at a time, and Transformation Tome swaps Pokémon in from the discard pile.' },
 ];
 
-// what each deck attacks with, for the lobby's type filter: its main attackers' types, in order
+// what each deck attacks with, for the lobby's type filter: its main attackers' types, in order (checked against the
+// damage the computer player deals with each deck)
 const TYPES = {
-  dragapult: ['Dragon'], charizard: ['Darkness'], gardevoir: ['Psychic'], 'raging-bolt': ['Dragon'], gholdengo: ['Metal'],
-  miraidon: ['Lightning'], 'mega-absol': ['Darkness'], 'chien-pao': ['Water'], 'roaring-moon': ['Darkness'], 'lost-zone': ['Darkness', 'Colorless'],
-  slowking: ['Water'], 'ns-zoroark': ['Darkness'], 'festival-lead': ['Water', 'Grass'], alakazam: ['Psychic'], hydrapple: ['Grass'],
-  dhelmise: ['Grass', 'Psychic'], 'mega-lopunny': ['Colorless'], crustle: ['Grass'], 'basic-box': ['Colorless', 'Grass'], 'mega-excadrill': ['Metal'],
+  dragapult: ['Dragon'], charizard: ['Darkness'], gardevoir: ['Psychic'], 'raging-bolt': ['Dragon', 'Colorless'], gholdengo: ['Metal', 'Colorless'],
+  miraidon: ['Lightning'], 'mega-absol': ['Darkness', 'Psychic'], 'chien-pao': ['Water'], 'roaring-moon': ['Darkness'], 'lost-zone': ['Colorless', 'Water'],
+  slowking: ['Psychic', 'Colorless'], 'ns-zoroark': ['Darkness'], 'festival-lead': ['Water'], alakazam: ['Psychic'], hydrapple: ['Grass'],
+  dhelmise: ['Psychic', 'Colorless'], 'mega-lopunny': ['Colorless'], crustle: ['Colorless', 'Grass'], 'basic-box': ['Colorless'], 'mega-excadrill': ['Metal'],
   'mega-lucario': ['Fighting'], 'mega-sharpedo': ['Darkness'], 'rockets-honchkrow': ['Darkness'], 'cynthias-garchomp': ['Fighting'], 'mew-box': ['Colorless', 'Psychic'],
-  'marnies-grimmsnarl': ['Darkness'], 'hops-trevenant': ['Psychic', 'Metal'],
-  beedrill: ['Grass'], 'mega-venusaur': ['Grass'], yanmega: ['Grass'], 'stevens-metagross': ['Metal'], archaludon: ['Metal', 'Darkness'],
-  'hops-zacian': ['Metal'], regidrago: ['Dragon'], giratina: ['Dragon'],
+  'marnies-grimmsnarl': ['Darkness'], 'hops-trevenant': ['Psychic'],
+  beedrill: ['Grass'], 'mega-venusaur': ['Grass'], yanmega: ['Grass', 'Colorless'], 'stevens-metagross': ['Metal'], archaludon: ['Metal'],
+  'hops-zacian': ['Metal', 'Colorless'], regidrago: ['Dragon', 'Grass'], giratina: ['Dragon', 'Colorless'],
+  'joltik-box': ['Grass', 'Lightning', 'Colorless'], 'froslass-munkidori': ['Water', 'Psychic'], ceruledge: ['Fire'], 'rockets-mewtwo': ['Grass', 'Psychic'],
+  flareon: ['Fire', 'Grass', 'Psychic'], greninja: ['Water', 'Fighting'], 'mega-starmie': ['Water'], 'ethans-typhlosion': ['Fire'], 'bloodmoon-ursaluna': ['Fighting', 'Water'],
 };
 
 // trait lists the card records don't carry
-const TERA = new Set(['OBF-125', 'TWM-130', 'TWM-25', 'TWM-64', 'TWM-112', 'SSP-57', 'ASC-121']);
+const TERA = new Set(['OBF-125', 'TWM-130', 'TWM-25', 'TWM-64', 'TWM-112', 'SSP-57', 'ASC-121', 'TWM-106', 'PRE-14', 'PRE-6', 'PRE-75', 'SCR-128']);
+// card records TCGdex has wrong (checked against the printed cards on Limitless)
+const FIX = { '30C-70': { stage: 'Stage1', from: 'Eevee' } };
 const ANCIENT = new Set(['Roaring Moon', 'Roaring Moon ex', 'Raging Bolt ex', 'Scream Tail', "Explorer's Guidance", "Professor Sada's Vitality", 'Ancient Booster Energy Capsule', 'Earthen Vessel']);
 const FUTURE = new Set(['Iron Hands ex', 'Iron Bundle', 'Iron Leaves ex', 'Miraidon ex', 'Iron Crown ex']);
 const ACE_SPEC = new Set(['Unfair Stamp', 'Secret Box', 'Prime Catcher', 'Sparkling Crystal', "Hero's Cape", 'Legacy Energy', 'Enriching Energy']);
 // Special Energy that provides a type (Legacy Energy provides every type, one at a time)
-const SPECIAL_PROVIDES = { 'Telepathic Psychic Energy': 'Psychic', 'Growing Grass Energy': 'Grass', 'Rocky Fighting Energy': 'Fighting', "Team Rocket's Energy": 'Darkness' };
+const SPECIAL_PROVIDES = { 'Telepathic Psychic Energy': 'Psychic', 'Growing Grass Energy': 'Grass', 'Rocky Fighting Energy': 'Fighting', "Team Rocket's Energy": 'Darkness', 'Bubbly Water Energy': 'Water' };
 // Special Energy that provides more than one Energy, each of one of these types (Team Rocket's Energy: 2, {P} or {D})
 const PROVIDES_EITHER = { "Team Rocket's Energy": { units: 2, types: ['Psychic', 'Darkness'] } };
 // ACE SPEC cards: the hand-kept list, and any card printed at ACE SPEC rarity
@@ -106,6 +120,7 @@ function def(entry) {
       attacks: (c.attacks || []).map(a => ({ name: a.name, cost: a.cost || [], damage: a.damage == null ? '' : String(a.damage), text: clean(a.effect) })),
       img,
     };
+    if (FIX[key]) Object.assign(cards[key], FIX[key]);
     // Pokémon V and VSTAR (Rule Box, 2 Prizes), Radiant Pokémon (Rule Box, 1 Prize)
     if (c.suffix === 'V' || / (?:V|VSTAR|VMAX)$/.test(c.name)) cards[key].v = true;
     if (c.stage === 'VSTAR') cards[key].vstar = true;

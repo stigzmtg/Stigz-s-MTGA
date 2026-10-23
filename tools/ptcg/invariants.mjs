@@ -75,6 +75,8 @@ function chainOk(g, stack) {
   for (let i = 1; i < stack.length; i++) {
     const below = stack[i - 1].def, top = stack[i].def;
     if (top.from === below.name) continue;
+    // Eevee ex's Rainbow DNA: any Pokémon ex that evolves from Eevee
+    if (top.ex && top.from === 'Eevee' && (below.abilities || []).some(a => a.name === 'Rainbow DNA')) continue;
     const s1 = Object.values(g.db).find(x => x.cat === 'P' && x.name === top.from);
     if (top.stage === 'Stage2' && below.stage === 'Basic' && ((s1 && s1.from === below.name) || (top.from === 'Pidgeotto' && below.name === 'Pidgey'))) continue;
     return false;
@@ -226,8 +228,10 @@ class Checker {
       if (act.t === 'evolve') {
         const m = g.monById(act.target), c = p.hand.find(x => x.id === act.card);
         const forest = g.stadiumName() === 'Forest of Vitality' && m.def.type === 'Grass' && c.def.type === 'Grass';
-        if (!forest && (m.playedTurn === g.turn || m.evolvedTurn === g.turn)) self.fail(`${m.name} evolves the turn it came into play or evolved`);
-        if (p.turns === 1) self.fail(`${p.name} evolves on their first turn`);
+        // Forest of Vitality, and Eevee's Boosted Evolution in the Active Spot, allow evolving the turn it came into play
+        const boosted = g.boostedEvolution(m);
+        if (!forest && (m.evolvedTurn === g.turn || (m.playedTurn === g.turn && !boosted))) self.fail(`${m.name} evolves the turn it came into play or evolved`);
+        if (p.turns === 1 && !boosted) self.fail(`${p.name} evolves on their first turn`);
       }
       if (act.t === 'ability') {
         const fx = ABILITIES[act.name] || {};

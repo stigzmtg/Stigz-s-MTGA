@@ -319,6 +319,8 @@ export class PokemonGame {
     if (atk.name === 'Trifrost' && this.hasAbility(mon, 'Plasma Bane') && this.players[this.opp(mon.owner)].discard.some(c => /Colress/.test(c.name))) return ['Colorless'];
     // Hop's Choice Band: attacks by the Hop's Pokémon it's attached to cost {C} less
     if (this.toolName(mon) === "Hop's Choice Band" && /^Hop's /.test(mon.name)) { const i = cost.lastIndexOf('Colorless'); if (i >= 0) cost.splice(i, 1); }
+    // Nighttime Mine: attacks by Tera Pokémon cost {C} more
+    if (this.stadiumName() === 'Nighttime Mine' && this.isTera(mon)) cost.push('Colorless');
     // Radiant Charizard's Excited Heart: {C} less for each Prize card the opponent has taken
     if (this.hasAbility(mon, 'Excited Heart')) for (let k = 0; k < this.prizesTaken(this.opp(mon.owner)); k++) { const i = cost.lastIndexOf('Colorless'); if (i < 0) break; cost.splice(i, 1); }
     if (atk.name === 'Blood Moon' && this.hasAbility(mon, 'Seasoned Skill')) {
@@ -369,8 +371,13 @@ export class PokemonGame {
   canEvolveNow(mon, def) {
     if (mon.noEvolveTurn === this.turn) return false;
     if (mon.playedTurn !== this.turn && mon.evolvedTurn !== this.turn) return true;
+    // Eevee's Boosted Evolution: in the Active Spot it can evolve the turn it's played (or the first turn)
+    if (this.boostedEvolution(mon) && mon.evolvedTurn !== this.turn) return true;
     return this.stadiumName() === 'Forest of Vitality' && mon.def.type === 'Grass' && def.type === 'Grass';
   }
+  boostedEvolution(mon) { return this.isActive(mon) && this.hasAbility(mon, 'Boosted Evolution'); }
+  // does this card evolve from this Pokémon? (Eevee ex's Rainbow DNA: into any Pokémon ex that evolves from Eevee)
+  evolvesFrom(mon, def) { return def.from === mon.name || (!!def.ex && def.from === 'Eevee' && this.hasAbility(mon, 'Rainbow DNA')); }
   // Bronzong's Evolution Jammer: no evolving from the hand this turn
   evolutionJammed(pid) { return this.hasEffect('evoLock', { pid }); }
   attackBlock(mon, atk) {
@@ -380,6 +387,8 @@ export class PokemonGame {
     if (!this.isActive(mon)) return 'Only your Active Pokémon can attack';
     if (mon.special === 'asleep' || mon.special === 'paralyzed') return `${mon.name} is ${mon.special}`;
     if (this.hasEffect('cantAttack', { mon })) return `${mon.name} can't attack this turn`;
+    // Team Rocket's Mewtwo ex's Power Saver
+    if (this.hasAbility(mon, 'Power Saver') && this.inPlay(pid).filter(m => this.isTeamRocket(m)).length < 4) return "Needs 4 or more Team Rocket's Pokémon in play";
     if (this.effects.some(e => e.kind === 'cantUse' && e.turn === this.turn && e.mon === mon.id && e.name === atk.name)) return `${mon.name} can't use ${atk.name} this turn`;
     if (!this.canPay(mon, this.attackCost(mon, atk), this.costMinus(mon))) return 'Not enough Energy';
     const fx = ATTACKS[atk.name];
@@ -519,8 +528,8 @@ export class PokemonGame {
     for (const c of p.hand) {
       const d = c.def;
       if (d.cat === 'P' && d.stage === 'Basic' && p.bench.length < this.benchLimit(pid)) out.push({ t: 'bench', card: c.id });
-      if (d.cat === 'P' && d.stage !== 'Basic' && !firstTurn && !evoLock) {
-        for (const m of mons) if (m.name === d.from && this.canEvolveNow(m, d)) out.push({ t: 'evolve', card: c.id, target: m.id });
+      if (d.cat === 'P' && d.stage !== 'Basic' && !evoLock) {
+        for (const m of mons) if ((!firstTurn || this.boostedEvolution(m)) && this.evolvesFrom(m, d) && this.canEvolveNow(m, d)) out.push({ t: 'evolve', card: c.id, target: m.id });
       }
       if (d.ace && aceLocked) continue;
       if (d.cat === 'E' && !p.energyDone) for (const m of mons) if (d.name !== "Team Rocket's Energy" || this.isTeamRocket(m)) out.push({ t: 'energy', card: c.id, target: m.id });
@@ -748,6 +757,7 @@ export class PokemonGame {
       this.log(`Jet Energy switches ${mon.name} into the Active Spot.`);
       this.switchActive(pid, mon);
     }
+    if (card.name === 'Bubbly Water Energy' && mon.def.type === 'Water' && this.energyLive(card) && (mon.special || mon.poisoned || mon.burned)) { this.clearConditions(mon); this.log(`${mon.name} recovers from its Special Conditions (Bubbly Water Energy).`); }
     // Special Energy that does something when attached from hand (Enriching Energy, Telepathic Psychic Energy)
     const fx = ENERGIES[card.name];
     if (fromHand && fx && fx.onAttach && this.energyLive(card) && (!fx.can || fx.can(this, mon, pid))) await fx.onAttach(this, mon, pid);
@@ -835,6 +845,8 @@ export class PokemonGame {
   // special conditions: Ancient Booster Energy Capsule, Flare Veil and Dig keep them off
   setCondition(mon, cond, ctx = null) {
     if (this.toolName(mon) === 'Ancient Booster Energy Capsule' && mon.def.ancient) return false;
+    // Bubbly Water Energy: the {W} Pokémon it's attached to can't be affected by Special Conditions
+    if (mon.def.type === 'Water' && this.liveEnergy(mon, 'Bubbly Water Energy').length) return false;
     if (this.stadiumName() === 'Festival Grounds' && mon.energy.length) return false;
     if (ctx && this.effectsBlocked(ctx, mon)) return false;
     if (cond === 'poisoned') mon.poisoned = true;
@@ -1004,6 +1016,14 @@ export class PokemonGame {
     if (attacker.def.type === 'Fighting' && this.hasEffect('premiumPower', { pid: ctx.pid })) n += 30;
     // Cynthia's Roserade's Cheer On to Glory: +30 each, on attacks by Cynthia's Pokémon
     if (/^Cynthia's /.test(attacker.name)) n += 30 * this.inPlay(ctx.pid).filter(m => this.hasAbility(m, 'Cheer On to Glory')).length;
+    // Galvantula's Compound Eyes: +50 against an Active Pokémon that has an Ability
+    if (this.hasAbility(attacker, 'Compound Eyes') && this.abilitiesOf(target).length) n += 50;
+    // Light Ball (on Pikachu ex), Maximum Belt, Kieran: more against Pokémon ex (and V)
+    if (target.def.ex && t === 'Light Ball' && attacker.name === 'Pikachu ex') n += 50;
+    if (target.def.ex && t === 'Maximum Belt') n += 50;
+    if ((target.def.ex || target.def.v) && this.hasEffect('kieran', { pid: ctx.pid })) n += 30;
+    // Victini's Victory Cheer: +10 each, on attacks by Evolution {R} Pokémon
+    if (attacker.def.type === 'Fire' && attacker.def.stage !== 'Basic') n += 10 * this.inPlay(ctx.pid).filter(m => this.hasAbility(m, 'Victory Cheer')).length;
     if (/^Hop's /.test(attacker.name)) {
       // Hop's Snorlax's Extra Helpings (doesn't stack), Hop's Choice Band, Postwick
       if (this.anyInPlayHasAbility('Extra Helpings', ctx.pid)) n += 30;
