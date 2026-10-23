@@ -519,6 +519,46 @@ test('Kadabra and Alakazam draw when evolved from the hand', async T => {
   expect(T.A.active.name === 'Alakazam' && T.A.hand.length === 3, `Alakazam drew 3 (${T.A.hand.length} in hand)`);
 });
 
+// ---- Basic Box
+test("Cobalt Command: +20 per Iron Crown ex for other Future Pokémon's attacks, not Iron Crown's own", async T => {
+  T.mon(0, 'Iron Leaves ex', { active: true, energy: ['Grass', 'Grass', 'Grass'] });     // Prism Edge 180
+  T.mon(0, 'Iron Crown ex'); T.mon(0, 'Iron Crown ex');
+  const d = T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  await T.attack('Prism Edge');
+  expect(d.damage === 220, `180 + 2 x 20 = 220 (${d.damage})`);
+  T.A.active = null; T.A.bench = [];
+  T.mon(0, 'Iron Crown ex', { active: true, energy: ['Psychic', 'Psychic', 'Psychic'] }); T.mon(0, 'Iron Crown ex');
+  const e = T.mon(1, 'Solrock'); T.B.active = null; T.g.switchActive(1, e); T.B.bench = T.B.bench.filter(m => m !== e);
+  T.mon(1, 'Lunatone');
+  T.g.turn += 2;
+  T.a.on('opp-damage-pierce:50', req => req.options);
+  await T.attack('Twin Shotels');
+  expect(e.damage === 50, `Iron Crown's own attack gets no bonus (${e.damage})`);
+});
+test('Twin Shotels: 50 to 2 Pokémon, ignoring Weakness and Bench protection (Tera, Flower Curtain)', async T => {
+  T.mon(0, 'Iron Crown ex', { active: true, energy: ['Psychic', 'Psychic', 'Psychic'] });
+  const d = T.mon(1, 'Passimian', { active: true });                    // weak to {P}: Weakness would double it
+  const tera = T.mon(1, 'Wellspring Mask Ogerpon ex');                  // Benched Tera Pokémon ex
+  T.mon(1, 'Shaymin');                                                   // Flower Curtain
+  const plain = T.mon(1, 'Solrock');
+  T.a.on('opp-damage-pierce:50', () => [tera.id, plain.id]);
+  await T.attack('Twin Shotels');
+  expect(tera.damage === 50 && plain.damage === 50 && d.damage === 0, `50 each through Tera and Flower Curtain (${tera.damage}, ${plain.damage})`);
+  T.g.turn += 2;
+  const l = T.mon(1, 'Lunatone');
+  T.a.on('opp-damage-pierce:50', () => [d.id, l.id]);
+  await T.attack('Twin Shotels');
+  expect(d.damage === 50, `no Weakness or Resistance on the Active either (${d.damage})`);
+});
+test('Coordinated Throwing: 20 for each of your Basic Pokémon in play', async T => {
+  T.mon(0, 'Passimian', { active: true, energy: ['Fighting', 'Fighting'] });
+  T.mon(0, 'Budew'); T.mon(0, 'Lunatone');
+  const dc = T.mon(0, 'Dusclops');
+  const d = T.mon(1, 'Mega Kangaskhan ex', { active: true });
+  await T.attack('Coordinated Throwing');
+  expect(d.damage === 120 && dc, `3 Basic Pokémon (Dusclops is a Stage 1): 60 x2 Weakness = 120 (${d.damage})`);
+});
+
 let pass = 0, fail = 0;
 for (const t of tests) {
   if (ONLY && !ONLY.test(t.name)) continue;

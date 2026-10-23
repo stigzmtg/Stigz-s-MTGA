@@ -18,7 +18,7 @@ const SETUP_ATTACKS = new Set(['Call for Family', 'Call Sign', 'Find a Friend', 
 // attacks that place damage counters (no Weakness, Resistance or damage reduction; stopped by effect protection)
 const COUNTER_ATTACKS = new Set(['Powerful Hand', 'Furtive Drop', 'Matcha Spin', 'Spiritual End']);
 // what attacks with no printed damage (or a small one) are really worth, for deciding where Energy goes
-const NOMINAL = { 'Seek Inspiration': 130, 'Night Joker': 170, 'Powerful Hand': 120, 'Trifrost': 110, 'Thunder Raid': 60, 'Lost Mine': 120, 'Vengeful Anchor': 170, 'Syrup Storm': 180 };
+const NOMINAL = { 'Seek Inspiration': 130, 'Night Joker': 170, 'Powerful Hand': 120, 'Trifrost': 110, 'Thunder Raid': 60, 'Lost Mine': 120, 'Vengeful Anchor': 170, 'Syrup Storm': 180, 'Twin Shotels': 100, 'Coordinated Throwing': 120 };
 // Items whose net effect on the hand is known (cards spent minus cards gained), for Powerful Hand turns
 const ITEM_HAND_COST = { 'Poké Pad': 0, 'Night Stretcher': 0, 'Pokégear 3.0': 0, 'Buddy-Buddy Poffin': 1, 'Nest Ball': 1, 'Ultra Ball': 2, 'Rare Candy': 2, 'Special Red Card': 1, 'Prime Catcher': 1, 'Sacred Ash': 1, 'Switch': 1, 'Strange Timepiece': 1, 'Earthen Vessel': 0, 'Super Rod': 1, 'Secret Box': 0 };
 
@@ -111,15 +111,17 @@ export class PokemonAI {
       case 'Syrup Storm': d = printed + 30 * g.inPlay(pid).reduce((s, m) => s + g.energyTypes(m).filter(t => t === 'Grass' || t === 'Any').length, 0); break;
       case 'Tumbling Attack': d = printed + 10; break;
       case 'Mirror Attack': d = printed + (target.def.type === 'Psychic' ? 30 : 0); break;
+      case 'Twin Shotels': d = 50; break;
+      case 'Coordinated Throwing': d = 20 * g.inPlay(pid).filter(m => m.def.stage === 'Basic').length; break;
     }
     if (COUNTER_ATTACKS.has(atk.name)) return blocked ? 0 : Math.max(0, d);
     if (d > 0) d += g.attackBonus({ pid, opp }, mon, target);
-    if (d > 0 && !['Cosmic Beam', 'Demolish', 'Spit Innocently'].includes(atk.name)) {
+    if (d > 0 && !['Cosmic Beam', 'Demolish', 'Spit Innocently', 'Twin Shotels'].includes(atk.name)) {
       if (g.weaknessOf(target) === mon.def.type) d *= 2;
       if (target.def.resist === mon.def.type) d -= 30;
     }
     // protections on the target
-    const ignore = ['Spiky Hopper', 'Demolish', 'Shred', 'Superb Scissors'].includes(atk.name);
+    const ignore = ['Spiky Hopper', 'Demolish', 'Shred', 'Superb Scissors', 'Twin Shotels'].includes(atk.name);
     if (!ignore && g.hasAbility(target, 'Cornerstone Stance') && g.abilitiesOf(mon).length) return 0;
     if (!ignore && g.hasEffect('dig', { mon: target })) return 0;
     if (!ignore && g.hasEffect('protect', { mon: target })) d -= 30;
@@ -180,6 +182,8 @@ export class PokemonAI {
       case 'Phantom Dive': return Math.min(60, ob.length * 30) + (ob.some(m => g.hpLeft(m) <= 60) ? 100 : 0);
       case 'Matcha Spin': return this.sneakers(g, pid) >= 6 ? sum(40, 5, true) : 0;
       case 'Torrential Pump': return mon.energy.length >= 3 ? best(120) / 2 : 0;
+      // Twin Shotels: 50 to a second Pokémon, through any protection on it
+      case 'Twin Shotels': return Math.max(0, ...ob.map(m => score(m, 50)));
       case 'Seek Inspiration': return this.seekValue(g, pid, mon, g.pl(g.opp(pid)).active).bench;
       case 'Night Joker': return this.copyBest(g, pid, mon, g.pl(g.opp(pid)).active, this.jokerChoices(g, pid)).bench;
       default: return 0;
@@ -328,6 +332,9 @@ export class PokemonAI {
     // Lost Vacuum: the opponent's Tool or Stadium goes, and a card from hand fills the Lost Zone
     t = item(['Lost Vacuum']);
     if (t && this.vacuumUseful(g, pid, t.c)) return t;
+    // Energy Switch: one Basic Energy from another Pokémon makes the Active ready to attack this turn
+    t = trainers.find(x => x.c && x.c.name === 'Energy Switch');
+    if (t && affordable(1)) { const plan = this.energySwitchPlan(g, pid); if (plan && once('eswitch', 2)) { this.eswitch = { turn: g.turn, ...plan }; return t; } }
     // Strange Timepiece on a Powerful Hand turn: devolve a healthy Benched Pokémon for more cards in hand
     if (handAttack) { t = trainers.find(x => x.c && x.c.name === 'Strange Timepiece'); if (t && this.timepieceTarget(g, pid) && once('timepiece')) return t; }
 
@@ -519,6 +526,25 @@ export class PokemonAI {
     if (g.inPlay(o).some(m => m.tool) || (g.stadium && g.stadium.owner === o)) return true;
     // our own Stadium, just to fill the Lost Zone for Lost Mine
     return !!(g.stadium && this.plays(g, pid, 'Lost Mine') && me.lost.length < 10);
+  }
+  // Energy Switch for the Active: which Pokémon gives which Energy (null when it doesn't make the Active ready)
+  energySwitchPlan(g, pid) {
+    const me = g.pl(pid), a = me.active;
+    if (!a || this.canAttackNow(g, a) || g.turn === 1 && g.first === pid) return null;
+    const need = this.needs(g, a);
+    if (!need.missing.length || !need.atk) return null;
+    const fits = c => isBasicEnergy(c) && (need.missing.includes(c.def.provides) || need.missing.includes('Colorless'));
+    // the manual attachment still to come covers one more
+    const handFits = !me.energyDone && me.hand.some(c => c.def.cat === 'E' && (need.missing.includes(c.def.provides) || need.missing.includes('Colorless') || c.def.anyType));
+    if (need.missing.length - 1 - (handFits ? 1 : 0) > 0) return null;
+    let best = null;
+    for (const m of me.bench) for (const c of m.energy) {
+      if (!fits(c)) continue;
+      // take it from the Pokémon that loses the least: one that isn't ready anyway, or has Energy to spare
+      const v = (this.needs(g, m).missing.length ? 0 : -20) + this.attackerValue(g, m) / 10;
+      if (!best || v < best.v) best = { v, from: m.id, card: c.id, to: a.id };
+    }
+    return best;
   }
   // Strange Timepiece target: an evolved {P} Pokémon on the Bench that survives devolving
   timepieceTarget(g, pid) {
@@ -801,6 +827,7 @@ export class PokemonAI {
     if (hint === 'opp-discard') return [this.rankCards(g, g.opp(pid), opts, { hint: 'take' })[0].id];
     if (hint === 'opp-discard-n') return this.rankCards(g, g.opp(pid), opts, { hint: 'take' }).slice(0, req.max).map(c => c.id);
     if (hint === 'move-to-active') return opts.map(c => c.id).slice(0, req.max);
+    if (hint === 'move' && this.eswitch && this.eswitch.turn === g.turn && opts.some(c => c.id === this.eswitch.card)) return [this.eswitch.card];
     if (hint === 'discard-draw') {
       // Gwynn: Pokémon we can spare, 3 cards each
       const spare = this.rankCards(g, pid, opts, req).reverse().filter(c => this.cardScore(g, pid, c) < 70 || hasAbil(c.def, SNEAK));
@@ -962,7 +989,8 @@ export class PokemonAI {
       const n = +(hint.split(':')[1] || 30) * (hint.startsWith('opp-counters') ? 10 : 1);
       const counters = hint.startsWith('opp-counters');
       const attacker = g.pl(pid).active;
-      const hit = m => (attacker && !g.isActive(m) ? this.benchHit(g, pid, attacker, m, n, counters) : n);
+      // 'pierce': the damage ignores every effect on the target (Twin Shotels)
+      const hit = m => (attacker && !g.isActive(m) && !hint.includes('pierce') ? this.benchHit(g, pid, attacker, m, n, counters) : n);
       const kos = opts.filter(m => hit(m) >= g.hpLeft(m) && hit(m) > 0).sort((a, b) => g.prizeValue(b) - g.prizeValue(a));
       if (kos.length) return pickN([...kos, ...opts.filter(m => !kos.includes(m)).sort((a, b) => (hit(b) > 0) - (hit(a) > 0))]);
       return pickN([...opts].sort((a, b) => ((hit(b) > 0) - (hit(a) > 0)) * 1000 + (g.prizeValue(b) - g.prizeValue(a)) * 100 + (b.damage - a.damage)));
@@ -974,6 +1002,9 @@ export class PokemonAI {
       return pickN(ranked);
     }
     if (hint === 'own-damaged' || hint === 'scoop') return [opts.sort((a, b) => b.damage - a.damage)[0].id];
+    const es = this.eswitch && this.eswitch.turn === g.turn && g.current === pid ? this.eswitch : null;
+    if (hint === 'energy-from' && es && opts.some(m => m.id === es.from)) return [es.from];
+    if (hint.startsWith('attach') && es && opts.some(m => m.id === es.to) && g.pl(pid).active && g.pl(pid).active.id === es.to && !g.pl(pid).active.energy.some(c => c.id === es.card)) { this.eswitch = null; return [es.to]; }
     if (hint === 'energy-from') return [opts.sort((a, b) => this.needs(g, a).dmg - this.needs(g, b).dmg)[0].id];
     if (hint === 'opp-energy') return [opts.sort((a, b) => b.energy.length - a.energy.length)[0].id];
     if (hint === 'devolve') { const t = this.timepieceTarget(g, pid); return [(t && opts.includes(t) ? t : opts[0]).id]; }

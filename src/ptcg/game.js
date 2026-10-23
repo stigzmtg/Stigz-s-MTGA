@@ -799,7 +799,7 @@ export class PokemonGame {
         if (this.hasAbility(target, 'Cornerstone Stance') && this.abilitiesOf(attacker).length) dmg = 0;
         dmg = this.damageGuard(target, attacker, dmg);
       }
-    } else if (target.owner !== ctx.pid) {
+    } else if (target.owner !== ctx.pid && !ignoreEffects) {
       // Tera Pokémon ex on the Bench take no damage from attacks
       if (this.isTera(target) && target.def.ex) dmg = 0;
       if (this.hasEffect('dig', { mon: target })) dmg = 0;
@@ -837,6 +837,8 @@ export class PokemonGame {
     if (t === 'Binding Mochi' && attacker.poisoned) n += 40;
     if (target.def.ex && this.hasEffect('blackBelt', { pid: ctx.pid })) n += 40;
     if (plain && this.hasEffect('gladion', { pid: ctx.pid })) n += 80;
+    // Iron Crown ex's Cobalt Command: +20 for each one in play, on attacks by the other Future Pokémon
+    if (attacker.def.future && attacker.name !== 'Iron Crown ex') n += 20 * this.inPlay(ctx.pid).filter(m => this.hasAbility(m, 'Cobalt Command')).length;
     return n;
   }
   // the defender's own protection, after Weakness and Resistance: Crustle's Mysterious Rock Inn, Bouffalant's Curly Wall
