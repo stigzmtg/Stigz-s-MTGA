@@ -214,6 +214,11 @@ export class Game {
     return list;
   }
   attachmentsOf(card) { return this.battlefield.filter(c => c.attachedTo === card.id); }
+  // players who goaded it: by an effect ("goad target creature") or for as long as a static says so
+  goaders(card) {
+    const st = card.zone === 'battlefield' ? (this.chars(card).goadedBy || []) : [];
+    return st.length ? [...new Set([...(card.goadedBy || []), ...st])] : (card.goadedBy || []);
+  }
   isAttacking(card) { return !!(this.combat && this.combat.attackers.some(a => a.card === card.id)); }
   isBlocking(card) { return !!(this.combat && this.combat.blockers.has(card.id)); }
   isBlocked(card) { const a = this.combat && this.combat.attackers.find(x => x.card === card.id); return !!(a && a.blocked); }
@@ -254,7 +259,7 @@ export class Game {
       ans = await agent.ask(this, pid, req);
     } finally { this.pendingAsk = null; }
     if (this.over) throw new GameOver();
-    return ans;
+    return sanitizeAnswer(req, ans);
   }
 
   // ---------------------------------------------------------------- game start
@@ -442,7 +447,7 @@ export class Game {
       }
       case 'draw': {
         const skip = this.turnNumber === 1 && this.players.length === 2;
-        if (!skip) await this.drawCards(p, 1, null);
+        if (!skip) { this.turnDrawFor = p.id; try { await this.drawCards(p, 1, null); } finally { this.turnDrawFor = null; } }
         this.fire('Phase', { Phase: 'Draw', Player: ap });
         break;
       }
@@ -658,6 +663,13 @@ export class Game {
         const lim = +(p.ActivationLimit || p.ResolvedLimit || 1);
         if (n >= lim) continue;
         this.turnState.triggerCounts[k] = n + 1;
+      }
+      // "when you NEXT cast a spell this turn" (Ride the Avalanche, Brass Infiniscope, Solar Array): once
+      if (p.OneOff === 'True') {
+        const k = `${host.id}:${t.key}`;
+        const fired = this.turnState.oneOffFired || (this.turnState.oneOffFired = {});
+        if (fired[k]) continue;
+        fired[k] = true;
       }
       const lk = `${host.id}:${t.key}`;
       const lc = (this.turnState.loopCounts[lk] = (this.turnState.loopCounts[lk] || 0) + 1);
@@ -1046,7 +1058,7 @@ export class Game {
       counters: { ...card.counters }, tapped: card.tapped, token: card.token, isCommander: card.isCommander,
       remembered: [...card.remembered], imprinted: [...card.imprinted], chosen: { ...card.chosen }, attachedTo: card.attachedTo,
       zone: card.zone, zcc: card.zcc, damage: card.damage, timestamp: card.timestamp, xPaid: card.xPaid, kicked: card.kicked, faceDown: card.faceDown,
-      castFrom: card.castFrom, exiledWith: card.exiledWith, face: card.face, faceDef: card.faceDef,
+      castFrom: card.castFrom, castMayPlayHost: card.castMayPlayHost, exiledWith: card.exiledWith, face: card.face, faceDef: card.faceDef, goadedBy: [...(card.goadedBy || [])],
       wasAttacking: this.isAttacking(card), wasBlocking: this.isBlocking(card),
       attachments: this.battlefield.filter(a => a.attachedTo === card.id).map(a => a.id),
       blitzed: card.blitzed, evoked: card.evoked, squad: card.squad, renowned: card.renowned, monstrous: card.monstrous, championed: card.championed,
@@ -1122,7 +1134,8 @@ export class Game {
     const meldPartner = from === 'battlefield' && card.meldedWith != null ? this.cardById(card.meldedWith) : null;
     card.reset();
     card.zcc++;
-    if (isToken && dest !== 'battlefield') {
+    // (a copy of a card being cast — Wondrous Crucible — is a token on the stack, not gone)
+    if (isToken && dest !== 'battlefield' && !(dest === 'stack' && card.isSpellCopy)) {
       card.zone = 'gone';
       this.cards.delete(card.id);
       this.recordMove(card, lki, from, dest, opts, ZONE_NAME);
@@ -1414,7 +1427,7 @@ export class Game {
       // "each opponent can't draw more than one card each turn"
       if (this.activeStatics('CantDraw').some(s => matchValid(this, p, s.p.ValidPlayer || 'Player', s.ctx) && p.cardsDrawnThisTurn >= +(s.p.DrawLimit || 0))) break;
       // draw replacements
-      const repl = await this.applySimpleReplacement('Draw', { Affected: p, Player: p.id }, sa);
+      const repl = await this.applySimpleReplacement('Draw', { Affected: p, Player: p.id, TurnDraw: this.turnDrawFor === p.id && i === 0 }, sa);
       if (repl === null) continue;
       if (!p.library.length) { p.drewFromEmpty = true; this.touch(); break; }
       // "you draw cards from the bottom of your library rather than the top"
@@ -1443,6 +1456,7 @@ export class Game {
         const ctx = { host: h, you, svars: r.svars, trig: rp };
         if (p.ValidPlayer && !(rp.Affected && matchValid(this, rp.Affected, p.ValidPlayer, ctx))) continue;
         if (p.ValidCard && !(rp.Card && matchValid(this, rp.Card, p.ValidCard, ctx))) continue;
+        if (p.NotFirstCardInDrawStep === 'True' && rp.TurnDraw) continue; // Notion Thief leaves the draw-step draw alone
         if (!checkPresence(this, p, ctx)) continue;
         if (rp._applied && rp._applied.has(h.id + r.key)) continue;
         if (this.activeRepl.has(h.id + r.key)) continue;
@@ -1994,6 +2008,50 @@ export class Game {
   }
 
   noteTokenBatch(pid) { this.turnState.tokenBatches[pid] = (this.turnState.tokenBatches[pid] || 0) + 1;
+  }
+}
+
+// Answers from any seat (a person, the AI, a peer online) are held to the prompt: only offered choices,
+// no duplicates, within min/max (padded with the first offered choices when short), a cancel only where
+// the prompt allows one. Deterministic, so every peer reaches the same answer.
+export function sanitizeAnswer(req, ans) {
+  const pad = (picked, offered, min, max) => {
+    const out = [];
+    for (const x of Array.isArray(picked) ? picked : []) if (offered.includes(x) && !out.includes(x)) out.push(x);
+    out.splice(Math.max(0, max));
+    for (const x of offered) { if (out.length >= Math.min(min, offered.length)) break; if (!out.includes(x)) out.push(x); }
+    return out;
+  };
+  switch (req.type) {
+    case 'cards': if (ans == null && req.cancellable) return null; return pad(ans, req.cards || [], req.min || 0, req.max ?? (req.cards || []).length);
+    case 'targets': if (ans == null && req.cancellable) return null; return pad(ans, req.cands || [], req.min || 0, req.max ?? (req.cands || []).length);
+    case 'option': {
+      if (ans == null && req.cancellable) return null;
+      const opts = req.options || [];
+      return opts.some(o => o.value === ans) ? ans : (opts[0] ? opts[0].value : null);
+    }
+    case 'modes': {
+      if (ans == null && req.cancellable) return null;
+      const vals = (req.options || []).map(o => o.value);
+      let out = (Array.isArray(ans) ? ans : []).filter(v => vals.includes(v));
+      if (!req.repeat) out = out.filter((v, i) => out.indexOf(v) === i);
+      out = out.slice(0, req.max ?? out.length);
+      for (const v of vals) { if (out.length >= (req.min || 0)) break; if (req.repeat || !out.includes(v)) out.push(v); }
+      return out;
+    }
+    case 'number': {
+      if (ans == null && req.cancellable) return null;
+      const lo = req.min ?? 0, hi = req.max ?? lo;
+      const n = Math.floor(Number(ans));
+      return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : lo;
+    }
+    case 'color': if (ans == null && req.cancellable) return null; return (req.colors || []).includes(ans) ? ans : (req.colors || [])[0] ?? null;
+    case 'player': if (ans == null && req.cancellable) return null; return (req.players || []).includes(ans) ? ans : (req.players || [])[0] ?? null;
+    case 'confirm': if (ans == null && req.cancellable) return null; return !!ans;
+    case 'mulligan': return ans !== false;
+    case 'priority': return ans && typeof ans === 'object' && typeof ans.type === 'string' ? ans : { type: 'pass' };
+    case 'attackers': case 'blockers': return Array.isArray(ans) ? ans : [];
+    default: return ans;
   }
 }
 

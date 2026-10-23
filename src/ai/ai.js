@@ -1,5 +1,5 @@
 // Heuristic AI agent. Answers every engine prompt ("ask") for its player.
-import { SA, getActions, spellOptions, buildSpellSA, targetSpec, targetCandidates, refOf, fromRef, manaSourcesFor, parseCost, activatedAbilities, producedUnits, canAfford } from '../engine/abilities.js';
+import { SA, getActions, spellOptions, buildSpellSA, targetSpec, targetCandidates, refOf, fromRef, manaSourcesFor, parseCost, activatedAbilities, producedUnits, canAfford, canPayNonMana } from '../engine/abilities.js';
 import { canBlock, canAttack, combatPower, blockRules, attackTax, canAttackDefender, playerInDirection } from '../engine/combat.js';
 import { matchValid, calc, ctxOf, ctrlOf } from '../engine/filters.js';
 import { parseAbility } from '../engine/forge.js';
@@ -200,7 +200,7 @@ export class AIAgent {
     const p = game.players[pid];
     const need = { W: 0, U: 0, B: 0, R: 0, G: 0 };
     const have = { W: 0, U: 0, B: 0, R: 0, G: 0 };
-    for (const s of manaSourcesFor(game, pid)) for (const u of s.units) for (const c of u) if (have[c] != null) have[c]++;
+    for (const s of manaSourcesFor(game, pid)) if (!s.manualOnly) for (const u of s.units) for (const c of u) if (have[c] != null) have[c]++;
     for (const c of [...p.hand, ...p.command]) {
       const mc = c.faceDef.manaCost;
       if (!mc) continue;
@@ -586,7 +586,9 @@ export class AIAgent {
     }
     if (purpose === 'sacrifice' || purpose === 'costSac' || purpose === 'devour' || purpose === 'costExile' || purpose === 'costReturn') {
       if (purpose === 'devour') return pick(cards.filter(c => c.token).sort((a, b) => v(a) - v(b)), Math.min(max, cards.filter(c => c.token).length));
-      const sorted = cards.slice().sort((a, b) => v(a) - v(b));
+      // when paying a cost, keep the permanents that make mana (a Treasure may be what pays the rest)
+      const manaish = c => purpose === 'costSac' && c.zone === 'battlefield' && manaSourcesFor(game, pid).some(s => s.card === c) ? 4 : 0;
+      const sorted = cards.slice().sort((a, b) => (v(a) + manaish(a)) - (v(b) + manaish(b)));
       return pick(sorted, min);
     }
     if (purpose === 'scryBottom' || purpose === 'surveilGrave') {
@@ -876,6 +878,7 @@ export class AIAgent {
 
   number(game, pid, req) {
     if (req.purpose === 'readAhead') return req.min;
+    if (req.purpose === 'divide') return Math.max(req.min, Math.min(req.max, Math.floor((req.left || req.max) / (req.targetsLeft || 1))));
     if (req.purpose === 'chorus') return Math.min(req.max, game.step === 'main2' ? req.max : Math.floor(req.max / 2));
     if (req.purpose === 'xValue' && req.xCost === 'PayLife') {
       const opp = game.battlefield.filter(c => c.controller !== pid && game.chars(c).types.has('Creature'));
@@ -894,6 +897,35 @@ export class AIAgent {
           }).length;
           return Math.max(req.min, Math.min(req.max, good));
         }
+      }
+      // "exile an artifact card with mana value X from your graveyard": the largest X the cost allows
+      const root0 = req.sa.root ? req.sa.root() : req.sa;
+      if (root0.p && /X/.test(String(root0.p.Cost || '')) && /cmc\w*X/.test(String(root0.p.Cost || ''))) {
+        const saved = root0.x;
+        let pickX = null;
+        try {
+          const cost = parseCost(root0.p.Cost);
+          for (let x = req.max; x >= req.min && pickX == null; x--) { root0.x = x; if (canPayNonMana(game, root0, cost)) pickX = x; }
+        } finally { root0.x = saved; }
+        if (pickX != null) return pickX;
+      }
+      // "target creature with mana value X" and the like: the largest X that still has a target worth taking
+      const xTargets = req.sa.chain().filter(s => /X\b/.test(String(s.p.ValidTgts || '')) && targetSpec(game, s));
+      if (xTargets.length) {
+        const root = req.sa.root ? req.sa.root() : req.sa;
+        const saved = root.x;
+        let pickX = null;
+        try {
+          // first an X with a target worth it (ours to help, theirs to harm), then any X with a legal target
+          for (const picky of [true, false]) {
+            for (let x = req.max; x >= req.min && pickX == null; x--) {
+              root.x = x;
+              if (xTargets.every(s => { const spec = targetSpec(game, s); const sent = this.sentiment(s); return spec.min === 0 || targetCandidates(game, s, spec).some(c => { if (!picky) return true; const mine = c.isPlayer ? c.id === pid : ctrlOf(game, c) === pid; return sent === 'harm' ? !mine : mine; }); })) pickX = x;
+            }
+            if (pickX != null) break;
+          }
+        } finally { root.x = saved; }
+        if (pickX != null) return pickX;
       }
     }
     if (req.purpose === 'xValue' || req.purpose === 'multikicker' || req.purpose === 'squad' || req.purpose === 'delve' || req.purpose === 'drawUpTo') return req.max;
@@ -942,8 +974,9 @@ export class AIAgent {
     // mandatory attackers (goad / encore)
     for (const c of cands) {
       if (c.mustAttack != null && game.players[c.mustAttack] && !game.players[c.mustAttack].lost) { out.push({ attacker: c.id, defender: 'p' + c.mustAttack }); used.add(c.id); }
-      else if (c.goadedBy && c.goadedBy.length) {
-        const t = opps.find(o => !c.goadedBy.includes(o.id)) || opps[0];
+      else if (game.goaders(c).length) {
+        const g = game.goaders(c);
+        const t = opps.find(o => !g.includes(o.id)) || opps[0];
         out.push({ attacker: c.id, defender: 'p' + t.id }); used.add(c.id);
       }
     }

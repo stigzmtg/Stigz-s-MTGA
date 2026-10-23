@@ -1,9 +1,10 @@
 // Behavioural tests for rules features added to the engine (Graft, Gift, Must Block, Cipher, ...):
 // set up a board, use the card, assert the outcome. Usage: node tools/mechanics.mjs [name-filter]
 import { setup, expect, run, db } from './lib/testkit.mjs';
-import { castSpell, getActions, refOf, activatedAbilities, castableOptions, activateAbility } from '../src/engine/abilities.js';
+import { castSpell, getActions, refOf, activatedAbilities, castableOptions, activateAbility, playLand, spellOptions } from '../src/engine/abilities.js';
 import * as combat from '../src/engine/combat.js';
 import { calcCtx } from '../src/engine/filters.js';
+import { sanitizeAnswer } from '../src/engine/game.js';
 
 const tests = [];
 const test = (name, fn, opts) => tests.push({ name, fn, opts });
@@ -1447,6 +1448,386 @@ test('Treasure and Gold tokens pay for spells', async T => {
   T.game.priority = 0;
   const ok = await castSpell(T.game, 0, c, {}); await T.resolve();
   expect(ok && c.zone === 'battlefield' && T.tokens(0).length === 1, `cast with one token sacrificed (${ok}, ${c.zone}, tokens left ${T.tokens(0).length})`);
+});
+
+// ------------------------------------------------------------ found by tools/fuzz.mjs and tools/manacheck.mjs
+const manaTools = await import('../src/engine/abilities.js');
+test('Auto-payment leaves Treasures and Spawn alone when lands suffice, and uses them when needed', async T => {
+  await T.put(0, 'Forest'); await T.put(0, 'Forest');
+  const tr = await T.game.createToken(db.token('c_a_treasure_sac'), 0, null);
+  const sp = await T.game.createToken(db.token('c_0_1_eldrazi_spawn_sac'), 0, null); sp.sick = false;
+  T.noMana(0); T.game.priority = 0;
+  const elf = await T.put(0, 'Llanowar Elves', 'hand');
+  await castSpell(T.game, 0, elf, {}); await T.resolve();
+  expect(elf.zone === 'battlefield' && tr.zone === 'battlefield' && sp.zone === 'battlefield', 'paid with a Forest');
+  const wall = await T.put(0, 'Wall of Omens', 'hand');
+  await castSpell(T.game, 0, wall, {}); await T.resolve();
+  expect(wall.zone === 'battlefield' && tr.zone !== 'battlefield', `{1}{W}: Forest + Treasure (${wall.zone}, treasure ${tr.zone})`);
+});
+test('Signets and filter lands can be tapped by hand with nothing floating', async T => {
+  const signet = await T.put(0, 'Izzet Signet');
+  const land = await T.put(0, 'Forest');
+  T.noMana(0);
+  expect(manaTools.manaSourcesFor(T.game, 0).some(s => s.card === signet), 'offered');
+  const ok = await manaTools.activateManaAbility(T.game, 0, signet, manaTools.manaAbilitiesOf(T.game, signet)[0].key);
+  expect(ok && signet.tapped && land.tapped && T.A.pool.U === 1 && T.A.pool.R === 1, `the Forest paid the {1} (${JSON.stringify(T.A.pool)})`);
+  const s2 = await T.put(0, 'Izzet Signet');
+  expect(!manaTools.manaSourcesFor(T.game, 0).some(s => s.card === s2 && !T.A.pool.U && !T.A.pool.R), 'not offered when nothing can pay its {1}');
+});
+test("A filter source pays its {1} with mana the spell doesn't need (Atraxa with Opal Palace and a Signet)", async T => {
+  for (const n of ['Murmuring Bosk', 'Opal Palace', 'Swamp', 'Island']) { const c = await T.put(0, n); c.tapped = false; }
+  await T.put(0, 'Golgari Signet');
+  T.noMana(0); T.game.priority = 0;
+  const a = await T.put(0, "Atraxa, Praetors' Voice", 'hand');
+  const ok = await castSpell(T.game, 0, a, {});
+  expect(ok && !T.game.logs.some(l => /payment failed/i.test(l.text)), `cast and paid (${ok})`);
+});
+test('Mana abilities that sacrifice another permanent can be used by hand (Skirk Prospector, Gilded Goose)', async T => {
+  const sk = await T.put(0, 'Skirk Prospector');
+  T.noMana(0);
+  const src = manaTools.manaSourcesFor(T.game, 0).find(s => s.card === sk);
+  expect(src && src.manualOnly, 'offered by hand, never used automatically');
+  const ok = await manaTools.activateManaAbility(T.game, 0, sk, src.abil.key);
+  expect(ok && sk.zone === 'graveyard' && T.A.pool.R === 1, 'sacrificed a Goblin (itself) for {R}');
+  const goose = await T.put(0, 'Gilded Goose'); await T.resolve(); goose.sick = false;
+  const foods = T.tokens(0).filter(t => T.game.chars(t).subtypes.has('Food'));
+  expect(foods.length >= 1, 'Goose came with a Food');
+  T.noMana(0);
+  const ok2 = await manaTools.activateManaAbility(T.game, 0, goose, manaTools.manaAbilitiesOf(T.game, goose).find(a => /Food/.test(a.parsed.p.Cost)).key, 'B');
+  expect(ok2 && goose.zone === 'battlefield' && foods[0].zone !== 'battlefield' && T.A.pool.B === 1, 'a Food was sacrificed, the Goose stayed');
+  const wall = await T.put(0, 'Wall of Omens', 'hand');
+  T.noMana(0); for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
+  expect(!castableOptions(T.game, 0, wall).length, "automatic payment never sacrifices another permanent");
+});
+test("Crew needs the tapped creatures' total power; costs can't be paid with nothing", async T => {
+  const v = await T.put(0, 'Filigree Racer'); await T.resolve();
+  const z = await T.put(0, 'Wall of Omens'); // 0 power
+  const elf = await T.put(0, 'Llanowar Elves');
+  let asked = 0;
+  T.a.on('crew', req => { asked++; return asked === 1 ? [z.id] : [elf.id]; });
+  await T.activate(v, 0, a => /Crew/.test(a.parsed.p.SpellDescription || ''));
+  expect(asked === 2 && elf.tapped && !z.tapped && T.isCreature(v), `the 0-power Wall wasn't enough; asked again (${asked})`);
+});
+test('Counter costs come from several permanents when needed (Tekuthal)', async T => {
+  const t = await T.put(0, 'Tekuthal, Inquiry Dominus');
+  const a = await T.put(0, 'Llanowar Elves'), b = await T.put(0, 'Serra Angel');
+  await T.game.addCounters(a, 'P1P1', 2, null); await T.game.addCounters(b, 'P1P1', 1, null);
+  T.a.on('costRemoveCounter', req => [req.cards[0]]);
+  await T.activate(t, 0, x => /Indestructible/.test(x.parsed.p.CounterType || ''));
+  expect(!a.counters.P1P1 && !b.counters.P1P1 && t.counters.INDESTRUCTIBLE === 1, `three counters removed from two creatures (${a.counters.P1P1}, ${b.counters.P1P1})`);
+});
+test("Modal spells aren't offered without a usable mode; spree modes must be affordable together", async T => {
+  const vs = await T.put(0, 'Valorous Stance', 'hand'); T.mana(0);
+  expect(!castableOptions(T.game, 0, vs).length, 'no creatures: no mode can be chosen');
+  const angel = await T.put(1, 'Serra Angel');
+  expect(castableOptions(T.game, 0, vs).length > 0, 'with a creature it can be cast');
+  const raid = await T.put(0, 'Requisition Raid', 'hand');
+  await T.put(1, 'Sol Ring'); await T.put(1, 'Wall of Omens');
+  T.noMana(0); T.A.pool.W = 2;
+  let tries = 0;
+  T.a.on('modes', req => (++tries === 1 ? req.options.map(o => o.value) : [req.options[0].value]));
+  T.game.priority = 0;
+  const ok = await castSpell(T.game, 0, raid, {});
+  expect(ok && tries === 2, `asked again after an unaffordable combination (${ok}, ${tries})`);
+});
+test('Another target creature: not offered with only one creature (Fall of the Hammer)', async T => {
+  await T.put(0, 'Llanowar Elves');
+  const f = await T.put(0, 'Fall of the Hammer', 'hand'); T.mana(0);
+  expect(!castableOptions(T.game, 0, f).length, 'needs two different creatures');
+  await T.put(1, 'Serra Angel');
+  expect(castableOptions(T.game, 0, f).length > 0, 'two creatures: castable');
+});
+test('X is capped by the targets and cards it needs (Disorder in the Court, Skeletal Scrying)', async T => {
+  await T.put(1, 'Serra Angel');
+  const d = await T.put(0, 'Disorder in the Court', 'hand'); T.mana(0);
+  let max = null;
+  T.a.on('xValue', req => { max = req.max; return req.max; });
+  T.a.on('targets', req => req.cands.slice(0, req.max));
+  T.game.priority = 0;
+  const ok = await castSpell(T.game, 0, d, {});
+  expect(ok && max === 1, `X at most 1 with one creature (${max})`);
+  await T.resolve();
+  const s = await T.put(0, 'Skeletal Scrying', 'hand'); T.mana(0);
+  T.A.graveyard.splice(0); await T.put(0, 'Forest', 'graveyard'); await T.put(0, 'Forest', 'graveyard');
+  max = null; T.game.priority = 0;
+  await castSpell(T.game, 0, s, {});
+  expect(max === 2, `X at most the 2 cards in the graveyard (${max})`);
+});
+test("Targets of a trigger's later sub-ability can't be cancelled out of the trigger", async T => {
+  const ans = sanitizeAnswer({ type: 'targets', cands: ['c1', 'c2'], min: 1, max: 1, cancellable: false }, null);
+  expect(Array.isArray(ans) && ans.length === 1, 'a non-cancellable prompt answered with nothing picks the minimum');
+  expect(sanitizeAnswer({ type: 'cards', cards: [1, 2, 3], min: 2, max: 2 }, [9, 1, 1]).join() === '1,2', 'only offered, no duplicates, padded to the minimum');
+  expect(sanitizeAnswer({ type: 'number', min: 1, max: 4 }, 99) === 4 && sanitizeAnswer({ type: 'number', min: 1, max: 4, cancellable: true }, null) === null, 'numbers clamped; cancel kept where allowed');
+  expect(sanitizeAnswer({ type: 'option', options: [{ value: 'a' }, { value: 'b' }] }, 'zz') === 'a', 'unknown option falls back to the first');
+});
+test('Gift is only offered when the spell can still be cast with it (Sazacap\'s Brew)', async T => {
+  const b = await T.put(0, "Sazacap's Brew", 'hand'); await T.put(0, 'Forest', 'hand'); T.mana(0);
+  let asked = false;
+  T.a.on('gift', () => { asked = true; return -1; });
+  T.game.priority = 0;
+  const ok = await castSpell(T.game, 0, b, {});
+  expect(ok && !asked, `no creature to pump: no gift prompt (${ok}, ${asked})`);
+});
+
+test('Ninjutsu only with an unblocked attacker after blocks; commander ninjutsu from the command zone', async T => {
+  const ninja = await T.put(0, 'Ninja of the Deep Hours', 'hand');
+  const out = await T.put(0, 'Changeling Outcast');
+  T.mana(0);
+  const ninjutsuOffered = () => getActions(T.game, 0).some(a => a.type === 'activate' && a.api === 'Ninjutsu');
+  expect(!ninjutsuOffered(), 'not in the main phase');
+  T.combatWith([[out, 1]]);
+  T.game.step = 'declareBlockers'; T.game.priority = 0;
+  expect(ninjutsuOffered(), 'offered with an unblocked attacker');
+  const y = await T.put(0, "Yuriko, the Tiger's Shadow", 'command'); y.isCommander = true;
+  T.mana(0);
+  expect(getActions(T.game, 0).some(a => a.cardId === y.id && a.api === 'Ninjutsu'), 'Yuriko from the command zone');
+  T.a.on('ninjutsu', req => [out.id]);
+  const act = getActions(T.game, 0).find(a => a.cardId === y.id && a.api === 'Ninjutsu');
+  await T.game.performAction(0, act); await T.resolve();
+  expect(y.zone === 'battlefield' && out.zone === 'hand' && T.game.isAttacking(y), 'Yuriko is attacking, the Outcast returned');
+});
+
+test('Divided as you choose: the caster splits the damage (Fiery Justice)', async T => {
+  const angel = await T.put(1, 'Serra Angel'), elf = await T.put(1, 'Llanowar Elves');
+  T.a.on('targets', req => req.cands.filter(r => r === refOf(angel) || r === refOf(elf)));
+  const asked = [];
+  T.a.on('divide', req => { asked.push(req); return req.max; });
+  await T.cast('Fiery Justice');
+  expect(asked.length === 1 && asked[0].min === 1 && asked[0].max === 4, `one split prompt, 1-4 (${asked.map(r => r.min + '-' + r.max)})`);
+  expect(angel.zone === 'graveyard' && elf.zone === 'graveyard', `four to the 4/4 angel, one to the elf (${angel.zone}, ${elf.zone})`);
+});
+
+test('A cast copy of a card (Wondrous Crucible) stays a registered object on the stack and the battlefield', async T => {
+  await T.put(0, 'Wondrous Crucible');
+  await T.put(0, 'Serra Angel', 'library'); await T.put(0, 'Serra Angel', 'library');
+  T.a.on('castFree', () => true);
+  await T.game.runStep('end'); await T.resolve();
+  const tok = T.tokens(0).find(t => T.game.name(t) === 'Serra Angel');
+  expect(tok && T.game.cardById(tok.id) === tok, `the token copy is registered (${!!tok})`);
+});
+
+test('A filter source pays with the mana hybrid costs can spare (Plumeveil with Prophetic Prism)', async T => {
+  for (const n of ['Plains', 'Plains', 'Mountain']) await T.put(0, n);
+  await T.put(0, 'Prophetic Prism'); await T.resolve();
+  T.noMana(0); T.game.priority = 0;
+  const pv = await T.put(0, 'Plumeveil', 'hand');
+  const ok = await castSpell(T.game, 0, pv, {});
+  expect(ok && !T.game.logs.some(l => /payment failed/i.test(l.text)), `{W/U}x3 paid with Plains, Plains and the Prism fed by the Mountain (${ok})`);
+});
+test('Ancient Ziggurat and Unclaimed Territory pay for the creature spells they allow, from hand', async T => {
+  for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
+  const zig = await T.put(0, 'Ancient Ziggurat');
+  T.noMana(0); T.game.priority = 0;
+  const ring = await T.put(0, 'Sol Ring', 'hand');
+  expect(castableOptions(T.game, 0, ring).length === 0, 'Sol Ring is not castable with Ziggurat mana');
+  const elf = await T.put(0, 'Llanowar Elves', 'hand');
+  expect(castableOptions(T.game, 0, elf).length > 0, 'Llanowar Elves is castable with Ziggurat mana');
+  const ok = await castSpell(T.game, 0, elf, {}); await T.resolve();
+  expect(ok && zig.tapped && elf.zone === 'battlefield', `cast with the Ziggurat (${ok}, ${zig.tapped}, ${elf.zone})`);
+  zig.tapped = true;
+  const ut = await T.put(0, 'Unclaimed Territory'); ut.chosen = { type: 'Elf' };
+  T.noMana(0);
+  const elf2 = await T.put(0, 'Llanowar Elves', 'hand');
+  const bear = await T.put(0, 'Birds of Paradise', 'hand');
+  expect(castableOptions(T.game, 0, elf2).length > 0 && castableOptions(T.game, 0, bear).length === 0, 'an Elf is castable with Territory (Elf) mana, a Bird is not');
+});
+test("Jegantha's {W}{U}{B}{R}{G} pays colored symbols, never generic", async T => {
+  for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
+  const jeg = await T.put(0, 'Jegantha, the Wellspring');
+  T.noMana(0); T.game.priority = 0;
+  const gs = await T.put(0, 'Growth Spiral', 'hand');
+  const ste = await T.put(0, 'Sakura-Tribe Elder', 'hand');
+  expect(castableOptions(T.game, 0, gs).length > 0, '{G}{U} is castable from Jegantha');
+  expect(castableOptions(T.game, 0, ste).length === 0, '{1}{G} is not castable from Jegantha alone');
+  const w = await T.put(0, 'Wastes');
+  expect(castableOptions(T.game, 0, ste).length > 0, '{1}{G} is castable from Jegantha and Wastes');
+  const ok = await castSpell(T.game, 0, ste, {}); await T.resolve();
+  expect(ok && jeg.tapped && w.tapped && ste.zone === 'battlefield', `cast with both (${ok}, ${jeg.tapped}, ${w.tapped}, ${ste.zone})`);
+});
+test('Escalate: the modes prompt offers no more modes than the escalate cost can pay for', async T => {
+  for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
+  await T.put(1, 'Sol Ring'); await T.put(1, 'Phyrexian Arena'); await T.put(1, 'Llanowar Elves');
+  const forests = [await T.put(0, 'Forest'), await T.put(0, 'Forest')];
+  T.noMana(0); T.game.priority = 0;
+  const maxes = [];
+  T.a.on('modes', req => { maxes.push(req.max); return [req.options[0].value]; });
+  const cr = await T.put(0, 'Collective Resistance', 'hand');
+  let ok = await castSpell(T.game, 0, cr, {}); await T.resolve();
+  expect(ok && maxes[0] === 1, `two Forests: one mode (${ok}, max ${maxes})`);
+  for (const c of forests) c.tapped = false;
+  await T.put(0, 'Forest');
+  const cr2 = await T.put(0, 'Collective Resistance', 'hand');
+  ok = await castSpell(T.game, 0, cr2, {}); await T.resolve();
+  expect(ok && maxes[1] === 2, `three Forests: two modes (${ok}, max ${maxes})`);
+});
+test('Demonic Covenant: sacrificed when the two milled cards share all their card types, kept otherwise', async T => {
+  const dc = await T.put(0, 'Demonic Covenant');
+  await T.put(0, 'Sol Ring', 'library'); await T.put(0, 'Forest', 'library');
+  T.game.fire('Phase', { Phase: 'End of Turn', Player: 0 }); await T.resolve();
+  expect(dc.zone === 'battlefield', `a land and an artifact: kept (${dc.zone})`);
+  await T.put(0, 'Forest', 'library'); await T.put(0, 'Island', 'library');
+  T.game.fire('Phase', { Phase: 'End of Turn', Player: 0 }); await T.resolve();
+  expect(dc.zone === 'graveyard', `two lands: sacrificed (${dc.zone})`);
+});
+test("Uro is sacrificed when it enters unless it escaped (SacValid$ Self)", async T => {
+  const uro = await T.cast("Uro, Titan of Nature's Wrath");
+  expect(uro.zone === 'graveyard', `cast from hand: sacrificed (${uro.zone})`);
+});
+test("Jaya's emblem: an instant cast from the graveyard is exiled, one cast from hand isn't", async T => {
+  const jaya = await T.put(0, 'Jaya Ballard'); jaya.counters.LOYALTY = 8;
+  await T.activate(jaya, 0, a => a.parsed.p.Ultimate === 'True');
+  const b1 = await T.cast('Lightning Bolt', 0, { action: {} });
+  expect(b1.zone === 'graveyard', `cast from hand: graveyard (${b1.zone})`);
+  T.mana(0); T.game.priority = 0;
+  const opt = spellOptions(T.game, 0, b1).find(o => o.mayPlay);
+  expect(!!opt, 'castable from the graveyard with the emblem');
+  const ok = await castSpell(T.game, 0, b1, { optionKey: opt.key }); await T.resolve();
+  expect(ok && b1.zone === 'exile', `cast from graveyard: exiled (${ok}, ${b1.zone})`);
+});
+test('Serra Paragon: only the land played from the graveyard gets "exile it and gain 2 life"', async T => {
+  await T.put(0, 'Serra Paragon');
+  T.game.priority = 0; T.A.landsPlayed = 0;
+  const f1 = await T.put(0, 'Forest', 'hand');
+  await playLand(T.game, 0, f1, {}); await T.resolve();
+  const life = T.A.life;
+  await T.game.sacrifice(f1, null); await T.resolve();
+  expect(f1.zone === 'graveyard' && T.A.life === life, `played from hand, sacrificed: graveyard, no life (${f1.zone}, ${T.A.life - life})`);
+  T.A.landsPlayed = 0; T.game.turnState.mayPlayUsed = {};
+  const f2 = await T.put(0, 'Forest', 'graveyard');
+  const opt = spellOptions(T.game, 0, f2).find(o => o.land);
+  expect(!!opt, 'a land is playable from the graveyard');
+  await playLand(T.game, 0, f2, { optionKey: opt.key }); await T.resolve();
+  await T.game.sacrifice(f2, null); await T.resolve();
+  expect(f2.zone === 'exile' && T.A.life === life + 2, `played from graveyard, sacrificed: exiled, +2 life (${f2.zone}, ${T.A.life - life})`);
+});
+test("Court Hussar stays when {W} was spent to cast it, and is sacrificed when it wasn't", async T => {
+  for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
+  T.game.players[0].pool = { W: 1, U: 2, B: 0, R: 0, G: 0, C: 0 }; T.game.priority = 0;
+  const h1 = await T.put(0, 'Court Hussar', 'hand');
+  let ok = await castSpell(T.game, 0, h1, {}); await T.resolve();
+  expect(ok && h1.zone === 'battlefield', `{W} spent: stays (${ok}, ${h1.zone}, ${JSON.stringify(h1.manaSpent)})`);
+  const h2 = await T.put(0, 'Court Hussar', 'hand');
+  T.game.players[0].pool = { W: 0, U: 3, B: 0, R: 0, G: 0, C: 0 };
+  const opt = castableOptions(T.game, 0, h2).find(o => !o.altCost);
+  ok = !!opt && await castSpell(T.game, 0, h2, { optionKey: opt.key }); await T.resolve();
+  expect(h2.zone === 'graveyard', `no {W} spent: sacrificed (${ok}, ${h2.zone})`);
+});
+test('Coin flips: "whenever you win a coin flip" ignores lost flips', async T => {
+  const ok = await T.put(0, 'Okaun, Eye of Chaos');
+  T.game.fire('FlippedCoin', { Player: 0, Result: false }); await T.resolve();
+  const before = T.game.chars(ok).power;
+  T.game.fire('FlippedCoin', { Player: 0, Result: true }); await T.resolve();
+  expect(before === 3 && T.game.chars(ok).power === 6, `Okaun's power ${before} after a lost flip, ${T.game.chars(ok).power} after a won one`);
+});
+test('Coercive Impetus: the enchanted creature is goaded (attacks, and not the goader)', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  const aura = await T.put(1, 'Coercive Impetus'); aura.attachedTo = elf.id; T.game.touch();
+  expect(T.game.goaders(elf).includes(1), `goaded by B (${JSON.stringify(T.game.goaders(elf))})`);
+  T.game.combat = { attackers: [], blockers: new Map(), firstStrikeDone: new Set() };
+  T.a.on('attackers', () => []);
+  await combat.declareAttackers(T.game); await T.resolve();
+  const atk = T.game.combat.attackers.find(a => a.card === elf.id);
+  expect(atk && atk.defenderPlayer === 2, `the Elves attack C (${JSON.stringify(atk)})`);
+}, { players: 3 });
+test('Doubling: Unleash Fury doubles power', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  elf.counters.P1P1 = 2; T.game.touch();
+  T.a.on('targets', req => [req.cands.find(r => r === refOf(elf))].filter(Boolean));
+  await T.cast('Unleash Fury');
+  expect(T.game.chars(elf).power === 6, `3 power doubled to ${T.game.chars(elf).power}`);
+});
+test("Basandra: no spells during combat, but spells are fine outside it", async T => {
+  await T.put(1, 'Basandra, Battle Seraph');
+  T.mana(0); T.game.priority = 0;
+  const bolt = await T.put(0, 'Lightning Bolt', 'hand');
+  expect(castableOptions(T.game, 0, bolt).length > 0, 'Lightning Bolt castable in the main phase');
+  T.game.step = 'declareAttackers';
+  expect(castableOptions(T.game, 0, bolt).length === 0, 'not castable during combat');
+});
+test("Notion Thief: an opponent's draw-step draw isn't stolen, their other draws are", async T => {
+  await T.put(0, 'Notion Thief');
+  T.game.activePlayer = 1; T.game.step = 'draw';
+  const a0 = T.A.hand.length, b0 = T.B.hand.length;
+  T.game.turnDrawFor = 1; await T.game.drawCards(T.B, 1, null); T.game.turnDrawFor = null; await T.resolve();
+  expect(T.B.hand.length === b0 + 1 && T.A.hand.length === a0, `draw-step draw: B ${T.B.hand.length - b0}, A ${T.A.hand.length - a0}`);
+  await T.game.drawCards(T.B, 1, null); await T.resolve();
+  expect(T.B.hand.length === b0 + 1 && T.A.hand.length === a0 + 1, `second draw: B ${T.B.hand.length - b0}, A ${T.A.hand.length - a0}`);
+});
+test('Faramir: "if you\'re the monarch" end-step tokens only for the monarch', async T => {
+  await T.put(0, 'Faramir, Steward of Gondor');
+  T.game.monarch = 1;
+  const n0 = T.tokens(0).length;
+  T.game.fire('Phase', { Phase: 'End of Turn', Player: 0 }); await T.resolve();
+  expect(T.tokens(0).length === n0, `not the monarch: no tokens (${T.tokens(0).length - n0})`);
+  T.game.monarch = 0;
+  T.game.fire('Phase', { Phase: 'End of Turn', Player: 0 }); await T.resolve();
+  expect(T.tokens(0).length === n0 + 2, `the monarch: two tokens (${T.tokens(0).length - n0})`);
+});
+test('Ninja Pizza: "at the beginning of your second main phase" triggers in main 2 only', async T => {
+  await T.put(0, 'Ninja Pizza');
+  const n0 = T.tokens(0).length;
+  T.game.fire('Phase', { Phase: 'Main1', Player: 0 }); await T.resolve();
+  expect(T.tokens(0).length === n0, `main 1: nothing (${T.tokens(0).length - n0})`);
+  T.game.fire('Phase', { Phase: 'Main2', Player: 0 }); await T.resolve();
+  expect(T.tokens(0).length === n0 + 1, `main 2: a Food (${T.tokens(0).length - n0})`);
+});
+test('Haldan: an exiled red card with fetch counters is cast with blue mana ("mana of any color")', async T => {
+  for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
+  const haldan = await T.put(0, 'Haldan, Avid Arcanist');
+  const isl = await T.put(0, 'Island');
+  const bolt = await T.put(0, 'Lightning Bolt', 'exile'); bolt.exiledWith = haldan.id; bolt.counters.FETCH = 1;
+  T.noMana(0); T.game.priority = 0; T.game.touch();
+  const opts = castableOptions(T.game, 0, bolt);
+  expect(opts.length > 0, 'castable from exile with an Island');
+  const ok = await castSpell(T.game, 0, bolt, { optionKey: opts[0].key }); await T.resolve();
+  expect(ok && isl.tapped && bolt.zone !== 'exile', `cast (${ok}, ${isl.tapped}, ${bolt.zone})`);
+});
+test('Ride the Avalanche: "when you cast your next spell this turn" triggers once', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  T.a.on('targets', req => req.cands.includes(refOf(elf)) ? [refOf(elf)] : req.cands.slice(0, req.min));
+  await T.cast('Ride the Avalanche');
+  await T.cast('Sol Ring');
+  const after1 = elf.counters.P1P1 || 0;
+  await T.cast('Mind Stone');
+  expect(after1 === 1 && (elf.counters.P1P1 || 0) === 1, `counters after the next spell ${after1}, after another ${elf.counters.P1P1 || 0}`);
+});
+test("Nexos: basic lands' {C}{C} pays for {X} costs only", async T => {
+  for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
+  await T.put(0, 'Nexos');
+  const isl = [await T.put(0, 'Island'), await T.put(0, 'Island')];
+  T.noMana(0); T.game.priority = 0;
+  const worn = await T.put(0, 'Worn Powerstone', 'hand');
+  expect(castableOptions(T.game, 0, worn).length === 0, 'a {3} spell without X is not castable from two Islands');
+  const hb = await T.put(0, 'Hangarback Walker', 'hand');
+  let max = null;
+  T.a.on('xValue', req => { max = req.max; return 2; });
+  const ok = await castSpell(T.game, 0, hb, {}); await T.resolve();
+  expect(ok && max === 2 && hb.zone === 'battlefield' && (hb.counters.P1P1 || 0) === 2 && isl.every(c => c.tapped), `Hangarback Walker for X=2 off two Islands (${ok}, max ${max}, ${hb.zone}, ${JSON.stringify(hb.counters)})`);
+});
+test("Elementalist's Palette: its charge-counter mana pays for an {X} ability", async T => {
+  for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
+  const pal = await T.put(0, "Elementalist's Palette"); pal.counters.CHARGE = 3;
+  const hp = await T.put(0, 'Helix Pinnacle');
+  T.noMana(0); T.game.priority = 0;
+  const abil = activatedAbilities(T.game, 0, hp)[0];
+  let max = null;
+  T.a.on('xValue', req => { max = req.max; return req.max; });
+  const ok = await activateAbility(T.game, 0, hp, abil.key, { ignoreTiming: true }); await T.resolve();
+  expect(ok && max === 3 && (hp.counters.TOWER || 0) === 3 && pal.tapped, `X up to 3 from the Palette (${ok}, max ${max}, ${JSON.stringify(hp.counters)})`);
+});
+test('Jarad: a Swamp Forest pays for the Swamp or the Forest, not both', async T => {
+  const jarad = await T.put(0, 'Jarad, Golgari Lich Lord', 'graveyard');
+  const tomb = await T.put(0, 'Woodland Chasm');
+  T.game.priority = 0;
+  const offered = () => getActions(T.game, 0).some(a => a.cardId === jarad.id && a.type === 'activate');
+  expect(!offered(), 'not offered with only a Swamp Forest');
+  const sw = await T.put(0, 'Swamp');
+  expect(offered(), 'offered with a Swamp and a Swamp Forest');
+  const asked = [];
+  T.a.on('costSac', req => { asked.push(req.cards.slice()); return req.cards.slice(0, 1); });
+  const act = getActions(T.game, 0).find(a => a.cardId === jarad.id && a.type === 'activate');
+  const ok = await activateAbility(T.game, 0, jarad, act.abilityKey); await T.resolve();
+  expect(ok && jarad.zone === 'hand' && sw.zone === 'graveyard' && tomb.zone === 'graveyard', `returned with both lands sacrificed (${ok}, ${jarad.zone}, asked ${JSON.stringify(asked)})`);
 });
 
 process.exit(await run(tests) ? 1 : 0);

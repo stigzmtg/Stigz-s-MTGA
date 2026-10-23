@@ -412,13 +412,13 @@ export const E = {
     }
     // a choice between counter kinds ("a +1/+1, first strike, or vigilance counter")
     if (p.CounterType && p.CounterType.includes(',') && !p.CounterTypes) {
-      const opts = p.CounterType.split(',').map(normalizeCounter);
+      const opts = [...new Set(p.CounterType.split(',').map(normalizeCounter))];
       type = await game.ask(sa.controller, { type: 'option', prompt: 'Choose a counter', options: opts.map(o => ({ label: counterLabel(o), value: o })), purpose: 'counterType', sa });
       if (!opts.includes(type)) type = opts[0];
     }
     if (p.CounterType === 'ExistingCounter' || p.CounterTypes) {
-      const opts = p.CounterTypes ? p.CounterTypes.split(',').map(normalizeCounter) : Object.keys(list[0] && list[0].counters || {}).filter(k => list[0].counters[k] > 0);
-      if (opts.length) type = opts.length === 1 ? opts[0] : await game.ask(sa.controller, { type: 'option', prompt: 'Choose a counter type', options: opts.map(o => ({ label: o, value: o })), purpose: 'counterType', sa });
+      const opts = [...new Set(p.CounterTypes ? p.CounterTypes.split(',').map(normalizeCounter) : Object.keys(list[0] && list[0].counters || {}).filter(k => list[0].counters[k] > 0))];
+      if (opts.length) type = opts.length === 1 ? opts[0] : await game.ask(sa.controller, { type: 'option', prompt: 'Choose a counter type', options: opts.map(o => ({ label: counterLabel(o), value: o })), purpose: 'counterType', sa });
     }
     const n = num(game, sa, 'CounterNum', 1);
     if (p.Monstrosity) {
@@ -495,8 +495,10 @@ export const E = {
     const p = sa.p;
     let list = objs(game, sa, 'Self');
     if (sa.etbCard && (!p.Defined || p.Defined === 'Self') && !hasTgtSpec(sa)) list = [sa.etbCard];
-    const a = p.NumAtt != null ? calc(game, p.NumAtt, sa) : 0;
-    const d = p.NumDef != null ? calc(game, p.NumDef, sa) : 0;
+    // "double its power and toughness" (Okaun, Unnatural Growth): +X/+X where X is what it has now
+    const dblA = /^\+?Double$/.test(p.NumAtt || ''), dblD = /^\+?Double$/.test(p.NumDef || '');
+    const a0 = p.NumAtt != null && !dblA ? calc(game, p.NumAtt, sa) : 0;
+    const d0 = p.NumDef != null && !dblD ? calc(game, p.NumDef, sa) : 0;
     let kws = kwList(p.KW);
     if (p.KWChoice || p.Choices && p.KWChoice !== undefined) { /* ignore */ }
     // "Protection:Player.PlayerUID_ChosenPlayerUID:ChosenPlayerName" with DefinedKW$ <player>: fill in that player
@@ -513,6 +515,8 @@ export const E = {
       if (o.zone !== 'battlefield' && !o.lki) continue;
       const c = o.lki ? o.card : o;
       if (!c || c.zone !== 'battlefield') continue;
+      const cch = game.chars(c);
+      const a = dblA ? cch.power : a0, d = dblD ? cch.toughness : d0;
       const rec = { power: a, toughness: d, keywords: kws.filter(k => k !== 'HIDDEN'), removeKeywords: p.KWRemove ? kwList(p.KWRemove) : null };
       applyDuration(game, sa, c, rec);
       c.temp.push(rec);
@@ -643,7 +647,7 @@ export const E = {
       for (const c of cards) if (c.zone === 'battlefield') { if (p.RememberSacrificed === 'True') remember(sa, [game.makeLKI(c)]); await game.sacrifice(c, sa); }
       return;
     }
-    const valid = (p.SacValid || 'Card.Self').replace(/CARDNAME/g, 'Card.Self');
+    const valid = (p.SacValid || 'Card.Self').replace(/CARDNAME/g, 'Card.Self').replace(/^Self$/, 'Card.Self'); // "SacValid$ Self" (Uro)
     for (const pl of playersOf(def.length ? def : [game.players[sa.controller]])) {
       const pool = game.battlefield.filter(c => c.controller === pl.id && matchValid(game, c, valid, { ...ctx, you: pl.id }) && !game.cantSacrifice(c, sa));
       const n = p.Amount === 'All' ? pool.length : num(game, sa, 'Amount', 1);
@@ -1708,7 +1712,7 @@ export const E = {
 
   async Ninjutsu(game, sa) {
     const card = sa.host;
-    if (!game.combat || card.zone !== 'hand') return;
+    if (!game.combat || (card.zone !== 'hand' && card.zone !== 'command')) return;
     const unblocked = game.combat.attackers.filter(a => !a.blocked).map(a => ({ a, c: game.cardById(a.card) })).filter(x => x.c && x.c.controller === sa.controller);
     if (!unblocked.length) return;
     const pick = await chooseCards(game, sa.controller, unblocked.map(x => x.c), 1, 1, 'Ninjutsu: return an unblocked attacker', sa, 'ninjutsu');
@@ -1717,7 +1721,7 @@ export const E = {
     const def = rec.defenderPlayer;
     await game.moveCard(pick[0], 'hand');
     const n = await game.moveCard(card, 'battlefield', { controller: sa.controller, tapped: true });
-    if (n) game.combat.attackers.push({ card: n.id, defenderPlayer: def, defenderCard: null, blockers: [], blocked: false });
+    if (n) game.combat.attackers.push({ card: n.id, defenderPlayer: def, defenderCard: rec.defenderCard && game.cardById(rec.defenderCard) && game.cardById(rec.defenderCard).zone === 'battlefield' ? rec.defenderCard : null, blockers: [], blocked: false });
   },
 
   async AlterAttribute(game, sa) {
@@ -1855,8 +1859,8 @@ export const E = {
     for (const c of cardsOf(objs(game, sa, 'Self'))) {
       const types = Object.keys(c.counters).filter(k => c.counters[k] > 0);
       if (!types.length) continue;
-      const t = types.length === 1 ? types[0] : await game.ask(sa.controller, { type: 'option', prompt: 'Choose a counter type', options: types.map(x => ({ label: x, value: x })), purpose: 'counterType', sa });
-      const add = await game.ask(sa.controller, { type: 'option', prompt: `Add or remove a ${t} counter on ${game.name(c)}?`, options: [{ label: 'Add', value: 'add' }, { label: 'Remove', value: 'remove' }], purpose: 'addOrRemove', sa, cardId: c.id });
+      const t = types.length === 1 ? types[0] : await game.ask(sa.controller, { type: 'option', prompt: 'Choose a counter type', options: types.map(x => ({ label: counterLabel(x), value: x })), purpose: 'counterType', sa });
+      const add = await game.ask(sa.controller, { type: 'option', prompt: `Add or remove a ${counterName(t)} counter on ${game.name(c)}?`, options: [{ label: 'Add', value: 'add' }, { label: 'Remove', value: 'remove' }], purpose: 'addOrRemove', sa, cardId: c.id });
       if (add === 'remove') await game.removeCounters(c, t, num(game, sa, 'CounterNum', 1)); else await game.addCounters(c, t, num(game, sa, 'CounterNum', 1), sa, { anyZone: true });
     }
   },

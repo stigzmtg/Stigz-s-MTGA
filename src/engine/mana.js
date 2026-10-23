@@ -160,7 +160,8 @@ function payNonPhyrexian(cost, p, life) {
 
 /*
  * Plan which mana sources to activate to pay a cost.
- * sources: [{ key, units: [[colors...], ...], penalty, extraCost: cost|null, sig }]
+ * sources: [{ key, units: [[colors...], ...], penalty, extraCost: cost|null, sig, noGeneric }]
+ *   noGeneric: its mana can't pay generic costs (Jegantha)
  *   units: each produced mana unit's acceptable colors (e.g. [['G']], [['C'],['C']], [['W','U','B','R','G']])
  * Returns { activations: [{ key, colors: [...] }], life } or null.
  */
@@ -211,6 +212,7 @@ export function planPayment(cost, pool, sources, { lifeAvailable = 0, maxNodes =
       for (let li = 0; li < leftovers.length; li++) {
         const u = leftovers[li];
         if (u.taken || u.srcIdx === notFrom) continue;
+        if (req === 'any' && srcs[u.srcIdx].noGeneric) continue; // Jegantha: "can't be spent to pay generic mana costs"
         if (notFrom >= 0 && srcs[u.srcIdx].extraCost) continue; // filter costs are paid by non-filter mana
         const color = pickColor(u.colors, req);
         if (!color) continue;
@@ -227,6 +229,7 @@ export function planPayment(cost, pool, sources, { lifeAvailable = 0, maxNodes =
         if (used[si]) continue;
         const s = srcs[si];
         if (notFrom >= 0 && s.extraCost) continue;
+        if (req === 'any' && s.noGeneric) continue;
         if (s.excl && exclUsed.has(s.excl)) continue;
         const sig = s.sig || (s.units.map(u => u.join('')).join('|') + ':' + s.penalty + (s.extraCost ? 'x' : ''));
         if (triedSig.has(sig)) continue;

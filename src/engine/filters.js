@@ -66,6 +66,7 @@ function matchOne(game, obj, spec, ctx) {
   if (!spec) return false;
   let neg = false;
   if (spec.startsWith('!')) { neg = true; spec = spec.slice(1); }
+  if (spec === 'Self') spec = 'Card.Self'; // "ValidCards$ Self"
   const dot = spec.indexOf('.');
   const typePart = dot < 0 ? spec : spec.slice(0, dot);
   const props = dot < 0 ? [] : splitTop(spec.slice(dot + 1), '+');
@@ -272,7 +273,7 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'AttackingPlayerCtrl': return ctrl === game.activePlayer;
     case 'ActivePlayerCtrl': return ctrl === game.activePlayer;
     case 'NonActivePlayerCtrl': return ctrl !== game.activePlayer;
-    case 'IsGoaded': case 'goaded': return (card.goadedBy || []).length > 0;
+    case 'IsGoaded': case 'goaded': return card.lki ? (card.goadedBy || []).length > 0 || ((card.chars && card.chars.goadedBy) || []).length > 0 : game.goaders(card).length > 0;
     case 'kicked': case 'Kicked': return card.kicked > 0;
     case 'Transformed': return !!card.transformed;
     case 'Monstrous': return !!card.monstrous;
@@ -396,6 +397,12 @@ function cardProp(game, card, ch, prop, ctx) {
       : m[2] ? resolveDefined(game, m[2], ctx).filter(x => !x.isPlayer) : [host];
     return others.some(o => o && shares(game, ch, charsOf(game, o), m[1]));
   }
+  // "two cards that share all their card types" (Demonic Covenant): same set of card types as another one
+  if ((m = prop.match(/^sharesAllCardTypesWith(Other)? ?(.*)$/))) {
+    const key = c => [...c.types].sort().join(',');
+    const others = (m[2] ? resolveDefined(game, m[2], ctx) : [host]).filter(o => o && !o.isPlayer && o.id !== card.id);
+    return others.some(o => key(charsOf(game, o)) === key(ch));
+  }
   if ((m = prop.match(/^in(?:Real)?Zone ?(\w+)$/))) return !card.lki && card.zone === (zoneMap[m[1]] || m[1].toLowerCase());
   if ((m = prop.match(/^ThisTurnEnteredFrom_(\w+)$/))) return card.movedTurn === game.turnNumber && card.enteredFrom === (zoneMap[m[1]] || m[1].toLowerCase());
   if (prop === 'turnedFaceUpThisTurn') return card.turnedFaceUpTurn === game.turnNumber;
@@ -410,6 +417,10 @@ function cardProp(game, card, ch, prop, ctx) {
   if ((m = prop.match(/^Devotion/))) return false;
   if ((m = prop.match(/^namedCard$/))) return !!host && host.chosen && host.chosen.name === ch.name;
   if ((m = prop.match(/^ExiledWith(Source|Effect)?$/))) return !!host && card.exiledWith === host.id;
+  // exiled by an effect of a permanent / spell you controlled (Haldan, Avid Arcanist)
+  if (prop === 'ExiledByYou') { const h = card.zone === 'exile' && card.exiledWith != null ? game.cardById(card.exiledWith) : null; return !!h && (h.zone === 'battlefield' ? h.controller : h.owner) === you; }
+  // "Card.CastSa Spell.MayPlaySource": cast thanks to this source's may-play permission (Jaya's emblem, Edgar)
+  if (prop === 'CastSa Spell.MayPlaySource') return card.castMayPlayHost != null && (!host || card.castMayPlayHost === host.id);
   // "Card.TriggeredNewCard", "Card.TriggeredSources": the object(s) the trigger refers to
   if (/^Triggered\w+$/.test(prop)) return resolveDefined(game, prop, ctx).some(x => x && !x.isPlayer && x.id === card.id);
   if ((m = prop.match(/^(\w+)Ctrl$/))) {
@@ -461,6 +472,8 @@ function cardProp(game, card, ch, prop, ctx) {
     return !!game.combat && !!a && game.combat.blockers.get(card.id) === a.id;
   }
   if (prop === 'otherAbility') { const r = ctx.sa && (ctx.sa.root ? ctx.sa.root() : ctx.sa); return !(r && r.stackItem === card); }
+  // two-word creature types ("Time Lord")
+  if (/^[A-Z][a-zA-Z'-]* [A-Z][a-zA-Z'-]*$/.test(prop)) return hasType(game, ch, prop, card);
   unknownProps.add(prop);
   return false;
 }
@@ -993,6 +1006,12 @@ function countExpr(game, rest, ctx, depth) {
   }
   if ((m = rest.match(/^CardCounters\.(\w+)$/))) return host ? ((host.counters || {})[m[1]] || 0) : 0;
   if ((m = rest.match(/^Initiative\.(\d+)\.(\d+)$/))) return game.initiative === youId ? +m[1] : +m[2];
+  // Urza's Mine / Power-Plant / Tower: more mana with the full set
+  if ((m = rest.match(/^UrzaLands\.(\d+)\.(\d+)$/))) {
+    const mine = game.battlefield.filter(c => c.controller === youId && game.chars(c).subtypes.has("Urza's"));
+    const has = t => mine.some(c => game.chars(c).subtypes.has(t));
+    return has('Mine') && has('Power-Plant') && has('Tower') ? +m[1] : +m[2];
+  }
   if ((m = rest.match(/^Kicked\.(\d+)\.(\d+)$/))) return host && host.kicked ? +m[1] : +m[2];
   // "<flag>.A.B": A if the flag holds for this spell (or the permanent it became), else B (values may be SVars)
   if ((m = rest.match(/^(PromisedGift|OptionalGenericCostPaid|Emerged|Presence_(\w+))\.([-\w]+)\.([-\w]+)$/))) {
@@ -1174,6 +1193,8 @@ export function checkPresence(game, p, ctx) {
   }
   if (p.PlayerTurn === 'True' && game.activePlayer !== ctx.you) return false;
   if (p.OpponentTurn === 'True' && !game.isOpponent(game.activePlayer, ctx.you)) return false;
+  // "if you're the monarch" (Faramir, Champions of Minas Tirith)
+  if (p.CheckDefinedPlayer && !resolveDefined(game, p.CheckDefinedPlayer, ctx).length) return false;
   if (p.NotPlayerTurn === 'True' && game.activePlayer === ctx.you) return false;
   if (p.Condition) {
     switch (p.Condition) {
