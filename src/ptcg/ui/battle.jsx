@@ -1,6 +1,7 @@
 // The Pokémon battle screen: both sides of the table (Prizes, Bench, Active, deck and discard), the hand, an action
 // bar for the turn (attacks, Retreat, Abilities, End turn), dialogs for every choice an effect asks for, and
 // short animations for attacks, damage, coin flips and Knock Outs.
+import { TRAINERS } from '../cards.js';
 import { Energy, Cost, TYPE_COLORS } from './energy.jsx';
 import { pkImage, subscribePk, pkImagesVersion } from './images.js';
 import { Modal } from '../../ui/dialogs.jsx';
@@ -296,6 +297,8 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
         : d.cat === 'P' && d.stage !== 'Basic' ? `Needs a ${d.from} that has been in play since before this turn.`
         : d.cat === 'P' ? 'Your Bench is full.'
         : game.hasEffect('itemLock', { pid: me }) && d.trainer === 'Item' ? "You can't play Item cards this turn."
+        : TRAINERS[d.name] && TRAINERS[d.name].needsDeck && !P.deck.length ? 'Your deck is empty, so it would do nothing.'
+        : d.cat === 'T' ? 'It would do nothing right now.'
         : "You can't play that right now.";
       return setFlash(why);
     }
