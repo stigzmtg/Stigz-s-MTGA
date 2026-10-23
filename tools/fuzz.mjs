@@ -1,8 +1,13 @@
 // Chaos-player fuzzer for the Commander engine: some seats answer every prompt with uniformly random
 // legal choices (random actions, targets, modes, X, cancels, attacks and blocks), the rest are the AI.
 // Every prompt, every offered action and every state is checked; failures are grouped and printed.
+// Checks: prompt shapes (min/max vs options), the legality oracle for each offered action, offered actions
+// that then do nothing, cancels that leave changes, costs not paid, card conservation / zones, illegal
+// states and SBAs, combat legality, and the "missing" oracle (plain lands, spells and {T} abilities that
+// must be offered). Exit code 1 when anything failed.
 // Usage: node tools/fuzz.mjs [games=50] [players=2|4|mix] [seed=1] [--chaos=N] [--turns=25] [--timeout=60000]
-//        [--out=report.json] [--stop] [--verbose] [--quiet]
+//        [--pass=0.3] [--concede=0.0015] [--asks=60000] [--out=report.json] [--stop] [--verbose] [--diag]
+//        [--mana] [--quiet]
 import fs from 'node:fs';
 import { CardDB } from '../src/engine/cards.js';
 import { Game } from '../src/engine/game.js';
