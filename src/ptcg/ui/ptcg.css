@@ -253,3 +253,38 @@
   .pk-prompt { flex-wrap: wrap; }
   .pk-prompt .acts { justify-content: flex-start; }
 }
+
+/* ================================================================ Pokémon motion */
+/* an attack lands: a burst in the attacker's type color */
+.pk-burst { position: absolute; left: 50%; top: 42%; z-index: 3; width: 115%; aspect-ratio: 1; border-radius: 50%; pointer-events: none; transform: translate(-50%, -50%) scale(0.2); background: radial-gradient(circle, rgba(255, 255, 255, 0.8) 0 5%, var(--burst) 16%, color-mix(in srgb, var(--burst) 45%, transparent) 36%, transparent 62%); mix-blend-mode: screen; animation: pkburst 0.62s ease-out forwards; }
+.pk-burst::before, .pk-burst::after { content: ""; position: absolute; inset: 8%; border-radius: 50%; border: 3px solid var(--burst); opacity: 0.9; animation: pkring 0.62s ease-out forwards; }
+.pk-burst::after { inset: 22%; border-width: 2px; border-color: #fff; animation-delay: 0.08s; }
+.pk-burst.big { width: 165%; animation-duration: 0.8s; }
+@keyframes pkburst { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.2); } 18% { opacity: 0.85; transform: translate(-50%, -50%) scale(0.95); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.25); } }
+@keyframes pkring { 0% { transform: scale(0.3); opacity: 1; } 100% { transform: scale(1.35); opacity: 0; } }
+.pk-float.heal { color: #e6ffd9; text-shadow: 0 2px 0 #1d5b22, 0 0 12px rgba(90, 220, 90, 0.85); }
+/* evolution: the card flares white and settles */
+.pk-mon.evolving .pk-card { animation: pkevolve 0.95s ease-out; }
+.pk-mon.evolving::after { content: ""; position: absolute; left: 50%; top: 40%; width: 150%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none; z-index: 3; background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0 12%, rgba(255, 245, 200, 0.6) 30%, transparent 65%); animation: pkevolveflash 0.95s ease-out forwards; }
+@keyframes pkevolve { 0% { filter: brightness(3) saturate(0); transform: scale(1.08); } 45% { filter: brightness(1.8) saturate(0.6); transform: scale(1.04); } 100% { filter: none; transform: none; } }
+@keyframes pkevolveflash { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.3); } 25% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.3); } }
+/* Energy and conditions arrive with a pop */
+.pk-attached .pk-en, .pk-attached .pk-tool { animation: enpop 0.4s cubic-bezier(0.3, 1.6, 0.5, 1); }
+@keyframes enpop { 0% { transform: scale(0.2); opacity: 0; } 100% { transform: none; opacity: 1; } }
+.pk-conds .c { animation: condpop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1); }
+@keyframes condpop { 0% { transform: scale(0.3) rotate(-12deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+.pk-dmg { animation: badgepop 0.36s cubic-bezier(0.3, 1.5, 0.5, 1); }
+.pk-hp i { transition: width 0.7s cubic-bezier(0.3, 0.8, 0.3, 1), background 0.4s; }
+/* the coin: a real flip in depth */
+.pk-coinbox { perspective: 600px; }
+.pk-coin .face { animation: pkflip 0.9s cubic-bezier(0.25, 0.7, 0.3, 1); transform-style: preserve-3d; }
+@keyframes pkflip { 0% { transform: translateY(0) rotateX(0) scale(0.6); } 45% { transform: translateY(-34px) rotateX(900deg) scale(1.15); } 80% { transform: translateY(0) rotateX(1800deg) scale(1); } 90% { transform: translateY(-5px) rotateX(1800deg); } 100% { transform: translateY(0) rotateX(1800deg); } }
+.pk-coin .lbl { animation: pkcoinlbl 0.9s ease-out both; }
+@keyframes pkcoinlbl { 0%, 70% { opacity: 0; transform: translateX(-6px); } 100% { opacity: 1; transform: none; } }
+/* banners: in with a light sweeping across */
+.pk-banner { overflow: hidden; }
+.pk-banner::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 35%, rgba(255, 240, 200, 0.25) 50%, transparent 65%); background-size: 250% 100%; animation: sweep 1.1s ease-out 0.1s both; pointer-events: none; }
+.pk-banner.ko { animation: banner 1.5s ease-out forwards, kojolt 0.4s ease-out; }
+@keyframes kojolt { 0% { transform: translate(-50%, -50%) scale(1.4); } 100% { transform: translate(-50%, -50%) scale(1); } }
+.pk-handslot.playable .pk-card { animation: pkhandglow 1.6s ease-in-out infinite; }
+@keyframes pkhandglow { 50% { box-shadow: 0 0 0 2px var(--brass-hi), 0 0 22px rgba(243, 214, 143, 0.85); } }

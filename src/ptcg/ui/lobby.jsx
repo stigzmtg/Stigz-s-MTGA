@@ -10,11 +10,11 @@ import { PkFriendsPanel } from './friends.jsx';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
-function DeckTile({ deck, cards, selected, onClick }) {
+function DeckTile({ deck, cards, selected, onClick, i = 0 }) {
   const img = pkImage(deck.featured);
   const f = cards[deck.featured];
   return (
-    <button className={`pk-deck ${selected ? 'sel' : ''}`} onClick={onClick} aria-pressed={selected}>
+    <button className={`pk-deck ${selected ? 'sel' : ''}`} onClick={onClick} aria-pressed={selected} style={{ '--i': Math.min(i, 30) }}>
       <span className="art" style={{ '--t': `var(--pk-${(f && f.type || 'Colorless').toLowerCase()})` }}>
         {img ? <img src={img} alt="" draggable="false" /> : <span className="ph">{deck.name}</span>}
       </span>
@@ -122,7 +122,7 @@ export function PkLobby({ data, online, onStart, onHome, onHelp }) {
               </div>
             </div>
             <div className="pk-decks">
-              {shown.map(d => <DeckTile key={d.id} deck={d} cards={data.cards} selected={d.id === mine} onClick={() => setMine(d.id)} />)}
+              {shown.map((d, i) => <DeckTile key={d.id} i={i} deck={d} cards={data.cards} selected={d.id === mine} onClick={() => setMine(d.id)} />)}
               {!shown.length ? <div className="empty">No deck matches.</div> : null}
             </div>
           </section>

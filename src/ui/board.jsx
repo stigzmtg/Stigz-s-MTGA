@@ -5,6 +5,7 @@ import { imageOf } from './images.js';
 import { EmoteBubble } from './emotes.jsx';
 import { AnimalAvatar } from './avatar.jsx';
 import { cssPx, uiScale } from './common.js';
+import { shake } from './motion.js';
 
 const { useState, useEffect, useLayoutEffect, useRef } = React;
 
@@ -59,7 +60,23 @@ export function groupBattlefield(game, pid, groupSame, groupLands = groupSame) {
 }
 
 // ------------------------------------------------------------------ one permanent (with attachments tucked under)
-export function CardSlot({ card, ctx, size = 'mini', count = 1, cards = null }) {
+// a number that floats off a card when its damage or +1/+1 counters go up
+function useRises(value) {
+  const prev = useRef(value);
+  const [rises, setRises] = useState([]);
+  useEffect(() => {
+    const d = value - prev.current;
+    prev.current = value;
+    if (d <= 0) return;
+    const id = Math.random();
+    setRises(r => [...r.slice(-2), { id, d }]);
+    const t = setTimeout(() => setRises(r => r.filter(x => x.id !== id)), 1300);
+    return () => clearTimeout(t);
+  }, [value]);
+  return rises;
+}
+
+export function CardSlot({ card, ctx, size = 'mini', count = 1, ids = null }) {
   const { game } = ctx;
   const v = viewOf(game, card);
   const onField = card.zone === 'battlefield';
@@ -95,11 +112,15 @@ export function CardSlot({ card, ctx, size = 'mini', count = 1, cards = null }) 
     if ((card.damage || 0) > before) wrapCls.push('hit');
     dm.set(card.id, card.damage || 0);
   }
+  const hurt = useRises(onField ? card.damage || 0 : 0);
+  const grow = useRises(onField ? (card.counters && card.counters.P1P1) || 0 : 0);
   return (
-    <div className={`cardwrap ${v.tapped && onField ? 'tapped' : ''} ${atts.length ? 'has-att' : ''} ${count > 1 ? 'stacked' : ''} ${wrapCls.join(' ')}`} data-ref={ref} style={atts.length ? { '--atts': atts.length } : undefined}>
+    <div className={`cardwrap ${v.tapped && onField ? 'tapped' : ''} ${atts.length ? 'has-att' : ''} ${count > 1 ? 'stacked' : ''} ${wrapCls.join(' ')}`} data-ref={ref} data-fly={(ids || [card.id]).join(' ')} style={atts.length ? { '--atts': atts.length } : undefined}>
       {count > 1 ? <div className="stackshadow" aria-hidden="true" /> : null}
+      {hurt.map(f => <span key={f.id} className="rise hurt" aria-hidden="true">−{f.d}</span>)}
+      {grow.map(f => <span key={f.id} className="rise grow" aria-hidden="true">+{f.d}/+{f.d}</span>)}
       {atts.map((a, i) => (
-        <div key={a.id} className="under" data-ref={'c' + a.id} style={{ '--i': i + 1 }}>
+        <div key={a.id} className="under" data-ref={'c' + a.id} data-fly={a.id} style={{ '--i': i + 1 }}>
           <CardFace v={viewOf(game, a)} cls={ctx.targetable && ctx.targetable.has('c' + a.id) ? (ctx.chosen && ctx.chosen.includes('c' + a.id) ? 'selected' : 'targetable') : (ctx.playable && ctx.playable.has(a.id) ? 'playable' : '')}
             onClick={e => ctx.onCardClick(a, e)} onContextMenu={e => ctx.onCardMenu(a, e)} onEnter={() => ctx.onHover(a.id)} />
         </div>
@@ -126,18 +147,21 @@ function Avatar({ game, p, av }) {
 
 function LifeTotal({ p, onClick }) {
   const prev = useRef(p.life);
+  const box = useRef(null);
   const [floats, setFloats] = useState([]);
   useEffect(() => {
     const d = p.life - prev.current;
     prev.current = p.life;
     if (!d) return;
+    if (d < 0 && box.current) { shake(box.current, Math.min(1.6, 0.6 + -d / 8)); box.current.animate([{ boxShadow: '0 0 0 0 rgba(255, 80, 60, 0)' }, { boxShadow: '0 0 0 3px rgba(255, 90, 70, 0.75), 0 0 22px rgba(255, 70, 50, 0.6)' }, { boxShadow: '0 0 0 0 rgba(255, 80, 60, 0)' }], { duration: 700, easing: 'ease-out' }); }
+    if (d > 0 && box.current) box.current.animate([{ boxShadow: '0 0 0 0 rgba(120, 220, 120, 0)' }, { boxShadow: '0 0 0 3px rgba(140, 230, 140, 0.7), 0 0 22px rgba(120, 220, 120, 0.55)' }, { boxShadow: '0 0 0 0 rgba(120, 220, 120, 0)' }], { duration: 700, easing: 'ease-out' });
     const id = Math.random();
     setFloats(f => [...f.slice(-3), { id, d }]);
     const t = setTimeout(() => setFloats(f => f.filter(x => x.id !== id)), 1600);
     return () => clearTimeout(t);
   }, [p.life]);
   return (
-    <span className={`lifetotal ${p.life <= 10 ? 'low' : ''}`} title="Life total" onClick={onClick} role={onClick ? 'button' : undefined} style={onClick ? { cursor: 'pointer' } : undefined}>
+    <span ref={box} className={`lifetotal ${p.life <= 10 ? 'low' : ''}`} title="Life total" onClick={onClick} role={onClick ? 'button' : undefined} style={onClick ? { cursor: 'pointer' } : undefined}>
       <b>{p.life}</b>
       {floats.map(f => <span key={f.id} className={`float ${f.d > 0 ? 'gain' : 'loss'}`}>{f.d > 0 ? '+' : '−'}{Math.abs(f.d)}</span>)}
     </span>
@@ -161,21 +185,21 @@ function Piles({ game, pid, ctx, compact }) {
   const open = z => e => { e.stopPropagation(); ctx.openZone(pid, z); };
   return (
     <div className="piles">
-      {compact ? null : <button className="pile" onClick={open('library')} title={`Library: ${p.library.length} cards`}><span className="pc"><CardBack sleeve={ctx.sleeves && ctx.sleeves[pid]} /></span><span className="pl">Library</span><b>{p.library.length}</b></button>}
-      <button className={`pile ${top ? '' : 'none'}`} onClick={open('graveyard')} title={`Graveyard: ${p.graveyard.length} cards`} onMouseEnter={() => top && ctx.onHover(top.id)}>
+      {compact ? null : <button className="pile" data-pile={`${pid}:library`} onClick={open('library')} title={`Library: ${p.library.length} cards`}><span className="pc"><CardBack sleeve={ctx.sleeves && ctx.sleeves[pid]} /></span><span className="pl">Library</span><b>{p.library.length}</b></button>}
+      <button className={`pile ${top ? '' : 'none'}`} data-pile={`${pid}:graveyard`} onClick={open('graveyard')} title={`Graveyard: ${p.graveyard.length} cards`} onMouseEnter={() => top && ctx.onHover(top.id)}>
         <span className="pc"><span className="slot"><ZoneIcon zone="graveyard" /></span></span><span className="pl">Graveyard</span><b>{p.graveyard.length}</b>
       </button>
-      <button className={`pile ${ex ? '' : 'none'}`} onClick={open('exile')} title={`Exile: ${p.exile.length} cards`} onMouseEnter={() => ex && ctx.onHover(ex.id)}>
+      <button className={`pile ${ex ? '' : 'none'}`} data-pile={`${pid}:exile`} onClick={open('exile')} title={`Exile: ${p.exile.length} cards`} onMouseEnter={() => ex && ctx.onHover(ex.id)}>
         <span className="pc"><span className="slot"><ZoneIcon zone="exile" /></span></span><span className="pl">Exile</span><b>{p.exile.length}</b>
       </button>
     </div>
   );
 }
 
-function OppHand({ n, sleeve }) {
+function OppHand({ n, sleeve, pid }) {
   const shown = Math.min(n, 7);
   return (
-    <span className="opphand" title={`${n} card${n === 1 ? '' : 's'} in hand`}>
+    <span className="opphand" data-pile={`${pid}:hand`} title={`${n} card${n === 1 ? '' : 's'} in hand`}>
       <span className="fan" style={{ '--n': shown }}>{Array.from({ length: shown }, (_, i) => <span key={i} className="fb" style={{ '--k': i - (shown - 1) / 2 }}><CardBack sleeve={sleeve} /></span>)}</span>
       <b>{n}</b>
     </span>
@@ -206,7 +230,7 @@ function CommandSlot({ game, pid, ctx }) {
   const cmds = p.command.filter(c => c.isCommander);
   if (!cmds.length) return null;
   return (
-    <div className="cmdslot" title="Command zone">
+    <div className="cmdslot" title="Command zone" data-pile={`${pid}:command`}>
       {cmds.map(c => {
         const tax = game.commanderTax(c);
         return (
@@ -317,22 +341,22 @@ export function Mat({ game, pid, ctx, side, compact }) {
         <span className="pname" title={p.name}><span className="pn">{p.name}</span>{game.activePlayer === pid ? <span className="turnmark" title="Active player">turn</span> : null}</span>
         <span className="status"><StatusChips game={game} pid={pid} />{incoming ? <span className="chip danger" title="Attacking this player">⚔ {incoming.n} attacking · {incoming.power} power</span> : null}<span className="pdeck">{p.deckName}</span></span>
       </span>
-      {!isMe ? <span className="plate-extras"><OppHand n={p.hand.length} sleeve={ctx.sleeves && ctx.sleeves[pid]} /><Piles game={game} pid={pid} ctx={ctx} compact={compact} /></span> : null}
+      {!isMe ? <span className="plate-extras"><OppHand n={p.hand.length} pid={pid} sleeve={ctx.sleeves && ctx.sleeves[pid]} /><Piles game={game} pid={pid} ctx={ctx} compact={compact} /></span> : null}
       {isMe && Object.values(p.pool).some(n => n > 0) ? <span className="pool" title="Mana pool">{Object.entries(p.pool).flatMap(([k, n]) => Array.from({ length: n }, (_, i) => <Pip key={k + i} s={k} />))}</span> : null}
       {isMe ? <Piles game={game} pid={pid} ctx={ctx} /> : null}
     </div>
   );
   const front = (
     <div className="row front">
-      {creatures.map(g => <CardSlot key={g.cards[0].id} card={g.cards[0]} count={g.cards.length} ctx={ctx} />)}
+      {creatures.map(g => <CardSlot key={g.cards[0].id} card={g.cards[0]} count={g.cards.length} ids={g.cards.map(c => c.id)} ctx={ctx} />)}
     </div>
   );
   const back = (
     <div className="row back">
       <CommandSlot game={game} pid={pid} ctx={ctx} />
-      {other.map(g => <CardSlot key={g.cards[0].id} card={g.cards[0]} count={g.cards.length} ctx={ctx} />)}
+      {other.map(g => <CardSlot key={g.cards[0].id} card={g.cards[0]} count={g.cards.length} ids={g.cards.map(c => c.id)} ctx={ctx} />)}
       {other.length && lands.length ? <span className="divider" /> : null}
-      <div className="lands">{lands.map(g => <CardSlot key={g.cards[0].id} card={g.cards[0]} count={g.cards.length} ctx={ctx} />)}</div>
+      <div className="lands">{lands.map(g => <CardSlot key={g.cards[0].id} card={g.cards[0]} count={g.cards.length} ids={g.cards.map(c => c.id)} ctx={ctx} />)}</div>
     </div>
   );
   return (
@@ -394,7 +418,7 @@ export function StackView({ game, ctx, me }) {
           const src = it.card || it.source;
           return (
             <div key={it.id} className={`sitem ${top ? 'top' : ''} ${it.kind}`} data-stack={it.id} onMouseEnter={() => src && src.id != null && game.cardById(src.id) && ctx.onHover(src.id)}>
-              {it.kind === 'spell' && it.card ? <div className="cardwrap"><CardFace v={viewOf(game, it.card)} size="stack" /></div> : (
+              {it.kind === 'spell' && it.card ? <div className="cardwrap" data-fly={it.card.id}><CardFace v={viewOf(game, it.card)} size="stack" /></div> : (
                 <div className="abil">
                   {src && !src.isEffect && game.cardById(src.id) ? <div className="abil-src"><CardFace v={viewOf(game, game.cardById(src.id))} /></div> : null}
                   <div className="abil-txt"><b>{src ? game.name(src) : 'Ability'}</b><RulesText text={it.description} /></div>

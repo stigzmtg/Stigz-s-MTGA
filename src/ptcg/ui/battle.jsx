@@ -7,7 +7,7 @@ import { pkImage, subscribePk, pkImagesVersion } from './images.js';
 import { Modal } from '../../ui/dialogs.jsx';
 import { secondPerson } from '../../ui/table.jsx';
 import { RoomStatus } from '../../ui/online.jsx';
-import { SoundToggle, SizeButton } from '../../ui/dialogs.jsx';
+import { SoundToggle, SizeButton, Confetti } from '../../ui/dialogs.jsx';
 import { useGameSounds } from '../../ui/sound.js';
 import { recordGame } from '../../ui/records.js';
 import { ReplayBar } from '../../ui/replaybar.jsx';
@@ -15,15 +15,28 @@ import { useEmotes, EmoteButton, EmoteBubble, WatcherEmotes } from '../../ui/emo
 import { Coach } from '../../ui/coach.jsx';
 import { AnimalAvatar, myAvatar } from '../../ui/avatar.jsx';
 import { Sleeve, savedStyle } from '../../ui/deckstyle.jsx';
+import { createFlights, runFlights, shake, motionOn } from '../../ui/motion.js';
+import { uiScale } from '../../ui/common.js';
 
-const { useState, useEffect, useRef, useMemo, useSyncExternalStore } = React;
+const { useState, useEffect, useLayoutEffect, useRef, useMemo, useSyncExternalStore } = React;
+
+// where every card is, for the card flights (motion.js): "1:discard", "mon:12" (in play on that Pokémon), "stadium"
+function cardZones(game) {
+  const z = new Map();
+  for (const p of game.players) {
+    for (const zone of ['hand', 'deck', 'discard', 'prizes', 'lost']) for (const c of p[zone] || []) z.set(String(c.id), `${p.id}:${zone}`);
+    for (const m of game.inPlay(p.id)) for (const c of m.allCards()) z.set(String(c.id), `mon:${m.id}`);
+  }
+  if (game.stadium) z.set(String(game.stadium.card.id), 'stadium');
+  return z;
+}
 const COND_LABEL = { asleep: 'Asleep', confused: 'Confused', paralyzed: 'Paralyzed' };
 
 // ---------------------------------------------------------------- a card picture (with a drawn fallback)
-function CardArt({ def, cls = '', onClick, onEnter, onLeave, title }) {
+function CardArt({ def, cls = '', onClick, onEnter, onLeave, title, fly }) {
   const img = def && pkImage(def.key);
   return (
-    <div className={`pk-card ${cls}`} onClick={onClick} onMouseEnter={onEnter} onMouseLeave={onLeave} title={title}
+    <div className={`pk-card ${cls}`} data-fly={fly} onClick={onClick} onMouseEnter={onEnter} onMouseLeave={onLeave} title={title}
       role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}
       onKeyDown={onClick ? (e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(e); } }) : undefined}
       style={{ '--t': TYPE_COLORS[def && (def.type || def.provides)] || '#c9c1a8' }}>
@@ -37,22 +50,25 @@ function CardArt({ def, cls = '', onClick, onEnter, onLeave, title }) {
   );
 }
 // sleeve: { code, av } when the owner sleeved their deck (see ui/deckstyle.jsx)
-const CardBack = ({ cls = '', sleeve }) => (sleeve && sleeve.code
-  ? <div className={`pk-card back sleeved ${cls}`}><Sleeve code={sleeve.code} avatar={sleeve.av} /></div>
-  : <div className={`pk-card back ${cls}`}><span className="ball" /></div>);
+const CardBack = ({ cls = '', sleeve, fly }) => (sleeve && sleeve.code
+  ? <div className={`pk-card back sleeved ${cls}`} data-fly={fly}><Sleeve code={sleeve.code} avatar={sleeve.av} /></div>
+  : <div className={`pk-card back ${cls}`} data-fly={fly}><span className="ball" /></div>);
 
 // ---------------------------------------------------------------- a Pokémon in play
 function MonView({ game, mon, big, state, fx, onClick, onHover }) {
   const max = game.maxHp(mon), left = Math.max(0, max - mon.damage);
   const pct = Math.max(0, Math.min(100, (left / max) * 100));
   const hit = fx.hits.get(mon.id);
-  const cls = ['pk-mon', big ? 'big' : '', state || '', hit ? 'hit' : '', fx.lunge === mon.id ? (mon.owner === fx.me ? 'lunge-up' : 'lunge-down') : '', fx.entered.has(mon.id) ? 'enter' : ''].filter(Boolean).join(' ');
+  const heal = fx.heals.get(mon.id);
+  const cls = ['pk-mon', big ? 'big' : '', state || '', hit ? 'hit' : '', fx.lunge === mon.id ? (mon.owner === fx.me ? 'lunge-up' : 'lunge-down') : '', fx.entered.has(mon.id) ? 'enter' : '', fx.evolved.has(mon.id) ? 'evolving' : ''].filter(Boolean).join(' ');
   const conds = [mon.special && COND_LABEL[mon.special], mon.poisoned && 'Poisoned', mon.burned && 'Burned'].filter(Boolean);
   return (
-    <div className={cls} data-mon={mon.id}>
+    <div className={cls} data-mon={mon.id} data-fly={mon.card.id}>
       <CardArt def={mon.def} onClick={onClick} onEnter={() => onHover({ mon: mon.id })} onLeave={() => onHover(null)} title={`${mon.name} · ${left}/${max} HP`} />
       {mon.damage ? <span className="pk-dmg" title={`${mon.damage} damage`}>{mon.damage}</span> : null}
       {hit ? <span key={hit.key} className="pk-float">−{hit.amount}</span> : null}
+      {hit && hit.amount ? <span key={'b' + hit.key} className={`pk-burst ${hit.amount >= 120 ? 'big' : ''}`} style={{ '--burst': hit.color || '#ffd75e' }} aria-hidden="true" /> : null}
+      {heal ? <span key={heal.key} className="pk-float heal">+{heal.amount}</span> : null}
       {conds.length ? <span className="pk-conds">{conds.map(c => <span key={c} className={`c ${c.toLowerCase()}`}>{c}</span>)}</span> : null}
       <div className="pk-hp" title={`${left} / ${max} HP`}><i style={{ width: pct + '%' }} className={pct <= 30 ? 'low' : pct <= 60 ? 'mid' : ''} /><span>{left}</span></div>
       <div className="pk-attached">
@@ -72,10 +88,10 @@ function MonView({ game, mon, big, state, fx, onClick, onHover }) {
 
 function EmptySlot({ big }) { return <div className={`pk-mon empty ${big ? 'big' : ''}`}><div className="pk-card slot"><span className="slotname">{big ? 'Active' : 'Bench'}</span></div></div>; }
 
-function Prizes({ n, label, sleeve }) {
+function Prizes({ n, label, sleeve, pid, ids = [] }) {
   return (
-    <div className="pk-prizes" title={`${n} Prize card${n === 1 ? '' : 's'} left`} aria-label={`${label}: ${n} Prize cards left`}>
-      <div className="grid">{Array.from({ length: 6 }, (_, i) => i < n ? <CardBack key={i} cls="tiny" sleeve={sleeve} /> : <span key={i} className="taken" />)}</div>
+    <div className="pk-prizes" data-pile={`${pid}:prizes`} title={`${n} Prize card${n === 1 ? '' : 's'} left`} aria-label={`${label}: ${n} Prize cards left`}>
+      <div className="grid">{Array.from({ length: 6 }, (_, i) => i < n ? <CardBack key={i} cls="tiny" sleeve={sleeve} fly={ids[i]} /> : <span key={i} className="taken" />)}</div>
       <div className="cap"><b>{n}</b> Prize{n === 1 ? '' : 's'}</div>
     </div>
   );
@@ -85,10 +101,10 @@ function Piles({ game, p, onOpen, sleeve, hand = false }) {
   const top = p.discard[p.discard.length - 1];
   return (
     <div className="pk-piles">
-      {hand ? <div className="pile hand" title={`${p.hand.length} cards in hand`}><span className="fan">{Array.from({ length: Math.min(p.hand.length, 3) }, (_, i) => <CardBack key={i} cls="micro" sleeve={sleeve} />)}</span><span><b>{p.hand.length}</b> in hand</span></div> : null}
-      <div className="pile" title={`Deck: ${p.deck.length} cards`}><CardBack cls="tiny" sleeve={sleeve} /><span><b>{p.deck.length}</b> Deck</span></div>
-      <button className="pile" onClick={() => onOpen('discard')} title="See the discard pile">{top ? <CardArt def={top.def} cls="tiny" /> : <span className="pk-card tiny slot" />}<span><b>{p.discard.length}</b> Discard</span></button>
-      {p.lost.length ? <button className="pile" onClick={() => onOpen('lost')} title="See the Lost Zone"><span className="pk-card tiny lostz" /><span><b>{p.lost.length}</b> Lost Zone</span></button> : null}
+      {hand ? <div className="pile hand" data-pile={`${p.id}:hand`} title={`${p.hand.length} cards in hand`}><span className="fan">{Array.from({ length: Math.min(p.hand.length, 3) }, (_, i) => <CardBack key={i} cls="micro" sleeve={sleeve} />)}</span><span><b>{p.hand.length}</b> in hand</span></div> : null}
+      <div className="pile" data-pile={`${p.id}:deck`} title={`Deck: ${p.deck.length} cards`}><CardBack cls="tiny" sleeve={sleeve} /><span><b>{p.deck.length}</b> Deck</span></div>
+      <button className="pile" data-pile={`${p.id}:discard`} onClick={() => onOpen('discard')} title="See the discard pile">{top ? <CardArt def={top.def} cls="tiny" /> : <span className="pk-card tiny slot" />}<span><b>{p.discard.length}</b> Discard</span></button>
+      {p.lost.length ? <button className="pile" data-pile={`${p.id}:lost`} onClick={() => onOpen('lost')} title="See the Lost Zone"><span className="pk-card tiny lostz" /><span><b>{p.lost.length}</b> Lost Zone</span></button> : null}
     </div>
   );
 }
@@ -96,7 +112,7 @@ function Piles({ game, p, onOpen, sleeve, hand = false }) {
 // ---------------------------------------------------------------- animations driven by the engine's events
 function useFx(game, me, watching) {
   const [, force] = useState(0);
-  const st = useRef({ last: 0, hits: new Map(), lunge: null, entered: new Set(), coin: null, banner: null, timers: [] });
+  const st = useRef({ last: 0, hits: new Map(), heals: new Map(), lunge: null, entered: new Set(), evolved: new Set(), coin: null, banner: null, timers: [], color: null, shake: null });
   const s = st.current;
   s.me = me;
   const later = (ms, f) => { const t = setTimeout(() => { f(); force(x => x + 1); }, ms); s.timers.push(t); };
@@ -106,15 +122,26 @@ function useFx(game, me, watching) {
     s.last = fresh[fresh.length - 1].id;
     let coinDelay = 0;
     for (const e of fresh) {
-      if (e.kind === 'damage') { s.hits.set(e.mon, { amount: e.amount, key: e.id }); later(1100, () => { const h = s.hits.get(e.mon); if (h && h.key === e.id) s.hits.delete(e.mon); }); }
+      if (e.kind === 'damage') {
+        s.hits.set(e.mon, { amount: e.amount, key: e.id, color: s.color });
+        later(1100, () => { const h = s.hits.get(e.mon); if (h && h.key === e.id) s.hits.delete(e.mon); });
+        if (e.amount >= 100) s.shake = { key: e.id, strength: e.amount >= 200 ? 1.8 : 1.2 };
+      }
+      if (e.kind === 'heal') { s.heals.set(e.mon, { amount: e.amount, key: e.id }); later(1100, () => { const h = s.heals.get(e.mon); if (h && h.key === e.id) s.heals.delete(e.mon); }); }
+      if (e.kind === 'attack') {
+        // the attack's burst takes the attacker's type color
+        const m = game.monById(e.mon);
+        s.color = m ? TYPE_COLORS[m.def.type] || null : null;
+      }
       if (e.kind === 'attack') { s.lunge = e.mon; later(420, () => { if (s.lunge === e.mon) s.lunge = null; }); s.banner = { text: e.name, key: e.id, kind: 'attack' }; later(1300, () => { if (s.banner && s.banner.key === e.id) s.banner = null; }); }
-      if (e.kind === 'enter' || e.kind === 'evolve') { s.entered.add(e.mon); later(600, () => s.entered.delete(e.mon)); }
+      if (e.kind === 'enter') { s.entered.add(e.mon); later(600, () => s.entered.delete(e.mon)); }
+      if (e.kind === 'evolve') { s.evolved.add(e.mon); later(1000, () => s.evolved.delete(e.mon)); }
       if (e.kind === 'coin') {
         const at = coinDelay; coinDelay += 900;
         later(at, () => { s.coin = { heads: e.heads, reason: e.reason, key: e.id }; });
         later(at + 1500, () => { if (s.coin && s.coin.key === e.id) s.coin = null; });
       }
-      if (e.kind === 'ko') { s.banner = { text: `${e.name} is Knocked Out!`, key: e.id, kind: 'ko' }; later(1600, () => { if (s.banner && s.banner.key === e.id) s.banner = null; }); }
+      if (e.kind === 'ko') { s.shake = { key: e.id, strength: 1.5 }; s.banner = { text: `${e.name} is Knocked Out!`, key: e.id, kind: 'ko' }; later(1600, () => { if (s.banner && s.banner.key === e.id) s.banner = null; }); }
       if (e.kind === 'turn') { s.banner = { text: e.pid === me && !watching ? 'Your turn' : `${game.players[e.pid].name}'s turn`, key: e.id, kind: 'turn' }; later(1200, () => { if (s.banner && s.banner.key === e.id) s.banner = null; }); }
     }
   }
@@ -248,6 +275,33 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [flash, setFlash] = useState(null);
   const fx = useFx(game, me, watching);
+  const boardRef = useRef(null);
+  // cards glide between hand, play, piles and Prizes; a Trainer is shown big before it goes to the discard pile
+  const flights = useRef(null);
+  if (!flights.current) flights.current = createFlights();
+  useLayoutEffect(() => {
+    const mine = watching ? null : me;
+    runFlights(flights.current, boardRef.current, game, {
+      zones: cardZones(game),
+      isPublic: z => !(z.endsWith(':deck') || z.endsWith(':prizes') || (z.endsWith(':hand') && z !== `${mine}:hand`)),
+      look: (id, face) => { const c = game.cardById(+id); return face && c ? { img: pkImage(c.def.key), name: c.name, cls: 'pk' } : { back: true, cls: 'pk' }; },
+      kindOf: (id, from, to) => {
+        if (!to) return 'move';
+        if (from && from.startsWith('mon:') && to.endsWith(':discard')) return 'ko';
+        if (to.endsWith(':lost')) return 'exile';
+        const c = game.cardById(+id);
+        if (from && from.endsWith(':hand') && to.endsWith(':discard') && c && c.def.cat === 'T') return 'show';
+        return 'move';
+      },
+      showAt: () => {
+        const b = boardRef.current && boardRef.current.getBoundingClientRect();
+        if (!b) return null;
+        const w = Math.min(190 * uiScale(), b.height * 0.42 / 1.4), h = w * 1.4;
+        return { left: b.left + b.width / 2 - w / 2, top: b.top + b.height / 2 - h / 2, width: w, height: h };
+      },
+    });
+  });
+  useEffect(() => { if (fx.shake && motionOn()) shake(boardRef.current, fx.shake.strength); }, [fx.shake && fx.shake.key]);
   useGameSounds(game, { kind: 'pk', me, watching });
   // a finished battle goes into your record (with a replay)
   useEffect(() => { if (game.over && !session.record) session.record = recordGame(session, 'pk'); }, [game.over]);
@@ -344,7 +398,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
           <EmoteBubble b={emotes.bubbles.get(p.id)} />
           <div className="who">{avatarOf(p.id) ? <AnimalAvatar code={avatarOf(p.id)} size={36} /> : null}<b>{p.name}</b>{game.current === p.id && !game.over ? <span className="turnmark">turn</span> : null}</div>
           {p.deckName && p.deckName !== p.name ? <div className="deck">{p.deckName}</div> : null}
-          <Prizes n={p.prizes.length} label={p.name} sleeve={sleeves[p.id]} />
+          <Prizes n={p.prizes.length} label={p.name} sleeve={sleeves[p.id]} pid={p.id} ids={p.prizes.map(c => c.id)} />
         </div>
         <div className="pk-field">{act}{bench}</div>
         <Piles game={game} p={p} onOpen={z => setZone({ p, z, mine: isMe })} sleeve={sleeves[p.id]} hand={!bottom} />
@@ -412,11 +466,11 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
         <button className="btn sm danger" onClick={onExit} title={online && host && !game.over ? 'Ends the battle for both players' : undefined}>{replay ? 'Close replay' : game.over ? (online ? 'Back to room' : 'New battle') : online ? (host ? 'End battle' : watching ? 'Stop watching' : 'Leave battle') : 'Leave battle'}</button>
       </header>
       <div className="game pk-game">
-        <main className="pk-board" onClick={e => { if (e.target === e.currentTarget) setMode(null); }}>
+        <main className={`pk-board ${game.over && !watching && result !== 'You win!' ? 'lost-game' : ''}`} ref={boardRef} onClick={e => { if (e.target === e.currentTarget) setMode(null); }}>
           {side(O, false)}
           <div className="pk-mid">
-            <div className="pk-stadium" title={game.stadium ? game.stadium.card.name : 'No Stadium in play'}>
-              {game.stadium ? <CardArt def={game.stadium.card.def} cls="small" onEnter={() => setHover({ card: game.stadium.card.id })} onLeave={() => setHover(null)} /> : <span className="pk-card small slot none" aria-label="No Stadium in play"><span className="slotname">Stadium</span></span>}
+            <div className="pk-stadium" data-pile="stadium" title={game.stadium ? game.stadium.card.name : 'No Stadium in play'}>
+              {game.stadium ? <CardArt def={game.stadium.card.def} cls="small" fly={game.stadium.card.id} onEnter={() => setHover({ card: game.stadium.card.id })} onLeave={() => setHover(null)} /> : <span className="pk-card small slot none" aria-label="No Stadium in play"><span className="slotname">Stadium</span></span>}
             </div>
             <div className={`prompt pk-prompt ${req ? '' : 'waiting'}`}>{bar}</div>
             <div className="pk-coinbox">{fx.coin ? <div key={fx.coin.key} className={`pk-coin ${fx.coin.heads ? 'heads' : 'tails'}`}><span className="face">{fx.coin.heads ? 'H' : 'T'}</span><span className="lbl">{fx.coin.heads ? 'Heads' : 'Tails'}{fx.coin.reason ? <small>{fx.coin.reason}</small> : null}</span></div> : null}</div>
@@ -425,7 +479,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
           <div className="pk-hand" aria-label={`${whose(P)} hand`} style={{ '--n': P.hand.length }}>
             {watching ? P.hand.map(c => <div key={c.id} className="pk-handslot"><CardBack sleeve={sleeves[P.id]} /></div>) : P.hand.map(c => (
               <div key={c.id} className={`pk-handslot ${handActs.has(c.id) ? 'playable' : ''} ${mode && mode.card === c.id ? 'chosen' : ''}`}>
-                <CardArt def={c.def} onClick={() => onHand(c)} onEnter={() => setHover({ card: c.id })} onLeave={() => setHover(null)} />
+                <CardArt def={c.def} fly={c.id} onClick={() => onHand(c)} onEnter={() => setHover({ card: c.id })} onLeave={() => setHover(null)} />
               </div>
             ))}
             {!P.hand.length ? <span className="empty">{whose(P)} hand is empty</span> : null}
@@ -455,7 +509,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
       ) : null}
       {zone ? <ZoneDialog game={game} p={zone.p} mine={zone.mine} zone={zone.z} onClose={() => setZone(null)} onHover={setHover} /> : null}
       {result && !dismissed ? (
-        <Modal narrow label="Game over">
+        <>{result === 'You win!' ? <Confetti /> : null}<Modal narrow label="Game over" cls={result === 'You win!' ? 'win' : ''}>
           <h2 className={result === 'You win!' ? 'win' : ''}>{result}</h2>
           <p className="sub">{youText(game.result || '')}. {game.turn} turns.{online && !host ? ' The host can start a rematch from here.' : ''}</p>
           <div className="row">
@@ -469,7 +523,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
               {!online || host ? <button className="btn primary" onClick={onRematch}>Rematch</button> : null}
             </>}
           </div>
-        </Modal>
+        </Modal></>
       ) : null}
     </div>
   );

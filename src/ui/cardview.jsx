@@ -182,12 +182,12 @@ export function CardFace({ v, size = 'mini', cls = '', onClick, onContextMenu, o
         </div>
       )}
       {extraKw.length && size !== 'big' ? <div className="kws">{extraKw.slice(0, size === 'mini' ? 3 : 6).map(k => <span key={k} className="kw">{k}</span>)}</div> : null}
-      {showPT ? <div className={`pt ${v.ptState || ''}`}>{v.power}/{v.toughness}</div> : null}
-      {v.loyalty != null && (!img || v.onField) ? <div className="loyal">{v.loyalty}</div> : null}
+      {showPT ? <div key={`${v.power}/${v.toughness}`} className={`pt ${v.ptState || ''}`}>{v.power}/{v.toughness}</div> : null}
+      {v.loyalty != null && (!img || v.onField) ? <div key={`l${v.loyalty}`} className="loyal">{v.loyalty}</div> : null}
       {v.defense != null && (!img || v.onField) ? <div className="loyal">{v.defense}</div> : null}
       <div className="badges">
-        {v.counters && v.counters.map(([k, n]) => <span key={k} className={`badge ${k === 'M1M1' ? 'minus' : k === 'P1P1' ? 'plus' : 'ctr'}`} title={`${n} ${counterName(k)} counter(s)`}>{k === 'P1P1' ? `+${n}` : k === 'M1M1' ? `−${n}` : KEYWORD_COUNTERS[k] ? (KW_ABBR[KEYWORD_COUNTERS[k]] || counterName(k)) : `${n} ${counterName(k).slice(0, 6)}`}</span>)}
-        {v.damage ? <span className="badge dmg" title={`${v.damage} damage`}>{v.damage} dmg</span> : null}
+        {v.counters && v.counters.map(([k, n]) => <span key={`${k}${n}`} className={`badge ${k === 'M1M1' ? 'minus' : k === 'P1P1' ? 'plus' : 'ctr'}`} title={`${n} ${counterName(k)} counter(s)`}>{k === 'P1P1' ? `+${n}` : k === 'M1M1' ? `−${n}` : KEYWORD_COUNTERS[k] ? (KW_ABBR[KEYWORD_COUNTERS[k]] || counterName(k)) : `${n} ${counterName(k).slice(0, 6)}`}</span>)}
+        {v.damage ? <span key={`dmg${v.damage}`} className="badge dmg" title={`${v.damage} damage`}>{v.damage} dmg</span> : null}
         {badges}
       </div>
     </div>

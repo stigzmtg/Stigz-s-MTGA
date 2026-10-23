@@ -6,10 +6,11 @@ import { loadSettings, saveSettings } from './common.js';
 import { fromRef } from '../engine/abilities.js';
 import { onClaude } from '../net/roomclient.js';
 import { UI_SIZES, uiSizePref, setUiSize, subscribeUiSize } from './uisize.js';
+import { MOTIONS, motionPref, setMotion, subscribeMotion } from './motion.js';
 
 const { useState, useEffect, useRef } = React;
 
-export function Modal({ children, narrow, onClose, label }) {
+export function Modal({ children, narrow, onClose, label, cls = '' }) {
   useEffect(() => {
     if (!onClose) return;
     const k = e => { if (e.key === 'Escape') onClose(); };
@@ -18,7 +19,7 @@ export function Modal({ children, narrow, onClose, label }) {
   }, [onClose]);
   return (
     <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget && onClose) onClose(); }}>
-      <div className={`dialog ${narrow ? 'narrow' : ''}`} role="dialog" aria-modal="true" aria-label={label}>{children}</div>
+      <div className={`dialog ${narrow ? 'narrow' : ''} ${cls}`} role="dialog" aria-modal="true" aria-label={label}>{children}</div>
     </div>
   );
 }
@@ -231,6 +232,7 @@ export function SettingsDialog({ settings, onChange, onClose }) {
           </select>
         </label>
         <div className="setrow"><span>Interface size<small>Everything bigger or smaller. The game also grows with your window.</small></span><SizeChoice /></div>
+        <div className="setrow"><span>Animations<small>Cards flying between zones, hits and celebrations. Reduced keeps simple fades; Off is quickest on slow computers.</small></span><MotionChoice /></div>
         <Toggle k="stopOppEnd" title="Stop at opponents' end steps" note="Only when you have instant-speed plays." />
         <Toggle k="stopOppCombat" title="Stop after blockers on opponents' attacks" note="Gives you a window for combat tricks." />
         <Toggle k="stopOwnCombat" title="Stop at your own combat steps" note="For tricks before attacks and after blocks." />
@@ -360,6 +362,7 @@ export function SoundToggle({ session }) {
 export function SizeButton({ cls = 'btn sm icon' }) {
   const [open, setOpen] = React.useState(false);
   const pref = React.useSyncExternalStore(subscribeUiSize, uiSizePref);
+  const motion = React.useSyncExternalStore(subscribeMotion, motionPref);
   React.useEffect(() => {
     if (!open) return;
     const close = e => { if (!e.target.closest || !e.target.closest('.sizepick')) setOpen(false); };
@@ -368,10 +371,29 @@ export function SizeButton({ cls = 'btn sm icon' }) {
   }, [open]);
   return (
     <span className="sizepick">
-      <button className={cls} onClick={() => setOpen(o => !o)} aria-expanded={open} aria-label="Interface size" title="Interface size"><span className="aa" aria-hidden="true">A<small>A</small></span></button>
-      {open ? <div className="sizepop" role="menu">{UI_SIZES.map(([k, label]) => <button key={k} role="menuitemradio" aria-checked={pref === k} className={pref === k ? 'on' : ''} onClick={() => { setUiSize(k); setOpen(false); }}>{label}</button>)}</div> : null}
+      <button className={cls} onClick={() => setOpen(o => !o)} aria-expanded={open} aria-label="Interface size" title="Interface size and animations"><span className="aa" aria-hidden="true">A<small>A</small></span></button>
+      {open ? <div className="sizepop" role="menu">
+        <div className="sizehead">Size</div>
+        {UI_SIZES.map(([k, label]) => <button key={k} role="menuitemradio" aria-checked={pref === k} className={pref === k ? 'on' : ''} onClick={() => { setUiSize(k); setOpen(false); }}>{label}</button>)}
+        <hr />
+        <div className="sizehead">Animations</div>
+        {MOTIONS.map(([k, label]) => <button key={k} role="menuitemradio" aria-checked={motion === k} className={motion === k ? 'on' : ''} onClick={() => { setMotion(k); setOpen(false); }}>{label}</button>)}
+      </div> : null}
     </span>
   );
+}
+export function MotionChoice() {
+  const pref = React.useSyncExternalStore(subscribeMotion, motionPref);
+  return <div className="seg" role="group" aria-label="Animations">{MOTIONS.map(([k, label]) => <button key={k} className={pref === k ? 'on' : ''} aria-pressed={pref === k} onClick={() => setMotion(k)}>{label}</button>)}</div>;
+}
+// gold falling over the screen for a win
+export function Confetti({ n = 70 }) {
+  const bits = React.useMemo(() => Array.from({ length: n }, (_, i) => ({
+    x: `${(Math.random() * 100).toFixed(1)}vw`, dx: `${((Math.random() - 0.5) * 30).toFixed(1)}vw`, r: `${Math.round((Math.random() - 0.5) * 1440)}deg`,
+    d: `${(Math.random() * 0.9).toFixed(2)}s`, t: `${(2.4 + Math.random() * 1.8).toFixed(2)}s`,
+    c: ['#f3d68f', '#d9ae5c', '#fff3c9', '#e8694f', '#86cb88', '#7dbcec'][i % 6],
+  })), [n]);
+  return <div className="confetti" aria-hidden="true">{bits.map((b, i) => <i key={i} style={{ '--x': b.x, '--dx': b.dx, '--r': b.r, '--d': b.d, '--t': b.t, '--c': b.c }} />)}</div>;
 }
 export function SizeChoice() {
   const pref = React.useSyncExternalStore(subscribeUiSize, uiSizePref);

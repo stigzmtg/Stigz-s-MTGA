@@ -1,8 +1,9 @@
 // The game table: seats, battlefield, hand, prompt bar, rail (preview / stack / log) and interactions.
 import { CardFace, viewOf, ManaCost, Pip, RulesText } from './cardview.jsx';
 import { Mat, Hand, StackView, RecentPlays, useRecentPlays, ArrowLayer, TurnBanner } from './board.jsx';
-import { imagesAvailable, subscribeImages, imagesVersion } from './images.js';
-import { Modal, CardsDialog, TargetsDialog, OptionDialog, ModesDialog, ConfirmDialog, NumberDialog, ColorDialog, PlayerDialog, MulliganDialog, ZoneDialog, SettingsDialog, TokenDialog, HelpDialog, Menu, SoundToggle, SizeButton } from './dialogs.jsx';
+import { imagesAvailable, subscribeImages, imagesVersion, imageOf } from './images.js';
+import { createFlights, runFlights, strike } from './motion.js';
+import { Modal, CardsDialog, TargetsDialog, OptionDialog, ModesDialog, ConfirmDialog, NumberDialog, ColorDialog, PlayerDialog, MulliganDialog, ZoneDialog, SettingsDialog, TokenDialog, HelpDialog, Menu, SoundToggle, SizeButton, Confetti } from './dialogs.jsx';
 import { getActions, refOf, fromRef, manaAbilitiesOf, manaSourcesFor, activateManaAbility, parseCost } from '../engine/abilities.js';
 import { STEP_NAMES } from '../engine/game.js';
 import { blockRules } from '../engine/combat.js';
@@ -16,7 +17,16 @@ import { Coach } from './coach.jsx';
 import { savedStyle } from './deckstyle.jsx';
 import { myAvatar } from './avatar.jsx';
 
-const { useState, useEffect, useRef, useMemo, useSyncExternalStore } = React;
+const { useState, useEffect, useLayoutEffect, useRef, useMemo, useSyncExternalStore } = React;
+
+// where every card is, for the card flights (motion.js): "1:graveyard", "bf", "stack"
+function cardZones(game) {
+  const z = new Map();
+  for (const p of game.players) for (const zone of ['library', 'hand', 'graveyard', 'exile', 'command']) for (const c of p[zone] || []) z.set(String(c.id), `${p.id}:${zone}`);
+  for (const c of game.battlefield) z.set(String(c.id), 'bf');
+  for (const it of game.stack) if (it.card) z.set(String(it.card.id), 'stack');
+  return z;
+}
 
 export function useStore(store) { return useSyncExternalStore(store.subscribe, store.get); }
 
@@ -216,6 +226,24 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
   const [toast, setToast] = useState(null);
   const [inspect, setInspect] = useState(null);
   const boardRef = useRef(null);
+  // cards glide between zones; a creature that dies falls to its graveyard, an exiled card fades into exile
+  const flights = useRef(null);
+  if (!flights.current) flights.current = createFlights();
+  useLayoutEffect(() => {
+    runFlights(flights.current, boardRef.current, game, {
+      zones: cardZones(game),
+      isPublic: z => !(z.endsWith(':library') || (z.endsWith(':hand') && (session.spectator || z !== `${me}:hand`))),
+      look: (id, face) => { const c = game.cardById(+id); return face && c ? { img: images ? imageOf(game, c) : null, name: game.name(c) } : { back: true }; },
+      kindOf: (id, from, to) => (from === 'bf' && to && to.endsWith(':graveyard') ? 'die' : to && to.endsWith(':exile') ? 'exile' : 'move'),
+    });
+  });
+  // combat damage: each attacker swings at what it attacks
+  const strikeKey = game.combat && /^(combatDamage|firstStrikeDamage)$/.test(game.step) ? `${game.turnNumber}:${game.step}` : null;
+  useLayoutEffect(() => {
+    const root = boardRef.current;
+    if (!strikeKey || !game.combat || !root) return;
+    for (const a of game.combat.attackers) strike(root.querySelector(`[data-ref="c${a.card}"]`), root.querySelector(`[data-ref="${a.defenderCard ? 'c' + a.defenderCard : 'p' + a.defenderPlayer}"]`));
+  }, [strikeKey]);
   const recent = useRecentPlays(game, self);
   const images = imagesAvailable() && session.settings.images !== false;
   const touch = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(hover: none)').matches;
@@ -405,7 +433,7 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
       <WatcherEmotes list={emotes.watchers} />
       {!session.replay && !session.spectator ? <Coach kind="mtg" tips={mtgTips(game, me, req)} /> : null}
       <div className="game">
-        <main className={`board opp${opps.length} ${images ? 'with-images' : ''}`} ref={boardRef} onClick={() => setPicked(null)}>
+        <main className={`board opp${opps.length} ${images ? 'with-images' : ''} ${game.over && self >= 0 && game.winner !== self ? 'lost-game' : ''}`} ref={boardRef} onClick={() => setPicked(null)}>
           <div className="opponents">
             {opps.map(p => <Mat key={p.id} game={game} pid={p.id} ctx={ctx} side="top" compact={opps.length > 1} />)}
           </div>
@@ -446,7 +474,7 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
         </Modal>
       ) : null}
       {game.over && !session.dismissedResult ? (
-        <Modal narrow label="Game over" onClose={() => { session.dismissedResult = true; session.store.bump(); }}>
+        <>{game.winner === self ? <Confetti /> : null}<Modal narrow label="Game over" cls={game.winner === self ? 'win' : ''} onClose={() => { session.dismissedResult = true; session.store.bump(); }}>
           <h2>{resultMine}</h2>
           <div className="sub">{game.turnNumber} turns played</div>
           <ol className="standings">
@@ -471,7 +499,7 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
               </>}
             </>}
           </div>
-        </Modal>
+        </Modal></>
       ) : null}
       {inspect != null ? (
         <Modal narrow label="Card" onClose={() => setInspect(null)}>
