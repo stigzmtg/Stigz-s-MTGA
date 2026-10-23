@@ -35,8 +35,17 @@ export function cssPx(el, name, fallback) {
 // the big-screen size scale (1 on laptops)
 export const uiScale = () => (typeof document === 'undefined' ? 1 : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--s')) || 1);
 
+// set by tools/build.mjs: a hash of this build's data files, so a new build never gets last build's copies from a cache
+const DATA_VERSION = typeof __DATA_VERSION__ === 'string' ? __DATA_VERSION__ : '';
+
+// (the website only: the claude.ai page's files are replaced together on every publish)
+const onClaudePage = () => typeof window !== 'undefined' && !!(window.claude && window.claude.use);
+export const dataUrl = url => (DATA_VERSION && /^data\//.test(url) && !onClaudePage() ? `${url}?v=${DATA_VERSION}` : url);
+// picture packs are listed with a hash of their contents (img/ptcg-6.avif?v=…); the claude.ai page asks for the bare file
+export const packUrl = url => (onClaudePage() ? String(url).split('?')[0] : url);
+
 export async function fetchJSON(url, onProgress) {
-  const res = await fetch(url);
+  const res = await fetch(dataUrl(url));
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   const len = +res.headers.get('content-length') || 0;
   if (!res.body || !len || !onProgress) return res.json();

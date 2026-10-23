@@ -1,10 +1,11 @@
 // Card images: packed AVIF files published next to the page (built by tools/pack-images.mjs).
 // Packs load on demand and are sliced into object URLs; anything without an image falls back to the drawn frame.
+import { dataUrl, packUrl } from './common.js';
 const state = { index: null, packs: new Map(), urls: new Map(), version: 0, listeners: new Set(), failed: false };
 
 export async function initImages() {
   try {
-    const res = await fetch('data/images.json');
+    const res = await fetch(dataUrl('data/images.json'));
     if (!res.ok) throw new Error(res.status);
     const ix = await res.json();
     state.index = ix && ix.v === 2 && ix.packs && ix.packs.length ? ix : null;
@@ -25,7 +26,7 @@ function loadPack(i) {
   p = { buf: null, promise: null };
   state.packs.set(i, p);
   // a busy host or a dropped connection gets a few more tries, backing off, before the pack is given up on
-  const get = attempt => fetch(state.index.packs[i]).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+  const get = attempt => fetch(packUrl(state.index.packs[i])).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
     .catch(e => { if (attempt >= 3) throw e; return new Promise(res => setTimeout(res, 1500 * 2 ** attempt)).then(() => get(attempt + 1)); });
   p.promise = get(0).then(b => { p.buf = b; bump(); }, () => { p.error = true; });
   return p;

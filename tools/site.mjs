@@ -17,15 +17,23 @@ for (const f of fs.readdirSync(path.join(DIST, 'data', 'ptcg'))) copy(path.join(
 for (const f of fs.readdirSync(path.join(DIST, 'img'))) copy(path.join('img', f));
 // serve files as they are (no Jekyll processing on GitHub Pages)
 fs.writeFileSync(path.join(OUT, '.nojekyll'), '');
-// caching hints for hosts that read them (Cloudflare Pages, Netlify): card images change rarely, data and code more often
+// caching hints for hosts that read them (Cloudflare, Netlify). The app asks for data and picture packs with a
+// version in the address, but browsers and the CDN still check back for the page, the app and the data every time
+// (a quick "not modified" when nothing changed), so a new deck shows up on the next reload, not an hour later
 fs.writeFileSync(path.join(OUT, '_headers'), `/img/*
   Cache-Control: public, max-age=86400
 
 /data/*
-  Cache-Control: public, max-age=3600
+  Cache-Control: no-cache
 
 /app.js
-  Cache-Control: public, max-age=300
+  Cache-Control: no-cache
+
+/
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
 
 /sw.js
   Cache-Control: no-cache

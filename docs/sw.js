@@ -2,7 +2,7 @@
 // data always try the network first, so a new version arrives at once, and fall back to what was saved when the
 // connection drops. Card pictures, React and the fonts come from the cache once they've been seen.
 // tools/build.mjs fills in VERSION; every build gets its own cache for the page and data.
-const VERSION = '2b88f952f186';
+const VERSION = '75d1bb2a522f';
 const SHELL = 'tcg-arena-' + VERSION;
 const IMG = 'tcg-arena-img';      // card picture packs, kept until their index changes
 const LIB = 'tcg-arena-lib';      // React and fonts from their CDNs

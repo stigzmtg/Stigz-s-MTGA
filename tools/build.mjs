@@ -19,6 +19,20 @@ for (const f of ['cards.json', 'decks.json', 'images.json']) if (fs.existsSync(p
 if (!fs.existsSync('data/ptcg/images.json')) fs.writeFileSync(path.join(DIST, 'data', 'ptcg', 'images.json'), JSON.stringify({ v: 1, type: 'image/avif', packs: [], cards: {} }));
 // no packed card images yet: an empty index keeps the page from requesting a missing file
 if (!fs.existsSync('data/images.json')) fs.writeFileSync(path.join(DIST, 'data', 'images.json'), JSON.stringify({ v: 2, type: 'image/avif', packs: [], images: [], decks: {}, lobby: {}, tokens: {} }));
+// cache-busting: a rebuilt picture pack keeps its file name, so its address carries a hash of its contents
+// (img/ptcg-6.avif?v=1a2b3c4d), and the app asks for the data files with a hash of all of them, so browsers and
+// the CDN never hand back last build's deck lists or pictures
+const crypto = await import('node:crypto');
+const hashOf = buf => crypto.createHash('sha1').update(buf).digest('hex').slice(0, 10);
+for (const f of ['images.json', 'ptcg/images.json']) {
+  const file = path.join(DIST, 'data', f);
+  const ix = JSON.parse(fs.readFileSync(file, 'utf8'));
+  ix.packs = (ix.packs || []).map(p => { const bare = p.split('?')[0]; const src = path.join(DIST, bare); return fs.existsSync(src) ? `${bare}?v=${hashOf(fs.readFileSync(src))}` : bare; });
+  fs.writeFileSync(file, JSON.stringify(ix));
+}
+const dataHash = crypto.createHash('sha1');
+for (const f of ['cards.json', 'tokens.json', 'decks.json', 'support.json', 'images.json', 'ptcg/cards.json', 'ptcg/decks.json', 'ptcg/images.json']) if (fs.existsSync(path.join(DIST, 'data', f))) dataHash.update(fs.readFileSync(path.join(DIST, 'data', f)));
+const DATA_VERSION = dataHash.digest('hex').slice(0, 10);
 
 await build({
   entryPoints: ['src/ui/main.jsx'],
@@ -31,7 +45,9 @@ await build({
   loader: { '.jsx': 'jsx' },
   outfile: path.join(DIST, 'app.js'),
   legalComments: 'none',
+  define: { __DATA_VERSION__: JSON.stringify(DATA_VERSION) },
 });
+const APP_VERSION = hashOf(fs.readFileSync(path.join(DIST, 'app.js')));
 
 // bigger screens get a bigger table: every pixel size of 3px or more in our stylesheets is multiplied by --s, which
 // styles.css raises at wide, tall windows (1 on laptops). Media query conditions and url(...) contents stay as they are.
@@ -41,10 +57,11 @@ const css = fs.readFileSync('src/ui/generated/symbols.css', 'utf8') + '\n' + sca
 const fonts = 'https://fonts.googleapis.com/css2?family=Alegreya+Sans+SC:wght@500;700;800&family=Alegreya+Sans:wght@400;600;700;800&family=Alegreya:ital,wght@0,400;0,500;1,400&family=Cinzel:wght@600;700&display=swap';
 const react = 'https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js';
 const reactDom = 'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js';
-const body = `<div id="root"></div>
+const bodyWith = app => `<div id="root"></div>
 <script src="${react}"></script>
 <script src="${reactDom}"></script>
-<script src="app.js"></script>`;
+<script src="${app}"></script>`;
+const body = bodyWith(`app.js?v=${APP_VERSION}`);
 const head = `<title>Stigz’s TCG Arena</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -52,7 +69,7 @@ const head = `<title>Stigz’s TCG Arena</title>
 <link rel="stylesheet" href="${fonts}">
 <style>${css}</style>`;
 // artifact page: content only (the host adds the document skeleton)
-fs.writeFileSync(path.join(DIST, 'artifact.html'), `${head}\n${body}\n`);
+fs.writeFileSync(path.join(DIST, 'artifact.html'), `${head}\n${bodyWith('app.js')}\n`);
 // standalone site
 const icon = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="14" y="6" width="36" height="52" rx="5" fill="#0f2a1f" stroke="#e3bf6b" stroke-width="4"/><circle cx="32" cy="32" r="9" fill="#e3bf6b"/></svg>')}`;
 fs.writeFileSync(path.join(DIST, 'index.html'), `<!doctype html>
@@ -93,7 +110,6 @@ fs.writeFileSync(path.join(DIST, 'manifest.webmanifest'), JSON.stringify({
   ],
 }, null, 2));
 {
-  const crypto = await import('node:crypto');
   const h = crypto.createHash('sha1');
   for (const f of ['app.js', 'index.html', 'data/decks.json', 'data/ptcg/decks.json', 'data/ptcg/cards.json', 'data/images.json', 'data/ptcg/images.json']) if (fs.existsSync(path.join(DIST, f))) h.update(fs.readFileSync(path.join(DIST, f)));
   fs.writeFileSync(path.join(DIST, 'sw.js'), fs.readFileSync('src/sw.js', 'utf8').replace('__VERSION__', h.digest('hex').slice(0, 12)));

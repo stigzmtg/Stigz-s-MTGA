@@ -1,4 +1,5 @@
 // Pokémon card pictures: packed AVIF files (tools/ptcg/fetch-images.mjs), sliced into object URLs on demand.
+import { dataUrl, packUrl } from '../../ui/common.js';
 const state = { index: null, packs: new Map(), urls: new Map(), listeners: new Set(), version: 0 };
 const bump = () => { state.version++; for (const f of state.listeners) f(); };
 export const subscribePk = f => { state.listeners.add(f); return () => state.listeners.delete(f); };
@@ -7,7 +8,7 @@ export const pkImagesVersion = () => state.version;
 export async function initPkImages() {
   if (state.index) return true;
   try {
-    const r = await fetch('data/ptcg/images.json');
+    const r = await fetch(dataUrl('data/ptcg/images.json'));
     if (!r.ok) throw new Error(r.status);
     const ix = await r.json();
     state.index = ix && ix.packs && ix.packs.length ? ix : null;
@@ -21,7 +22,7 @@ function loadPack(i) {
   if (p) return p;
   p = { buf: null };
   state.packs.set(i, p);
-  const get = attempt => fetch(state.index.packs[i]).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+  const get = attempt => fetch(packUrl(state.index.packs[i])).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
     .catch(e => { if (attempt >= 3) throw e; return new Promise(res => setTimeout(res, 1500 * 2 ** attempt)).then(() => get(attempt + 1)); });
   p.promise = get(0).then(b => { p.buf = b; bump(); }, () => { p.error = true; });
   return p;
