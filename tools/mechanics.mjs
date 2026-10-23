@@ -1644,6 +1644,22 @@ test("Jegantha's {W}{U}{B}{R}{G} pays colored symbols, never generic", async T =
   const ok = await castSpell(T.game, 0, ste, {}); await T.resolve();
   expect(ok && jeg.tapped && w.tapped && ste.zone === 'battlefield', `cast with both (${ok}, ${jeg.tapped}, ${w.tapped}, ${ste.zone})`);
 });
+test('Escalate: the modes prompt offers no more modes than the escalate cost can pay for', async T => {
+  for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
+  await T.put(1, 'Sol Ring'); await T.put(1, 'Phyrexian Arena'); await T.put(1, 'Llanowar Elves');
+  const forests = [await T.put(0, 'Forest'), await T.put(0, 'Forest')];
+  T.noMana(0); T.game.priority = 0;
+  const maxes = [];
+  T.a.on('modes', req => { maxes.push(req.max); return [req.options[0].value]; });
+  const cr = await T.put(0, 'Collective Resistance', 'hand');
+  let ok = await castSpell(T.game, 0, cr, {}); await T.resolve();
+  expect(ok && maxes[0] === 1, `two Forests: one mode (${ok}, max ${maxes})`);
+  for (const c of forests) c.tapped = false;
+  await T.put(0, 'Forest');
+  const cr2 = await T.put(0, 'Collective Resistance', 'hand');
+  ok = await castSpell(T.game, 0, cr2, {}); await T.resolve();
+  expect(ok && maxes[1] === 2, `three Forests: two modes (${ok}, max ${maxes})`);
+});
 test("Nexos: basic lands' {C}{C} pays for {X} costs only", async T => {
   for (const c of T.game.battlefield) if (c.controller === 0) c.tapped = true;
   await T.put(0, 'Nexos');

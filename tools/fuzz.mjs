@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import { CardDB } from '../src/engine/cards.js';
 import { Game } from '../src/engine/game.js';
 import { AIAgent } from '../src/ai/ai.js';
-import { getActions, manaSourcesFor, parseCost, fromRef, spellOptions } from '../src/engine/abilities.js';
+import { getActions, manaSourcesFor, parseCost, fromRef, spellOptions, canAfford } from '../src/engine/abilities.js';
 import { matchValid } from '../src/engine/filters.js';
 
 const args = process.argv.slice(2);
@@ -30,7 +30,7 @@ function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Ma
 
 // ------------------------------------------------------------------ failure bookkeeping
 const failures = new Map(); // key -> { count, samples: [] }
-const totals = { games: 0, asks: 0, prompts: 0, actionsChecked: 0, actionsTaken: 0, cancels: 0, invariantChecks: 0, errors: 0, timeouts: 0, turns: 0 };
+const totals = { games: 0, asks: 0, prompts: 0, actionsChecked: 0, missingChecked: 0, actionsTaken: 0, cancels: 0, invariantChecks: 0, errors: 0, timeouts: 0, turns: 0 };
 let cur = null; // { seed, gameIndex, game }
 function fail(kind, detail, extra = {}) {
   const key = kind + ' :: ' + String(detail).slice(0, 180);
@@ -231,6 +231,51 @@ function oracle(game, pid, actions) {
   }
 }
 
+// the other way round: plain things a player can obviously do must be offered (a land with the land drop
+// unused; a creature / artifact / enchantment / planeswalker from hand or the commander from the command zone,
+// at sorcery speed, with the mana for its printed cost plus tax, no X, no extra costs, no cost changes around)
+function missingOracle(game, pid, actions) {
+  if (game.priority !== pid || game.stack.some(s => s.splitSecond)) return;
+  const p = game.players[pid];
+  const has = (type, id) => actions.some(a => a.type === type && a.cardId === id);
+  // plain "{T}: do something" (no targets, no conditions) on an untapped permanent that can tap
+  if (!game.activeStatics('CantBeActivated').length) {
+    for (const c of game.battlefield) {
+      if (c.controller !== pid || c.phasedOut || c.tapped) continue;
+      const ch = game.chars(c);
+      if (ch.types.has('Creature') && c.sick && !hasteLike(game, c)) continue;
+      for (const abil of ch.abilities) {
+        const ap = abil.parsed.p;
+        if (abil.parsed.kind !== 'AB' || ['Mana', 'ManaReflected', 'Charm'].includes(abil.parsed.api) || (ap.Cost || '').trim() !== 'T') continue;
+        if (Object.keys(ap).some(k => /Tgt|Target|Limit|Phases|Sorcery|Turn|Present|SVar|Condition|Zone|AnyPlayer|Activator|Planeswalker|Equip|Restrict|Require|Exhaust|Choices/i.test(k))) continue;
+        if (Object.values(abil.svars || {}).some(v => /ValidTgts|TargetType|Tgt/.test(String(v)))) continue;
+        totals.missingChecked++;
+        if (!actions.some(a => a.type === 'activate' && a.cardId === c.id && a.abilityKey === abil.key)) fail('missing', `{T} ability not offered: ${ch.name}: ${(ap.SpellDescription || '').slice(0, 60)}`);
+      }
+    }
+  }
+  if (!game.canSorcery(pid)) return;
+  if (p.landsPlayed < 1 + game.playerChars(pid).extraLands) {
+    // (a modal double-faced card's land face too; a transforming card's back face is never played)
+    for (const c of p.hand) if (c.def.faces[0].types.includes('Land') || (c.def.altMode === 'Modal' && c.def.faces[1]?.types.includes('Land'))) { totals.missingChecked++; if (!has('land', c.id)) fail('missing', `land play not offered: ${c.def.name}`); }
+  }
+  if (game.activeStatics('RaiseCost').length || game.activeStatics('CantBeCast').length || game.stack.length) return;
+  const cands = [...p.hand, ...p.command.filter(c => c.isCommander && c.owner === pid)];
+  for (const c of cands) {
+    const f = c.def.faces[0];
+    if (!f.manaCost || f.manaCost.x || f.types.includes('Land') || f.subtypes.includes('Aura')) continue;
+    if (!['Creature', 'Artifact', 'Enchantment', 'Planeswalker'].some(t => f.types.includes(t))) continue;
+    const text = c.def.oracle || f.oracle || '';
+    if (/additional cost|can't be cast|cast this spell only|can cast .* only|can't cast|Companion/i.test(text)) continue;
+    if (/\bSP\$/.test((f.abilities || []).join('\n'))) continue; // its own spell ability (with costs of its own)
+    const tax = c.zone === 'command' ? game.commanderTax(c) : 0;
+    const m = { ...f.manaCost, colored: { ...f.manaCost.colored }, generic: (f.manaCost.generic || 0) + tax };
+    if (!canAfford(game, pid, m, { spellCard: c, exclude: new Set([c.id]) })) continue;
+    totals.missingChecked++;
+    if (!has('cast', c.id)) fail('missing', `${c.zone === 'command' ? 'commander' : 'spell'} not offered though its mana is there: ${c.def.name}`);
+  }
+}
+
 // ------------------------------------------------------------------ combat legality, checked at the first priority after declarations
 function combatOracle(game) {
   const cb = game.combat;
@@ -375,7 +420,7 @@ class Checked {
     validatePrompt(game, pid, req);
     totals.prompts++;
     checkInvariants(game, cur.initial, req.type === 'priority');
-    if (req.type === 'priority') { oracle(game, pid, getActions(game, pid)); combatOracle(game); }
+    if (req.type === 'priority') { const acts = getActions(game, pid); oracle(game, pid, acts); missingOracle(game, pid, acts); combatOracle(game); }
     const ans = await this.inner.ask(game, pid, req);
     if (flags.verbose) { (cur.trail = cur.trail || []).push(`${req.type}/${req.purpose || ''} ${(req.prompt || '').slice(0, 60)} [${req.min ?? ''}-${req.max ?? ''}] -> ${JSON.stringify(ans)?.slice(0, 80)}`); if (cur.trail.length > 12) cur.trail.shift(); }
     return ans;
@@ -474,6 +519,7 @@ for (let g = 0; g < N; g++) {
 
 const list = [...failures.values()].sort((a, b) => b.count - a.count);
 console.log(`\n${totals.games} games (${totals.turns} turns), ${totals.prompts} prompts, ${totals.actionsChecked} offered actions checked, ${totals.actionsTaken} actions taken, ${totals.cancels} cancels, ${totals.errors} errors, ${totals.timeouts} timeouts, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+console.log(`${totals.missingChecked} plain lands / spells checked to be offered`);
 console.log(`${list.length} distinct failures, ${list.reduce((a, f) => a + f.count, 0)} total`);
 for (const f of list.slice(0, +(flags.top || 60))) console.log(`${String(f.count).padStart(5)} [${f.kind}] ${f.detail}  e.g. seed ${f.samples[0].seed} T${f.samples[0].turn} ${f.samples[0].step}`);
 if (flags.out) fs.writeFileSync(flags.out, JSON.stringify({ totals, failures: list }, null, 1));

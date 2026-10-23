@@ -1900,8 +1900,20 @@ export async function chooseModes(game, sa, { mana = null, card = null, cancella
   const repeat = p.CanRepeatModes === 'True';
   let prompt = p.ChoiceDesc || `Choose ${num === min ? num : min + '-' + num} mode${num > 1 ? 's' : ''}`;
   let ans = null;
+  let max = repeat ? num : Math.min(num, usable.length);
+  const lo = Math.min(min, usable.length);
+  // escalate: no more modes than the escalate costs can be paid for (the prompt's max says so)
+  const escalateOk = k => {
+    if (!escalate || k < 2) return true;
+    if (escalate.parts.length && !canPayNonMana(game, sa, { ...escalate, tap: false, untap: false, hasMana: false, parts: repeatParts(escalate.parts, k - 1) })) return false;
+    if (!escalate.hasMana || !mana) return true;
+    let m = mana.x ? { ...mana, x: 0 } : mana;
+    for (let i = 1; i < k; i++) m = addCosts(m, escalate.mana);
+    return canAfford(game, sa.controller, m, { spellCard: card, exclude: card ? new Set([card.id]) : new Set() });
+  };
+  while (max > Math.max(1, lo) && !escalateOk(max)) max--;
   for (let tries = 0; tries < 4; tries++) {
-    ans = await game.ask(sa.controller, { type: 'modes', prompt, options: usable, min: Math.min(min, usable.length), max: repeat ? num : Math.min(num, usable.length), repeat, sa, cancellable: !!cancellable && !sa.isTrigger, baseMana: mana });
+    ans = await game.ask(sa.controller, { type: 'modes', prompt, options: usable, min: lo, max, repeat, sa, cancellable: !!cancellable && !sa.isTrigger, baseMana: mana });
     if (!ans) return false;
     // spree: the chosen modes' costs must be payable together
     const extra = ans.map(n => (usable.find(o => o.value === n) || {}).cost).filter(Boolean);
