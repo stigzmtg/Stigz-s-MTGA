@@ -1163,4 +1163,169 @@ test("Ludevic: transforms into a copy of an exiled creature card named Olag", as
   expect(ch.power === 6 && ch.subtypes.has('Zombie') && ch.colors.has('U') && ch.colors.has('B'), `4/4 + 2 counters, Zombie, blue-black (${ch.power})`);
 });
 
+// ------------------------------------------------------------ planar die, text changes, piles, meld, stun and the last few
+test('Planar die: Fractured Powerstone rolls; Ichor Elixir rolls one more and ignores one', async T => {
+  const ps = await T.put(0, 'Fractured Powerstone');
+  let calls = spyRng(T);
+  await T.activate(ps, 0, a => a.parsed.api === 'RollPlanarDice');
+  expect(calls.filter(([n]) => n === 6).length === 1 && T.logged(/rolls the planar die/), 'one planar die');
+  await T.put(0, 'Ichor Elixir');
+  ps.tapped = false; ps.abilityUses = {};
+  calls = spyRng(T);
+  await T.activate(ps, 0, a => a.parsed.api === 'RollPlanarDice');
+  expect(calls.filter(([n]) => n === 6).length === 2, 'two planar dice');
+});
+test('Path of the Pyromancer: the Will of the Planeswalkers vote resolves without a planar deck', async T => {
+  for (let i = 0; i < 3; i++) await T.put(0, 'Forest', 'hand');
+  for (let i = 0; i < 6; i++) await T.put(0, 'Island', 'library');
+  await T.cast('Path of the Pyromancer');
+  expect(T.A.hand.length === 4 && T.A.graveyard.length >= 3, `discarded 3, drew 4 (${T.A.hand.length})`);
+  expect(T.logged(/Chaos ensues|can't planeswalk/), 'the vote was carried out');
+});
+test('New Blood: steal a creature and turn one of its creature types into Vampire', async T => {
+  await T.put(0, 'Bloodthirsty Adversary');
+  const elf = await T.put(1, 'Llanowar Elves');
+  T.a.on('targets', () => [refOf(elf)]);
+  T.a.on('changeText', () => 'Elf');
+  await T.cast('New Blood');
+  const ch = T.game.chars(elf);
+  expect(elf.controller === 0 && ch.subtypes.has('Vampire') && !ch.subtypes.has('Elf') && ch.subtypes.has('Druid'), `Vampire Druid under A (${[...ch.subtypes]})`);
+});
+test('Stun counters: an untap removes one instead; Fear of Sleep Paralysis keeps them on', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  elf.tapped = true; await T.game.addCounters(elf, 'STUN', 1, null);
+  await T.game.untap(elf);
+  expect(elf.tapped && !elf.counters.STUN, 'stayed tapped, counter removed');
+  await T.game.untap(elf);
+  expect(!elf.tapped, 'untaps next time');
+  const angel = await T.put(1, 'Serra Angel');
+  T.a.on('targets', req => req.cands.includes(refOf(angel)) ? [refOf(angel)] : []);
+  await T.cast('Fear of Sleep Paralysis');
+  expect(angel.tapped && angel.counters.STUN === 1, 'tapped and stunned');
+  await T.game.untap(angel);
+  expect(angel.tapped && angel.counters.STUN === 1, "the counter can't be removed: still tapped");
+});
+test('Chorus of the Conclave: pay extra mana for extra +1/+1 counters on creature spells', async T => {
+  await T.put(0, 'Chorus of the Conclave');
+  T.a.on('chorus', () => 3);
+  const elf = await T.cast('Llanowar Elves');
+  expect(elf.counters.P1P1 === 3, `three counters (${elf.counters.P1P1})`);
+});
+test('Bloodthirsty Adversary: pay {2}{R} any number of times; copy an instant from the graveyard', async T => {
+  const opt = await T.put(0, 'Opt', 'graveyard');
+  T.a.on('repeatCost', () => 1);
+  T.a.on('targets', req => req.cands.includes(refOf(opt)) ? [refOf(opt)] : req.cands.slice(0, req.min));
+  const h = T.A.hand.length;
+  const ba = await T.cast('Bloodthirsty Adversary');
+  expect(ba.counters.P1P1 === 1 && opt.zone === 'exile', `a counter, Opt exiled (${ba.counters.P1P1}, ${opt.zone})`);
+  expect(T.A.hand.length === h + 1, `the copy drew a card (${T.A.hand.length - h})`);
+});
+test('Whims of the Fates: each player sacrifices one of three piles at random', async T => {
+  const a = [await T.put(0, 'Llanowar Elves'), await T.put(0, 'Serra Angel'), await T.put(0, 'Wall of Omens')];
+  const b = [await T.put(1, 'Llanowar Elves'), await T.put(1, 'Serra Angel'), await T.put(1, 'Wall of Omens')];
+  const one = req => [req.cards[0]];
+  T.a.on('pile', one); T.b.on('pile', one);
+  await T.cast('Whims of the Fates');
+  expect(a.filter(c => c.zone === 'battlefield').length === 2 && b.filter(c => c.zone === 'battlefield').length === 2, 'one permanent each');
+});
+test('Meld: Gisela and Bruna become Brisela; both cards leave together', async T => {
+  const g = await T.put(0, 'Gisela, the Broken Blade');
+  const b = await T.put(0, 'Bruna, the Fading Light');
+  await T.game.runStep('end'); await T.resolve();
+  expect(g.zone === 'battlefield' && T.game.name(g) === 'Brisela, Voice of Nightmares' && T.game.chars(g).power === 9 && b.zone === 'exile', `melded (${T.game.name(g)}, ${b.zone})`);
+  await T.game.destroy(g, null); await T.resolve();
+  expect(g.zone === 'graveyard' && b.zone === 'graveyard', `both in the graveyard (${g.zone}, ${b.zone})`);
+});
+test('Manascape Refractor: has the activated abilities of lands and spends mana as any color for them', async T => {
+  const r = await T.put(0, 'Manascape Refractor');
+  await T.put(1, 'Kessig Wolf Run'); await T.put(0, 'Forest');
+  const keys = activatedAbilities(T.game, 0, r).map(a => a.parsed.api);
+  expect(keys.includes('Pump'), `gained Kessig Wolf Run's ability (${keys})`);
+  const elf = await T.put(0, 'Llanowar Elves');
+  T.noMana(0); T.A.pool.C = 3; r.tapped = false; r.sick = false;
+  T.a.on('xValue', () => 1); T.a.on('targets', () => [refOf(elf)]);
+  const abil = T.game.chars(r).abilities.find(a => a.parsed.api === 'Pump');
+  T.game.priority = 0;
+  const ok = await (await import('../src/engine/abilities.js')).activateAbility(T.game, 0, r, abil.key, { ignoreTiming: true });
+  await T.resolve();
+  expect(ok && T.game.chars(elf).power === 2 && T.game.hasKeyword(elf, 'Trample'), `paid {X}{R}{G} with colorless (${T.game.chars(elf).power})`);
+});
+test('Exchange of Words: two creatures swap text boxes while it remains', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  const angel = await T.put(1, 'Serra Angel');
+  T.a.on('targets', () => [refOf(elf), refOf(angel)]);
+  const ex = await T.cast('Exchange of Words');
+  expect(T.game.hasKeyword(elf, 'Flying') && !T.game.hasKeyword(angel, 'Flying') && T.game.chars(elf).power === 1, 'the elf has flying and vigilance, still 1/1');
+  await T.game.destroy(ex, null); await T.resolve();
+  expect(!T.game.hasKeyword(elf, 'Flying') && T.game.hasKeyword(angel, 'Flying'), 'back to normal');
+});
+test('Space Beleren: creatures get sectors; -1 counters one sector', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  const angel = await T.put(1, 'Serra Angel');
+  T.a.on('sector', () => 'Alpha'); T.b.on('sector', () => 'Beta');
+  const sb = await T.put(0, 'Space Beleren'); await T.resolve();
+  expect(elf.sector === 'Alpha' && angel.sector === 'Beta', 'assigned');
+  T.a.on('chooseSector', () => 'Alpha');
+  await T.activate(sb, 0, a => a.parsed.api === 'ChooseSector' && /SubCounter<1\//.test(a.parsed.p.Cost));
+  expect(elf.counters.P1P1 === 1 && !angel.counters.P1P1, 'only the alpha sector got counters');
+  const elf2 = await T.put(1, 'Llanowar Elves'); await T.resolve();
+  expect(elf2.sector === 'Beta', 'a creature entering later is assigned too');
+  sb.abilityUses = {};
+  expect(combat.canBlock(T.game, angel, elf), 'before +1: blocks across sectors');
+  await T.activate(sb, 0, a => a.parsed.api === 'Effect');
+  expect(!combat.canBlock(T.game, angel, elf) && combat.canBlock(T.game, angel, elf2), 'after +1: only within its sector');
+});
+test("Danny Pink: counters for the first time each turn draw a card", async T => {
+  await T.put(0, 'Danny Pink');
+  const elf = await T.put(0, 'Llanowar Elves');
+  const h = T.A.hand.length;
+  await T.game.addCounters(elf, 'P1P1', 1, null); await T.resolve();
+  await T.game.addCounters(elf, 'P1P1', 1, null); await T.resolve();
+  expect(T.A.hand.length === h + 1, `one card (${T.A.hand.length - h})`);
+});
+test("Everybody Lives!: players can't lose life this turn", async T => {
+  await T.cast('Everybody Lives!');
+  await T.game.loseLife(T.B, 5, null);
+  expect(T.B.life === 40, `no life lost (${T.B.life})`);
+});
+test('River Song: draw from the bottom; opponents searching their library get punished', async T => {
+  const rs = await T.put(0, 'River Song');
+  await T.put(0, 'Serra Angel', 'library');
+  const bottom = await T.put(0, 'Wall of Omens', 'library');
+  T.A.library.push(T.A.library.splice(T.A.library.indexOf(bottom), 1)[0]);
+  await T.game.drawCards(T.A, 1, null);
+  expect(bottom.zone === 'hand', 'drew the bottom card');
+  await T.put(1, 'Forest', 'library');
+  T.game.activePlayer = 1;
+  await T.cast('Rampant Growth', 1);
+  expect(rs.counters.P1P1 === 1 && T.B.life === 37, `a counter and 3 damage (${T.B.life})`);
+});
+test('Regenerations Restored: removing time counters scries and gains life', async T => {
+  const rr = await T.put(0, 'Regenerations Restored'); await T.resolve();
+  expect(rr.counters.TIME === 12, 'vanishing 12');
+  await T.game.removeCounters(rr, 'TIME', 1); await T.resolve();
+  expect(T.A.life === 41, `gained 1 (${T.A.life})`);
+});
+test('The Master, Multiplied: your triggered abilities can\'t make you sacrifice creature tokens', async T => {
+  await T.put(0, 'The Master, Multiplied');
+  await T.cast('Dragon Fodder');
+  const tok = T.tokens(0)[0];
+  expect(tok && T.game.cantSacrifice(tok, { isTrigger: true, controller: 0 }) && !T.game.cantSacrifice(tok, { isSpell: true, controller: 0 }), 'blocked only for your triggers');
+});
+test('The Pandorica: the permanent stays phased out while it remains tapped; The War Doctor counts it', async T => {
+  const pan = await T.put(0, 'The Pandorica');
+  const doc = await T.put(0, 'The War Doctor');
+  const angel = await T.put(1, 'Serra Angel');
+  angel.tapped = true;
+  T.a.on('targets', () => [refOf(angel)]);
+  T.a.on('keepTapped', () => true);
+  await T.activate(pan, 0, a => a.parsed.api === 'Untap');
+  expect(angel.phasedOut && !angel.tapped && doc.counters.TIME === 1, `phased out, War Doctor +1 (${doc.counters.TIME})`);
+  T.game.activePlayer = 1; await T.game.runStep('untap');
+  expect(angel.phasedOut, "can't phase in while The Pandorica is tapped");
+  T.game.activePlayer = 0; T.a.on('keepTapped', () => false);
+  await T.game.runStep('untap'); await T.resolve();
+  expect(!pan.tapped && !angel.phasedOut, 'phased in when The Pandorica untapped');
+});
+
 process.exit(await run(tests) ? 1 : 0);

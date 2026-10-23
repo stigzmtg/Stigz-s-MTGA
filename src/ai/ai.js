@@ -399,6 +399,9 @@ export class AIAgent {
       case 'Regenerate': return 0;
       case 'Goad': return 1.5;
       case 'AddPhase': return 2;
+      case 'RollPlanarDice': case 'Planeswalk': case 'ChaosEnsues': return -1;
+      case 'BlankLine': return 0;
+      case 'Meld': return 4;
       case 'UnlockDoor': { const f = sa.host && sa.host.def && sa.host.def.faces[+p.Door || 0]; return f ? 3 + f.cmc * 0.6 + f.triggers.length + f.statics.length : 2; }
       default: return 1;
     }
@@ -595,6 +598,12 @@ export class AIAgent {
       return pick(cards.slice().sort((a, b) => score(b) - score(a)), 1);
     }
     if (purpose === 'pair') return pick(cards.slice().sort((a, b) => v(b) - v(a)), 1);
+    if (purpose === 'pile') {
+      // spread value evenly over the piles: one of them is lost at random
+      const left = (req.piles || 3) - (req.pile || 1) + 1;
+      const sorted = cards.slice().sort((a, b) => v(b) - v(a));
+      return sorted.filter((_, i) => i % left === 0).map(c => c.id);
+    }
     if (purpose === 'attachChoice') {
       // curses and pacifism-style auras go on the opponents' best; everything else on our own
       const host = req.sa && req.sa.host;
@@ -668,6 +677,21 @@ export class AIAgent {
         return game.players[pid].library.filter(c => !game.chars(c).types.has('Land') && (game.chars(c).cmc % 2 === 1) === odd).length;
       };
       return score('Odd') >= score('Even') ? 'Odd' : 'Even';
+    }
+    if (req.purpose === 'sector') {
+      // keep our creatures together, away from a sculptor-wielding opponent's
+      const sculptor = game.battlefield.find(x => game.hasKeyword(x, 'Space sculptor'));
+      const mineIn = s => game.battlefield.filter(x => x.controller === pid && x.sector === s).length;
+      if (sculptor && sculptor.controller !== pid) {
+        const theirs = s => game.battlefield.filter(x => x.controller === sculptor.controller && x.sector === s).length;
+        return opts.slice().sort((a, b) => theirs(a.value) - theirs(b.value))[0].value;
+      }
+      return opts.slice().sort((a, b) => mineIn(b.value) - mineIn(a.value))[0].value;
+    }
+    if (req.purpose === 'chooseSector') {
+      const worth = (s, mine) => game.battlefield.filter(x => game.chars(x).types.has('Creature') && x.sector === s && (x.controller === pid) === mine).reduce((t, x) => t + this.value(x), 0);
+      const score = s => req.ai === 'Destroy' ? worth(s, false) - worth(s, true) * 1.5 : worth(s, true) - worth(s, false);
+      return opts.slice().sort((a, b) => score(b.value) - score(a.value))[0].value;
     }
     if (req.purpose === 'assignGroup') {
       // friend for ourselves, foe for everyone else
@@ -847,6 +871,7 @@ export class AIAgent {
 
   number(game, pid, req) {
     if (req.purpose === 'readAhead') return req.min;
+    if (req.purpose === 'chorus') return Math.min(req.max, game.step === 'main2' ? req.max : Math.floor(req.max / 2));
     if (req.purpose === 'xValue' && req.xCost === 'PayLife') {
       const opp = game.battlefield.filter(c => c.controller !== pid && game.chars(c).types.has('Creature'));
       const need = opp.length ? Math.max(...opp.map(c => game.chars(c).toughness)) : 0;

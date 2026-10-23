@@ -168,6 +168,10 @@ export class Card {
     this.disguised = false;
     this.pairedWith = null;
     this.impending = false;
+    this.textChanges = null; // "change the text by replacing all instances of one creature type with another"
+    this.textSwap = null; // exchanged text boxes (Exchange of Words)
+    this.sector = null; // Space sculptor: 'Alpha' | 'Beta' | 'Gamma'
+    this.meldedWith = null; // melded permanent: the other card it's made of
   }
   get faceDef() {
     if (this.copyOf && this.copyOf.def) return this.copyOf.def.faces[this.copyOf.face || 0] || this.copyOf.def.faces[0];

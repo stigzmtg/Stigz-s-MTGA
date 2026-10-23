@@ -41,7 +41,42 @@ export function baseChars(game, card) {
   // impending: not a creature while it has time counters
   if (card.impending && card.zone === 'battlefield' && (card.counters.TIME || 0) > 0) ch.types.delete('Creature');
   if (card.copyOf && card.copyOf.extra) applyCopyExtras(ch, card.copyOf.extra);
+  if (card.textSwap && card.zone === 'battlefield' && !card.faceDown) swapTextBox(game, card, ch);
+  if (card.textChanges && card.textChanges.length && !card.faceDown) applyTextChanges(ch, card.textChanges);
   return ch;
+}
+
+// exchanged text boxes: abilities, keywords and rules text come from the other creature's printed face
+function swapTextBox(game, card, ch) {
+  const ts = card.textSwap;
+  const o = game.cardById(ts.other);
+  const h = ts.host != null ? game.cardById(ts.host) : null;
+  if (!o || o.zone !== 'battlefield' || o.zcc !== ts.otherZcc || o.faceDown) return;
+  if (ts.host != null && (!h || h.zone !== 'battlefield' || h.zcc !== ts.hostZcc)) return;
+  const of = o.faceDef;
+  ch.keywords = [...of.keywords];
+  ch.abilities = abilityList(of.abilities, of.svars, card, `${card.face}xA`);
+  ch.triggers = abilityList(of.triggers, of.svars, card, `${card.face}xT`);
+  ch.statics = abilityList(of.statics, of.svars, card, `${card.face}xS`);
+  ch.replacements = abilityList(of.replacements, of.svars, card, `${card.face}xR`);
+  ch.svars = of.svars;
+  ch.oracle = of.oracle;
+}
+
+// text-changing effects (New Blood): every instance of a word in the type line and abilities is replaced
+function applyTextChanges(ch, changes) {
+  const swap = s => changes.reduce((t, { from, to }) => t.replace(new RegExp(`\\b${from}\\b`, 'g'), to), String(s));
+  for (const { from, to } of changes) if (ch.subtypes.has(from)) { ch.subtypes.delete(from); ch.subtypes.add(to); }
+  const svars = {};
+  for (const [k, v] of Object.entries(ch.svars || {})) svars[k] = swap(v);
+  const remap = list => list.map(e => {
+    const raw = swap(e.raw);
+    return { ...e, raw, parsed: raw === e.raw ? e.parsed : parseAbility(raw), svars: e.svars === ch.svars ? svars : e.svars };
+  });
+  ch.abilities = remap(ch.abilities); ch.triggers = remap(ch.triggers); ch.statics = remap(ch.statics); ch.replacements = remap(ch.replacements);
+  ch.keywords = ch.keywords.map(swap);
+  ch.svars = svars;
+  ch.oracle = swap(ch.oracle || '');
 }
 
 // A Room permanent has the characteristics of its unlocked doors; each locked door can be unlocked
@@ -290,7 +325,7 @@ export function computeAll(game) {
   for (const c of all) applyOwnMods(game, c, map.get(c.id), 6);
   for (const { st, ctx } of active) {
     const p = st.parsed.p;
-    if (!(p.AddKeyword || p.RemoveKeyword || p.RemoveAllAbilities || p.AddAbility || p.AddTrigger || p.AddStaticAbility || p.AddHiddenKeyword || p.AddReplacementEffects || p.AddSVar)) continue;
+    if (!(p.AddKeyword || p.RemoveKeyword || p.RemoveAllAbilities || p.AddAbility || p.AddTrigger || p.AddStaticAbility || p.AddHiddenKeyword || p.AddReplacementEffects || p.AddSVar || p.GainsAbilitiesOf)) continue;
     for (const c of affectedCards(game, st, ctx, map)) {
       const ch = map.get(c.id) || lazy(game, c);
       if (p.RemoveAllAbilities) { ch.abilities = []; ch.triggers = []; ch.statics = []; ch.replacements = []; ch.keywords = []; }
@@ -302,6 +337,16 @@ export function computeAll(game) {
       if (p.AddStaticAbility) grantAbilities(ch, p.AddStaticAbility, st.svars, st.host, 'S', 's' + st.host.id + st.key);
       if (p.AddReplacementEffects) grantAbilities(ch, p.AddReplacementEffects, st.svars, st.host, 'R', 's' + st.host.id + st.key);
       if (p.AddSVar) for (const n of p.AddSVar.split(' & ')) if (st.svars[n]) ch.svars = { ...ch.svars, [n]: st.svars[n] };
+      // "CARDNAME has all activated abilities of all lands on the battlefield"
+      if (p.GainsAbilitiesOf) {
+        const types = p.GainsAbilitiesOf.split(',').map(x => x.trim());
+        for (const x of bf) {
+          if (x.id === c.id || x.phasedOut) continue;
+          const xch = map.get(x.id);
+          if (!xch || !types.some(t => xch.types.has(t))) continue;
+          for (const a of xch.abilities) if (!a.gainedFrom && !ch.abilities.some(b => b.raw === a.raw)) ch.abilities.push({ ...a, key: `g${x.id}:${a.key}`, gainedFrom: x.id });
+        }
+      }
     }
   }
   // continuous statics granted in layer 6 (AddStaticAbility, granted by other statics) apply from layer 7 on

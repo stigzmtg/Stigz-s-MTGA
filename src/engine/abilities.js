@@ -110,9 +110,11 @@ function costCandidates(game, sa, part) {
   const ctx = ctxOf(game, sa);
   const valid = (part.valid || '').replace(/CARDNAME|NICKNAME/g, 'Card.Self');
   switch (part.type) {
-    case 'Sac': case 'Return': case 'Exile':
-      if (valid === 'Card.Self') return host.zone === 'battlefield' ? [host] : [];
-      return game.battlefield.filter(c => c.controller === pid && matchValid(game, c, valid, ctx));
+    case 'Sac': case 'Return': case 'Exile': {
+      const ok = c => part.type !== 'Sac' || !game.cantSacrifice(c, sa, true);
+      if (valid === 'Card.Self') return host.zone === 'battlefield' && ok(host) ? [host] : [];
+      return game.battlefield.filter(c => c.controller === pid && matchValid(game, c, valid, ctx) && ok(c));
+    }
     case 'tapXType':
       return game.battlefield.filter(c => c.controller === pid && !c.tapped && matchValid(game, c, valid, ctx) && (valid === 'Card.Self' || c.id !== host.id || true));
     case 'untapYType':
@@ -338,6 +340,34 @@ export async function rollDice(game, pid, amount, sides, ignore = 0, sa = null) 
   game.fire('RolledDie', { Player: pid, Result: total, Sides: sides });
   game.fire('RolledDieOnce', { Player: pid, Result: total, Sides: sides });
   return { rolls, total };
+}
+
+// "you may spend mana as though it were mana of any color to pay the activation costs of CARDNAME's abilities"
+function manaConverted(game, card, mana) {
+  if (!card || !card.isCard || card.zone !== 'battlefield' || !mana) return mana;
+  if (!game.chars(card).statics.some(s => s.parsed.p.Mode === 'ManaConvert' && /Card\.Self/.test(s.parsed.p.ValidCard || 'Card.Self') && /Activated/.test(s.parsed.p.ValidSA || 'Activated'))) return mana;
+  const m = cloneCost(mana);
+  for (const c of COLORS) { m.generic += m.colored[c] || 0; m.colored[c] = 0; }
+  m.generic += m.hybrid.length; m.hybrid = [];
+  return m;
+}
+
+// "you may pay {2}{R} any number of times" (Cost$ Mana<2 R\NumTimes> | Announce$ NumTimes)
+async function payRepeatedMana(game, sa, unitStr, varName) {
+  const pid = sa.controller;
+  const unit = parseMana(unitStr);
+  let max = 0, m = emptyCost();
+  while (max < 10) { const m2 = addCosts(m, unit); if (!canAfford(game, pid, m2, {})) break; m = m2; max++; }
+  if (!max) return false;
+  const n = await game.ask(pid, { type: 'number', prompt: `${game.name(sa.host)}: pay ${costString(unit)} how many times?`, min: 0, max, purpose: 'repeatCost', sa });
+  if (!n || n < 0) return false;
+  let total = emptyCost();
+  for (let i = 0; i < Math.min(n, max); i++) total = addCosts(total, unit);
+  if (!(await payManaCost(game, pid, total, { sa }))) return false;
+  const svars = { ...sa.svars, [varName]: `Number$${Math.min(n, max)}` };
+  for (const s of sa.chain()) s.svars = svars;
+  sa.svars = svars;
+  return true;
 }
 
 async function applyCostParts(game, sa, cost, choices) {
@@ -1236,6 +1266,16 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
     sa.optionalCostPaid = true;
     if (reveal) (sa.castPresence = sa.castPresence || []).push(reveal[1]);
   }
+  // Chorus of the Conclave: "as an additional cost to cast creature spells, you may pay any amount of mana"
+  if (face.types.includes('Creature') && game.battlefield.some(c => c.controller === pid && game.chars(c).keywords.some(k => /^As an additional cost to cast creature spells, you may pay any amount of mana/.test(k)))) {
+    let max = 0;
+    while (max < 20 && affordable(String(max + 1))) max++;
+    if (max > 0) {
+      const n = await game.ask(pid, { type: 'number', prompt: `Pay any amount of additional mana: ${face.name} enters with that many more +1/+1 counters`, min: 0, max, purpose: 'chorus', sa, cancellable: true });
+      if (n == null) throw new Cancelled();
+      if (n > 0) { addCost(String(Math.min(n, max))); sa.chorusCounters = Math.min(n, max); }
+    }
+  }
   // casualty N: you may sacrifice a creature with power N or greater; when you do, copy the spell
   const cas = kws.map(k => k.match(/^Casualty:(\d+)$/)).find(Boolean);
   if (cas) {
@@ -1599,7 +1639,7 @@ export function canActivate(game, pid, card, abil, { ignoreTiming = false } = {}
   const cost = parseCost(p.Cost);
   if (!canPayNonMana(game, sa, cost)) return false;
   if (cost.hasMana) {
-    const m = cost.mana.x ? { ...cost.mana, x: 0 } : cost.mana;
+    const m = manaConverted(game, card, cost.mana.x ? { ...cost.mana, x: 0 } : cost.mana);
     const exclude = new Set(cost.tap ? [card.id] : []);
     for (const part of cost.parts) if (part.type === 'Sac' && (part.valid === 'CARDNAME' || part.valid === 'Card.Self')) exclude.add(card.id);
     if (!canAfford(game, pid, m, { exclude })) return false;
@@ -1632,7 +1672,7 @@ export async function activateAbility(game, pid, card, abilityKey, action = {}) 
   sa.isActivated = true;
   if (sa.api === 'Charm') { const ok = await chooseModes(game, sa); if (!ok) throw new Cancelled(); }
   const cost = parseCost(p.Cost);
-  let mana = cost.mana;
+  let mana = manaConverted(game, card, cost.mana);
   if (mana.x || /\bX\b/.test(p.Cost || '') && cost.parts.some(pt => pt.amount === 'X')) {
     const exclude = new Set(cost.tap ? [card.id] : []);
     let max;
@@ -1769,6 +1809,8 @@ async function encodeCipher(game, pid, card) {
 // Pay the cost of a triggered ability on resolution. Returns true when paid (or nothing to pay).
 export async function payTriggerCost(game, sa, item, alreadyAgreed = false) {
   const costStr = sa.p.Cost;
+  const rep = String(costStr || '').match(/^Mana<([^\\>]+)\\(\w+)>$/);
+  if (rep) return payRepeatedMana(game, sa, rep[1], rep[2]);
   const cost = parseCost(costStr);
   const mandatory = /\bMandatory\b/.test(costStr);
   const pid = sa.controller;

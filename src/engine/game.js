@@ -413,7 +413,10 @@ export class Game {
     switch (step) {
       case 'untap': {
         for (const c of [...this.battlefield]) {
-          if (c.phasedOut && c.controller === ap) { c.phasedOut = false; continue; }
+          if (c.phasedOut && c.controller === ap) {
+            if (!this.activeStatics('CantPhaseIn').some(s => matchValid(this, c, s.p.ValidCard || 'Card', s.ctx))) { c.phasedOut = false; this.touch(); }
+            continue;
+          }
           if (c.controller === ap) {
             c.sick = false;
             if (c.skipNextUntap) { c.skipNextUntap = false; continue; } // exerted
@@ -744,6 +747,7 @@ export class Game {
       const to = this.pendingInitiative; this.pendingInitiative = null;
       if (!this.players[to].lost) await this.takeInitiative(to);
     }
+    await this.assignSectors();
     for (let guard = 0; guard < 50 && !this.over; guard++) {
       await this.checkSBA();
       if (this.over) return;
@@ -1083,6 +1087,8 @@ export class Game {
       if (r === null) return card; // replaced entirely
       dest = r;
     }
+    // "triggered abilities you control can't cause you to exile creature tokens you control"
+    if (dest === 'exile' && from === 'battlefield' && opts.cause && this.cantByStatic('CantExile', card, opts.cause, !!opts.forCost)) return card;
     const lki = from === 'battlefield' ? this.makeLKI(card) : (from === 'stack' ? this.makeLKI(card) : null);
     const wasFaceDown = card.faceDown;
     // leaving the battlefield
@@ -1112,6 +1118,7 @@ export class Game {
     const prevController = card.controller;
     const countersRemain = dest !== 'hand' && dest !== 'library' && card.faceDef.statics.some(s => /Mode\$ CountersRemain/.test(s));
     const keepCounters = opts.keepCounters || countersRemain ? { ...card.counters } : null;
+    const meldPartner = from === 'battlefield' && card.meldedWith != null ? this.cardById(card.meldedWith) : null;
     card.reset();
     card.zcc++;
     if (isToken && dest !== 'battlefield') {
@@ -1158,6 +1165,8 @@ export class Game {
       if (!opts.silent && opts.log !== false) this.logMove(card, lki, from, dest, wasFaceDown);
     }
     this.recordMove(card, lki, from, dest, opts, ZONE_NAME);
+    // a melded permanent is both cards: the other one goes along
+    if (meldPartner && meldPartner.zone === 'exile') await this.moveCard(meldPartner, dest === 'command' ? (to === 'command' ? 'graveyard' : to) : dest, { silent: true, noReplace: dest === 'battlefield' });
     return card;
   }
 
@@ -1282,6 +1291,7 @@ export class Game {
     }
     if (ch.types.has('Battle') && card.faceDef.defense) await this.addCounters(card, 'DEFENSE', +card.faceDef.defense || 0, null, { etb: true });
     if (this.hasKeywordIn(ch, 'Ravenous') && card.xPaid) await this.addCounters(card, 'P1P1', card.xPaid, null, { etb: true });
+    if (card.castSA && card.castSA.chorusCounters) await this.addCounters(card, 'P1P1', card.castSA.chorusCounters, null, { etb: true });
     if (this.hasKeywordIn(ch, 'Unleash') && await this.ask(card.controller, { type: 'confirm', prompt: `Unleash: have ${this.name(card)} enter with a +1/+1 counter? (It can't block while it has one.)`, purpose: 'unleash', cardId: card.id })) await this.addCounters(card, 'P1P1', 1, null, { etb: true });
     if (this.hasKeywordIn(ch, 'Start your engines') && !(this.players[card.controller].speed > 0)) { this.players[card.controller].speed = 1; this.log(`${this.players[card.controller].name}'s speed is 1.`); }
     if (card.castSA && card.castSA.altCost === 'Impending') { const k = ch.keywords.find(x => /^Impending:/.test(x)); if (k) { card.impending = true; await this.addCounters(card, 'TIME', +k.split(':')[1] || 1, null, { etb: true }); } }
@@ -1405,7 +1415,8 @@ export class Game {
       const repl = await this.applySimpleReplacement('Draw', { Affected: p, Player: p.id }, sa);
       if (repl === null) continue;
       if (!p.library.length) { p.drewFromEmpty = true; this.touch(); break; }
-      const c = p.library[0];
+      // "you draw cards from the bottom of your library rather than the top"
+      const c = this.activeStatics('DrawFromBottom').some(s => matchValid(this, p, s.p.ValidPlayer || 'You', s.ctx)) ? p.library[p.library.length - 1] : p.library[0];
       await this.moveCard(c, 'hand', { silent: true, noReplace: true });
       p.cardsDrawnThisTurn++;
       drawn.push(c);
@@ -1532,8 +1543,38 @@ export class Game {
     return true;
   }
 
+  // Space sculptor: while one is on the battlefield, each creature's controller assigns it to a sector
+  async assignSectors() {
+    if (!this.battlefield.some(c => !c.phasedOut && this.hasKeyword(c, 'Space sculptor'))) return;
+    const SECTORS = ['Alpha', 'Beta', 'Gamma'];
+    for (const c of [...this.battlefield]) {
+      if (c.sector || c.phasedOut || c.zone !== 'battlefield' || !this.chars(c).types.has('Creature')) continue;
+      const v = await this.ask(c.controller, { type: 'option', prompt: `Space sculptor: assign ${this.name(c)} to a sector`, options: SECTORS.map(x => ({ label: x, value: x })), purpose: 'sector', cardId: c.id });
+      c.sector = SECTORS.includes(v) ? v : 'Alpha';
+      this.log(`${this.name(c)} is assigned to the ${c.sector.toLowerCase()} sector.`);
+      this.touch();
+    }
+  }
+
+  // "can't be sacrificed" / "can't cause you to sacrifice or exile" statics
+  cantByStatic(mode, card, sa, forCost = false) {
+    return this.activeStatics(mode).some(s => {
+      if (!matchValid(this, card, s.p.ValidCard || 'Card', s.ctx)) return false;
+      if (s.p.ForCost === 'False' && forCost) return false;
+      if (s.p.ValidCause) {
+        if (!sa) return false;
+        const root = sa.root ? sa.root() : sa;
+        if (/^Triggered/.test(s.p.ValidCause) && !(sa.isTrigger || root.isTrigger)) return false;
+        if (/YouCtrl/.test(s.p.ValidCause) && sa.controller !== s.ctx.you) return false;
+      }
+      return true;
+    });
+  }
+  cantSacrifice(card, sa, forCost = false) { return this.cantByStatic('CantSacrifice', card, sa, forCost); }
+
   async sacrifice(card, sa) {
     if (!card || card.zone !== 'battlefield') return false;
+    if (this.cantSacrifice(card, sa, !!(sa && sa.payingCost))) return false;
     const lki = this.makeLKI(card);
     const ctrl = card.controller;
     await this.moveCard(card, 'graveyard', { cause: sa, silent: true });
@@ -1551,6 +1592,12 @@ export class Game {
   }
   async untap(card) {
     if (!card.tapped) return false;
+    // stun counters: "if it would become untapped, instead remove a stun counter from it"
+    if ((card.counters.STUN || 0) > 0) {
+      const r = await this.removeCounters(card, 'STUN', 1);
+      this.log(r ? `${this.name(card)} stays tapped and loses a stun counter.` : `${this.name(card)} stays tapped (stunned).`);
+      return false;
+    }
     card.tapped = false;
     // effects and control changes that last "for as long as CARDNAME remains tapped"
     for (const c of this.battlefield) if (c.tempControl && c.tempControl.untilUntapOf === card.id) { c.controller = c.tempControl.prev; c.tempControl = null; c.sick = true; }
@@ -1588,6 +1635,7 @@ export class Game {
   async loseLife(p, n, sa, fromDamage = false) {
     if (n <= 0 || p.lost) return 0;
     if (this.lifeLocked(p)) return 0;
+    if (this.activeStatics('CantLoseLife').some(s => matchValid(this, p, s.p.ValidPlayer || 'You', s.ctx))) return 0;
     p.life -= n;
     p.lifeLostThisTurn += n;
     // start your engines!: speed rises once each of your turns when an opponent loses life
@@ -1894,6 +1942,7 @@ export class Game {
     const cap = Math.min(n, 30);
     for (let i = 0; i < cap; i++) this.fire('CounterAdded', { Card: obj.isCard ? obj : null, Player: obj.isPlayer ? obj.id : null, Valid: obj, CounterType: type, CounterAmount: 1, Source: sa ? sa.host : null, Previous: before + i });
     this.fire('CounterAddedOnce', { Card: obj.isCard ? obj : null, Player: obj.isPlayer ? obj.id : null, CounterType: type, Amount: n, CounterAmount: n, Source: sa ? sa.host : null, Previous: before });
+    this.fire('CounterTypeAddedAll', { Object: obj, Card: obj.isCard ? obj : null, Player: obj.isPlayer ? obj.id : null, CounterType: type, Amount: n });
     // saga chapters
     if (type === 'LORE' && obj.isCard) await this.sagaChapters(obj, before, before + n);
     return n;
@@ -1904,9 +1953,12 @@ export class Game {
     const have = obj.counters[type] || 0;
     const r = Math.min(have, n);
     if (r <= 0) return 0;
+    // "stun counters can't be removed from permanents your opponents control"
+    if (obj.isCard && this.replacementsFor('RemoveCounter').some(({ p, ctx }) => p.Layer === 'CantHappen' && (!p.ValidCard || matchValid(this, obj, p.ValidCard, ctx)) && (!p.ValidCounterType || p.ValidCounterType.split(',').map(normalizeCounter).includes(type)))) return 0;
     obj.counters[type] = have - r;
     this.touch();
     this.fire('CounterRemoved', { Card: obj.isCard ? obj : null, CounterType: type, Amount: r, NewCounterAmount: obj.counters[type] });
+    this.fire('CounterRemovedOnce', { Card: obj.isCard ? obj : null, Player: obj.isPlayer ? obj.id : null, CounterType: type, Amount: r });
     return r;
   }
 

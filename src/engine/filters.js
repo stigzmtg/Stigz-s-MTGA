@@ -320,6 +320,10 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'suspended': return card.zone === 'exile' && (card.counters.TIME || 0) > 0;
     case 'madness': return false;
     case 'CastSaSource': return !!host && card.id === host.id;
+    case 'ChosenSector': return !!host && !!host.chosen && !!host.chosen.sector && card.sector === host.chosen.sector;
+    case 'DifferentSector': return !!ctx.attacker && card.sector !== ctx.attacker.sector;
+    case 'phasedOutIsRemembered': return !!card.phasedOut && !!host && (host.remembered || []).some(r => r && r.id === card.id);
+    case 'phasedOutOther': return !!card.phasedOut && (!host || host.id !== card.id);
     case 'cmcChosenEvenOdd': return !!host && !!host.chosen && !!host.chosen.evenOdd && (ch.cmc % 2 === 0) === (host.chosen.evenOdd === 'Even');
     case 'FortifiedBy': return !!host && host.attachedTo === card.id;
     case 'enlistedThisCombat': return card.enlistedTurn === game.turnNumber;
@@ -355,7 +359,7 @@ function cardProp(game, card, ch, prop, ctx) {
     const has = game.hasKeywordIn(ch, kw) || game.hasKeywordIn(ch, m[2]);
     return m[1] ? !has : has;
   }
-  if ((m = prop.match(/^named(.+)$/))) return ch.name === m[1] || card.def.name === m[1];
+  if ((m = prop.match(/^named(.+)$/))) { const nm = m[1].replace(/;/g, ','); return ch.name === nm || card.def.name === nm; }
   if ((m = prop.match(/^base(Power|Toughness)(EQ|NE|LT|LE|GT|GE)(.+)$/))) { const b = m[1] === 'Power' ? card.faceDef.power : card.faceDef.toughness; return compare(/^\d+$/.test(b || '') ? +b : 0, m[2], calcCtx(game, m[3], ctx)); }
   if ((m = prop.match(/^kicked (\d)$/))) return (card.kicked || 0) >= +m[1];
   if ((m = prop.match(/^ClassLevel(EQ|GE|LE|GT|LT)(\d+)$/))) return compare(card.classLevel || 1, m[1], +m[2]);
@@ -850,6 +854,7 @@ function countExpr(game, rest, ctx, depth) {
   let m;
   switch (rest) {
     case 'xPaid': case 'XPaid': return xPaid(ctx);
+    case 'TriggerRememberAmount': { const r = sa && sa.root ? sa.root() : sa; return (r && r.triggerRememberAmount) || (sa && sa.triggerRememberAmount) || 0; }
     case 'CardPower': return host ? charsOf(game, host).power : 0;
     case 'CardToughness': return host ? charsOf(game, host).toughness : 0;
     case 'CardManaCost': return host ? charsOf(game, host).cmc : 0;

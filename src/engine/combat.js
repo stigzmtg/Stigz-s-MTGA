@@ -230,7 +230,9 @@ export function canBlock(game, b, a) {
   for (const s of game.activeStatics('CantBlockBy')) {
     if (s.p.ValidAttacker && !matchValid(game, a, s.p.ValidAttacker, s.ctx)) continue;
     if (s.p.ValidBlocker && !matchValid(game, b, s.p.ValidBlocker, s.ctx)) continue;
-    if (!s.p.ValidAttacker && !s.p.ValidBlocker) continue;
+    // "can be blocked only by creatures in the same sector" (relative to the attacker)
+    if (s.p.ValidBlockerRelative && !matchValid(game, b, s.p.ValidBlockerRelative, { ...s.ctx, attacker: a })) continue;
+    if (!s.p.ValidAttacker && !s.p.ValidBlocker && !s.p.ValidBlockerRelative) continue;
     return false;
   }
   return true;

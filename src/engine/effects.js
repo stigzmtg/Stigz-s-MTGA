@@ -331,6 +331,7 @@ export const E = {
       }
       await game.endBatch();
       if (chosen.length && dest !== 'battlefield' && origins.includes('library')) game.log(`${pl.name} searches their library${dest === 'hand' ? ' and puts ' + chosen.length + ' card(s) into their hand' : ''}.`);
+      if (origins.includes('library')) game.fire('SearchedLibrary', { Player: chooser, Searched: pl.id, SearchOwn: chooser === pl.id });
       if (origins.includes('library') && p.Shuffle !== 'False') game.shuffle(pl, sa);
     }
   },
@@ -644,7 +645,7 @@ export const E = {
     }
     const valid = (p.SacValid || 'Card.Self').replace(/CARDNAME/g, 'Card.Self');
     for (const pl of playersOf(def.length ? def : [game.players[sa.controller]])) {
-      const pool = game.battlefield.filter(c => c.controller === pl.id && matchValid(game, c, valid, { ...ctx, you: pl.id }));
+      const pool = game.battlefield.filter(c => c.controller === pl.id && matchValid(game, c, valid, { ...ctx, you: pl.id }) && !game.cantSacrifice(c, sa));
       const n = p.Amount === 'All' ? pool.length : num(game, sa, 'Amount', 1);
       if (!pool.length) continue;
       let chosen;
@@ -1040,6 +1041,8 @@ export const E = {
     sub.isTrigger = true;
     sub.trigRemembered = rem;
     sub.delayRemembered = rem;
+    // "when you pay this cost one or more times, put that many ..." (Count$TriggerRememberAmount)
+    if (p.RememberSVarAmount) sub.triggerRememberAmount = sa.svars[p.RememberSVarAmount] ? calc(game, sa.svars[p.RememberSVarAmount], sa) : 0;
     sub.description = (p.TriggerDescription || parseAbility(raw).p.SpellDescription || '').replace(/CARDNAME/g, game.name(sa.host));
     const ok = await chooseTargetsForSA(game, sub, { optional: true });
     if (!ok) return;
@@ -1557,7 +1560,17 @@ export const E = {
     game.touch();
   },
 
-  async Phases(game, sa) { for (const c of cardsOf(objs(game, sa, 'Self'))) { c.phasedOut = true; game.log(`${game.name(c)} phases out.`); } game.touch(); },
+  async Phases(game, sa) {
+    const out = [];
+    for (const c of cardsOf(objs(game, sa, 'Self'))) {
+      if (c.zone !== 'battlefield') continue;
+      if (c.phasedOut) { if (sa.p.PhaseInOrOut === 'True') { c.phasedOut = false; game.log(`${game.name(c)} phases in.`); } continue; }
+      c.phasedOut = true; out.push(c);
+      game.log(`${game.name(c)} phases out.`);
+    }
+    game.touch();
+    if (out.length) game.fire('PhaseOutAll', { Cards: out, Amount: out.length });
+  },
 
   async Play(game, sa) {
     const p = sa.p;
@@ -2251,6 +2264,134 @@ export const E = {
       await resolveChain(game, sub);
     }
     sa.host.remembered = prev;
+  },
+
+  // "exchange the text boxes of those creatures for as long as this enchantment remains on the battlefield"
+  async ExchangeTextBox(game, sa) {
+    const list = cardsOf(hasTgtSpec(sa) ? sa.targets : objs(game, sa, 'Self')).filter(c => c && c.zone === 'battlefield');
+    if (list.length < 2) return;
+    const [a, b] = list;
+    const host = sa.host && sa.host.isCard && sa.p.Duration === 'AsLongAsInPlay' ? sa.host : null;
+    const link = (x, y) => { x.textSwap = { other: y.id, otherZcc: y.zcc, host: host ? host.id : null, hostZcc: host ? host.zcc : null }; };
+    link(a, b); link(b, a);
+    game.touch();
+    game.log(`${game.name(a)} and ${game.name(b)} exchange text boxes.`);
+  },
+
+  async ChooseSector(game, sa) {
+    const SECTORS = ['Alpha', 'Beta', 'Gamma'];
+    const v = await game.ask(sa.controller, { type: 'option', prompt: 'Choose a sector', options: SECTORS.map(x => ({ label: x, value: x })), sa, purpose: 'chooseSector', ai: sa.p.AILogic });
+    const s = SECTORS.includes(v) ? v : 'Alpha';
+    sa.host.chosen = { ...(sa.host.chosen || {}), sector: s };
+    game.touch();
+    game.log(`${game.players[sa.controller].name} chooses the ${s.toLowerCase()} sector.`);
+  },
+
+  // the planar die (there's no planar deck outside Planechase, so planeswalking and chaos have nothing to act on)
+  async RollPlanarDice(game, sa) {
+    const pid = sa.controller;
+    let amount = 1, ignore = 0;
+    // "if you would roll one or more planar dice, instead roll that many plus one and ignore one" (Ichor Elixir)
+    const rr = await game.applySimpleReplacement('RollPlanarDice', { Affected: game.players[pid], Player: pid, Number: 1, Ignore: 0 }, sa);
+    if (rr) { amount = Math.max(1, rr.Number || 1); ignore = rr.Ignore || 0; }
+    const FACES = ['Chaos', 'Planeswalk', 'Blank', 'Blank', 'Blank', 'Blank'];
+    const rolls = [];
+    for (let i = 0; i < amount; i++) rolls.push(FACES[game.rng.int(6)]);
+    while (ignore > 0 && rolls.length > 1) {
+      const opts = [...new Set(rolls)];
+      const drop = opts.length === 1 ? opts[0] : await game.ask(pid, { type: 'option', prompt: `Planar die: ${rolls.join(', ')}. Choose a result to ignore`, options: opts.map(x => ({ label: x, value: x })), sa, purpose: 'planarIgnore' });
+      rolls.splice(rolls.indexOf(opts.includes(drop) ? drop : opts[0]), 1);
+      ignore--;
+    }
+    game.log(`${game.players[pid].name} rolls the planar die: ${rolls.join(', ')}.`);
+    for (const r of rolls) {
+      if (r === 'Chaos') await E.ChaosEnsues(game, sa);
+      else if (r === 'Planeswalk') await E.Planeswalk(game, sa);
+    }
+  },
+  async ChaosEnsues(game, sa) { game.log('Chaos ensues (no plane is in play, so nothing happens).'); game.fire('ChaosEnsues', { Player: sa.controller }); },
+  async Planeswalk(game, sa) { game.log(`${game.players[sa.controller].name} can't planeswalk: there's no planar deck in this game.`); },
+  async BlankLine() {},
+
+  // "change the text of that creature by replacing all instances of one creature type with Vampire"
+  async ChangeText(game, sa) {
+    const m = String(sa.p.ChangeTypeWord || '').match(/^ChooseCreatureType (\w+)$/);
+    if (!m) return;
+    const to = m[1];
+    const known = new Set(creatureTypesInGame(game));
+    for (const c of cardsOf(objs(game, sa, 'Self'))) {
+      if (c.zone !== 'battlefield') continue;
+      const ch = game.chars(c);
+      const words = [...ch.subtypes].filter(t => !game.nonCreatureSubtypes.has(t));
+      const text = [...ch.abilities, ...ch.triggers, ...ch.statics, ...ch.replacements].map(e => e.raw).concat(Object.values(ch.svars), ch.keywords).join(' ');
+      for (const w of text.match(/\b[A-Z][a-z]+\b/g) || []) if (known.has(w) && !words.includes(w)) words.push(w);
+      const list = words.filter(w => w !== to);
+      if (!list.length) continue;
+      const pick = list.length === 1 ? list[0] : await game.ask(sa.controller, { type: 'option', prompt: `${game.name(c)}: replace which creature type with ${to}?`, options: list.map(x => ({ label: x, value: x })), sa, purpose: 'changeText', cardId: c.id });
+      const from = list.includes(pick) ? pick : list[0];
+      c.textChanges = [...(c.textChanges || []), { from, to }];
+      game.touch();
+      game.log(`${game.name(c)}: ${from} becomes ${to} in its text.`);
+    }
+  },
+
+  // "each player separates all permanents they control into three piles, then chooses one at random"
+  async MultiplePiles(game, sa) {
+    const p = sa.p;
+    const ctx = ctxOf(game, sa);
+    const n = Math.max(2, num(game, sa, 'Piles', 2));
+    const zone = Z(p.Zone || 'Battlefield');
+    const np = game.players.length;
+    const players = playersOf(objs(game, sa, 'Player')).sort((a, b) => ((a.id - sa.controller + np) % np) - ((b.id - sa.controller + np) % np));
+    const chosen = [];
+    for (const pl of players) {
+      let rest = (zone === 'battlefield' ? game.battlefield.filter(c => c.controller === pl.id) : (pl[zone] || []).slice()).filter(c => matchValid(game, c, p.ValidCards || 'Card', ctx));
+      const piles = [];
+      for (let i = 1; i < n; i++) {
+        let pick = [];
+        if (rest.length) {
+          const ids = await game.ask(pl.id, { type: 'cards', prompt: `Separate your permanents into ${n} piles: choose the cards for pile ${i} (the rest make pile ${n})`, cards: rest.map(c => c.id), min: 0, max: rest.length, purpose: 'pile', pile: i, piles: n, sa });
+          pick = rest.filter(c => (ids || []).includes(c.id));
+        }
+        piles.push(pick);
+        rest = rest.filter(c => !pick.includes(c));
+      }
+      piles.push(rest);
+      let k = 0;
+      if (p.RandomChosen === 'True') k = game.rng.int(n);
+      else {
+        const v = await game.ask(pl.id, { type: 'option', prompt: 'Choose a pile', options: piles.map((x, i) => ({ label: `Pile ${i + 1}: ${x.map(c => game.name(c)).join(', ') || 'empty'}`, value: i })), sa, purpose: 'choosePile' });
+        k = piles[v] ? v : 0;
+      }
+      game.log(`${pl.name} makes piles of ${piles.map(x => x.length).join(', ')}; pile ${k + 1} is chosen${p.RandomChosen === 'True' ? ' at random' : ''} (${piles[k].map(c => game.name(c)).join(', ') || 'empty'}).`);
+      chosen.push(...piles[k]);
+    }
+    const raw = p.ChosenPile && sa.svars[p.ChosenPile];
+    if (!raw) return;
+    const prev = sa.host.remembered;
+    sa.host.remembered = chosen.slice();
+    const s2 = makeSA(game, raw, sa.svars, sa.host, sa.controller, { parent: sa, key: sa.key + 'pile' });
+    for (const s of s2.chain()) s.rememberedOverride = chosen.slice();
+    await resolveChain(game, s2);
+    sa.host.remembered = prev;
+  },
+
+  // meld: exile both cards, then put them onto the battlefield as the melded permanent
+  async Meld(game, sa) {
+    const p = sa.p;
+    const pid = sa.controller;
+    const mine = c => c.controller === pid && c.owner === pid && !c.faceDown;
+    const prim = game.battlefield.find(c => mine(c) && c.def.faces[0].name === p.Primary);
+    const sec = game.battlefield.find(c => mine(c) && c.def.faces[0].name === p.Secondary);
+    if (!prim || !sec || prim.def.faces.length < 2) return;
+    await game.moveCard(prim, 'exile', { cause: sa, silent: true });
+    await game.moveCard(sec, 'exile', { cause: sa, silent: true });
+    if (prim.zone !== 'exile' || sec.zone !== 'exile') return;
+    const melded = await game.moveCard(prim, 'battlefield', { controller: pid, face: 1, cause: sa, silent: true });
+    if (!melded) return;
+    melded.meldedWith = sec.id;
+    game.touch();
+    game.log(`${p.Primary} and ${p.Secondary} meld into ${game.name(melded)}.`);
   },
 
   // blight N: put N -1/-1 counters on a creature you control
