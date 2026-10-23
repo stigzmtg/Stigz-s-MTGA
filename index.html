@@ -267,7 +267,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, .card:focus-vis
 ::selection { background: rgba(217, 174, 92, 0.35); }
 input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color: #d9ae5c; }
 * { scrollbar-color: rgba(232, 200, 132, 0.28) transparent; }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { html:not([data-motion="full"]) *, html:not([data-motion="full"]) *::before, html:not([data-motion="full"]) *::after { transition: none !important; animation: none !important; } }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: calc(7px * var(--s));
@@ -1180,6 +1180,69 @@ kbd { font: 600 calc(12px * var(--s))/1 'Alegreya Sans', sans-serif; padding: 2p
   .turninfo { padding: calc(4px * var(--s)) calc(9px * var(--s)); }
 }
 
+/* ================================================================ motion (ui/motion.js flies the cards) */
+/* under dialogs (z-index 50; no animation may leave .app a stacking context, or flights would cover them) */
+.flylayer { position: fixed; inset: 0; z-index: 46; pointer-events: none; overflow: hidden; }
+.flyghost { z-index: 46; pointer-events: none; will-change: transform, opacity; transform-origin: 50% 50%; }
+.flyghost .card, .flyghost.pk-card, .flyghost .pk-card, .flycard { box-shadow: 0 calc(14px * var(--s)) calc(30px * var(--s)) rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.5); }
+.flyghost .rise, .flyghost .pk-float, .flyghost .pk-burst { display: none; }
+.flycard { position: relative; border-radius: 6% / 4.5%; overflow: hidden; display: grid; place-items: center; padding: 8%; text-align: center; background: linear-gradient(160deg, #f6eed3, #d9cba0); color: #2a241a; font: 700 calc(12px * var(--s))/1.15 var(--font-card); }
+.flycard img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.flycard.back { padding: 0; background: radial-gradient(ellipse 46% 40% at 50% 50%, #4a6fa3 0%, #2e4f80 38%, #3b2a1c 64%, #2b1e14 100%); border: calc(3px * var(--s)) solid #1a120c; }
+.flycard.back.pk { border: 0; background: radial-gradient(circle at 50% 50%, #3f6fd0 0 20%, #1f3f8d 52%, #0f2457 100%); box-shadow: inset 0 0 0 2px #0b1a3f, 0 calc(14px * var(--s)) calc(30px * var(--s)) rgba(0, 0, 0, 0.55); }
+/* numbers rising off a card: damage, +1/+1 counters */
+.rise { position: absolute; left: 50%; top: 24%; z-index: 9; pointer-events: none; white-space: nowrap; font: 900 max(calc(17px * var(--s)), calc(var(--cw) * 0.3))/1 var(--font-ui); animation: riseup 1.25s ease-out forwards; }
+.rise.hurt { color: #ffe3da; text-shadow: 0 2px 0 #7a160b, 0 0 calc(12px * var(--s)) rgba(255, 60, 30, 0.85); }
+.rise.grow { color: #eaffdc; text-shadow: 0 2px 0 #1d5b22, 0 0 calc(12px * var(--s)) rgba(90, 220, 90, 0.8); top: 40%; }
+@keyframes riseup { 0% { opacity: 0; transform: translate(-50%, calc(10px * var(--s))) scale(0.6); } 15% { opacity: 1; transform: translate(-50%, calc(-4px * var(--s))) scale(1.3); } 30% { transform: translate(-50%, calc(-8px * var(--s))) scale(1); } 100% { opacity: 0; transform: translate(-50%, calc(-42px * var(--s))) scale(1); } }
+/* counters, damage and power that change pop as they change */
+.card .badge, .card .pt, .card .loyal { animation: badgepop 0.36s cubic-bezier(0.3, 1.5, 0.5, 1); }
+@keyframes badgepop { 0% { transform: scale(0.4); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+.pool > * { animation: pippop 0.32s cubic-bezier(0.3, 1.6, 0.5, 1); }
+@keyframes pippop { 0% { transform: translateY(calc(8px * var(--s))) scale(0.3); opacity: 0; } 100% { transform: none; opacity: 1; } }
+/* the step that just began */
+.ph.on { animation: phpop 0.4s cubic-bezier(0.3, 1.5, 0.5, 1); }
+@keyframes phpop { 0% { transform: scale(0.7); } 100% { transform: scale(1); } }
+/* battlefield cards answer the pointer */
+.mat .field .card { transition: transform 0.2s, box-shadow 0.18s, filter 0.18s; }
+.mat .field .cardwrap:hover > .card:not(.playable):not(.targetable):not(.selected):not(.attacking):not(.blocking) { box-shadow: 0 calc(8px * var(--s)) calc(18px * var(--s)) rgba(0, 0, 0, 0.6), 0 0 0 1.5px rgba(243, 214, 143, 0.6); filter: brightness(1.06); }
+.hand .card.playable, .card.targetable { animation: glowpulse 1.6s ease-in-out infinite; }
+@keyframes glowpulse { 50% { box-shadow: 0 0 0 2px var(--brass-hi), 0 0 calc(22px * var(--s)) rgba(243, 214, 143, 0.85); } }
+/* the turn banner: a light sweeps across it */
+.turnbanner { overflow: hidden; }
+.turnbanner::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 35%, rgba(255, 240, 200, 0.22) 50%, transparent 65%); background-size: 250% 100%; animation: sweep 1.3s ease-out 0.15s both; pointer-events: none; }
+@keyframes sweep { from { background-position: 120% 0; } to { background-position: -40% 0; } }
+/* screens fade in; lobbies rise into place */
+.app { animation: appin 0.32s ease-out backwards; }
+@keyframes appin { from { opacity: 0; } to { opacity: 1; } }
+.lobby > *, .pk-lobby-grid > *, .builder-grid > * { animation: risein 0.5s cubic-bezier(0.2, 0.8, 0.3, 1) backwards; }
+.lobby > :nth-child(2), .pk-lobby-grid > :nth-child(1), .builder-grid > :nth-child(1) { animation-delay: 0.06s; }
+.lobby > :nth-child(3), .pk-lobby-grid > :nth-child(2), .builder-grid > :nth-child(2) { animation-delay: 0.12s; }
+.lobby > :nth-child(n+4) { animation-delay: 0.18s; }
+.decklist > div { animation: risein 0.45s ease-out backwards; }
+.decklist > div:nth-child(2) { animation-delay: 0.05s; } .decklist > div:nth-child(3) { animation-delay: 0.1s; } .decklist > div:nth-child(4) { animation-delay: 0.15s; } .decklist > div:nth-child(n+5) { animation-delay: 0.2s; }
+.pk-decks > .pk-deck { animation: risein 0.45s ease-out backwards; animation-delay: calc(var(--i, 0) * 22ms); }
+@keyframes risein { from { opacity: 0; transform: translateY(calc(14px * var(--s))); } to { opacity: 1; transform: none; } }
+.deckrow.sel, .pk-deck.sel { animation: selpop 0.3s cubic-bezier(0.3, 1.5, 0.5, 1); }
+@keyframes selpop { 0% { transform: scale(0.97); } 100% { transform: scale(1); } }
+.prompt { transition: border-color 0.3s, background 0.3s; }
+.prompt .acts .btn { animation: btnin 0.28s ease-out backwards; }
+@keyframes btnin { from { opacity: 0; transform: translateY(calc(6px * var(--s))); } to { opacity: 1; transform: none; } }
+/* a finished game: the board dims after a loss; a win rains gold */
+.board.lost-game, .pk-board.lost-game { filter: grayscale(0.55) brightness(0.8); transition: filter 1.2s; }
+.confetti { position: fixed; inset: 0; z-index: 52; pointer-events: none; overflow: hidden; }
+.confetti i { position: absolute; top: -4vh; left: var(--x); width: calc(9px * var(--s)); height: calc(14px * var(--s)); border-radius: 2px; background: var(--c); opacity: 0; animation: confall var(--t) cubic-bezier(0.25, 0.6, 0.4, 1) var(--d) forwards; }
+.confetti i:nth-child(3n) { width: calc(7px * var(--s)); height: calc(7px * var(--s)); border-radius: 50%; }
+@keyframes confall { 0% { opacity: 1; transform: translate(0, 0) rotate(0); } 85% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx), 108vh) rotate(var(--r)); } }
+.dialog.win h2, .dialog h2.win { animation: wintitle 0.7s cubic-bezier(0.3, 1.5, 0.5, 1) both; background: linear-gradient(180deg, #fff6dc, #e7c983); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-size: calc(28px * var(--s)); }
+@keyframes wintitle { 0% { transform: scale(0.6); opacity: 0; letter-spacing: 0.3em; } 100% { transform: none; opacity: 1; } }
+/* the size picker also holds the animation choice */
+.sizepop .sizehead { padding: calc(8px * var(--s)) calc(10px * var(--s)) calc(4px * var(--s)); font: 800 calc(11px * var(--s))/1 var(--font-ui); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); }
+.sizepop hr { border: 0; border-top: 1px solid var(--line); margin: calc(4px * var(--s)) 0; }
+/* Off: nothing moves; Reduced: fades stay, flights and shakes go (motion.js) */
+html[data-motion="off"] *, html[data-motion="off"] *::before, html[data-motion="off"] *::after { animation: none !important; transition: none !important; }
+html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { display: none; }
+
 /* ================================================================ Pokémon: shared */
 .app.pk {
   --pk-grass: #4fae4a; --pk-fire: #e8572c; --pk-water: #2b8fd6; --pk-lightning: #f3c21b; --pk-psychic: #9c5bbd; --pk-fighting: #c0652d;
@@ -1435,6 +1498,41 @@ kbd { font: 600 calc(12px * var(--s))/1 'Alegreya Sans', sans-serif; padding: 2p
   .pk-prompt { flex-wrap: wrap; }
   .pk-prompt .acts { justify-content: flex-start; }
 }
+
+/* ================================================================ Pokémon motion */
+/* an attack lands: a burst in the attacker's type color */
+.pk-burst { position: absolute; left: 50%; top: 42%; z-index: 3; width: 115%; aspect-ratio: 1; border-radius: 50%; pointer-events: none; transform: translate(-50%, -50%) scale(0.2); background: radial-gradient(circle, rgba(255, 255, 255, 0.8) 0 5%, var(--burst) 16%, color-mix(in srgb, var(--burst) 45%, transparent) 36%, transparent 62%); mix-blend-mode: screen; animation: pkburst 0.62s ease-out forwards; }
+.pk-burst::before, .pk-burst::after { content: ""; position: absolute; inset: 8%; border-radius: 50%; border: calc(3px * var(--s)) solid var(--burst); opacity: 0.9; animation: pkring 0.62s ease-out forwards; }
+.pk-burst::after { inset: 22%; border-width: 2px; border-color: #fff; animation-delay: 0.08s; }
+.pk-burst.big { width: 165%; animation-duration: 0.8s; }
+@keyframes pkburst { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.2); } 18% { opacity: 0.85; transform: translate(-50%, -50%) scale(0.95); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.25); } }
+@keyframes pkring { 0% { transform: scale(0.3); opacity: 1; } 100% { transform: scale(1.35); opacity: 0; } }
+.pk-float.heal { color: #e6ffd9; text-shadow: 0 2px 0 #1d5b22, 0 0 calc(12px * var(--s)) rgba(90, 220, 90, 0.85); }
+/* evolution: the card flares white and settles */
+.pk-mon.evolving .pk-card { animation: pkevolve 0.95s ease-out; }
+.pk-mon.evolving::after { content: ""; position: absolute; left: 50%; top: 40%; width: 150%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none; z-index: 3; background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0 12%, rgba(255, 245, 200, 0.6) 30%, transparent 65%); animation: pkevolveflash 0.95s ease-out forwards; }
+@keyframes pkevolve { 0% { filter: brightness(3) saturate(0); transform: scale(1.08); } 45% { filter: brightness(1.8) saturate(0.6); transform: scale(1.04); } 100% { filter: none; transform: none; } }
+@keyframes pkevolveflash { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.3); } 25% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.3); } }
+/* Energy and conditions arrive with a pop */
+.pk-attached .pk-en, .pk-attached .pk-tool { animation: enpop 0.4s cubic-bezier(0.3, 1.6, 0.5, 1); }
+@keyframes enpop { 0% { transform: scale(0.2); opacity: 0; } 100% { transform: none; opacity: 1; } }
+.pk-conds .c { animation: condpop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1); }
+@keyframes condpop { 0% { transform: scale(0.3) rotate(-12deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+.pk-dmg { animation: badgepop 0.36s cubic-bezier(0.3, 1.5, 0.5, 1); }
+.pk-hp i { transition: width 0.7s cubic-bezier(0.3, 0.8, 0.3, 1), background 0.4s; }
+/* the coin: a real flip in depth */
+.pk-coinbox { perspective: calc(600px * var(--s)); }
+.pk-coin .face { animation: pkflip 0.9s cubic-bezier(0.25, 0.7, 0.3, 1); transform-style: preserve-3d; }
+@keyframes pkflip { 0% { transform: translateY(0) rotateX(0) scale(0.6); } 45% { transform: translateY(calc(-34px * var(--s))) rotateX(900deg) scale(1.15); } 80% { transform: translateY(0) rotateX(1800deg) scale(1); } 90% { transform: translateY(calc(-5px * var(--s))) rotateX(1800deg); } 100% { transform: translateY(0) rotateX(1800deg); } }
+.pk-coin .lbl { animation: pkcoinlbl 0.9s ease-out both; }
+@keyframes pkcoinlbl { 0%, 70% { opacity: 0; transform: translateX(calc(-6px * var(--s))); } 100% { opacity: 1; transform: none; } }
+/* banners: in with a light sweeping across */
+.pk-banner { overflow: hidden; }
+.pk-banner::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 35%, rgba(255, 240, 200, 0.25) 50%, transparent 65%); background-size: 250% 100%; animation: sweep 1.1s ease-out 0.1s both; pointer-events: none; }
+.pk-banner.ko { animation: banner 1.5s ease-out forwards, kojolt 0.4s ease-out; }
+@keyframes kojolt { 0% { transform: translate(-50%, -50%) scale(1.4); } 100% { transform: translate(-50%, -50%) scale(1); } }
+.pk-handslot.playable .pk-card { animation: pkhandglow 1.6s ease-in-out infinite; }
+@keyframes pkhandglow { 50% { box-shadow: 0 0 0 2px var(--brass-hi), 0 0 calc(22px * var(--s)) rgba(243, 214, 143, 0.85); } }
 
 /* ================================================================ home: the arena's entrance
    Layout: a slim bar, a title under drifting card art with the arena's numbers, the two games as arched gates
@@ -1729,6 +1827,6 @@ kbd { font: 600 calc(12px * var(--s))/1 'Alegreya Sans', sans-serif; padding: 2p
 <div id="root"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
-<script src="app.js?v=8853f39e02"></script>
+<script src="app.js?v=3ba29ac2bd"></script>
 </body>
 </html>
