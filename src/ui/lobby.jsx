@@ -139,7 +139,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
               {Object.entries(stats.counts).filter(([, n]) => n).map(([t, n]) => <span key={t} className="chip">{n} {t === 'Sorcery' ? 'Sorceries' : t + 's'}</span>)}
               <span className="chip">Avg MV {stats.avgMV}</span>
             </div>
-            <p className="coverage">Rules automation: <b>{stats.coverage}%</b> of cards fully automated. Anything missed can be fixed with the right-click tools.</p>
+            <p className="coverage">Rules automation: <b>{stats.coverage}%</b> of cards fully automated.</p>
             <DeckRecord kind="mtg" id={deck.id} />
           </section>
           <div className="seg modeswitch" role="tablist" aria-label="Game mode">

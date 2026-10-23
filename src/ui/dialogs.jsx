@@ -192,7 +192,7 @@ export function MulliganDialog({ game, req, respond, onHover }) {
   );
 }
 
-export function ZoneDialog({ game, pid, zone, onClose, onHover, onMenu }) {
+export function ZoneDialog({ game, pid, me, zone, onClose, onHover, onMenu }) {
   const p = game.players[pid];
   const cards = zone === 'library' ? [] : [...(p[zone] || [])].reverse();
   const title = { graveyard: 'Graveyard', exile: 'Exile', library: 'Library', command: 'Command zone' }[zone];
@@ -201,7 +201,7 @@ export function ZoneDialog({ game, pid, zone, onClose, onHover, onMenu }) {
       <h2>{p.name} — {title} ({(p[zone] || []).length})</h2>
       {zone === 'library' ? <div className="sub">Libraries are hidden. {p.library.length} cards remain.</div> : null}
       <div className="dlg-cards">
-        {cards.length ? cards.map(c => <div className="cardwrap" key={c.id}><CardFace v={c.faceDown && c.owner !== 0 ? { ...viewOf(game, c), name: 'Face-down card', oracle: '' } : viewOf(game, c)} size="hand" onEnter={() => onHover(c.id)} onContextMenu={e => { e.preventDefault(); onMenu(e, c); }} onClick={e => onMenu(e, c)} /></div>) : <div className="empty">Empty</div>}
+        {cards.length ? cards.map(c => <div className="cardwrap" key={c.id}><CardFace v={c.faceDown && c.owner !== me ? { ...viewOf(game, c), name: 'Face-down card', oracle: '' } : viewOf(game, c)} size="hand" onEnter={() => onHover(c.id)} onContextMenu={e => { e.preventDefault(); onMenu(e, c); }} onClick={e => onMenu(e, c)} /></div>) : <div className="empty">Empty</div>}
       </div>
       <div className="dlg-actions"><button className="btn primary" onClick={onClose}>Close</button></div>
     </Modal>
@@ -228,6 +228,7 @@ export function SettingsDialog({ settings, onChange, onClose }) {
         <Toggle k="stopForOpponentSpells" title="Let me respond during “End turn”" note="Stops auto-pass when an opponent casts something you can answer." />
         <Toggle k="fullControl" title="Full control" note="Stop at every priority window where you could act." />
         <Toggle k="autoCommander" title="Always return my commander to the command zone" note="Otherwise you'll be asked each time." />
+        <Toggle k="sandbox" title="Sandbox tools (solo games)" note="Right-click cards or your life total to move cards, tap or untap, add counters, change life or make tokens. For practice: never in friends' games." />
         <Toggle k="images" title="Show card images" note="Turn off for drawn card frames with the full rules text on every card." />
         <Toggle k="sound" title="Sound effects" note="Card draws, land drops, spells, attacks and hits." />
         <label htmlFor="set-volume"><span style={{ minWidth: 90 }}>Volume</span>
@@ -264,7 +265,7 @@ export function HelpDialog({ onClose }) {
         </section>
         <section>
           <h3>Looking closer and fixing things</h3>
-          <p>Hover a card to read it in the side panel. On a touch screen, tap it. Right-click any card, or your life total, for more: inspect it, move it, tap or untap it, add counters, or create tokens. Use these to handle the rare card the rules engine doesn't fully automate. The deck screen shows how much of each deck is automated.</p>
+          <p>Hover a card to read it in the side panel. On a touch screen, tap it. Right-click any card to inspect it. For practice in solo games you can turn on Sandbox tools in Settings, which let you move cards, tap or untap them, add counters, change life or create tokens; they're off by default and never work in friends' games.</p>
         </section>
         <section>
           <h3>Playing with friends</h3>
@@ -322,7 +323,7 @@ export function Menu({ menu, onClose }) {
     <div className="overlay" style={{ background: 'transparent' }} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }} onContextMenu={e => { e.preventDefault(); onClose(); }}>
       <div className="menu" ref={ref} style={pos} role="menu">
         {menu.title ? <div className="mh">{menu.title}</div> : null}
-        {menu.items.map((it, i) => it === '-' ? <hr key={i} /> : it.header ? <div key={i} className="mh">{it.header}</div> :
+        {menu.items.map((it, i) => it === '-' ? <hr key={i} /> : it.header ? <div key={i} className="mh">{it.header}</div> : it.note ? <div key={i} className="mnote">{it.note}</div> :
           <button key={i} className={`mi ${it.primary ? 'cast' : ''}`} role="menuitem" onClick={() => { onClose(); it.run(); }}><RulesText text={it.label} /></button>)}
       </div>
     </div>

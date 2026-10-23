@@ -1,7 +1,7 @@
 // Behavioural tests for rules features added to the engine (Graft, Gift, Must Block, Cipher, ...):
 // set up a board, use the card, assert the outcome. Usage: node tools/mechanics.mjs [name-filter]
 import { setup, expect, run, db } from './lib/testkit.mjs';
-import { castSpell, getActions, refOf, activatedAbilities, castableOptions } from '../src/engine/abilities.js';
+import { castSpell, getActions, refOf, activatedAbilities, castableOptions, activateAbility } from '../src/engine/abilities.js';
 import * as combat from '../src/engine/combat.js';
 import { calcCtx } from '../src/engine/filters.js';
 
@@ -1417,6 +1417,36 @@ test('"TriggeredCard$Valid ...": Zurgo draws when an attacking token leaves', as
   const h = T.A.hand.length;
   await T.game.destroy(tok, null); await T.resolve();
   expect(T.A.hand.length === h + 1 && T.B.life === 40, `drew a card (${T.A.hand.length - h}, ${T.B.life})`);
+});
+
+// ---- restricted mana: Powerstones pay for abilities and artifact spells, never for other spells
+async function powerstones(T, n) { const out = []; for (let i = 0; i < n; i++) { await T.game.createToken(db.token('c_a_powerstone'), 0, null); const t = T.tokens(0).at(-1); t.sick = false; out.push(t); } T.noMana(0); for (const c of T.game.battlefield) if (c.controller === 0 && T.game.chars(c).types.has('Land')) c.tapped = true; return out; }
+test('Powerstone mana pays for an activated ability (Mind Stone)', async T => {
+  const stone = await T.put(0, 'Mind Stone');
+  const ps = await powerstones(T, 1);
+  const abil = activatedAbilities(T.game, 0, stone).find(a => /Draw/i.test(a.parsed.p.SpellDescription || a.text || ''));
+  expect(!!abil, 'Mind Stone has its draw ability');
+  const h = T.A.hand.length;
+  T.game.priority = 0;
+  const ok = await activateAbility(T.game, 0, stone, abil.key, { ignoreTiming: true });
+  await T.resolve();
+  expect(ok && ps[0].tapped && T.A.hand.length === h + 1, `activated with the Powerstone (${ok}, tapped ${ps[0].tapped}, drew ${T.A.hand.length - h})`);
+});
+test('Powerstone mana pays for an artifact spell but not for a nonartifact one', async T => {
+  await powerstones(T, 3);
+  const ring = await T.put(0, 'Sol Ring', 'hand');
+  expect(castableOptions(T.game, 0, ring).length > 0, 'Sol Ring is castable with Powerstones');
+  const c = await T.put(0, 'Skittering Cicada', 'hand');
+  expect(castableOptions(T.game, 0, c).length === 0, 'a colorless nonartifact spell is not castable with Powerstone mana');
+});
+test('Treasure and Gold tokens pay for spells', async T => {
+  await T.game.createToken(db.token('c_a_treasure_sac'), 0, null); await T.game.createToken(db.token('c_a_gold_sac'), 0, null);
+  T.noMana(0); for (const c of T.game.battlefield) if (c.controller === 0 && T.game.chars(c).types.has('Land')) c.tapped = true;
+  const c = await T.put(0, 'Llanowar Elves', 'hand');
+  expect(castableOptions(T.game, 0, c).length > 0, 'Llanowar Elves castable with a Treasure or Gold');
+  T.game.priority = 0;
+  const ok = await castSpell(T.game, 0, c, {}); await T.resolve();
+  expect(ok && c.zone === 'battlefield' && T.tokens(0).length === 1, `cast with one token sacrificed (${ok}, ${c.zone}, tokens left ${T.tokens(0).length})`);
 });
 
 process.exit(await run(tests) ? 1 : 0);

@@ -3,7 +3,7 @@ import { CardFace, viewOf, ManaCost, Pip, RulesText } from './cardview.jsx';
 import { Mat, Hand, StackView, RecentPlays, useRecentPlays, ArrowLayer, TurnBanner } from './board.jsx';
 import { imagesAvailable, subscribeImages, imagesVersion } from './images.js';
 import { Modal, CardsDialog, TargetsDialog, OptionDialog, ModesDialog, ConfirmDialog, NumberDialog, ColorDialog, PlayerDialog, MulliganDialog, ZoneDialog, SettingsDialog, TokenDialog, HelpDialog, Menu, SoundToggle } from './dialogs.jsx';
-import { getActions, refOf, fromRef, manaAbilitiesOf, manaSourcesFor, activateManaAbility } from '../engine/abilities.js';
+import { getActions, refOf, fromRef, manaAbilitiesOf, manaSourcesFor, activateManaAbility, parseCost } from '../engine/abilities.js';
 import { STEP_NAMES } from '../engine/game.js';
 import { blockRules } from '../engine/combat.js';
 import { applyOp, cardMenuItems, playerMenuItems } from './manual.js';
@@ -82,7 +82,7 @@ function Preview({ game, cardId, support, images }) {
       <div className="bigcard"><div className="cardwrap"><CardFace v={shown} size="big" /></div></div>
       <div className="facts">
         {facts.map((f, i) => <div key={i}>{f}</div>)}
-        {warn ? <div className="warn">Not fully automated ({warn.join(', ')}). Use right-click tools to fix anything it misses.</div> : null}
+        {warn ? <div className="warn">Not fully automated ({warn.join(', ')}). The game may miss part of what it does.</div> : null}
       </div>
     </div>
   );
@@ -162,7 +162,6 @@ function mtgTips(game, me, req) {
     { id: 'main', when: t === 'priority' && myTurn && game.step === 'main1', text: 'Your main phase: cards you can play glow in your hand. Play one land each turn, then cast spells you have the mana for. The game taps your lands for you.' },
     { id: 'commander', when: t === 'priority' && myTurn && game.isMainPhase() && game.turnNumber >= 5 && p.command.length > 0, text: 'Your commander waits in the command zone on your side of the table. Cast it like any spell; every time it goes back there, it costs 2 more.' },
     { id: 'combat', when: t === 'priority' && myTurn && game.step === 'main1' && game.turnNumber >= 5, text: 'Ready to attack? Press Go to combat. Your creatures without summoning sickness can attack any opponent.' },
-    { id: 'manual', when: t === 'priority' && game.turnNumber >= 8, text: 'Right-click any card or your life total (or press and hold on a phone) for manual tools: tap, counters, life, moving cards. Handy if a rule needs fixing.' },
   ];
 }
 
@@ -171,6 +170,8 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
   useStore(session.store);
   useSyncExternalStore(subscribeImages, imagesVersion);
   const { game, human } = session;
+  // browser tests can reach the running game (window.__paExpose)
+  if (typeof window !== 'undefined' && window.__paExpose) window.__paSession = session;
   const me = human.pid != null ? human.pid : 0;
   const self = session.spectator ? -1 : me; // the seat that is "you" (spectators have none)
   useGameSounds(game, { kind: 'mtg', me, watching: !!session.spectator });
@@ -227,13 +228,11 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
   if (mode === 'targets' && inlineTargets) mode = 'targets-inline';
 
   const run = async (fn) => { try { await fn(); } catch (e) { console.error(e); setToast(e.message); } session.store.bump(); };
-  // manual tools: applied at once in solo play; online they ride along with your next decision
-  const online = session.online || null;
+  // sandbox tools (move cards, change life, …): solo games only, and only when turned on in Settings
+  const tools = !session.online && !session.spectator && !session.replay && !!session.settings.sandbox;
   const use = (op) => {
-    if (session.replay) return;
-    if (!online) { if (session.recorder) session.recorder.ops.push(op); return run(() => applyOp(game, op)); }
-    if (!(game.pendingAsk && game.pendingAsk.pid === me && human.pending)) { setToast('Manual tools work while the game is waiting on you (your priority or a choice).'); return; }
-    online.pendingOps.push(op);
+    if (!tools) return;
+    if (session.recorder) session.recorder.ops.push(op);
     return run(() => applyOp(game, op));
   };
 
@@ -310,19 +309,27 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
       for (const a of acts) items.push({ label: a.type === 'land' ? a.label : a.type === 'cast' ? a.label : a.label, primary: true, run: () => respondAction(a) });
       for (const s of manaAbils) {
         const colors = [...new Set(s.units.flat())];
-        if (s.units.length === 1 && colors.length > 1) for (const c of colors) items.push({ label: `Tap for {${c}}`, run: () => respondAction({ type: 'mana', cardId: card.id, abilityKey: s.abil.key, color: c }) });
-        else items.push({ label: `Tap for ${s.units.map(u => `{${u[0]}}`).join('')}`, run: () => respondAction({ type: 'mana', cardId: card.id, abilityKey: s.abil.key }) });
+        // Treasures tap and sacrifice, Gold and Eldrazi Spawn only sacrifice
+        const cost = parseCost(s.abil.parsed.p.Cost);
+        const sac = cost.parts.some(pt => pt.type === 'Sac');
+        const verb = cost.tap && sac ? 'Tap and sacrifice' : sac ? 'Sacrifice' : 'Tap';
+        if (s.units.length === 1 && colors.length > 1) for (const c of colors) items.push({ label: `${verb} for {${c}}`, run: () => respondAction({ type: 'mana', cardId: card.id, abilityKey: s.abil.key, color: c }) });
+        else items.push({ label: `${verb} for ${s.units.map(u => `{${u[0]}}`).join('')}`, run: () => respondAction({ type: 'mana', cardId: card.id, abilityKey: s.abil.key }) });
       }
-      if (items.length) { items.push({ label: 'Inspect card', run: () => setInspect(card.id) }); if (isMine && !session.spectator) items.push('-', ...cardMenuItems(game, card, me, use)); setMenu({ x: e ? e.clientX : 200, y: e ? e.clientY : 200, title: game.name(card), items }); return; }
+      // mana that can only pay for some things (a Powerstone: artifact spells and abilities) is spent for you then
+      if (card.zone === 'battlefield' && card.controller === me && !card.tapped && !manaAbils.length && manaAbilitiesOf(game, card).some(a => a.parsed.p.RestrictValid)) {
+        items.push({ note: `${game.name(card)}'s mana can only pay for certain things, so it's spent for you when you pay for one of them.` });
+      }
+      if (items.length) { items.push({ label: 'Inspect card', run: () => setInspect(card.id) }); if (isMine && tools) items.push('-', ...cardMenuItems(game, card, me, use)); setMenu({ x: e ? e.clientX : 200, y: e ? e.clientY : 200, title: game.name(card), items }); return; }
     }
     if (touch) setInspect(card.id);
   };
   ctx.onCardMenu = (card, e) => {
     e.preventDefault(); e.stopPropagation();
-    setMenu({ x: e.clientX, y: e.clientY, title: game.name(card), items: [{ label: 'Inspect card', run: () => setInspect(card.id) }, ...(session.spectator ? [] : cardMenuItems(game, card, me, use))] });
+    setMenu({ x: e.clientX, y: e.clientY, title: game.name(card), items: [{ label: 'Inspect card', run: () => setInspect(card.id) }, ...(tools ? cardMenuItems(game, card, me, use) : [])] });
   };
   ctx.onPlayerMenu = (p, e) => {
-    if (session.spectator) return;
+    if (!tools) return;
     setMenu({ x: e.clientX, y: e.clientY, title: game.players[p].name, items: playerMenuItems(p, use, setTokenFor) });
   };
 
@@ -396,7 +403,7 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
       </div>
       {dialog}
       {menu ? <Menu menu={menu} onClose={() => setMenu(null)} /> : null}
-      {zone ? <ZoneDialog game={game} pid={zone.pid} zone={zone.zone} onClose={() => setZone(null)} onHover={setHover} onMenu={(e, c) => { e.preventDefault(); if (!session.spectator) setMenu({ x: e.clientX, y: e.clientY, title: game.name(c), items: cardMenuItems(game, c, me, use) }); }} /> : null}
+      {zone ? <ZoneDialog game={game} pid={zone.pid} me={me} zone={zone.zone} onClose={() => setZone(null)} onHover={setHover} onMenu={(e, c) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, title: game.name(c), items: [{ label: 'Inspect card', run: () => setInspect(c.id) }, ...(tools ? cardMenuItems(game, c, me, use) : [])] }); }} /> : null}
       {showHelp ? <HelpDialog onClose={() => setShowHelp(false)} /> : null}
       {showSettings ? <SettingsDialog settings={session.settings} onChange={s => { session.setSettings(s); session.store.bump(); }} onClose={() => setShowSettings(false)} /> : null}
       {tokenFor != null ? <TokenDialog game={game} onMake={makeToken} onClose={() => setTokenFor(null)} /> : null}

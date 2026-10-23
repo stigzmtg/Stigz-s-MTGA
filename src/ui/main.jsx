@@ -118,8 +118,7 @@ function newOnlineSession(data, room, cfg) {
   const me = seat >= 0 ? seat : null;
   const human = new HumanAgent(() => store.bump(), settings);
   const net = new Lockstep({ channel: room.room, cid: room.cid, nick: room.nick, cfg, seat: me, onChange: () => store.bump(), storage: safeStorage });
-  const online = { net, code: cfg.code, game: cfg.game, pendingOps: [] };
-  const takeOps = () => { const o = online.pendingOps; online.pendingOps = []; return o; };
+  const online = { net, code: cfg.code, game: cfg.game };
   const isHost = cfg.host === room.cid;
   const pace = makePace(settings);
   const ais = [];
@@ -129,9 +128,10 @@ function newOnlineSession(data, room, cfg) {
     ? (() => { const bot = new AIAgent(); return { ask: (g, pid, req) => (g.turnNumber < window.__paAutoplay ? bot.ask(g, pid, req) : human.ask(g, pid, req)) }; })()
     : human;
   const agents = cfg.seats.map((s, pid) => {
-    if (pid === me) return new LocalSeatAgent(net, localInner, applyOp, takeOps);
+    // friends' games have no sandbox tools: nobody's manual changes are sent or accepted
+    if (pid === me) return new LocalSeatAgent(net, localInner, null, null);
     if (s.k === 'a' && isHost) return new HostAIAgent(net, mkAI());
-    return new RemoteSeatAgent(net, applyOp, isHost ? mkAI() : null);
+    return new RemoteSeatAgent(net, null, isHost ? mkAI() : null);
   });
   const players = cfg.seats.map((s, pid) => ({ name: s.n || `Player ${pid + 1}`, deck: findDeck(data.decks, s.d) || data.decks[0], agent: agents[pid], human: s.k === 'h' }));
   const game = new Game({ db: data.db, seed: cfg.seed, players, onUpdate: () => store.bump(), maxTurns: 400 });

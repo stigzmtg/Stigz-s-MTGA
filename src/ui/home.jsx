@@ -311,7 +311,7 @@ export function Home({ onPick, onJoin }) {
             fan={MTG_FAN.map(mtg)} fanLabel="Commanders: Kaalia, Atraxa, The Ur-Dragon, Edgar Markov, Arahbo"
             blurb="Every preconstructed Commander deck from Commander 2013 to today, 100 cards each, played with full rules automation."
             facts={[['194', 'precon decks'], ['2–4', 'players a table'], ['6,422', 'cards scripted']]}
-            points={['1v1 or a 4-player free-for-all', 'Commander damage, tax and the command zone tracked', 'Lands, mana and triggers handled for you', 'Right-click tools fix anything the rules miss']}
+            points={['1v1 or a 4-player free-for-all', 'Commander damage, tax and the command zone tracked', 'Lands, mana and triggers handled for you', 'Every card’s rules handled, down to the last trigger']}
             onPlay={mode => open('mtg', mode)} />
           <Gate game="pk" title="Pokémon TCG" kind="Tournament decks" keystone={<span className="ball" />}
             pips={PK_TYPES.map(t => <Energy key={t} type={t} size={19} />)}

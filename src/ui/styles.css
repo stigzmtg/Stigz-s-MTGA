@@ -509,6 +509,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .menu .mi { text-align: left; border: 0; background: transparent; padding: 7px 10px; border-radius: 6px; font-size: 14px; }
 .menu .mi:hover { background: rgba(214, 170, 85, 0.14); }
 .menu .mi.cast { color: var(--brass-hi); font-weight: 700; }
+.menu .mnote { max-width: 260px; padding: 6px 10px; font-size: 13px; line-height: 1.4; color: var(--ink-dim); }
 .menu .mh { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); padding: 6px 10px 2px; }
 .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(80px + env(safe-area-inset-bottom, 0px)); z-index: 70; background: #2b1c0b; color: #f8e6c4; border: 1px solid var(--brass); border-radius: 8px; padding: 8px 14px; max-width: calc(100vw - 32px); }
