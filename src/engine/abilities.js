@@ -586,7 +586,28 @@ export function manaSourcesFor(game, pid, { exclude = new Set(), spellCard = nul
 }
 
 function surplusPay(pool, cost, reserve, produced = []) {
-  // pay a (filter) cost from the pool while keeping colors the pending main cost needs
+  // pay a (filter) cost from the pool while keeping colors the pending main cost needs: try the ways of
+  // paying it and keep one after which the rest is still payable; else fall back to a heuristic
+  if (reserve) {
+    const ways = [];
+    const seen = new Set();
+    const go = (p, hyb, gen) => {
+      if (ways.length >= 64) return;
+      if (hyb.length) { for (const c of new Set(hyb[0])) if (p[c] > 0) go({ ...p, [c]: p[c] - 1 }, hyb.slice(1), gen); return; }
+      if (gen > 0) { for (const c of ['C', 'W', 'U', 'B', 'R', 'G']) if (p[c] > 0) go({ ...p, [c]: p[c] - 1 }, hyb, gen - 1); return; }
+      const k = JSON.stringify(p);
+      if (!seen.has(k)) { seen.add(k); ways.push(p); }
+    };
+    const start = { ...pool };
+    let ok = true;
+    for (const k of ['W', 'U', 'B', 'R', 'G', 'C']) { const n = cost.colored[k] || 0; if ((start[k] || 0) < n) ok = false; else start[k] = (start[k] || 0) - n; }
+    if (ok) go(start, cost.hybrid || [], cost.generic || 0);
+    for (const w of ways) {
+      const fin = { ...w };
+      for (const c of produced) fin[c] = (fin[c] || 0) + 1;
+      if (payFromPool(reserve, fin)) return w;
+    }
+  }
   const need = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
   if (reserve) { for (const k in need) need[k] = reserve.colored[k] || 0; for (const h of reserve.hybrid) for (const k of h) need[k] += 0.5; }
   for (const c of produced) need[c] = (need[c] || 0) - 1;
@@ -726,7 +747,13 @@ function alternativeSources(game, pid, card, exclude) {
 // still needs after counting what later activations add, and mana later filter sources need for theirs
 function reserveFor(manaCost, seq, i) {
   const r = cloneCost(manaCost);
-  for (const { a } of seq.slice(i + 1)) for (const c of a.colors) if (r.colored[c] > 0) r.colored[c]--;
+  // what later activations add covers a colored symbol, else a hybrid one, else generic
+  for (const { a } of seq.slice(i + 1)) for (const c of a.colors) {
+    if (r.colored[c] > 0) { r.colored[c]--; continue; }
+    const h = r.hybrid.findIndex(x => x.includes(c));
+    if (h >= 0) { r.hybrid = r.hybrid.filter((_, j) => j !== h); continue; }
+    if (r.generic > 0) r.generic--;
+  }
   for (const { s } of seq.slice(i + 1)) if (s.extraCost) {
     for (const [k, n] of Object.entries(s.extraCost.colored)) r.colored[k] = (r.colored[k] || 0) + n;
     r.hybrid = [...r.hybrid, ...s.extraCost.hybrid];

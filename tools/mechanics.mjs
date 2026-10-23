@@ -1606,4 +1606,13 @@ test('A cast copy of a card (Wondrous Crucible) stays a registered object on the
   expect(tok && T.game.cardById(tok.id) === tok, `the token copy is registered (${!!tok})`);
 });
 
+test('A filter source pays with the mana hybrid costs can spare (Plumeveil with Prophetic Prism)', async T => {
+  for (const n of ['Plains', 'Plains', 'Mountain']) await T.put(0, n);
+  await T.put(0, 'Prophetic Prism'); await T.resolve();
+  T.noMana(0); T.game.priority = 0;
+  const pv = await T.put(0, 'Plumeveil', 'hand');
+  const ok = await castSpell(T.game, 0, pv, {});
+  expect(ok && !T.game.logs.some(l => /payment failed/i.test(l.text)), `{W/U}x3 paid with Plains, Plains and the Prism fed by the Mountain (${ok})`);
+});
+
 process.exit(await run(tests) ? 1 : 0);
