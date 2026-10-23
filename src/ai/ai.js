@@ -589,6 +589,12 @@ export class AIAgent {
     }
     if (purpose === 'tap') return pick(cards.filter(c => c.controller !== pid).sort((a, b) => v(b) - v(a)), max);
     if (purpose === 'gainControlChoice') return pick(cards.slice().sort((a, b) => v(b) - v(a)), Math.max(min, 1));
+    if (purpose === 'cipher') {
+      // encode on the creature most likely to connect
+      const evasive = c => ['Flying', 'Menace', 'Shadow', 'Horsemanship', 'Fear', 'Intimidate', 'Skulk'].some(k => game.hasKeyword(c, k)) || game.chars(c).keywords.some(k => /can't be blocked/.test(k));
+      const score = c => (evasive(c) ? 4 : 0) + Math.max(0, combatPower(game, c)) * 0.3 - (game.hasKeyword(c, 'Defender') ? 6 : 0);
+      return pick(cards.slice().sort((a, b) => score(b) - score(a)), 1);
+    }
     if (purpose === 'casualty') { const ok = cards.filter(c => c.token || v(c) <= 4).sort((a, b) => v(a) - v(b)); return ok.length ? [ok[0].id] : []; }
     if (purpose === 'emerge') return pick(cards.slice().sort((a, b) => (game.chars(b).cmc - v(b) * 0.4 + (b.token ? 2 : 0)) - (game.chars(a).cmc - v(a) * 0.4 + (a.token ? 2 : 0))), 1);
     if (purpose === 'blight') {

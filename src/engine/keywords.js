@@ -262,6 +262,7 @@ export function synthesizeKeywords(game, card, ch) {
   if (!card || !ch || ch._synth) return;
   ch._synth = true;
   const face = card.faceDef;
+  if (card.faceDown && card.zone === 'battlefield' && (card.disguised || card.cloaked) && !ch.keywords.includes('Ward:2')) ch.keywords.push('Ward:2');
   for (const kw of ch.keywords) {
     let d = cache.get(kw + '|' + face.name);
     if (d === undefined) { d = defFor(kw, face); cache.set(kw + '|' + face.name, d); }
@@ -293,12 +294,17 @@ export function synthesizeKeywords(game, card, ch) {
       const raw = `AB$ SetState | Cost$ ${m[2]} | Defined$ Self | Mode$ TurnFaceUp | Static$ True | Megamorph$ ${m[1] === 'Megamorph'} | SpellDescription$ Turn face up (${m[1]} ${costText(m[2])})`;
       ch.abilities.push({ raw, parsed: parseAbility(raw), svars: card.def.faces[0].svars, src: card, key: 'morphUp' });
     }
-    if (card.disguised) ch.keywords.push('Ward:2');
+    // a manifested or cloaked creature card can be turned face up for its mana cost
+    const front = card.def.faces[0];
+    if (card.manifested && front.types.includes('Creature') && front.manaCostStr) {
+      const raw = `AB$ SetState | Cost$ ${front.manaCostStr} | Defined$ Self | Mode$ TurnFaceUp | Static$ True | SpellDescription$ Turn face up (mana cost ${costText(front.manaCostStr)})`;
+      ch.abilities.push({ raw, parsed: parseAbility(raw), svars: front.svars, src: card, key: 'manifestUp' });
+    }
   }
 }
 
 export function keywordInfo(kw) { return defFor(kw, { svars: {} }); }
 
 export const SUPPORTED_KEYWORDS = new Set(['Flying', 'Equip', 'Trample', 'ETBReplacement', 'Enchant', 'Cycling', 'Vigilance', 'Flash', 'Haste', 'etbCounter', 'Deathtouch', 'Lifelink', 'Menace', 'First Strike', 'Flashback', 'Reach', 'TypeCycling', 'Indestructible', 'Changeling', 'Crew', 'Chapter', 'Defender', 'Kicker', 'Convoke', 'Ward', 'Double Strike', 'Cascade', 'Partner', 'Partner with', 'Evoke', 'Devoid', 'Multikicker', 'Unearth', 'Hexproof', 'Myriad', 'Ravenous', 'Landwalk', 'Fear', 'Intimidate', 'Shroud', 'Annihilator', 'Prowess', 'Persist', 'Undying', 'Exalted', 'Extort', 'Evolve', 'Living Weapon', 'Job select', 'Fabricate', 'Riot', 'Mentor', 'Training', 'Battle cry', 'Melee', 'Bushido', 'Afflict', 'Storm', 'Demonstrate', 'Backup', 'Squad', 'Blitz', 'Dash', 'Echo', 'Hideaway', 'Devour', 'Exploit', 'Dethrone', 'Renown', 'Toxic', 'Infect', 'Wither', 'Affinity', 'Delve', 'Improvise', 'Escape', 'Retrace', 'Overload', 'Split second', 'Umbra armor', 'Totem armor', 'Morph', 'Megamorph', 'Disguise', 'Encore', 'Embalm', 'Eternalize', 'Outlast', 'Scavenge', 'Transmute', 'Ninjutsu', 'CommanderNinjutsu', 'Decayed', 'Offspring', 'Afterlife', 'Squad', 'Protection', 'Shadow', 'Horsemanship', 'Skulk', 'Jump-start', 'Discover', 'Rebound', 'Choose a Background', 'Friends forever', 'Doctor\'s companion', 'Ascend', 'Reconfigure', 'Level up', 'Foretell', 'Suspend', 'Class', 'Madness', 'Miracle', 'Aftermath', 'Undaunted', 'Spectacle', 'Surge', 'Mutate', 'Bestow', 'Strive', 'Escalate', 'Fuse',
-  'Graft', 'Flanking', 'Sunburst', 'Mayhem', 'All creatures able to block CARDNAME do so.', 'Gift', 'Casualty', 'Replicate', 'AlternateAdditionalCost', 'Emerge', 'Prowl', 'Entwine', 'MayFlashCost', 'Tiered', 'Spree', 'Dredge',
+  'Graft', 'Flanking', 'Sunburst', 'Mayhem', 'All creatures able to block CARDNAME do so.', 'Gift', 'Casualty', 'Replicate', 'AlternateAdditionalCost', 'Emerge', 'Prowl', 'Entwine', 'MayFlashCost', 'Tiered', 'Spree', 'Dredge', 'Cipher', 'Cloak',
   'Prevent all combat damage that would be dealt to and dealt by CARDNAME.', 'Prevent all combat damage that would be dealt to CARDNAME.', 'Prevent all damage that would be dealt to CARDNAME.', 'Prevent all combat damage that would be dealt by CARDNAME.', 'Prevent all damage that would be dealt to and dealt by CARDNAME.']);

@@ -163,6 +163,9 @@ export class Card {
     this.lkiCause = null;
     this.promisedGift = null;
     this.unlocked = null; // Room doors unlocked on the battlefield (face indices)
+    this.manifested = false; // face-down via manifest / cloak: can be turned up for its mana cost
+    this.cloaked = false;
+    this.disguised = false;
   }
   get faceDef() {
     if (this.copyOf && this.copyOf.def) return this.copyOf.def.faces[this.copyOf.face || 0] || this.copyOf.def.faces[0];

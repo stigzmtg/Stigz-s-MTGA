@@ -518,4 +518,70 @@ test('Rooms: cast a door, it unlocks; unlock the other door as a sorcery', async
   expect(angel.tapped && angel.counters.STUN === 1, 'fully unlocked: Fear of Sleep Paralysis stunned the angel');
 });
 
+// ------------------------------------------------------------ face-down, cipher, entering replacements
+test('Cloak: Ransom Note cloaks the top card as a 2/2 with ward {2}', async T => {
+  const note = await T.put(0, 'Ransom Note'); await T.resolve(); // its surveil trigger first
+  const top = await T.put(0, 'Serra Angel', 'library');
+  T.a.on('modes', req => [req.options.find(o => /Cloak/.test(o.label)).value]);
+  await T.activate(note);
+  expect(top.zone === 'battlefield' && top.faceDown && T.game.chars(top).power === 2, 'face-down 2/2');
+  expect(T.game.chars(top).keywords.includes('Ward:2'), 'ward 2');
+  const up = activatedAbilities(T.game, 0, top).find(a => a.key === 'manifestUp');
+  expect(up, 'can be turned face up for its mana cost');
+  await T.activate(top, 0, a => a.key === 'manifestUp');
+  expect(!top.faceDown && T.game.name(top) === 'Serra Angel', 'turned face up');
+});
+test("Cloak: Unexplained Absence — each exiled permanent's controller cloaks", async T => {
+  const a = await T.put(1, 'Serra Angel');
+  T.a.on('targets', () => [refOf(a)]);
+  const n = T.count(1, 'battlefield', c => c.faceDown);
+  await T.cast('Unexplained Absence');
+  expect(a.zone === 'exile' && T.count(1, 'battlefield', c => c.faceDown) === n + 1, 'B cloaked a card');
+});
+test('Veiled Ascension: face-down creatures you control enter with a flying counter', async T => {
+  await T.put(0, 'Veiled Ascension'); await T.resolve();
+  await T.put(0, 'Serra Angel', 'library');
+  T.a.on('optionalTrigger', () => true);
+  T.game.fire('Phase', { Phase: 'Upkeep', Player: 0 }); await T.resolve();
+  const fd = T.game.battlefield.find(c => c.faceDown && c.controller === 0);
+  expect(fd && fd.counters.FLYING === 1 && T.game.hasKeyword(fd, 'Flying'), 'cloaked creature has a flying counter');
+});
+test('Grumgully: other non-Human creatures you control enter with a counter (not itself)', async T => {
+  const g = await T.put(0, 'Grumgully, the Generous');
+  expect(!g.counters.P1P1, 'no counter on itself');
+  const elf = await T.put(0, 'Llanowar Elves');
+  const theirs = await T.put(1, 'Llanowar Elves');
+  expect(elf.counters.P1P1 === 1 && !theirs.counters.P1P1, "own elf got one, opponent's did not");
+});
+test('Hooded Hydra: turned face up, it gets five +1/+1 counters', async T => {
+  const h = await T.put(0, 'Hooded Hydra', 'hand');
+  T.mana(0);
+  const act = getActions(T.game, 0).find(a => a.cardId === h.id && /face down/.test(a.label));
+  await T.game.performAction(0, act); await T.resolve();
+  expect(h.faceDown, 'face down');
+  await T.activate(h, 0, a => a.key === 'morphUp');
+  expect(!h.faceDown && h.counters.P1P1 === 5, `five counters (${h.counters.P1P1})`);
+});
+test('Cipher: Writ of Return encoded on a creature, copy cast on combat damage', async T => {
+  const flyer = await T.put(0, 'Serra Angel');
+  const dead = await T.put(0, 'Llanowar Elves', 'graveyard');
+  const dead2 = await T.put(0, 'Wall of Omens', 'graveyard');
+  T.a.on('targets', req => req.cands.includes(refOf(dead)) ? [refOf(dead)] : req.cands.includes(refOf(dead2)) ? [refOf(dead2)] : undefined);
+  T.a.on('cipher', () => [flyer.id]);
+  const writ = await T.cast('Writ of Return');
+  expect(dead.zone === 'battlefield' && writ.zone === 'exile', 'resolved and encoded');
+  T.combatWith([[flyer, 1]]);
+  await combat.combatDamage(T.game, false); await T.resolve();
+  expect(dead2.zone === 'battlefield', 'copy cast: the wall came back too');
+  expect(writ.zone === 'exile', 'encoded card stays in exile');
+  expect(T.game.allCards().filter(c => c.def === writ.def).length === 1, 'the copy is gone');
+});
+test('Psionic Ritual: cast a copy of an instant from a graveyard', async T => {
+  const ns = await T.put(1, "Night's Whisper", 'graveyard');
+  T.a.on('targets', () => [refOf(ns)]);
+  const h = T.A.hand.length;
+  await T.cast('Psionic Ritual');
+  expect(T.A.hand.length === h + 2 && ns.zone === 'exile', `copy drew two (${T.A.hand.length - h})`);
+});
+
 process.exit(await run(tests) ? 1 : 0);

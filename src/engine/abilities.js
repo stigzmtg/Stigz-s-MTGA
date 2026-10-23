@@ -890,7 +890,7 @@ export function spellOptions(game, pid, card, { anyZone = false } = {}) {
       if ((m = k.match(/^Dash:(.*)$/))) pushFace(0, { altCost: 'Dash', altManaStr: m[1].split(':')[0], label: `Dash ${f.name}` });
       if ((m = k.match(/^Blitz:(.*)$/))) pushFace(0, { altCost: 'Blitz', altManaStr: m[1].split(':')[0], label: `Blitz ${f.name}` });
       if ((m = k.match(/^Overload:(.*)$/))) pushFace(0, { altCost: 'Overload', altManaStr: m[1].split(':')[0], label: `Overload ${f.name}` });
-      if ((m = k.match(/^(Morph|Megamorph|Disguise):(.*)$/))) opts.push({ key: 'morph', label: `Cast ${f.name} face down (${m[1]})`, face: 0, permanent: true, faceDown: true, altManaStr: '3', altCost: 'Morph', from });
+      if ((m = k.match(/^(Morph|Megamorph|Disguise):(.*)$/))) opts.push({ key: 'morph', label: `Cast ${f.name} face down (${m[1]})`, face: 0, permanent: true, faceDown: true, altManaStr: '3', altCost: 'Morph', from, disguise: m[1] === 'Disguise' });
       if ((m = k.match(/^Spectacle:(.*)$/)) && game.opponents(pid).some(o => o.lifeLostThisTurn > 0)) pushFace(0, { altCost: 'Spectacle', altManaStr: m[1], label: `Spectacle ${f.name}` });
       if ((m = k.match(/^Surge:(.*)$/)) && game.players[pid].spellsCastThisTurn.length > 0) pushFace(0, { altCost: 'Surge', altManaStr: m[1], label: `Surge ${f.name}` });
       if ((m = k.match(/^Emerge:(.*)$/))) pushFace(0, { altCost: 'Emerge', altManaStr: m[1].split(':')[0], label: `Emerge ${f.name} (sacrifice a creature)` });
@@ -1571,6 +1571,7 @@ export async function resolveStackItem(game, item) {
       const moved = await game.moveCard(card, 'battlefield', opts);
       if (moved) {
         if (wasFaceDown || sa.faceDown) moved.faceDown = true;
+        if (sa.opt && sa.opt.disguise) { moved.disguised = true; game.touch(); }
         game.log(`${game.name(moved)} enters the battlefield.`, { type: 'resolve', cardId: moved.id });
         if (sa.altCost === 'Dash' || sa.altCost === 'Blitz') {
           moved.temp.push({ keywords: ['Haste'], until: 'Permanent' });
@@ -1588,6 +1589,8 @@ export async function resolveStackItem(game, item) {
     // gift: the promised opponent gets the gift before the spell's other effects
     if (card.promisedGift != null && !item.isCopy && (card.faceDef.svars || {}).GiftAbility) await resolveChain(game, makeSA(game, 'DB$ GiveGift', card.faceDef.svars, card, item.controller, { parent: sa, key: 'gift' }));
     await resolveChain(game, sa);
+    // cipher: you may exile the spell card encoded on a creature you control
+    if (card.zone === 'stack' && !item.isCopy && !card.isSpellCopy && card.faceDef.keywords.includes('Cipher')) await encodeCipher(game, item.controller, card);
     if (card.zone === 'stack') {
       if (sa.opt && sa.opt.adventure) { await game.moveCard(card, 'exile', { silent: true }); card.onAdventure = true; game.log(`${game.name(card)} goes on an adventure.`); }
       else if (card.reboundPending) { await game.moveCard(card, 'exile'); }
@@ -1611,6 +1614,31 @@ export async function resolveStackItem(game, item) {
     if (sa.kind === 'AB' && sa.p.Cost && !(await payTriggerCost(game, sa, item, !!tp.OptionalDecider))) return;
   }
   await resolveChain(game, sa);
+}
+
+// Cipher: exile the card encoded on a creature you control; whenever that creature deals combat damage to a
+// player, its controller may cast a copy of the encoded card without paying its mana cost.
+async function encodeCipher(game, pid, card) {
+  const pool = game.battlefield.filter(c => c.controller === pid && game.chars(c).types.has('Creature'));
+  if (!pool.length) return;
+  const ids = await game.ask(pid, { type: 'cards', prompt: `Cipher: you may encode ${game.name(card)} on a creature you control`, cards: pool.map(c => c.id), min: 0, max: 1, purpose: 'cipher', cardId: card.id });
+  const host = ids && ids.length ? game.cardById(ids[0]) : null;
+  if (!host || !pool.includes(host)) return;
+  await game.moveCard(card, 'exile', { silent: true });
+  if (card.zone !== 'exile') return;
+  const name = card.faceDef.name;
+  const raw = `Mode$ DamageDone | ValidSource$ Card.IsRemembered | ValidTarget$ Player | CombatDamage$ True | Execute$ CipherCast | TriggerDescription$ Cipher — you may cast a copy of ${name} without paying its mana cost`;
+  const svars = { CipherCast: 'DB$ Play | Defined$ Imprinted | CopyCard$ True | WithoutManaCost$ True | Optional$ True | Controller$ TriggeredSourceController' };
+  const e = {
+    isEffect: true, id: game.nextId++, effectName: `${name} (encoded on ${game.name(host)})`, controller: pid, owner: pid, zone: 'command',
+    duration: 'Permanent', remembered: [host], imprinted: [card], chosen: {}, counters: {}, timestamp: game.uid++, temp: [], mods: [], abilityUses: {}, xPaid: 0,
+    endsWhenHostLeaves: host.id, hostCard: card, description: `Whenever ${game.name(host)} deals combat damage to a player, its controller may cast a copy of ${name} without paying its mana cost.`,
+  };
+  e.effectChars = { name: e.effectName, types: new Set(['Effect']), subtypes: new Set(), supertypes: new Set(), colors: new Set(), keywords: [], abilities: [], triggers: [{ raw, parsed: parseAbility(raw), svars, src: e, key: `cipher${e.id}` }], statics: [], replacements: [], svars, power: 0, toughness: 0, cmc: 0 };
+  card.encodedOn = { id: host.id, zcc: host.zcc };
+  game.effects.push(e);
+  game.touch();
+  game.log(`${game.players[pid].name} encodes ${name} on ${game.name(host)}.`);
 }
 
 // Pay the cost of a triggered ability on resolution. Returns true when paid (or nothing to pay).

@@ -1064,6 +1064,7 @@ export class Game {
       card.timestamp = newTimestamp(this);
       card.tapped = !!opts.tapped;
       if (opts.faceDown) card.faceDown = true;
+      if (opts.setProps) Object.assign(card, opts.setProps);
       if (opts.transformed) { card.face = 1; card.transformed = true; }
       if (opts.face != null) card.face = opts.face;
       if (isRoom(card.def)) card.unlocked = opts.cast ? [opts.face || 0] : [];
@@ -1223,6 +1224,8 @@ export class Game {
       if ((m = k.match(/^ETBReplacement:(\w+):(\w+)(?::(.*))?$/))) {
         const raw = ch.svars[m[2]];
         if (!raw) continue;
+        const [, zoneP, validP] = (m[3] || '').split(':');
+        if (validP && zoneP) continue; // "other creatures you control enter with ..." (applied below, from the host)
         if (m[3] === 'Optional' || /Optional/.test(m[3] || '')) {
           const yes = await this.ask(card.controller, { type: 'confirm', prompt: `${this.name(card)}: ${parseAbility(raw).p.SpellDescription || 'use this ability as it enters?'}`, purpose: 'etbOptional', cardId: card.id });
           if (!yes) continue;
@@ -1231,6 +1234,20 @@ export class Game {
       }
     }
     for (const mod of opts.etbMods || []) await this.runETBMod(card, mod.raw, mod.svars, mod.host);
+    // permanents (or cards in other zones) whose keywords say how other cards enter
+    for (const h of [...this.battlefield, ...this.players.flatMap(pl => pl.graveyard)]) {
+      if (h === card || h.phasedOut) continue;
+      const hk = h.zone === 'battlefield' ? this.chars(h).keywords : h.faceDef.keywords;
+      for (const k of hk) {
+        const m = k.match(/^ETBReplacement:(\w+):(\w+):([^:]*):(\w+):(.+)$/);
+        if (!m || (zoneMap[m[4]] || m[4].toLowerCase()) !== h.zone) continue;
+        const svars = h.zone === 'battlefield' ? this.chars(h).svars : h.faceDef.svars;
+        const raw = svars[m[2]];
+        if (!raw || !matchValid(this, card, m[5], { host: h, you: h.zone === 'battlefield' ? h.controller : h.owner })) continue;
+        if (m[3] === 'Optional' && !(await this.ask(h.zone === 'battlefield' ? h.controller : h.owner, { type: 'confirm', prompt: `${this.name(h)}: ${parseAbility(raw).p.SpellDescription || 'apply to ' + this.name(card) + '?'}`, purpose: 'etbOptional', cardId: card.id }))) continue;
+        await this.runETBMod(card, raw, svars, h);
+      }
+    }
     // replacement effects created while this permanent was entering (e.g. Spark Double's extra counter)
     for (const e of this.effects.filter(x => x.timestamp >= etbStart)) {
       for (const r of e.effectChars.replacements) {

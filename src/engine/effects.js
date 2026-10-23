@@ -1193,7 +1193,11 @@ export const E = {
     const p = sa.p;
     const ctx = ctxOf(game, sa);
     const objsToAttach = p.Object ? cardsOf(resolveDefined(game, p.Object, ctx)) : [sa.host.lki ? sa.host.card : sa.host];
-    const target = (hasTgtSpec(sa) ? sa.targets : resolveDefined(game, p.Defined || 'Self', ctx))[0];
+    let target = (hasTgtSpec(sa) ? sa.targets : resolveDefined(game, p.Defined || 'Self', ctx))[0];
+    if (p.Choices && !hasTgtSpec(sa)) {
+      const pool = game.battlefield.filter(c => !objsToAttach.includes(c) && matchValid(game, c, p.Choices, ctx));
+      target = (await chooseCards(game, sa.controller, pool, p.Optional === 'True' ? 0 : 1, 1, p.ChoiceTitle || 'Choose what to attach it to', sa, 'attachChoice'))[0];
+    }
     if (!target) return;
     for (const a of objsToAttach) {
       if (!a || a.zone !== 'battlefield') continue;
@@ -1350,11 +1354,27 @@ export const E = {
       if (mode === 'TurnFaceUp' || mode === 'TurnFace') {
         if (!c.faceDown) continue;
         c.faceDown = false;
+        c.cloaked = false; c.disguised = false;
         if (sa.p.Megamorph === 'true' || sa.p.Megamorph === 'True') await game.addCounters(c, 'P1P1', 1, sa);
         game.touch();
         game.log(`${game.players[c.controller].name} turns ${game.name(c)} face up.`);
         c.turnedFaceUpTurn = game.turnNumber;
+        // "as CARDNAME is turned face up, ..." replacements
+        for (const r of game.chars(c).replacements) {
+          const rp = r.parsed.p;
+          if (rp.Event !== 'TurnFaceUp' || !r.svars[rp.ReplaceWith]) continue;
+          if (rp.ValidCard && !matchValid(game, c, rp.ValidCard, { host: c, you: c.controller })) continue;
+          if (rp.Optional === 'True' && !(await game.ask(c.controller, { type: 'confirm', prompt: `${game.name(c)}: ${rp.Description || 'apply?'}`, purpose: 'replacement', cardId: c.id }))) continue;
+          const sub = makeSA(game, r.svars[rp.ReplaceWith], r.svars, c, c.controller, { key: r.key });
+          for (const s of sub.chain()) s.etbCard = c;
+          await resolveChain(game, sub);
+        }
         game.fire('TurnFaceUp', { Card: c, Player: c.controller });
+      } else if (mode === 'TurnFaceDown') {
+        if (c.faceDown || c.zone !== 'battlefield') continue;
+        c.faceDown = true; c.copyOf = null;
+        game.touch();
+        game.log(`${game.players[c.controller].name} turns ${game.name(c)} face down.`);
       } else if (mode === 'Transform' || mode === 'Flip') {
         if (c.def.faces.length < 2) continue;
         c.face = c.face ? 0 : 1;
@@ -1371,8 +1391,26 @@ export const E = {
     const n = num(game, sa, 'Amount', 1);
     const cards = sa.p.Defined && !/You|Player/.test(sa.p.Defined) ? cardsOf(resolveDefined(game, sa.p.Defined, ctxOf(game, sa))) : pl.library.slice(0, n);
     for (const c of cards) {
-      await game.moveCard(c, 'battlefield', { controller: sa.controller, faceDown: true, silent: true });
+      const r = await game.moveCard(c, 'battlefield', { controller: sa.controller, faceDown: true, silent: true, setProps: { manifested: true } });
+      if (r && sa.p.RememberManifested === 'True') remember(sa, [r]);
       game.log(`${pl.name} manifests a card.`);
+    }
+  },
+
+  // cloak: put the card onto the battlefield face down as a 2/2 creature with ward {2}
+  async Cloak(game, sa) {
+    const ctx = ctxOf(game, sa);
+    const players = sa.p.DefinedPlayer ? playersOf(resolveDefined(game, sa.p.DefinedPlayer, ctx)) : [game.players[sa.controller]];
+    const n = num(game, sa, 'Amount', 1);
+    const fromTop = !sa.p.Defined || sa.p.Defined === 'TopOfLibrary';
+    for (const pl of players) {
+      if (pl.lost) continue;
+      const cards = fromTop ? pl.library.slice(0, n) : cardsOf(resolveDefined(game, sa.p.Defined, ctx));
+      for (const c of cards) {
+        const r = await game.moveCard(c, 'battlefield', { controller: pl.id, faceDown: true, silent: true, cause: sa, setProps: { manifested: true, cloaked: true } });
+        if (r && sa.p.RememberCloaked === 'True') remember(sa, [r]);
+        game.log(`${pl.name} cloaks a card.`);
+      }
     }
   },
 
@@ -1512,7 +1550,16 @@ export const E = {
         if (!yes) break;
       }
       cards = cards.filter(c => c !== pick);
-      if (game.chars(pick).types.has('Land')) { await game.moveCard(pick, 'battlefield', { controller: pid }); continue; }
+      if (game.chars(pick).types.has('Land') && p.CopyCard !== 'True') { await game.moveCard(pick, 'battlefield', { controller: pid }); continue; }
+      if (p.CopyCard === 'True') {
+        // "copy that card; you may cast the copy" — the copy is a new object that stops existing outside the stack
+        const copy = game.newCard(pick.def, pid);
+        copy.token = true; copy.isSpellCopy = true; copy.zone = 'none'; copy.face = pick.face;
+        let ok = false;
+        try { ok = await castSpell(game, pid, copy, {}, { free, fromEffect: true, effectSA: sa }); } catch (e) { if (!e.cancelled) throw e; }
+        if (!ok && copy.zone === 'none') { copy.zone = 'gone'; game.cards.delete(copy.id); }
+        continue;
+      }
       try {
         const ok = await castSpell(game, pid, pick, {}, { free, fromEffect: true, effectSA: sa });
         if (ok && p.ReplaceGraveyard === 'Exile') pick.mustBeExiled = true;
@@ -1879,7 +1926,8 @@ export const E = {
     const top = pl.library.slice(0, 2);
     if (!top.length) return;
     const pick = (await chooseCards(game, pl.id, top, 1, 1, 'Manifest dread: choose a card to manifest', sa, 'manifestDread', { reveal: true }))[0] || top[0];
-    await game.moveCard(pick, 'battlefield', { controller: pl.id, faceDown: true, silent: true });
+    const r = await game.moveCard(pick, 'battlefield', { controller: pl.id, faceDown: true, silent: true, setProps: { manifested: true } });
+    if (r && sa.p.RememberManifested === 'True') remember(sa, [r]);
     for (const c of top) if (c !== pick) await game.moveCard(c, 'graveyard', { silent: true });
     game.log(`${pl.name} manifests dread.`);
   },
