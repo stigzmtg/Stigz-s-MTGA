@@ -1328,4 +1328,69 @@ test('The Pandorica: the permanent stays phased out while it remains tapped; The
   expect(!pan.tapped && !angel.phasedOut, 'phased in when The Pandorica untapped');
 });
 
+test('Highest mana value and greatest power filters (Padeem, Desecrator Hag)', async T => {
+  await T.put(0, 'Padeem, Consul of Innovation');
+  await T.put(0, 'Sol Ring');
+  const x = () => calcCtx(T.game, 'Count$Valid Artifact.greatestCMC_Artifact+YouCtrl', { host: null, you: 0 });
+  expect(x() === 1, 'Sol Ring is the highest');
+  const s = await T.put(1, 'Weathered Sentinels');
+  expect(x() === 0, 'not any more');
+  await T.game.destroy(s, null);
+  const angel = await T.put(0, 'Serra Angel', 'graveyard'); await T.put(0, 'Llanowar Elves', 'graveyard');
+  await T.cast('Desecrator Hag');
+  expect(angel.zone === 'hand', 'the 4-power angel returned');
+});
+test('Attack history: Weathered Sentinels attacks players who attacked you; Bloodthirster attacks a player once', async T => {
+  const s = await T.put(0, 'Weathered Sentinels');
+  T.B.attackedPlayers = [0]; T.C.attackedPlayers = [3];
+  expect(combat.canAttackDefender(T.game, s, 1, null) && !combat.canAttackDefender(T.game, s, 2, null), 'only B, who attacked A');
+  const b = await T.put(0, 'Bloodthirster');
+  T.game.combat = { attackers: [], blockers: new Map(), firstStrikeDone: new Set() };
+  T.a.on('attackers', () => [{ attacker: b.id, defender: 'p1' }]);
+  await combat.declareAttackers(T.game); await T.resolve();
+  expect(!combat.canAttackDefender(T.game, b, 1, null) && combat.canAttackDefender(T.game, b, 2, null), "it can't attack B again this turn");
+}, { players: 4 });
+
+test('Steel Hellkite: destroys only what players it damaged control', async T => {
+  const h = await T.put(0, 'Steel Hellkite');
+  const ringB = await T.put(1, 'Sol Ring'), ringC = await T.put(2, 'Sol Ring'), ringA = await T.put(0, 'Sol Ring');
+  await T.game.dealDamage(h, T.B, 5, { combat: true });
+  T.a.on('xValue', () => 1);
+  await T.activate(h, 0, a => a.parsed.api === 'DestroyAll');
+  expect(ringB.zone === 'graveyard' && ringC.zone === 'battlefield' && ringA.zone === 'battlefield', `only B's ring (${ringB.zone}, ${ringC.zone}, ${ringA.zone})`);
+}, { players: 3 });
+test('"AttachedBy Self": Presence of Gond grants its ability to the enchanted creature', async T => {
+  const elf = await T.put(0, 'Llanowar Elves');
+  T.a.on('targets', () => [refOf(elf)]);
+  await T.cast('Presence of Gond');
+  expect(activatedAbilities(T.game, 0, elf).some(a => a.parsed.api === 'Token'), 'the elf can make tokens');
+});
+test('Sylvan Offering: you and the chosen opponent each get the tokens', async T => {
+  T.a.on('xValue', () => 2);
+  await T.cast('Sylvan Offering');
+  expect(T.tokens(0).length === 3 && T.tokens(1).length === 3, `three tokens each (${T.tokens(0).length}, ${T.tokens(1).length})`);
+});
+test('Escape: Woe Strider escapes with two +1/+1 counters', async T => {
+  const w = await T.put(0, 'Woe Strider', 'graveyard');
+  for (let i = 0; i < 4; i++) await T.put(0, 'Forest', 'graveyard');
+  T.mana(0);
+  const act = getActions(T.game, 0).find(x => x.cardId === w.id && /Escape/i.test(x.label));
+  expect(act, 'escape offered');
+  await T.game.performAction(0, act); await T.resolve();
+  expect(w.zone === 'battlefield' && w.counters.P1P1 === 2, `escaped with counters (${w.counters.P1P1})`);
+});
+test('Crackling Doom: each opponent sacrifices its greatest-power creature', async T => {
+  const angel = await T.put(1, 'Serra Angel'), elf = await T.put(1, 'Llanowar Elves');
+  await T.cast('Crackling Doom');
+  expect(angel.zone === 'graveyard' && elf.zone === 'battlefield' && T.B.life === 38, `angel sacrificed (${angel.zone}, ${elf.zone}, ${T.B.life})`);
+});
+test('Equip restrictions: Lothlórien Blade equips only Elves', async T => {
+  const blade = await T.put(0, 'Lothlórien Blade');
+  const elf = await T.put(0, 'Llanowar Elves'), angel = await T.put(0, 'Serra Angel');
+  let cands = null;
+  T.a.on('targets', req => { cands = req.cands; return [refOf(elf)]; });
+  await T.activate(blade, 0, a => a.parsed.p.IsEquip === 'True');
+  expect(cands && cands.includes(refOf(elf)) && !cands.includes(refOf(angel)) && blade.attachedTo === elf.id, 'only the elf');
+});
+
 process.exit(await run(tests) ? 1 : 0);

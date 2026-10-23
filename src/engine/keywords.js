@@ -15,7 +15,7 @@ function defFor(kw, face) {
   switch (name) {
     case 'Equip': {
       const cost = a || '0';
-      const valid = looksLikeFilter(b) ? 'Creature.YouCtrl+' + b.replace(/^Creature\.?/, '').replace(/^\+/, '') : 'Creature.YouCtrl';
+      const valid = looksLikeFilter(b) ? 'Creature.YouCtrl+' + b.replace(/^Creature\.?/, '').replace(/^\+/, '').replace(/\./g, '+') : 'Creature.YouCtrl';
       A.push(`AB$ Attach | Cost$ ${cost} | ValidTgts$ ${valid.replace(/\+$/, '')} | TgtPrompt$ Select target creature you control | SorcerySpeed$ True | IsEquip$ True | AILogic$ Pump | SpellDescription$ Equip ${costText(cost)}`);
       break;
     }

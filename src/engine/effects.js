@@ -1499,6 +1499,7 @@ export const E = {
     const prev = sa.host.remembered;
     const prevImp = sa.host.imprinted;
     const useImp = p.UseImprinted === 'True';
+    const added = [];
     for (const it of items.slice(0, 60)) {
       if (useImp) sa.host.imprinted = [it];
       else sa.host.remembered = [...(p.RememberOld ? prev : []), it];
@@ -1510,8 +1511,10 @@ export const E = {
         if (!yes) continue;
       }
       if (await chooseTargetsForSA(game, sub, { optional: true })) await resolveChain(game, sub);
+      // what the iterations remember ("RememberChosen") outlives the loop; the iterated object doesn't
+      if (!useImp) for (const x of sa.host.remembered || []) if (x !== it && !prev.includes(x) && !added.includes(x)) added.push(x);
     }
-    if (useImp) sa.host.imprinted = prevImp; else sa.host.remembered = prev;
+    if (useImp) sa.host.imprinted = prevImp; else sa.host.remembered = [...prev, ...added];
   },
 
   async Branch(game, sa) {

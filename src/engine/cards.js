@@ -171,6 +171,7 @@ export class Card {
     this.textChanges = null; // "change the text by replacing all instances of one creature type with another"
     this.textSwap = null; // exchanged text boxes (Exchange of Words)
     this.sector = null; // Space sculptor: 'Alpha' | 'Beta' | 'Gamma'
+    this.attackedPlayers = null; // { turn, pids } players this creature attacked this turn
     this.meldedWith = null; // melded permanent: the other card it's made of
   }
   get faceDef() {

@@ -32,6 +32,11 @@ export function playerInDirection(game, pid, dir) {
 
 // Restrictions for attacking a specific defender (player or planeswalker)
 export function canAttackDefender(game, c, defPid, defCard) {
+  // "can attack players who attacked you during their last turn as though it didn't have defender"
+  if (kw(game, c, 'Defender')) {
+    const sts = game.activeStatics('CanAttackDefender').filter(s => matchValid(game, c, s.p.ValidCard || 'Card.Self', s.ctx));
+    if (sts.length && !sts.some(s => !s.p.ValidAttacked || matchValid(game, defCard || game.players[defPid], s.p.ValidAttacked, s.ctx))) return false;
+  }
   for (const s of game.activeStatics('CantAttack')) {
     if (s.p.DefenderNotNearestToYouInChosenDirection === 'True') {
       // "each player may attack only the nearest opponent in the chosen direction and planeswalkers controlled by that opponent"
@@ -151,6 +156,15 @@ export async function declareAttackers(game) {
   const names = decl.map(({ c, d }) => `${game.name(c)} → ${d.card ? game.name(game.cardById(d.card)) : game.players[d.player].name}`);
   game.log(`${game.players[ap].name} attacks: ${names.join(', ')}`, { type: 'attack' });
   game.turnState.attackedWith = decl.map(x => x.c.id);
+  // who attacked whom: "attacked you during their last turn", "a player it has already attacked this turn"
+  const apP = game.players[ap];
+  if (apP.attackedPlayersTurn !== game.turnNumber) { apP.attackedPlayers = []; apP.attackedPlayersTurn = game.turnNumber; }
+  for (const { c, d } of decl) {
+    if (!c.attackedPlayers || c.attackedPlayers.turn !== game.turnNumber) c.attackedPlayers = { turn: game.turnNumber, pids: [] };
+    if (d.card) continue;
+    if (!apP.attackedPlayers.includes(d.player)) apP.attackedPlayers.push(d.player);
+    if (!c.attackedPlayers.pids.includes(d.player)) c.attackedPlayers.pids.push(d.player);
+  }
   for (const { c } of decl) game.turnState.attackCounts = { ...(game.turnState.attackCounts || {}), [c.id]: ((game.turnState.attackCounts || {})[c.id] || 0) + 1 };
   // enlist: as it attacks, you may tap a nonattacking creature without summoning sickness to add its power
   for (const { c } of decl) {

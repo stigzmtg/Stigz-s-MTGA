@@ -97,7 +97,7 @@ export class Game {
   }
 
   freshTurnState() {
-    return { spellsCast: [], moves: [], damagedPlayers: {}, combatDamagedPlayers: {}, damagedCards: {}, dealtDamage: {}, creaturesDied: 0, permanentLeft: {}, attackedWith: [], turnsTaken: this.turnState ? this.turnState.turnsTaken : {}, landsEntered: {}, abilityResolved: {}, triggerCounts: {}, tokenBatches: {}, loopCounts: {}, resolutions: 0 };
+    return { spellsCast: [], moves: [], damagedPlayers: {}, combatDamagedPlayers: {}, combatDamageSources: {}, damagedCards: {}, dealtDamage: {}, creaturesDied: 0, permanentLeft: {}, attackedWith: [], turnsTaken: this.turnState ? this.turnState.turnsTaken : {}, landsEntered: {}, abilityResolved: {}, triggerCounts: {}, tokenBatches: {}, loopCounts: {}, resolutions: 0 };
   }
 
   // ---------------------------------------------------------------- queries
@@ -322,6 +322,7 @@ export class Game {
     this.turnState = this.freshTurnState();
     this.turnState.turnsTaken[ap] = (this.turnState.turnsTaken[ap] || 0) + 1;
     for (const pl of this.players) { pl.landsPlayed = 0; pl.lifeGainedThisTurn = 0; pl.lifeLostThisTurn = 0; pl.cardsDrawnThisTurn = 0; pl.spellsCastThisTurn = []; pl.manaExpended = 0; }
+    p.attackedPlayers = []; p.attackedPlayersTurn = this.turnNumber;
     for (const c of this.battlefield) c.abilityUses = {};
     this.log(`Turn ${this.turnNumber}: ${p.name}`, { type: 'turn' });
     // effects lasting "until your next turn"
@@ -1694,6 +1695,7 @@ export class Game {
       this.turnState.damagedPlayers[target.id] = (this.turnState.damagedPlayers[target.id] || 0) + amount;
       if (opts.combat) {
         this.turnState.combatDamagedPlayers[target.id] = true;
+        if (source) { const list = (this.turnState.combatDamageSources[target.id] = this.turnState.combatDamageSources[target.id] || []); const sc = source.lki ? source.card : source; if (sc && !list.some(x => x.id === sc.id)) list.push(source.lki ? source : this.makeLKI(sc)); }
         // prowl: remember the creature types that dealt combat damage to a player this turn
         if (srcCh && srcCh.types.has('Creature') && srcCtrl != null) { const pr = (this.turnState.prowl = this.turnState.prowl || {}); (pr[srcCtrl] = pr[srcCtrl] || []).push({ types: [...srcCh.subtypes], all: !!srcCh.allCreatureTypes }); }
         const srcCard = source && (source.lki ? source.card : source);
