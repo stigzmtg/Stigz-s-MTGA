@@ -430,15 +430,23 @@ for (let g = 0; g < N; g++) {
       const k = `${game.turnNumber}:${card.id}:${action.abilityKey}`;
       const n = (cur.acts.get(k) || 0) + 1;
       cur.acts.set(k, n);
-      if (n === 25) fail('cost', `ability activated 25 times in one turn (${nm}: ${(action.label || '').slice(0, 60)})`);
+      // the 25th time in a turn, it must at least have cost something (energy, life, a tap, a card): a real loop
+      // like Aethergeode Miner with two energy per creature entering is fine
+      if (n === 25 && !diffSnap(game, before, snapshot(game)).some(x => / mana | life | counters|vanished|: .*→/.test(x))) {
+        fail('cost', `ability activated 25 times in one turn (${nm}: ${(action.label || '').slice(0, 60)})`);
+        if (flags.verbose) console.log('    player counters', JSON.stringify(game.players[pid].counters), 'pool', JSON.stringify(game.players[pid].pool), '\n    LOGS', game.logs.slice(-8).map(l => l.text).join(' | '));
+      }
     }
     // a mana cost was paid somehow: mana left the pool, or something got tapped / sacrificed, or life was paid
     const paidMana = () => {
       const d = diffSnap(game, before, snapshot(game));
-      return d.some(x => / mana | life |\|1\||vanished|→ (graveyard|exile)/.test(x));
+      return d.some(x => / mana | life |\|1\||vanished|→ (graveyard|exile|hand|library)/.test(x));
     };
     if (ok && action.type === 'cast' && action.manaCost && cmcOf(action.manaCost) > 0 && !paidMana()) fail('cost', `cast ${nm} for ${cmcOf(action.manaCost)} mana without paying anything`);
-    if (ok && abil && parseCost(abil.parsed.p.Cost).hasMana && cmcOf(parseCost(abil.parsed.p.Cost).mana) > 0 && !paidMana()) fail('cost', `activated ${nm} without paying its mana cost (${(action.label || '').slice(0, 60)})`);
+    if (ok && abil && parseCost(abil.parsed.p.Cost).hasMana && cmcOf(parseCost(abil.parsed.p.Cost).mana) > 0 && !paidMana()) {
+      fail('cost', `activated ${nm} without paying its mana cost (${(action.label || '').slice(0, 60)})`);
+      if (flags.verbose) console.log('    DIFF', diffSnap(game, before, snapshot(game)).join(' ; '), '\n    LOGS', game.logs.slice(-6).map(l => l.text).join(' | '));
+    }
     if (ok && action.type === 'cast' && card && card.zone !== 'stack' && !game.stack.some(s => s.card === card) && !card.token) {
       // it may already have resolved/been countered only if something resolved in between (it can't have)
       fail('cost', `cast ${nm} returned true but the card isn't on the stack (zone ${card.zone})`);

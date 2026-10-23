@@ -144,6 +144,38 @@ function costCandidates(game, sa, part) {
   }
 }
 
+// cost parts that each pick their own cards ("Sacrifice a Swamp and a Forest"): one card can't pay for two of them
+const PICK_PARTS = new Set(['Sac', 'Discard', 'ExileFromGrave', 'ExileFromHand', 'Return', 'Exile', 'tapXType', 'untapYType', 'Reveal', 'ExileAnyGrave', 'ExiledMoveToGrave', 'Behold', 'PutCardToLibFromBattlefield']);
+function pickSlots(game, sa, parts, exclude) {
+  const slots = [];
+  for (const part of parts) {
+    if (!PICK_PARTS.has(part.type)) continue;
+    if (part.type === 'Discard' && (part.valid === 'Hand' || part.valid === 'Random')) continue;
+    if (part.type === 'tapXType' && /withTotalPowerGE/.test(part.valid || '')) continue;
+    const n = part.amount === 'X' ? (sa.root().x || 0) : amountOf(game, sa, part.amount);
+    if (!Number.isFinite(n) || n <= 0) continue;
+    const ids = costCandidates(game, sa, part).filter(c => !exclude.has(c.id)).map(c => c.id);
+    for (let i = 0; i < n; i++) slots.push(ids);
+  }
+  return slots;
+}
+// can every pick part get its own distinct cards (a bipartite matching of slots to cards)?
+function distinctPicksPossible(game, sa, parts, exclude = new Set(), minSlots = 1) {
+  const slots = pickSlots(game, sa, parts, exclude);
+  if (slots.length < minSlots || slots.length > 60) return true;
+  const owner = new Map();
+  const assign = (i, seen) => {
+    for (const id of slots[i]) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      if (!owner.has(id) || assign(owner.get(id), seen)) { owner.set(id, i); return true; }
+    }
+    return false;
+  };
+  for (let i = 0; i < slots.length; i++) if (!assign(i, new Set())) return false;
+  return true;
+}
+
 export function canPayNonMana(game, sa, cost, exclude = new Set()) {
   const pid = sa.controller;
   const host = sa.host;
@@ -206,6 +238,7 @@ export function canPayNonMana(game, sa, cost, exclude = new Set()) {
       }
     }
   }
+  if (cost.parts.length > 1 && !distinctPicksPossible(game, sa, cost.parts, exclude, 2)) return false;
   return true;
 }
 
@@ -225,7 +258,7 @@ async function chooseCostParts(game, sa, cost, { afford = null } = {}) {
   const pid = sa.controller;
   const choices = [];
   const used = new Set();
-  for (const part of cost.parts) {
+  for (const [pi, part] of cost.parts.entries()) {
     const n0 = part.amount === 'X' ? (sa.root().x || 0) : amountOf(game, sa, part.amount);
     const label = part.desc || part.valid;
     switch (part.type) {
@@ -260,6 +293,13 @@ async function chooseCostParts(game, sa, cost, { afford = null } = {}) {
           const keep = cands.filter(c => afford(new Set(costExclusions(game, [{ part, cards: [c] }]))));
           if (keep.length >= n) cands = keep;
         }
+        // nor one the rest of the cost needs (a Swamp Forest when a Swamp and a Forest are to be sacrificed)
+        const rest = cost.parts.slice(pi + 1).filter(pt => PICK_PARTS.has(pt.type));
+        const restOk = ids => !rest.length || distinctPicksPossible(game, sa, rest, new Set([...used, ...ids]));
+        if (rest.length && n0 !== Infinity) {
+          const keep = cands.filter(c => restOk([c.id]));
+          if (keep.length >= n) cands = keep;
+        }
         if (part.type === 'tapXType' && /withTotalPowerGE(\d+)/.test(part.valid || '')) {
           const need = +RegExp.$1;
           cands = costCandidates(game, sa, { ...part, valid: part.valid.replace(/\+?withTotalPowerGE\d+/, '') }).filter(c => !used.has(c.id));
@@ -285,11 +325,14 @@ async function chooseCostParts(game, sa, cost, { afford = null } = {}) {
           const verb = { Sac: 'Sacrifice', Discard: 'Discard', ExileFromGrave: 'Exile from your graveyard', ExileFromHand: 'Exile from your hand', Return: 'Return to hand', Exile: 'Exile', tapXType: 'Tap', untapYType: 'Untap', Reveal: 'Reveal', ExileAnyGrave: 'Exile from a graveyard', ExiledMoveToGrave: "Put into its owner's graveyard from exile" }[part.type];
           // together, the chosen permanents must leave enough to make the mana (two Treasures for "sacrifice two artifacts" and {R})
           const jointOk = cs => !afford || !(part.type === 'Sac' || part.type === 'tapXType') || afford(new Set([...costExclusions(game, choices), ...costExclusions(game, [{ part, cards: cs }])]));
+          let why = '';
           for (let tries = 0; tries < 3 && !chosen; tries++) {
-            const ids = await game.ask(pid, { type: 'cards', prompt: `${tries ? "You'd need one of those to pay the mana. " : ''}${verb} ${n}: ${part.desc || humanValid(part.valid)}`, cards: cands.map(c => c.id), min: n, max: n, purpose: 'cost' + part.type, sa, cancellable: true });
+            const ids = await game.ask(pid, { type: 'cards', prompt: `${why}${verb} ${n}: ${part.desc || humanValid(part.valid)}`, cards: cands.map(c => c.id), min: n, max: n, purpose: 'cost' + part.type, sa, cancellable: true });
             if (!ids) throw new Cancelled();
             const cs = ids.map(id => game.cardById(id)).filter(Boolean);
-            if (jointOk(cs)) chosen = cs;
+            if (!jointOk(cs)) why = "You'd need one of those to pay the mana. ";
+            else if (!restOk(cs.map(c => c.id))) why = "That would leave nothing to pay the rest of the cost with. ";
+            else chosen = cs;
           }
           if (!chosen) throw new Cancelled();
         }
@@ -541,16 +584,27 @@ export function producedUnits(game, card, abil, noReflect = false) {
 // can mana from `host` be spent here? RestrictValid says what it can pay for: spells ("Spell.Creature",
 // "Spell.Instant,Spell.Sorcery"), activated abilities ("Activated", "Activated.Dragon+inZoneBattlefield") or, for
 // Powerstones, anything but a nonartifact spell. spellCard: the spell being cast; abilityHost: the permanent whose
-// activated ability is being paid for. Neither (tapping a source by hand): restricted mana stays put.
-function restrictionAllows(game, host, restrict, pid, { spellCard = null, abilityHost = null }) {
+// activated ability is being paid for; costHasX: that ability's cost has {X} (Nexos, Elementalist's Palette:
+// "spend this mana only on costs that contain {X}"). Neither (tapping a source by hand): restricted mana stays put.
+function restrictionAllows(game, host, restrict, pid, { spellCard = null, abilityHost = null, costHasX = false }) {
   const ctx = { host, you: pid };
   if (restrict === 'CantCastNonArtifactSpells') return spellCard ? game.chars(spellCard).types.has('Artifact') : !!abilityHost;
-  if (spellCard) return matchValid(game, spellCard, restrict, ctx);
+  if (restrict === 'CostContainsX') return spellCard ? !!game.chars(spellCard).manaCost?.x : !!abilityHost && costHasX;
+  if (spellCard) {
+    // "Spell.Creature": the spell's own characteristics, wherever it is cast from (it only moves to the stack
+    // once its costs are paid)
+    return restrict.split(',').some(r => {
+      if (r === 'Spell') return true;
+      if (!r.startsWith('Spell.')) return false;
+      if (r === 'Spell.wasCastFromYourGraveyard') return (spellCard.zone === 'stack' ? spellCard.castFrom : spellCard.zone) === 'graveyard' && spellCard.owner === pid;
+      return matchValid(game, spellCard, 'Card.' + r.slice(6), ctx);
+    });
+  }
   if (!abilityHost) return false;
   return restrict.split(',').some(r => r === 'Activated' || (r.startsWith('Activated.') && matchValid(game, abilityHost, 'Card.' + r.slice(10), ctx)));
 }
 
-export function manaSourcesFor(game, pid, { exclude = new Set(), spellCard = null, abilityHost = null } = {}) {
+export function manaSourcesFor(game, pid, { exclude = new Set(), spellCard = null, abilityHost = null, costHasX = false } = {}) {
   const out = [];
   for (const card of game.battlefield) {
     if (card.controller !== pid || exclude.has(card.id) || card.phasedOut) continue;
@@ -571,7 +625,7 @@ export function manaSourcesFor(game, pid, { exclude = new Set(), spellCard = nul
         else ok = false;
       }
       if (!ok) continue;
-      if (p.RestrictValid && !restrictionAllows(game, card, p.RestrictValid, pid, { spellCard, abilityHost })) continue;
+      if (p.RestrictValid && !restrictionAllows(game, card, p.RestrictValid, pid, { spellCard, abilityHost, costHasX })) continue;
       if (p.ActivationLimit && (card.abilityUses[abil.key] || 0) >= +p.ActivationLimit) continue;
       if (!checkPresence(game, p, { host: card, you: pid, svars: abil.svars, sa: { svars: abil.svars, host: card, controller: pid, root() { return { x: 0, paid: {} }; } } })) continue;
       if (p.SubAbility) penalty += 1.5;
@@ -768,10 +822,10 @@ function reserveFor(manaCost, seq, i) {
 }
 
 // Plan + pay a mana cost for player pid. Returns true when paid. No state change when it fails.
-export async function payManaCost(game, pid, manaCost, { exclude = new Set(), spellCard = null, abilityHost = null, sa = null, dryRun = false } = {}) {
+export async function payManaCost(game, pid, manaCost, { exclude = new Set(), spellCard = null, abilityHost = null, costHasX = false, sa = null, dryRun = false } = {}) {
   const p = game.players[pid];
   if (cmc(manaCost) === 0 && !manaCost.x) return true;
-  let sources = manaSourcesFor(game, pid, { exclude, spellCard, abilityHost }).filter(s => !s.manualOnly);
+  let sources = manaSourcesFor(game, pid, { exclude, spellCard, abilityHost, costHasX }).filter(s => !s.manualOnly);
   if (spellCard) sources = sources.concat(alternativeSources(game, pid, spellCard, exclude));
   const plan = planPayment(manaCost, p.pool, sources, { lifeAvailable: p.life - 1 });
   if (!plan) return false;
@@ -840,11 +894,11 @@ export function canAfford(game, pid, manaCost, opts = {}) {
   return !!planPayment(manaCost, p.pool, sources, { lifeAvailable: p.life - 1, maxNodes: 8000 });
 }
 
-export function availableManaCount(game, pid, spellCard = null) {
+export function availableManaCount(game, pid, spellCard = null, opts = {}) {
   const p = game.players[pid];
   let n = poolTotal(p.pool);
   const best = new Map();
-  for (const s of manaSourcesFor(game, pid, { spellCard })) {
+  for (const s of manaSourcesFor(game, pid, { spellCard, ...opts })) {
     if (s.manualOnly) continue;
     const v = s.units.length - (s.extraCost ? cmc(s.extraCost) : 0);
     const k = s.excl || s.key;
@@ -1919,7 +1973,7 @@ export function canActivate(game, pid, card, abil, { ignoreTiming = false } = {}
     const exclude = new Set(cost.tap ? [card.id] : []);
     for (const part of cost.parts) if (part.type === 'Sac' && (part.valid === 'CARDNAME' || part.valid === 'Card.Self')) exclude.add(card.id);
     for (const id of costPartExclusions(game, sa, cost.parts)) exclude.add(id);
-    if (!canAfford(game, pid, m, { exclude, abilityHost: card })) return false;
+    if (!canAfford(game, pid, m, { exclude, abilityHost: card, costHasX: !!cost.mana.x })) return false;
   }
   if (!targetsPossible(game, sa)) return false;
   return true;
@@ -1950,20 +2004,21 @@ export async function activateAbility(game, pid, card, abilityKey, action = {}) 
   if (sa.api === 'Charm') { const ok = await chooseModes(game, sa, { cancellable: true }); if (!ok) throw new Cancelled(); }
   const cost = parseCost(p.Cost);
   let mana = manaConverted(game, card, cost.mana);
+  const payOpts = { abilityHost: card, costHasX: !!cost.mana.x };
   if (mana.x || /\bX\b/.test(p.Cost || '') && cost.parts.some(pt => pt.amount === 'X')) {
     const exclude = new Set(cost.tap ? [card.id] : []);
     let max;
     if (mana.x) {
-      max = Math.max(0, Math.floor((availableManaCount(game, pid) - cmc({ ...mana, x: 0 }) - (cost.tap && manaSourcesFor(game, pid).some(s => s.card === card) ? 1 : 0)) / mana.x));
+      max = Math.max(0, Math.floor((availableManaCount(game, pid, null, payOpts) - cmc({ ...mana, x: 0 }) - (cost.tap && manaSourcesFor(game, pid, payOpts).some(s => s.card === card) ? 1 : 0)) / mana.x));
       // the count can double-book sources (a filter land's own cost): check with the planner, going down
       const exX = new Set(cost.tap ? [card.id] : []);
-      while (max > 0) { const m = cloneCost(mana); m.generic += m.x * max; m.x = 0; if (canAfford(game, pid, m, { exclude: exX, abilityHost: card })) break; max--; }
+      while (max > 0) { const m = cloneCost(mana); m.generic += m.x * max; m.x = 0; if (canAfford(game, pid, m, { exclude: exX, ...payOpts })) break; max--; }
     }
     else {
       const part = cost.parts.find(pt => pt.amount === 'X');
       max = part.type === 'SubCounter' ? ((card.counters[normalizeCounterName(part.counter)]) || 0) : part.type === 'PayLife' ? game.players[pid].life - 1 : part.type === 'PayEnergy' ? (game.players[pid].counters.ENERGY || 0) : 10;
     }
-    max = Math.min(max, xCap(game, sa, cost.parts, cost.hasMana ? ex => canAfford(game, pid, mana.x ? { ...mana, x: 0 } : mana, { exclude: new Set([...(cost.tap ? [card.id] : []), ...ex]), abilityHost: card }) : null));
+    max = Math.min(max, xCap(game, sa, cost.parts, cost.hasMana ? ex => canAfford(game, pid, mana.x ? { ...mana, x: 0 } : mana, { exclude: new Set([...(cost.tap ? [card.id] : []), ...ex]), ...payOpts }) : null));
     let x = null;
     for (let tries = 0; tries < 3; tries++) {
       x = await game.ask(pid, { type: 'number', prompt: tries ? `There's no legal target with X = ${x}, or its cost can't be paid. Choose X for ${game.name(card)}` : `Choose X for ${game.name(card)}`, min: 0, max: Math.max(0, max), purpose: 'xValue', sa, cancellable: true });
@@ -1978,12 +2033,12 @@ export async function activateAbility(game, pid, card, abilityKey, action = {}) 
   if (sa.x && !canPayNonMana(game, sa, cost)) return false;
   const ok = await chooseTargetsForSA(game, sa);
   if (!ok) return false;
-  const choices = await chooseCostParts(game, sa, cost, { afford: cost.hasMana ? ex => canAfford(game, pid, mana, { exclude: new Set([...(cost.tap ? [card.id] : []), ...ex]), abilityHost: card }) : null });
+  const choices = await chooseCostParts(game, sa, cost, { afford: cost.hasMana ? ex => canAfford(game, pid, mana, { exclude: new Set([...(cost.tap ? [card.id] : []), ...ex]), ...payOpts }) : null });
   if (!choices) return false;
   const exclude = new Set(cost.tap ? [card.id] : []);
   for (const id of costExclusions(game, choices)) exclude.add(id);
-  if (cost.hasMana && !canAfford(game, pid, mana, { exclude, abilityHost: card })) return false;
-  if (cost.hasMana) { const paidOk = await payManaCost(game, pid, mana, { exclude, sa, abilityHost: card }); if (!paidOk) return false; }
+  if (cost.hasMana && !canAfford(game, pid, mana, { exclude, ...payOpts })) return false;
+  if (cost.hasMana) { const paidOk = await payManaCost(game, pid, mana, { exclude, sa, ...payOpts }); if (!paidOk) return false; }
   await applyCostParts(game, sa, cost, choices);
   card.abilityUses[abil.key] = (card.abilityUses[abil.key] || 0) + 1;
   if (p.Planeswalker === 'True') card.abilityUses.__pw = (card.abilityUses.__pw || 0) + 1;
