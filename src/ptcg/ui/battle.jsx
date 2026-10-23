@@ -6,7 +6,7 @@ import { pkImage, subscribePk, pkImagesVersion } from './images.js';
 import { Modal } from '../../ui/dialogs.jsx';
 import { secondPerson } from '../../ui/table.jsx';
 import { RoomStatus } from '../../ui/online.jsx';
-import { SoundToggle } from '../../ui/dialogs.jsx';
+import { SoundToggle, SizeButton } from '../../ui/dialogs.jsx';
 import { useGameSounds } from '../../ui/sound.js';
 import { recordGame } from '../../ui/records.js';
 import { ReplayBar } from '../../ui/replaybar.jsx';
@@ -404,6 +404,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
         {replay ? <ReplayBar ctl={replay} /> : null}
         <span className="spacer" />
         <EmoteButton emotes={emotes} />
+        <SizeButton />
         <SoundToggle session={session} />
         <button className="btn sm danger" onClick={onExit} title={online && host && !game.over ? 'Ends the battle for both players' : undefined}>{replay ? 'Close replay' : game.over ? (online ? 'Back to room' : 'New battle') : online ? (host ? 'End battle' : watching ? 'Stop watching' : 'Leave battle') : 'Leave battle'}</button>
       </header>

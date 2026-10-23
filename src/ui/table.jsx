@@ -2,7 +2,7 @@
 import { CardFace, viewOf, ManaCost, Pip, RulesText } from './cardview.jsx';
 import { Mat, Hand, StackView, RecentPlays, useRecentPlays, ArrowLayer, TurnBanner } from './board.jsx';
 import { imagesAvailable, subscribeImages, imagesVersion } from './images.js';
-import { Modal, CardsDialog, TargetsDialog, OptionDialog, ModesDialog, ConfirmDialog, NumberDialog, ColorDialog, PlayerDialog, MulliganDialog, ZoneDialog, SettingsDialog, TokenDialog, HelpDialog, Menu, SoundToggle } from './dialogs.jsx';
+import { Modal, CardsDialog, TargetsDialog, OptionDialog, ModesDialog, ConfirmDialog, NumberDialog, ColorDialog, PlayerDialog, MulliganDialog, ZoneDialog, SettingsDialog, TokenDialog, HelpDialog, Menu, SoundToggle, SizeButton } from './dialogs.jsx';
 import { getActions, refOf, fromRef, manaAbilitiesOf, manaSourcesFor, activateManaAbility, parseCost } from '../engine/abilities.js';
 import { STEP_NAMES } from '../engine/game.js';
 import { blockRules } from '../engine/combat.js';
@@ -27,9 +27,12 @@ const PHASES = [
 
 function PhaseTracker({ game }) {
   const step = game.step === 'firstStrikeDamage' ? 'combatDamage' : game.step;
+  const steps = PHASES.filter(p => p !== '|').map(p => p[0]);
+  const at = steps.indexOf(step);
+  const near = k => { const j = steps.indexOf(k); return at >= 0 && Math.abs(j - at) <= 1; };
   return (
     <div className="phases" aria-label="Turn structure">
-      {PHASES.map((p, i) => p === '|' ? <span key={i} className="ph sep" /> : <span key={p[0]} className={`ph ${step === p[0] ? 'on' : ''}`}>{p[1]}</span>)}
+      {PHASES.map((p, i) => p === '|' ? <span key={i} className="ph sep" /> : <span key={p[0]} className={`ph ${step === p[0] ? 'on' : ''} ${near(p[0]) ? 'near' : ''}`}>{p[1]}</span>)}
     </div>
   );
 }
@@ -56,11 +59,11 @@ function LogPanel({ game, me, onHover }) {
   );
 }
 
-function Preview({ game, cardId, support, images }) {
+function Preview({ game, cardId, support, images, me = 0 }) {
   const card = cardId != null ? game.cardById(cardId) : null;
   if (!card) return <div className="empty">Point at any card to read it here.</div>;
   const v = viewOf(game, card);
-  const hidden = card.faceDown && card.controller !== 0 && card.owner !== 0;
+  const hidden = card.faceDown && card.controller !== me && card.owner !== me;
   const facts = [];
   if (card.zone === 'battlefield') {
     facts.push(`${game.players[card.controller].name}${card.controller !== card.owner ? ` (owned by ${game.players[card.owner].name})` : ''}`);
@@ -80,6 +83,15 @@ function Preview({ game, cardId, support, images }) {
   return (
     <div className="preview">
       <div className="bigcard"><div className="cardwrap"><CardFace v={shown} size="big" /></div></div>
+      {/* the card's words as real text: sharp at any size, unlike the small print in the picture */}
+      {shown.img ? (
+        <div className="cardtext">
+          <div className="ct-head"><b>{v.name}</b>{v.cost ? <ManaCost cost={v.cost} /> : null}</div>
+          <div className="ct-type">{v.typeLine}</div>
+          {v.oracle ? <div className="ct-rules"><RulesText text={v.oracle} /></div> : null}
+          {v.power != null ? <div className="ct-pt">{v.power}/{v.toughness}</div> : v.loyalty != null ? <div className="ct-pt">Loyalty {v.loyalty}</div> : v.defense != null ? <div className="ct-pt">Defense {v.defense}</div> : null}
+        </div>
+      ) : null}
       <div className="facts">
         {facts.map((f, i) => <div key={i}>{f}</div>)}
         {warn ? <div className="warn">Not fully automated ({warn.join(', ')}). The game may miss part of what it does.</div> : null}
@@ -372,6 +384,7 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
         {session.replay ? <ReplayBar ctl={session.replay} /> : null}
         <span className="spacer" />
         <EmoteButton emotes={emotes} />
+        <SizeButton />
         <SoundToggle session={session} />
         <button className="btn sm icon" onClick={() => setShowHelp(true)} title="How to play" aria-label="How to play"><svg viewBox="0 0 24 24" aria-hidden="true"><path fillRule="evenodd" d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm-1 11.5h2V18h-2zM12 6a3.5 3.5 0 0 1 1.7 6.6c-.5.3-.7.6-.7 1V14h-2v-.6c0-1.1.6-2 1.6-2.6A1.5 1.5 0 1 0 10.5 9.5h-2A3.5 3.5 0 0 1 12 6z" /></svg></button>
         <button className="btn sm icon" onClick={() => setShowSettings(true)} title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path fillRule="evenodd" d="M10.3 2h3.4l.5 2.6c.6.2 1.2.5 1.7.9l2.5-.9 1.7 2.9-2 1.7a7 7 0 0 1 0 1.9l2 1.7-1.7 2.9-2.5-.9c-.5.4-1.1.7-1.7.9l-.5 2.6h-3.4l-.5-2.6c-.6-.2-1.2-.5-1.7-.9l-2.5.9-1.7-2.9 2-1.7a7 7 0 0 1 0-1.9l-2-1.7 1.7-2.9 2.5.9c.5-.4 1.1-.7 1.7-.9zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z" transform="translate(0 1)" /></svg></button>
@@ -397,7 +410,7 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
           <TurnBanner game={game} me={self} />
         </main>
         <aside className="rail">
-          <section className="preview-sec"><Preview game={game} cardId={hover} support={support} images={images} /></section>
+          <section className="preview-sec"><Preview game={game} cardId={hover} support={support} images={images} me={me} /></section>
           <section className="log-sec"><h3>Game log</h3><LogPanel game={game} me={me} onHover={setHover} /></section>
         </aside>
       </div>
@@ -450,7 +463,7 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
       ) : null}
       {inspect != null ? (
         <Modal narrow label="Card" onClose={() => setInspect(null)}>
-          <Preview game={game} cardId={inspect} support={support} images={images} />
+          <Preview game={game} cardId={inspect} support={support} images={images} me={me} />
           <div className="dlg-actions"><button className="btn primary" onClick={() => setInspect(null)}>Close</button></div>
         </Modal>
       ) : null}

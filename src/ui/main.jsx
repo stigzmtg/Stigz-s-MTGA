@@ -15,6 +15,7 @@ import { Home } from './home.jsx';
 import { PokemonApp, pkRoomFromHash } from '../ptcg/ui/app.jsx';
 import { Recorder, ReplayControl, ReplayAgent, mtgDelay, loadReplay } from './records.js';
 import { initApp } from './install.js';
+import { initUiScale } from './uisize.js';
 import { loadCustomDecks, findDeck, registerDeck, unpackDeck, packDeck, customDeck } from './customdecks.js';
 import { DeckBuilder } from './builder.jsx';
 import { myAvatar } from './avatar.jsx';
@@ -299,5 +300,6 @@ function Root() {
   return <Home onPick={pick} onJoin={join} />;
 }
 
+initUiScale();
 initApp();
 ReactDOM.createRoot(document.getElementById('root')).render(<Root />);

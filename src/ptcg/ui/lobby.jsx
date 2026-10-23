@@ -1,6 +1,7 @@
 // Pokémon lobby: pick one of the tournament decks, pick (or randomize) the opponent's, start the battle.
 import { Energy } from './energy.jsx';
 import { DeckRecord } from '../../ui/replaybar.jsx';
+import { SizeButton } from '../../ui/dialogs.jsx';
 import { DeckStyleButton, subscribeDeckStyles, deckStylesVersion } from '../../ui/deckstyle.jsx';
 import { pkImage, subscribePk, pkImagesVersion } from './images.js';
 import { PkFriendsPanel } from './friends.jsx';
@@ -71,6 +72,7 @@ export function PkLobby({ data, online, onStart, onHome, onHelp }) {
         <span className="chip pk-chip">Pokémon TCG</span>
         <span className="spacer" />
         <button className="btn sm" onClick={onHome}>Switch game</button>
+        <SizeButton />
         <button className="btn sm" onClick={onHelp}>How to play</button>
       </header>
       <main className="lobby pk-lobby">

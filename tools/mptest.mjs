@@ -111,7 +111,10 @@ while (Date.now() - t1 < 240000) {
 }
 console.log('turns reached (host, guest, watcher):', ts.join(', '));
 await host.waitForTimeout(2000);
-const views = await Promise.all([host, guest, watcher].map(summary));
+// the game keeps going (the AI seat plays on) while three browsers are read one after another, so a mismatch can be
+// a moment apart: read again a few times; a real desync stays
+let views = await Promise.all([host, guest, watcher].map(summary));
+for (let k = 0; k < 6 && !views.every(v => JSON.stringify(v) === JSON.stringify(views[0])); k++) { await host.waitForTimeout(1500); views = await Promise.all([host, guest, watcher].map(summary)); }
 await watcher.screenshot({ path: `${OUT}/5-watcher.png` });
 await guest.screenshot({ path: `${OUT}/6-guest-after-reload.png` });
 console.log('after reload + watcher:');

@@ -5,6 +5,7 @@ import { play as playSound } from './sound.js';
 import { loadSettings, saveSettings } from './common.js';
 import { fromRef } from '../engine/abilities.js';
 import { onClaude } from '../net/roomclient.js';
+import { UI_SIZES, uiSizePref, setUiSize, subscribeUiSize } from './uisize.js';
 
 const { useState, useEffect, useRef } = React;
 
@@ -222,6 +223,7 @@ export function SettingsDialog({ settings, onChange, onClose }) {
             <option value="slow">Relaxed</option><option value="normal">Like a real player</option><option value="fast">Quick</option><option value="instant">Instant</option>
           </select>
         </label>
+        <div className="setrow"><span>Interface size<small>Everything bigger or smaller. The game also grows with your window.</small></span><SizeChoice /></div>
         <Toggle k="stopOppEnd" title="Stop at opponents' end steps" note="Only when you have instant-speed plays." />
         <Toggle k="stopOppCombat" title="Stop after blockers on opponents' attacks" note="Gives you a window for combat tricks." />
         <Toggle k="stopOwnCombat" title="Stop at your own combat steps" note="For tricks before attacks and after blocks." />
@@ -345,4 +347,26 @@ export function SoundToggle({ session }) {
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" />{on ? <path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /> : <path d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />}</svg>
     </button>
   );
+}
+
+// how big everything is drawn (see uisize.js): a button with the four sizes, for top bars and the home page
+export function SizeButton({ cls = 'btn sm icon' }) {
+  const [open, setOpen] = React.useState(false);
+  const pref = React.useSyncExternalStore(subscribeUiSize, uiSizePref);
+  React.useEffect(() => {
+    if (!open) return;
+    const close = e => { if (!e.target.closest || !e.target.closest('.sizepick')) setOpen(false); };
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [open]);
+  return (
+    <span className="sizepick">
+      <button className={cls} onClick={() => setOpen(o => !o)} aria-expanded={open} aria-label="Interface size" title="Interface size"><span className="aa" aria-hidden="true">A<small>A</small></span></button>
+      {open ? <div className="sizepop" role="menu">{UI_SIZES.map(([k, label]) => <button key={k} role="menuitemradio" aria-checked={pref === k} className={pref === k ? 'on' : ''} onClick={() => { setUiSize(k); setOpen(false); }}>{label}</button>)}</div> : null}
+    </span>
+  );
+}
+export function SizeChoice() {
+  const pref = React.useSyncExternalStore(subscribeUiSize, uiSizePref);
+  return <div className="seg" role="group" aria-label="Interface size">{UI_SIZES.map(([k, label]) => <button key={k} className={pref === k ? 'on' : ''} aria-pressed={pref === k} onClick={() => setUiSize(k)}>{label}</button>)}</div>;
 }

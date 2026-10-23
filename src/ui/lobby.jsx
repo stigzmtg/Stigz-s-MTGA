@@ -1,7 +1,7 @@
 // Deck selection: pick your precon and your AI opponents.
 import { CardFace, viewOfDef, Pip } from './cardview.jsx';
 import { DeckRecord } from './replaybar.jsx';
-import { HelpDialog } from './dialogs.jsx';
+import { HelpDialog, SizeButton } from './dialogs.jsx';
 import { FriendsPanel } from './online.jsx';
 import { lobbyImages, subscribeImages, imagesVersion, cardImage } from './images.js';
 import { DeckStyleButton, subscribeDeckStyles, deckStylesVersion } from './deckstyle.jsx';
@@ -93,7 +93,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
 
   return (
     <div className="app">
-      <header className="topbar">{onHome ? <button className="brand linklike" onClick={onHome} title="Choose a game">Stigz’s TCG Arena<small>Commander</small></button> : <span className="brand">Stigz’s TCG Arena<small>Commander vs AI</small></span>}<span className="spacer" /><span className="chip">{decks.length} preconstructed decks</span>{onHome ? <button className="btn sm" onClick={onHome}>Switch game</button> : null}<button className="btn sm" onClick={() => setHelp(true)}>How to play</button></header>
+      <header className="topbar">{onHome ? <button className="brand linklike" onClick={onHome} title="Choose a game">Stigz’s TCG Arena<small>Commander</small></button> : <span className="brand">Stigz’s TCG Arena<small>Commander vs AI</small></span>}<span className="spacer" /><span className="chip">{decks.length} preconstructed decks</span>{onHome ? <button className="btn sm" onClick={onHome}>Switch game</button> : null}<SizeButton /><button className="btn sm" onClick={() => setHelp(true)}>How to play</button></header>
       {help ? <HelpDialog onClose={() => setHelp(false)} /> : null}
       <div className="lobby">
         <div className="intro">

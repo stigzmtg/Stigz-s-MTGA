@@ -296,8 +296,7 @@ export function Mat({ game, pid, ctx, side, compact }) {
         <span className="pname" title={p.name}>{p.name}{game.activePlayer === pid ? <span className="turnmark" title="Active player">turn</span> : null}</span>
         <span className="status"><StatusChips game={game} pid={pid} />{incoming ? <span className="chip danger" title="Attacking this player">⚔ {incoming.n} attacking · {incoming.power} power</span> : null}<span className="pdeck">{p.deckName}</span></span>
       </span>
-      {!isMe ? <OppHand n={p.hand.length} sleeve={ctx.sleeves && ctx.sleeves[pid]} /> : null}
-      {!isMe ? <Piles game={game} pid={pid} ctx={ctx} compact={compact} /> : null}
+      {!isMe ? <span className="plate-extras"><OppHand n={p.hand.length} sleeve={ctx.sleeves && ctx.sleeves[pid]} /><Piles game={game} pid={pid} ctx={ctx} compact={compact} /></span> : null}
       {isMe && Object.values(p.pool).some(n => n > 0) ? <span className="pool" title="Mana pool">{Object.entries(p.pool).flatMap(([k, n]) => Array.from({ length: n }, (_, i) => <Pip key={k + i} s={k} />))}</span> : null}
     </div>
   );

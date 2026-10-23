@@ -9,6 +9,7 @@ import { isRoomCode } from '../net/roomclient.js';
 import { safeStorage, fetchJSON } from './common.js';
 import { loadRecords, tally } from './records.js';
 import { subscribeInstall, canInstall, install } from './install.js';
+import { SizeButton } from './dialogs.jsx';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -283,6 +284,7 @@ export function Home({ onPick, onJoin }) {
         </span>
         <span className="spacer" />
         {installable ? <button className="navbtn install" onClick={install} title="Add Stigz’s TCG Arena to your home screen or shelf">Install app</button> : null}
+        <SizeButton cls="navbtn sizebtn" />
         <button className="navbtn mtg" onClick={() => open('mtg')}>Commander</button>
         <button className="navbtn pk" onClick={() => open('pokemon')}>Pokémon</button>
       </nav>

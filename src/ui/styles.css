@@ -1,6 +1,6 @@
 /* Stigz’s TCG Arena — a felt-table look. Layout: board (opponents / prompt / you) + side rail (preview, stack, log). */
 :root {
-  --s: 1;   /* size scale for big screens (see below); tools/build.mjs multiplies pixel sizes by it */
+  --s: 1;   /* size scale, set from the window and the player's choice by ui/uisize.js; tools/build.mjs multiplies pixel sizes by it */
   --felt: #12291f;
   --felt-2: #183627;
   --felt-deep: #0b1913;
@@ -470,11 +470,17 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 /* rail: card preview + game log */
 .rail section { padding: 12px; border-bottom: 1px solid var(--line); min-height: 0; }
 .rail h3 { margin: 0 0 6px; font: 700 12px/1 var(--font-ui); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); }
-.rail .preview-sec { --cw: 260px; }
+.rail .preview-sec { --cw: min(260px, 26vh); }   /* leaves room for the game log */
 .rail .log-sec { flex: 1; display: flex; flex-direction: column; min-height: 0; border-bottom: 0; }
 .preview { display: grid; justify-items: center; gap: 8px; }
 .preview .bigcard { --cw: inherit; }
-.preview .facts { width: 100%; font-size: 12.5px; color: var(--ink-dim); display: grid; gap: 2px; }
+.preview .facts { width: 100%; font-size: 13.5px; color: var(--ink-dim); display: grid; gap: 2px; }
+.cardtext { width: 100%; display: grid; gap: 4px; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.3); }
+.cardtext .ct-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cardtext .ct-head b { font: 700 16px/1.25 var(--font-display); color: var(--ink); }
+.cardtext .ct-type { font-size: 13.5px; color: var(--ink-dim); }
+.cardtext .ct-rules { font-size: 14.5px; line-height: 1.45; color: var(--ink); white-space: pre-line; }
+.cardtext .ct-pt { justify-self: end; font: 700 15px/1 var(--font-display); color: var(--brass-hi); }
 .preview .facts .warn { color: #f0cf84; }
 .log { flex: 1; overflow-y: auto; font-size: 12.5px; display: flex; flex-direction: column; gap: 2px; padding-right: 4px; min-height: 120px; }
 .log .e { color: var(--ink-dim); }
@@ -487,7 +493,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .log .e.manual { color: var(--info); }
 /* dialogs */
 .overlay { position: fixed; inset: 0; z-index: 50; background: rgba(2, 8, 5, 0.62); display: grid; place-items: center; padding-block: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-.dialog { background: var(--panel-solid); border: 1px solid var(--line-strong); border-radius: 14px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6); padding: 16px; width: min(880px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.dialog { background: var(--panel-solid); border: 1px solid var(--line-strong); border-radius: 14px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6); padding: 16px; width: min(880px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .dialog.narrow { width: min(460px, 100%); }
 .dialog h2 { margin: 0; font: 700 18px/1.2 var(--font-display); letter-spacing: 0.05em; color: var(--brass-hi); text-wrap: balance; }
 .dialog .sub { color: var(--ink-dim); font-size: 14px; margin-top: -6px; }
@@ -730,11 +736,6 @@ kbd { font: 600 12px/1 'Alegreya Sans', sans-serif; padding: 2px 6px; border-rad
 }
 
 /* bigger screens: everything a little bigger (text, buttons, panels, cards). Laptops stay at 1. */
-@media (min-width: 1600px) and (min-height: 820px) { :root { --s: 1.1; } }
-@media (min-width: 1880px) and (min-height: 900px) { :root { --s: 1.2; } }
-@media (min-width: 2200px) and (min-height: 1100px) { :root { --s: 1.35; } }
-@media (min-width: 2500px) and (min-height: 1250px) { :root { --s: 1.5; } }
-@media (min-width: 3200px) and (min-height: 1650px) { :root { --s: 1.8; } }
 /* ---- avatars */
 .animal-avatar { display: block; flex: none; border-radius: 50%; box-shadow: 0 0 0 2px rgba(243, 212, 136, 0.55), 0 3px 8px rgba(0, 0, 0, 0.45); }
 .av-editor { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: start; }
@@ -835,3 +836,44 @@ kbd { font: 600 12px/1 'Alegreya Sans', sans-serif; padding: 2px 6px; border-rad
 .ds-match { justify-self: start; }
 .seat-deck .deckbox { display: inline-block; vertical-align: middle; margin-right: 4px; filter: none; }
 @media (max-width: 640px) { .ds-editor { grid-template-columns: minmax(0, 1fr); } .ds-preview { width: 100%; } }
+
+/* the interface size picker */
+.sizepick { position: relative; display: inline-flex; }
+.sizepick .aa { font: 700 15px/1 var(--font-display); letter-spacing: -0.02em; }
+.sizepick .aa small { font-size: 11px; }
+.sizepop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 120; display: grid; gap: 2px; min-width: 130px; padding: 6px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--panel-solid); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55); }
+.sizepop button { text-align: left; padding: 7px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font: 600 14px/1.2 var(--font-ui); cursor: pointer; }
+.sizepop button:hover { background: rgba(255, 255, 255, 0.06); }
+.sizepop button.on { background: var(--brass); color: #1c1407; }
+.setrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.setrow > span { display: grid; gap: 2px; }
+.setrow small { color: var(--ink-dim); font-size: 13px; }
+
+/* ---- tight tables (the interface scales with the window, so most screens are tight) */
+.plate-extras { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; flex: none; min-width: 0; }
+.plate-extras .opphand { margin-left: 0; }
+/* several opponents: name on top, hand and piles under it, beside the avatar */
+.mat.compact > .plate { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "who ident" "who extras"; column-gap: 8px; row-gap: 3px; align-items: center; }
+.mat.compact > .plate > .who { grid-area: who; }
+.mat.compact > .plate > .ident { grid-area: ident; }
+.mat.compact > .plate > .plate-extras { grid-area: extras; margin-left: 0; justify-content: flex-start; flex-wrap: wrap; row-gap: 3px; }
+.mat.compact > .plate .pdeck { display: none; }
+.mat.compact .plate-extras { gap: 5px; }
+.mat.compact .opphand .fan { width: 15px; }
+.mat.compact .opphand .fan .fb:nth-child(n+2) { display: none; }
+.mat.compact .opphand .fan .fb { transform: none; left: 0; }
+.mat.compact .plate .pile { --cw: 13px; padding: 1px 5px 1px 2px; column-gap: 3px; }
+.mat.compact .plate .piles { gap: 3px; }
+/* your own piles: a row of small counters under your nameplate */
+.mat.bottom > .piles { flex-direction: row; flex-wrap: wrap; gap: 4px; align-self: start; }
+.mat.bottom > .piles .pile { --cw: 16px; grid-template-columns: auto auto; grid-template-areas: "pc n"; padding: 2px 6px 2px 3px; column-gap: 4px; }
+.mat.bottom > .piles .pile .pl { display: none; }
+.mat.bottom > .piles .pile b { font-size: 13px; }
+/* the turn steps: just the current one and its neighbours unless the bar has room */
+.topbar { flex-wrap: nowrap; }
+.topbar .phases { flex-wrap: nowrap; min-width: 0; }
+:root:not([data-roomy]) .topbar .ph:not(.near) { display: none; }
+:root:not([data-roomy]) .topbar .ph.sep { display: none; }
+:root:not([data-roomy]) .topbar .ph.near:not(.on) { color: var(--ink-dim); }
+/* a dialog taller than the window scrolls, with its buttons kept in view at the bottom */
+.dialog > .dlg-actions:last-child { position: sticky; bottom: -16px; z-index: 2; margin: 0 -16px -16px; padding: 10px 16px 14px; background: linear-gradient(180deg, rgba(14, 30, 23, 0), var(--panel-solid) 30%); }
