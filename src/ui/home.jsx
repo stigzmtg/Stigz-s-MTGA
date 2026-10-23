@@ -8,6 +8,7 @@ import { codeFromInput } from '../ptcg/ui/friends.jsx';
 import { isRoomCode } from '../net/roomclient.js';
 import { safeStorage, fetchJSON } from './common.js';
 import { loadRecords, tally } from './records.js';
+import { subscribeInstall, canInstall, install } from './install.js';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -250,6 +251,7 @@ export function Home({ onPick, onJoin }) {
   useSyncExternalStore(subscribePk, pkImagesVersion);
   useSyncExternalStore(subscribeImages, imagesVersion);
   const [pkDecks, setPkDecks] = useState(null);
+  const installable = useSyncExternalStore(subscribeInstall, canInstall);
   useEffect(() => {
     initPkImages().then(ok => { if (ok) preloadPk(); });
     initImages();
@@ -280,6 +282,7 @@ export function Home({ onPick, onJoin }) {
           <button onClick={() => scrollTo('why')}>Features</button>
         </span>
         <span className="spacer" />
+        {installable ? <button className="navbtn install" onClick={install} title="Add Stigz’s TCG Arena to your home screen or shelf">Install app</button> : null}
         <button className="navbtn mtg" onClick={() => open('mtg')}>Commander</button>
         <button className="navbtn pk" onClick={() => open('pokemon')}>Pokémon</button>
       </nav>

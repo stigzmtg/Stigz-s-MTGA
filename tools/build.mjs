@@ -58,6 +58,8 @@ fs.writeFileSync(path.join(DIST, 'index.html'), `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Play Magic: The Gathering Commander precons and popular Pokémon TCG decks against the computer or with friends, right in your browser.">
 <meta name="theme-color" content="#0b1a14">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="img/icon-180.png">
 <link rel="icon" href="${icon}">
 ${head}
 </head>
@@ -66,5 +68,31 @@ ${body}
 </body>
 </html>
 `);
+// installable app: icons, manifest and the service worker (the website only; the claude.ai page can't use them)
+const crest = (x, y, scale) => `<g transform="translate(${x} ${y}) scale(${scale}) translate(-20 -20)"><rect x="9" y="7" width="17" height="24" rx="2.5" transform="rotate(-14 17 19)" fill="#1d4bb0" stroke="#ffd23f" stroke-width="1.6"/><rect x="14" y="8" width="17" height="24" rx="2.5" transform="rotate(10 22 20)" fill="#2e1f0d" stroke="#f3d488" stroke-width="1.6"/><path d="M22.6 14.5l2.4 4.4-2.4 4.4-2.4-4.4z" fill="#f3d488" transform="rotate(10 22 20)"/></g>`;
+const iconSvg = (rounded, scale) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><radialGradient id="g" cx="50%" cy="38%" r="72%"><stop offset="0" stop-color="#21503a"/><stop offset="1" stop-color="#0a1812"/></radialGradient></defs><rect width="512" height="512" rx="${rounded ? 112 : 0}" fill="url(#g)"/>${crest(256, 262, scale)}</svg>`;
+try {
+  const sharp = (await import('sharp')).default;
+  fs.mkdirSync(path.join(DIST, 'img'), { recursive: true });
+  for (const [file, size, rounded, scale] of [['icon-192.png', 192, true, 10], ['icon-512.png', 512, true, 10], ['icon-maskable-512.png', 512, false, 7.6], ['icon-180.png', 180, false, 9]]) {
+    await sharp(Buffer.from(iconSvg(rounded, scale))).resize(size, size).png().toFile(path.join(DIST, 'img', file));
+  }
+} catch (e) { console.warn('icons skipped:', e.message); }
+fs.writeFileSync(path.join(DIST, 'manifest.webmanifest'), JSON.stringify({
+  name: 'Stigz’s TCG Arena', short_name: 'TCG Arena', id: './', start_url: './', scope: './', display: 'standalone',
+  description: 'Commander precons and top Pokémon TCG decks against the computer or with friends.',
+  background_color: '#0b1913', theme_color: '#0b1a14',
+  icons: [
+    { src: 'img/icon-192.png', sizes: '192x192', type: 'image/png' },
+    { src: 'img/icon-512.png', sizes: '512x512', type: 'image/png' },
+    { src: 'img/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+  ],
+}, null, 2));
+{
+  const crypto = await import('node:crypto');
+  const h = crypto.createHash('sha1');
+  for (const f of ['app.js', 'index.html', 'data/decks.json', 'data/ptcg/decks.json', 'data/ptcg/cards.json', 'data/images.json', 'data/ptcg/images.json']) if (fs.existsSync(path.join(DIST, f))) h.update(fs.readFileSync(path.join(DIST, f)));
+  fs.writeFileSync(path.join(DIST, 'sw.js'), fs.readFileSync('src/sw.js', 'utf8').replace('__VERSION__', h.digest('hex').slice(0, 12)));
+}
 const kb = f => (fs.statSync(path.join(DIST, f)).size / 1024).toFixed(0) + 'KB';
 console.log('built', ['app.js', 'index.html', 'artifact.html', 'data/cards.json'].map(f => `${f} ${kb(f)}`).join(', '), `| ${Object.keys(support).length} cards flagged`);

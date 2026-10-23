@@ -14,6 +14,7 @@ import { createStore, loadSettings, saveSettings, safeStorage, fetchJSON } from 
 import { Home } from './home.jsx';
 import { PokemonApp, pkRoomFromHash } from '../ptcg/ui/app.jsx';
 import { Recorder, ReplayControl, ReplayAgent, mtgDelay, loadReplay } from './records.js';
+import { initApp } from './install.js';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -270,4 +271,5 @@ function Root() {
   return <Home onPick={pick} onJoin={join} />;
 }
 
+initApp();
 ReactDOM.createRoot(document.getElementById('root')).render(<Root />);

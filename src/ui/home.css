@@ -283,3 +283,5 @@
   .home .rec-list .meta { grid-column: 2; white-space: normal; }
   .home .rec-list li > .btn, .home .rec-list .noreplay { grid-column: 2; justify-self: start; }
 }
+.home .navbtn.install { color: var(--ink); border: 1px dashed var(--line-strong); background: rgba(255, 255, 255, 0.04); }
+@media (max-width: 520px) { .home .navbtn.install { display: none; } }
