@@ -283,9 +283,15 @@ async function chooseCostParts(game, sa, cost, { afford = null } = {}) {
         if (cands.length === n && (part.valid === 'CARDNAME' || part.valid === 'Card.Self')) chosen = cands;
         else {
           const verb = { Sac: 'Sacrifice', Discard: 'Discard', ExileFromGrave: 'Exile from your graveyard', ExileFromHand: 'Exile from your hand', Return: 'Return to hand', Exile: 'Exile', tapXType: 'Tap', untapYType: 'Untap', Reveal: 'Reveal', ExileAnyGrave: 'Exile from a graveyard', ExiledMoveToGrave: "Put into its owner's graveyard from exile" }[part.type];
-          const ids = await game.ask(pid, { type: 'cards', prompt: `${verb} ${n}: ${part.desc || humanValid(part.valid)}`, cards: cands.map(c => c.id), min: n, max: n, purpose: 'cost' + part.type, sa, cancellable: true });
-          if (!ids) throw new Cancelled();
-          chosen = ids.map(id => game.cardById(id)).filter(Boolean);
+          // together, the chosen permanents must leave enough to make the mana (two Treasures for "sacrifice two artifacts" and {R})
+          const jointOk = cs => !afford || !(part.type === 'Sac' || part.type === 'tapXType') || afford(new Set([...costExclusions(game, choices), ...costExclusions(game, [{ part, cards: cs }])]));
+          for (let tries = 0; tries < 3 && !chosen; tries++) {
+            const ids = await game.ask(pid, { type: 'cards', prompt: `${tries ? "You'd need one of those to pay the mana. " : ''}${verb} ${n}: ${part.desc || humanValid(part.valid)}`, cards: cands.map(c => c.id), min: n, max: n, purpose: 'cost' + part.type, sa, cancellable: true });
+            if (!ids) throw new Cancelled();
+            const cs = ids.map(id => game.cardById(id)).filter(Boolean);
+            if (jointOk(cs)) chosen = cs;
+          }
+          if (!chosen) throw new Cancelled();
         }
         chosen.forEach(c => used.add(c.id));
         choices.push({ part, cards: chosen });
@@ -1947,7 +1953,12 @@ export async function activateAbility(game, pid, card, abilityKey, action = {}) 
   if (mana.x || /\bX\b/.test(p.Cost || '') && cost.parts.some(pt => pt.amount === 'X')) {
     const exclude = new Set(cost.tap ? [card.id] : []);
     let max;
-    if (mana.x) max = Math.max(0, Math.floor((availableManaCount(game, pid) - cmc({ ...mana, x: 0 }) - (cost.tap && manaSourcesFor(game, pid).some(s => s.card === card) ? 1 : 0)) / mana.x));
+    if (mana.x) {
+      max = Math.max(0, Math.floor((availableManaCount(game, pid) - cmc({ ...mana, x: 0 }) - (cost.tap && manaSourcesFor(game, pid).some(s => s.card === card) ? 1 : 0)) / mana.x));
+      // the count can double-book sources (a filter land's own cost): check with the planner, going down
+      const exX = new Set(cost.tap ? [card.id] : []);
+      while (max > 0) { const m = cloneCost(mana); m.generic += m.x * max; m.x = 0; if (canAfford(game, pid, m, { exclude: exX, abilityHost: card })) break; max--; }
+    }
     else {
       const part = cost.parts.find(pt => pt.amount === 'X');
       max = part.type === 'SubCounter' ? ((card.counters[normalizeCounterName(part.counter)]) || 0) : part.type === 'PayLife' ? game.players[pid].life - 1 : part.type === 'PayEnergy' ? (game.players[pid].counters.ENERGY || 0) : 10;
@@ -1955,10 +1966,11 @@ export async function activateAbility(game, pid, card, abilityKey, action = {}) 
     max = Math.min(max, xCap(game, sa, cost.parts, cost.hasMana ? ex => canAfford(game, pid, mana.x ? { ...mana, x: 0 } : mana, { exclude: new Set([...(cost.tap ? [card.id] : []), ...ex]), abilityHost: card }) : null));
     let x = null;
     for (let tries = 0; tries < 3; tries++) {
-      x = await game.ask(pid, { type: 'number', prompt: tries ? `There's no legal target with X = ${x}. Choose X for ${game.name(card)}` : `Choose X for ${game.name(card)}`, min: 0, max: Math.max(0, max), purpose: 'xValue', sa, cancellable: true });
+      x = await game.ask(pid, { type: 'number', prompt: tries ? `There's no legal target with X = ${x}, or its cost can't be paid. Choose X for ${game.name(card)}` : `Choose X for ${game.name(card)}`, min: 0, max: Math.max(0, max), purpose: 'xValue', sa, cancellable: true });
       if (x == null) throw new Cancelled();
       sa.x = x;
-      if (targetsPossible(game, sa)) break;
+      // "exile an artifact card with mana value X": the X must work for the costs and the targets
+      if (targetsPossible(game, sa) && canPayNonMana(game, sa, cost)) break;
     }
     if (mana.x) { const m2 = cloneCost(mana); m2.generic += m2.x * x; m2.x = 0; mana = m2; }
   } else sa.x = 0;

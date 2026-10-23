@@ -1,5 +1,5 @@
 // Heuristic AI agent. Answers every engine prompt ("ask") for its player.
-import { SA, getActions, spellOptions, buildSpellSA, targetSpec, targetCandidates, refOf, fromRef, manaSourcesFor, parseCost, activatedAbilities, producedUnits, canAfford } from '../engine/abilities.js';
+import { SA, getActions, spellOptions, buildSpellSA, targetSpec, targetCandidates, refOf, fromRef, manaSourcesFor, parseCost, activatedAbilities, producedUnits, canAfford, canPayNonMana } from '../engine/abilities.js';
 import { canBlock, canAttack, combatPower, blockRules, attackTax, canAttackDefender, playerInDirection } from '../engine/combat.js';
 import { matchValid, calc, ctxOf, ctrlOf } from '../engine/filters.js';
 import { parseAbility } from '../engine/forge.js';
@@ -586,7 +586,9 @@ export class AIAgent {
     }
     if (purpose === 'sacrifice' || purpose === 'costSac' || purpose === 'devour' || purpose === 'costExile' || purpose === 'costReturn') {
       if (purpose === 'devour') return pick(cards.filter(c => c.token).sort((a, b) => v(a) - v(b)), Math.min(max, cards.filter(c => c.token).length));
-      const sorted = cards.slice().sort((a, b) => v(a) - v(b));
+      // when paying a cost, keep the permanents that make mana (a Treasure may be what pays the rest)
+      const manaish = c => purpose === 'costSac' && c.zone === 'battlefield' && manaSourcesFor(game, pid).some(s => s.card === c) ? 4 : 0;
+      const sorted = cards.slice().sort((a, b) => (v(a) + manaish(a)) - (v(b) + manaish(b)));
       return pick(sorted, min);
     }
     if (purpose === 'scryBottom' || purpose === 'surveilGrave') {
@@ -895,6 +897,17 @@ export class AIAgent {
           }).length;
           return Math.max(req.min, Math.min(req.max, good));
         }
+      }
+      // "exile an artifact card with mana value X from your graveyard": the largest X the cost allows
+      const root0 = req.sa.root ? req.sa.root() : req.sa;
+      if (root0.p && /X/.test(String(root0.p.Cost || '')) && /cmc\w*X/.test(String(root0.p.Cost || ''))) {
+        const saved = root0.x;
+        let pickX = null;
+        try {
+          const cost = parseCost(root0.p.Cost);
+          for (let x = req.max; x >= req.min && pickX == null; x--) { root0.x = x; if (canPayNonMana(game, root0, cost)) pickX = x; }
+        } finally { root0.x = saved; }
+        if (pickX != null) return pickX;
       }
       // "target creature with mana value X" and the like: the largest X that still has a target worth taking
       const xTargets = req.sa.chain().filter(s => /X\b/.test(String(s.p.ValidTgts || '')) && targetSpec(game, s));

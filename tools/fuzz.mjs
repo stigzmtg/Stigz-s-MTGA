@@ -42,6 +42,7 @@ function fail(kind, detail, extra = {}) {
   if (flags.stop) throw new Error(`stop: ${kind}: ${detail}`);
 }
 
+const cmcOf = m => (m.generic || 0) + Object.values(m.colored || {}).reduce((a, b) => a + b, 0) + (m.hybrid || []).length + (m.phyrexian || []).length + (m.twobrid || []).length * 2;
 const name = (game, id) => { const c = game.cardById(id); return c ? game.name(c) || c.def.name : '#' + id; };
 
 // ------------------------------------------------------------------ prompt validation
@@ -311,7 +312,7 @@ class ChaosAgent {
     const r = this.rng;
     // the engine asking again ("There's no legal target with X = 5", "You can't pay for all of those modes")
     // means our earlier answer was a mistake a person could make too: if the action fails now, it's on us
-    if (/^(There's no legal target|You can't pay for all|Those creatures' total power)/.test(req.prompt || '')) this.cancelled = true;
+    if (/^(There's no legal target|You can't pay for all|Those creatures' total power|You'd need one of those)/.test(req.prompt || '')) this.cancelled = true;
     switch (req.type) {
       case 'priority': {
         // a handful of actions per step at most: {X} abilities could otherwise be activated for 0 forever
@@ -431,6 +432,13 @@ for (let g = 0; g < N; g++) {
       cur.acts.set(k, n);
       if (n === 25) fail('cost', `ability activated 25 times in one turn (${nm}: ${(action.label || '').slice(0, 60)})`);
     }
+    // a mana cost was paid somehow: mana left the pool, or something got tapped / sacrificed, or life was paid
+    const paidMana = () => {
+      const d = diffSnap(game, before, snapshot(game));
+      return d.some(x => / mana | life |\|1\||vanished|→ (graveyard|exile)/.test(x));
+    };
+    if (ok && action.type === 'cast' && action.manaCost && cmcOf(action.manaCost) > 0 && !paidMana()) fail('cost', `cast ${nm} for ${cmcOf(action.manaCost)} mana without paying anything`);
+    if (ok && abil && parseCost(abil.parsed.p.Cost).hasMana && cmcOf(parseCost(abil.parsed.p.Cost).mana) > 0 && !paidMana()) fail('cost', `activated ${nm} without paying its mana cost (${(action.label || '').slice(0, 60)})`);
     if (ok && action.type === 'cast' && card && card.zone !== 'stack' && !game.stack.some(s => s.card === card) && !card.token) {
       // it may already have resolved/been countered only if something resolved in between (it can't have)
       fail('cost', `cast ${nm} returned true but the card isn't on the stack (zone ${card.zone})`);
