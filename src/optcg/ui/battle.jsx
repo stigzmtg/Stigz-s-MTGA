@@ -107,7 +107,7 @@ function Life({ p, sleeve }) {
   const n = p.life.length;
   return (
     <div className={`op-life ${n <= 1 ? 'low' : ''}`} data-pile={`${p.id}:life`} title={`${n} Life card${n === 1 ? '' : 's'} left`}>
-      <div className="stack">{p.life.map((c, i) => <div key={c.uid} style={{ left: `${i * 14}px`, zIndex: 10 - i }}><CardBack sleeve={sleeve} fly={c.uid} /></div>)}</div>
+      <div className="stack" style={{ '--n': Math.max(n, 1) }}>{p.life.map((c, i) => <div key={c.uid} style={{ '--i': i, zIndex: 10 - i }}>{c.faceUp ? <OpCard card={c} fly={c.uid} /> : <CardBack sleeve={sleeve} fly={c.uid} />}</div>)}</div>
       <div className="cap"><b>{n}</b>Life</div>
     </div>
   );
@@ -126,13 +126,16 @@ function Piles({ p, onOpen, sleeve, hand }) {
 }
 
 // ---------------------------------------------------------------- dialogs
+const ZONE_NAME = { hand: 'hand', trash: 'trash', deck: 'deck', life: 'Life cards', limbo: 'card', leader: 'Leader', characters: 'Characters', stage: 'Stage' };
 function CardsDialog({ game, req, respond, onHover, me }) {
   const [sel, setSel] = useState([]);
   const opts = new Set(req.options);
   const shown = (req.shown || req.options).map(id => game.cardByUid(id)).filter(Boolean);
   const toggle = id => setSel(s => s.includes(id) ? s.filter(x => x !== id) : s.length >= req.max ? (req.max === 1 ? [id] : s) : [...s, id]);
   const ok = sel.length >= req.min && sel.length <= req.max;
-  const title = { hand: 'Your hand', trash: 'Your trash', deck: 'Your deck', life: 'Your Life cards', 'opp-hand': "Your opponent's hand", 'opp-trash': "Your opponent's trash" }[req.from] || 'Choose';
+  // the title names where the cards are (a few effects pick from the hand and the trash at once)
+  const where = [...new Set(shown.map(c => `${c.owner === me ? 'Your' : `${game.players[c.owner].name}'s`} ${ZONE_NAME[c.zone] || c.zone}`))];
+  const title = where.length === 1 ? where[0] : where.length === 2 ? `${where[0]} or ${where[1].replace(/^Your /, '')}` : 'Choose';
   return (
     <Modal label={req.prompt}>
       <h2>{title}</h2>
@@ -152,6 +155,36 @@ function CardsDialog({ game, req, respond, onHover, me }) {
       <div className="row">
         <button className="btn primary" disabled={!ok} onClick={() => respond(sel)}>{sel.length ? 'Confirm' : req.min === 0 ? 'Choose none' : 'Confirm'}</button>
         {req.min === 0 && sel.length ? <button className="btn" onClick={() => setSel([])}>Clear</button> : null}
+      </div>
+    </Modal>
+  );
+}
+
+// put cards in order: click them in the order you want them (the first one goes on top)
+function OrderDialog({ game, req, respond, onHover }) {
+  const [seq, setSeq] = useState([]);
+  const cards = req.options.map(id => game.cardByUid(id)).filter(Boolean);
+  const toggle = id => setSeq(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+  const done = seq.length === cards.length;
+  const where = req.hint === 'order-bottom' ? 'the bottom of your deck' : req.hint === 'order-life' ? 'your Life cards' : 'the top of your deck';
+  return (
+    <Modal label={req.prompt}>
+      <h2>Put them in order</h2>
+      <p className="sub">{youText(req.prompt)} Click the cards in order: number 1 ends up on top of {where}.</p>
+      <div className="op-picks">
+        {cards.map(c => {
+          const n = seq.indexOf(c.uid);
+          return (
+            <div key={c.uid} className={`op-pick ${n >= 0 ? 'on' : ''}`}>
+              <OpCard card={c} onClick={() => toggle(c.uid)} onEnter={() => onHover(c.uid)} onLeave={() => onHover(null)} />
+              {n >= 0 ? <span className="tick">{n + 1}</span> : null}
+            </div>
+          );
+        })}
+      </div>
+      <div className="row">
+        <button className="btn primary" onClick={() => respond(done ? seq : [...seq, ...req.options.filter(id => !seq.includes(id))])}>{done ? 'Confirm' : seq.length ? 'Confirm (rest in this order)' : 'Keep this order'}</button>
+        {seq.length ? <button className="btn" onClick={() => setSeq([])}>Clear</button> : null}
       </div>
     </Modal>
   );
@@ -186,7 +219,7 @@ function Preview({ game, uid, me }) {
         {d.traits && d.traits.length ? <p>{d.traits.join(' / ')}{d.attr && d.attr.length ? ` · ${d.attr.join(' / ')}` : ''}</p> : null}
         {d.text ? <p><EffectText text={d.text} /></p> : null}
         {d.trigger ? <p><span className="kw trigger">Trigger</span> {d.trigger}</p> : null}
-        {inPlay ? <p className="state">{pw} power now{c.don ? ` · ${c.don} DON!! given` : ''}{c.rested ? ' · rested' : ''}{(c.mods || []).map(m => ` · ${m.text}`).join('')}</p> : null}
+        {inPlay ? <p className="state">{pw} power now{c.don ? ` · ${c.don} DON!! given` : ''}{c.rested ? ' · rested' : ''}{(game.modsOf ? game.modsOf(c) : []).filter(m => !/^DON!!/.test(m.text)).map(m => ` · ${m.text}`).join('')}</p> : null}
       </div>
     </div>
   );
@@ -397,12 +430,12 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
           {chars.map(c => <InPlay key={c.uid} game={game} card={c} state={stateOf(c)} fx={fx} me={me} onClick={e => onField(c, e)} onHover={setHover} />)}
           {Array.from({ length: Math.max(0, 5 - chars.length) }, (_, i) => <EmptySlot key={'e' + i} label="Character" />)}
         </div>
-        {p.stage ? <InPlay game={game} card={p.stage} state={stateOf(p.stage)} fx={fx} me={me} onClick={e => onField(p.stage, e)} onHover={setHover} /> : <EmptySlot label="Stage" />}
       </div>
     );
     const back = (
       <div className="op-back">
         {p.leader ? <InPlay game={game} card={p.leader} lead state={stateOf(p.leader)} fx={fx} me={me} onClick={e => onField(p.leader, e)} onHover={setHover} /> : <EmptySlot label="Leader" />}
+        {p.stage ? <InPlay game={game} card={p.stage} state={stateOf(p.stage)} fx={fx} me={me} onClick={e => onField(p.stage, e)} onHover={setHover} /> : <EmptySlot label="Stage" />}
         <DonArea p={p} pick={bottom && myTurn && !watching && donActs.length > 0 && !mode} onPick={() => setMode({ kind: 'don' })} />
       </div>
     );
@@ -428,6 +461,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
   const dialog = (() => {
     if (!req || game.over) return null;
     if (req.type === 'cards' && req.from !== 'field') return <CardsDialog key={pend.id} game={game} req={req} respond={respond} onHover={setHover} me={me} />;
+    if (req.type === 'order') return <OrderDialog key={pend.id} game={game} req={req} respond={respond} onHover={setHover} />;
     if (req.type === 'option' && req.options.length > 6) return <Modal label={req.prompt}><h2>{youText(req.prompt)}</h2><div className="optlist">{req.options.map(o => <button key={String(o.value)} className="btn" onClick={() => respond(o.value)}>{o.label}</button>)}</div></Modal>;
     if (req.type === 'trigger') {
       const c = game.cardByUid(req.card);

@@ -57,6 +57,11 @@ for (let i = 0; i < 4000 && Date.now() - t0 < 300000; i++) {
     if (bl.length && Math.random() < 0.5) { await rnd(bl).click(); continue; }
     await page.click('.op-prompt .btn.primary'); continue;
   }
+  if (await page.$('.op-prompt .op-num')) {
+    if (Math.random() < 0.3) await page.click(`.op-prompt .op-num .btn[aria-label="${Math.random() < 0.5 ? 'Less' : 'More'}"]`);
+    else await page.click('.op-prompt .op-num .btn.primary');
+    continue;
+  }
   const yes = await page.$('.op-prompt .btn:has-text("Yes")');
   if (yes) { await (Math.random() < 0.8 ? yes : await page.$('.op-prompt .btn:has-text("No")')).click(); continue; }
   const tgt = await page.$$('.op-slot.targetable .op-card');
