@@ -198,3 +198,9 @@
   .op-mid { order: 3; position: sticky; bottom: env(safe-area-inset-bottom, 0px); z-index: 20; }
   .op-hand { height: auto; padding-bottom: 6px; }
 }
+.op-coin { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); z-index: 5; padding: 8px 14px; border-radius: 999px; font: 800 14px/1 var(--font-ui); color: #1c1407; background: radial-gradient(circle at 35% 30%, #fff3b8, #e2b23a 60%, #9c7414); box-shadow: 0 0 0 2px #7a5810, 0 6px 16px rgba(0, 0, 0, 0.6); animation: pkcoinlbl 0.6s ease-out both; pointer-events: none; }
+.op-num { align-items: center; }
+.op-num b { min-width: 2ch; text-align: center; font: 800 20px/1 var(--font-ui); }
+.op-trigtext { margin: 0; font-size: 14.5px; line-height: 1.45; }
+.op-log .e.mine { color: var(--ink); }
+.op-acts .btn.primary { min-width: 120px; }

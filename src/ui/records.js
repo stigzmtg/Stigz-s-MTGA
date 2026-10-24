@@ -137,3 +137,4 @@ export class ReplayAgent {
 // how long each kind of move takes on screen at normal speed
 export const mtgDelay = (req, v) => (req.type === 'priority' ? (v === 0 ? 12 : 650) : req.type === 'attackers' || req.type === 'blockers' ? 700 : 320);
 export const pkDelay = (req, v) => (req.type === 'main' ? (v && v.t === 'end' ? 450 : 800) : 500);
+export const opDelay = (req, v) => (req.type === 'main' ? (v && v.t === 'end' ? 450 : v && v.t === 'don' ? 350 : 800) : req.type === 'counter' ? 650 : 500);
