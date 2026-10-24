@@ -12,7 +12,8 @@ const PRESENCE_BUDGET = 3900; // presence objects are capped at 4 KiB of JSON
 
 // ---- compact decision encoding
 const ACTION_KEYS = ['type', 'cardId', 'optionKey', 'abilityKey', 'color'];
-const PK_ACTION_KEYS = ['t', 'card', 'target', 'mon', 'name', 'to', 'src']; // a Pokémon main-phase move (what matchAction compares)
+// a Pokémon or One Piece main-phase move (what matchAction compares)
+const PK_ACTION_KEYS = ['t', 'card', 'target', 'mon', 'name', 'to', 'src', 'ability', 'n'];
 export function packValue(v, type) {
   if (v === undefined) return null;
   if (type === 'main' && v && typeof v === 'object' && !Array.isArray(v) && typeof v.t === 'string') {
