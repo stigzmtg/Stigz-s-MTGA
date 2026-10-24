@@ -1,0 +1,10680 @@
+{
+ "about": "How each starter deck list was confirmed: every source that has the deck, what it lists after matching card numbers to the product's official card list (fixes), and whether it agrees. A deck is used only when at least two sources give the same 50 cards.",
+ "decks": {
+  "ST-01": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st01-04.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569001",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST01",
+     "leaders": [
+      "ST01-001"
+     ],
+     "cards": [
+      [
+       "ST01-003",
+       4
+      ],
+      [
+       "ST01-006",
+       4
+      ],
+      [
+       "ST01-007",
+       4
+      ],
+      [
+       "ST01-002",
+       4
+      ],
+      [
+       "ST01-004",
+       4
+      ],
+      [
+       "ST01-009",
+       4
+      ],
+      [
+       "ST01-011",
+       2
+      ],
+      [
+       "ST01-005",
+       4
+      ],
+      [
+       "ST01-008",
+       4
+      ],
+      [
+       "ST01-013",
+       2
+      ],
+      [
+       "ST01-010",
+       4
+      ],
+      [
+       "ST01-012",
+       2
+      ],
+      [
+       "ST01-014",
+       2
+      ],
+      [
+       "ST01-016",
+       2
+      ],
+      [
+       "ST01-015",
+       2
+      ],
+      [
+       "ST01-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST01-001"
+     ],
+     "cards": [
+      [
+       "ST01-006",
+       4
+      ],
+      [
+       "ST01-007",
+       4
+      ],
+      [
+       "ST01-002",
+       4
+      ],
+      [
+       "ST01-003",
+       4
+      ],
+      [
+       "ST01-011",
+       2
+      ],
+      [
+       "ST01-004",
+       4
+      ],
+      [
+       "ST01-009",
+       4
+      ],
+      [
+       "ST01-005",
+       4
+      ],
+      [
+       "ST01-008",
+       4
+      ],
+      [
+       "ST01-013",
+       2
+      ],
+      [
+       "ST01-010",
+       4
+      ],
+      [
+       "ST01-012",
+       2
+      ],
+      [
+       "ST01-014",
+       2
+      ],
+      [
+       "ST01-016",
+       2
+      ],
+      [
+       "ST01-015",
+       2
+      ],
+      [
+       "ST01-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st01-cardlists/",
+     "leaders": [
+      "ST01-001"
+     ],
+     "cards": [
+      [
+       "ST01-002",
+       4
+      ],
+      [
+       "ST01-003",
+       4
+      ],
+      [
+       "ST01-004",
+       4
+      ],
+      [
+       "ST01-005",
+       4
+      ],
+      [
+       "ST01-006",
+       4
+      ],
+      [
+       "ST01-007",
+       4
+      ],
+      [
+       "ST01-008",
+       4
+      ],
+      [
+       "ST01-009",
+       4
+      ],
+      [
+       "ST01-010",
+       4
+      ],
+      [
+       "ST01-011",
+       2
+      ],
+      [
+       "ST01-012",
+       2
+      ],
+      [
+       "ST01-013",
+       2
+      ],
+      [
+       "ST01-014",
+       2
+      ],
+      [
+       "ST01-015",
+       2
+      ],
+      [
+       "ST01-016",
+       2
+      ],
+      [
+       "ST01-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "laughtale",
+     "name": "LaughTale (JP) card list with counts",
+     "url": "https://laughtale-pirates.com/askerbert/one-piece-cardlist-starterdeck01",
+     "leaders": [
+      "ST01-001"
+     ],
+     "cards": [
+      [
+       "ST01-002",
+       4
+      ],
+      [
+       "ST01-003",
+       4
+      ],
+      [
+       "ST01-004",
+       4
+      ],
+      [
+       "ST01-005",
+       4
+      ],
+      [
+       "ST01-006",
+       4
+      ],
+      [
+       "ST01-007",
+       4
+      ],
+      [
+       "ST01-008",
+       4
+      ],
+      [
+       "ST01-009",
+       4
+      ],
+      [
+       "ST01-010",
+       4
+      ],
+      [
+       "ST01-011",
+       2
+      ],
+      [
+       "ST01-012",
+       2
+      ],
+      [
+       "ST01-013",
+       2
+      ],
+      [
+       "ST01-014",
+       2
+      ],
+      [
+       "ST01-015",
+       2
+      ],
+      [
+       "ST01-017",
+       2
+      ]
+     ],
+     "total": 48,
+     "agrees": false,
+     "differs": [
+      "ST01-016 x0 (the others: x2)"
+     ]
+    }
+   ],
+   "leader": "ST01-001",
+   "status": "3 sources agree; laughtale differs",
+   "cards": [
+    [
+     "ST01-003",
+     4
+    ],
+    [
+     "ST01-006",
+     4
+    ],
+    [
+     "ST01-007",
+     4
+    ],
+    [
+     "ST01-002",
+     4
+    ],
+    [
+     "ST01-004",
+     4
+    ],
+    [
+     "ST01-009",
+     4
+    ],
+    [
+     "ST01-011",
+     2
+    ],
+    [
+     "ST01-005",
+     4
+    ],
+    [
+     "ST01-008",
+     4
+    ],
+    [
+     "ST01-013",
+     2
+    ],
+    [
+     "ST01-010",
+     4
+    ],
+    [
+     "ST01-012",
+     2
+    ],
+    [
+     "ST01-014",
+     2
+    ],
+    [
+     "ST01-016",
+     2
+    ],
+    [
+     "ST01-015",
+     2
+    ],
+    [
+     "ST01-017",
+     2
+    ]
+   ]
+  },
+  "ST-02": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st01-04.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569002",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST02",
+     "leaders": [
+      "ST02-001"
+     ],
+     "cards": [
+      [
+       "ST02-004",
+       4
+      ],
+      [
+       "ST02-007",
+       4
+      ],
+      [
+       "ST02-012",
+       4
+      ],
+      [
+       "ST02-008",
+       4
+      ],
+      [
+       "ST02-011",
+       4
+      ],
+      [
+       "ST02-003",
+       2
+      ],
+      [
+       "ST02-002",
+       4
+      ],
+      [
+       "ST02-005",
+       2
+      ],
+      [
+       "ST02-006",
+       4
+      ],
+      [
+       "ST02-014",
+       4
+      ],
+      [
+       "ST02-009",
+       2
+      ],
+      [
+       "ST02-010",
+       2
+      ],
+      [
+       "ST02-013",
+       2
+      ],
+      [
+       "ST02-015",
+       2
+      ],
+      [
+       "ST02-016",
+       4
+      ],
+      [
+       "ST02-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST02-001"
+     ],
+     "cards": [
+      [
+       "ST02-004",
+       4
+      ],
+      [
+       "ST02-007",
+       4
+      ],
+      [
+       "ST02-012",
+       4
+      ],
+      [
+       "ST02-003",
+       2
+      ],
+      [
+       "ST02-008",
+       4
+      ],
+      [
+       "ST02-005",
+       2
+      ],
+      [
+       "ST02-011",
+       4
+      ],
+      [
+       "ST02-002",
+       4
+      ],
+      [
+       "ST02-014",
+       4
+      ],
+      [
+       "ST02-006",
+       4
+      ],
+      [
+       "ST02-009",
+       2
+      ],
+      [
+       "ST02-010",
+       2
+      ],
+      [
+       "ST02-013",
+       2
+      ],
+      [
+       "ST02-015",
+       2
+      ],
+      [
+       "ST02-016",
+       4
+      ],
+      [
+       "ST02-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st02-cardlists/",
+     "leaders": [
+      "ST02-001"
+     ],
+     "cards": [
+      [
+       "ST02-002",
+       4
+      ],
+      [
+       "ST02-003",
+       2
+      ],
+      [
+       "ST02-004",
+       4
+      ],
+      [
+       "ST02-005",
+       2
+      ],
+      [
+       "ST02-006",
+       4
+      ],
+      [
+       "ST02-007",
+       4
+      ],
+      [
+       "ST02-008",
+       4
+      ],
+      [
+       "ST02-009",
+       2
+      ],
+      [
+       "ST02-010",
+       2
+      ],
+      [
+       "ST02-011",
+       4
+      ],
+      [
+       "ST02-012",
+       4
+      ],
+      [
+       "ST02-013",
+       2
+      ],
+      [
+       "ST02-014",
+       4
+      ],
+      [
+       "ST02-015",
+       2
+      ],
+      [
+       "ST02-016",
+       4
+      ],
+      [
+       "ST02-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "laughtale",
+     "name": "LaughTale (JP) card list with counts",
+     "url": "https://laughtale-pirates.com/askerbert/one-piece-cardlist-starterdeck02",
+     "leaders": [
+      "ST02-001"
+     ],
+     "cards": [
+      [
+       "ST02-002",
+       4
+      ],
+      [
+       "ST02-004",
+       4
+      ],
+      [
+       "ST02-006",
+       4
+      ],
+      [
+       "ST02-007",
+       4
+      ],
+      [
+       "ST02-008",
+       4
+      ],
+      [
+       "ST02-011",
+       4
+      ],
+      [
+       "ST02-012",
+       4
+      ],
+      [
+       "ST02-014",
+       4
+      ],
+      [
+       "ST02-016",
+       4
+      ],
+      [
+       "ST02-003",
+       2
+      ],
+      [
+       "ST02-005",
+       2
+      ],
+      [
+       "ST02-009",
+       2
+      ],
+      [
+       "ST02-010",
+       2
+      ],
+      [
+       "ST02-013",
+       2
+      ],
+      [
+       "ST02-015",
+       2
+      ],
+      [
+       "ST02-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST02-001",
+   "status": "4 sources agree",
+   "cards": [
+    [
+     "ST02-004",
+     4
+    ],
+    [
+     "ST02-007",
+     4
+    ],
+    [
+     "ST02-012",
+     4
+    ],
+    [
+     "ST02-003",
+     2
+    ],
+    [
+     "ST02-008",
+     4
+    ],
+    [
+     "ST02-011",
+     4
+    ],
+    [
+     "ST02-002",
+     4
+    ],
+    [
+     "ST02-005",
+     2
+    ],
+    [
+     "ST02-006",
+     4
+    ],
+    [
+     "ST02-014",
+     4
+    ],
+    [
+     "ST02-009",
+     2
+    ],
+    [
+     "ST02-010",
+     2
+    ],
+    [
+     "ST02-013",
+     2
+    ],
+    [
+     "ST02-015",
+     2
+    ],
+    [
+     "ST02-016",
+     4
+    ],
+    [
+     "ST02-017",
+     2
+    ]
+   ]
+  },
+  "ST-03": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st01-04.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569003",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST03",
+     "leaders": [
+      "ST03-001"
+     ],
+     "cards": [
+      [
+       "ST03-008",
+       4
+      ],
+      [
+       "ST03-011",
+       4
+      ],
+      [
+       "ST03-006",
+       4
+      ],
+      [
+       "ST03-010",
+       4
+      ],
+      [
+       "ST03-002",
+       4
+      ],
+      [
+       "ST03-013",
+       4
+      ],
+      [
+       "ST03-007",
+       2
+      ],
+      [
+       "ST03-012",
+       4
+      ],
+      [
+       "ST03-004",
+       2
+      ],
+      [
+       "ST03-005",
+       2
+      ],
+      [
+       "ST03-014",
+       2
+      ],
+      [
+       "ST03-003",
+       2
+      ],
+      [
+       "ST03-009",
+       2
+      ],
+      [
+       "ST03-016",
+       4
+      ],
+      [
+       "ST03-017",
+       2
+      ],
+      [
+       "ST03-015",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST03-001"
+     ],
+     "cards": [
+      [
+       "ST03-008",
+       4
+      ],
+      [
+       "ST03-013",
+       4
+      ],
+      [
+       "ST03-011",
+       4
+      ],
+      [
+       "ST03-010",
+       4
+      ],
+      [
+       "ST03-006",
+       4
+      ],
+      [
+       "ST03-007",
+       2
+      ],
+      [
+       "ST03-014",
+       2
+      ],
+      [
+       "ST03-002",
+       4
+      ],
+      [
+       "ST03-004",
+       2
+      ],
+      [
+       "ST03-005",
+       2
+      ],
+      [
+       "ST03-012",
+       4
+      ],
+      [
+       "ST03-003",
+       2
+      ],
+      [
+       "ST03-009",
+       2
+      ],
+      [
+       "ST03-016",
+       4
+      ],
+      [
+       "ST03-017",
+       2
+      ],
+      [
+       "ST03-015",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st03-cardlists/",
+     "leaders": [
+      "ST03-001"
+     ],
+     "cards": [
+      [
+       "ST03-002",
+       4
+      ],
+      [
+       "ST03-003",
+       2
+      ],
+      [
+       "ST03-004",
+       2
+      ],
+      [
+       "ST03-005",
+       2
+      ],
+      [
+       "ST03-006",
+       4
+      ],
+      [
+       "ST03-007",
+       2
+      ],
+      [
+       "ST03-008",
+       4
+      ],
+      [
+       "ST03-009",
+       2
+      ],
+      [
+       "ST03-010",
+       4
+      ],
+      [
+       "ST03-011",
+       4
+      ],
+      [
+       "ST03-012",
+       4
+      ],
+      [
+       "ST03-013",
+       4
+      ],
+      [
+       "ST03-014",
+       2
+      ],
+      [
+       "ST03-015",
+       4
+      ],
+      [
+       "ST03-016",
+       4
+      ],
+      [
+       "ST03-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "laughtale",
+     "name": "LaughTale (JP) card list with counts",
+     "url": "https://laughtale-pirates.com/askerbert/one-piece-cardlist-starterdeck03",
+     "leaders": [
+      "ST03-001"
+     ],
+     "cards": [
+      [
+       "ST03-002",
+       4
+      ],
+      [
+       "ST03-003",
+       2
+      ],
+      [
+       "ST03-004",
+       2
+      ],
+      [
+       "ST03-005",
+       2
+      ],
+      [
+       "ST03-006",
+       4
+      ],
+      [
+       "ST03-007",
+       2
+      ],
+      [
+       "ST03-008",
+       4
+      ],
+      [
+       "ST03-009",
+       2
+      ],
+      [
+       "ST03-010",
+       4
+      ],
+      [
+       "ST03-011",
+       4
+      ],
+      [
+       "ST03-012",
+       4
+      ],
+      [
+       "ST03-013",
+       4
+      ],
+      [
+       "ST03-014",
+       2
+      ],
+      [
+       "ST03-015",
+       4
+      ],
+      [
+       "ST03-016",
+       4
+      ],
+      [
+       "ST03-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST03-001",
+   "status": "4 sources agree",
+   "cards": [
+    [
+     "ST03-008",
+     4
+    ],
+    [
+     "ST03-011",
+     4
+    ],
+    [
+     "ST03-006",
+     4
+    ],
+    [
+     "ST03-010",
+     4
+    ],
+    [
+     "ST03-002",
+     4
+    ],
+    [
+     "ST03-007",
+     2
+    ],
+    [
+     "ST03-013",
+     4
+    ],
+    [
+     "ST03-004",
+     2
+    ],
+    [
+     "ST03-005",
+     2
+    ],
+    [
+     "ST03-012",
+     4
+    ],
+    [
+     "ST03-014",
+     2
+    ],
+    [
+     "ST03-003",
+     2
+    ],
+    [
+     "ST03-009",
+     2
+    ],
+    [
+     "ST03-016",
+     4
+    ],
+    [
+     "ST03-017",
+     2
+    ],
+    [
+     "ST03-015",
+     4
+    ]
+   ]
+  },
+  "ST-04": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st01-04.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569004",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST04",
+     "leaders": [
+      "ST04-001"
+     ],
+     "cards": [
+      [
+       "ST04-009",
+       4
+      ],
+      [
+       "ST04-007",
+       4
+      ],
+      [
+       "ST04-011",
+       4
+      ],
+      [
+       "ST04-006",
+       4
+      ],
+      [
+       "ST04-013",
+       4
+      ],
+      [
+       "ST04-008",
+       2
+      ],
+      [
+       "ST04-010",
+       2
+      ],
+      [
+       "ST04-002",
+       4
+      ],
+      [
+       "ST04-012",
+       4
+      ],
+      [
+       "ST04-005",
+       2
+      ],
+      [
+       "ST04-004",
+       2
+      ],
+      [
+       "ST04-003",
+       2
+      ],
+      [
+       "ST04-016",
+       4
+      ],
+      [
+       "ST04-014",
+       2
+      ],
+      [
+       "ST04-015",
+       2
+      ],
+      [
+       "ST04-017",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST04-001"
+     ],
+     "cards": [
+      [
+       "ST04-011",
+       4
+      ],
+      [
+       "ST04-009",
+       4
+      ],
+      [
+       "ST04-010",
+       2
+      ],
+      [
+       "ST04-007",
+       4
+      ],
+      [
+       "ST04-006",
+       4
+      ],
+      [
+       "ST04-008",
+       2
+      ],
+      [
+       "ST04-013",
+       4
+      ],
+      [
+       "ST04-002",
+       4
+      ],
+      [
+       "ST04-012",
+       4
+      ],
+      [
+       "ST04-005",
+       2
+      ],
+      [
+       "ST04-004",
+       2
+      ],
+      [
+       "ST04-003",
+       2
+      ],
+      [
+       "ST04-016",
+       4
+      ],
+      [
+       "ST04-014",
+       2
+      ],
+      [
+       "ST04-015",
+       2
+      ],
+      [
+       "ST04-017",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st04-cardlists/",
+     "leaders": [
+      "ST04-001"
+     ],
+     "cards": [
+      [
+       "ST04-002",
+       4
+      ],
+      [
+       "ST04-003",
+       2
+      ],
+      [
+       "ST04-004",
+       2
+      ],
+      [
+       "ST04-005",
+       2
+      ],
+      [
+       "ST04-006",
+       4
+      ],
+      [
+       "ST04-007",
+       4
+      ],
+      [
+       "ST04-008",
+       2
+      ],
+      [
+       "ST04-009",
+       4
+      ],
+      [
+       "ST04-010",
+       2
+      ],
+      [
+       "ST04-011",
+       4
+      ],
+      [
+       "ST04-012",
+       4
+      ],
+      [
+       "ST04-013",
+       4
+      ],
+      [
+       "ST04-014",
+       2
+      ],
+      [
+       "ST04-015",
+       2
+      ],
+      [
+       "ST04-016",
+       4
+      ],
+      [
+       "ST04-017",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "laughtale",
+     "name": "LaughTale (JP) card list with counts",
+     "url": "https://laughtale-pirates.com/askerbert/one-piece-cardlist-starterdeck04",
+     "leaders": [
+      "ST04-001"
+     ],
+     "cards": [
+      [
+       "ST04-002",
+       4
+      ],
+      [
+       "ST04-003",
+       2
+      ],
+      [
+       "ST04-004",
+       2
+      ],
+      [
+       "ST04-005",
+       2
+      ],
+      [
+       "ST04-006",
+       4
+      ],
+      [
+       "ST04-007",
+       4
+      ],
+      [
+       "ST04-008",
+       2
+      ],
+      [
+       "ST04-009",
+       4
+      ],
+      [
+       "ST04-010",
+       2
+      ],
+      [
+       "ST04-011",
+       4
+      ],
+      [
+       "ST04-012",
+       4
+      ],
+      [
+       "ST04-013",
+       4
+      ],
+      [
+       "ST04-014",
+       2
+      ],
+      [
+       "ST04-015",
+       2
+      ],
+      [
+       "ST04-016",
+       4
+      ],
+      [
+       "ST04-017",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST04-001",
+   "status": "4 sources agree",
+   "cards": [
+    [
+     "ST04-009",
+     4
+    ],
+    [
+     "ST04-007",
+     4
+    ],
+    [
+     "ST04-011",
+     4
+    ],
+    [
+     "ST04-006",
+     4
+    ],
+    [
+     "ST04-008",
+     2
+    ],
+    [
+     "ST04-010",
+     2
+    ],
+    [
+     "ST04-013",
+     4
+    ],
+    [
+     "ST04-002",
+     4
+    ],
+    [
+     "ST04-012",
+     4
+    ],
+    [
+     "ST04-005",
+     2
+    ],
+    [
+     "ST04-004",
+     2
+    ],
+    [
+     "ST04-003",
+     2
+    ],
+    [
+     "ST04-016",
+     4
+    ],
+    [
+     "ST04-014",
+     2
+    ],
+    [
+     "ST04-015",
+     2
+    ],
+    [
+     "ST04-017",
+     4
+    ]
+   ]
+  },
+  "ST-05": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st05.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569005",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST05",
+     "leaders": [
+      "ST05-001"
+     ],
+     "cards": [
+      [
+       "ST05-007",
+       4
+      ],
+      [
+       "ST05-014",
+       4
+      ],
+      [
+       "ST05-003",
+       4
+      ],
+      [
+       "ST05-009",
+       4
+      ],
+      [
+       "ST05-015",
+       4
+      ],
+      [
+       "ST05-005",
+       2
+      ],
+      [
+       "ST05-012",
+       4
+      ],
+      [
+       "ST05-002",
+       4
+      ],
+      [
+       "ST05-013",
+       4
+      ],
+      [
+       "ST05-004",
+       2
+      ],
+      [
+       "ST05-006",
+       2
+      ],
+      [
+       "ST05-008",
+       2
+      ],
+      [
+       "ST05-010",
+       2
+      ],
+      [
+       "ST05-011",
+       2
+      ],
+      [
+       "ST05-017",
+       4
+      ],
+      [
+       "ST05-016",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST05-001"
+     ],
+     "cards": [
+      [
+       "ST05-014",
+       4
+      ],
+      [
+       "ST05-007",
+       4
+      ],
+      [
+       "ST05-003",
+       4
+      ],
+      [
+       "ST05-005",
+       2
+      ],
+      [
+       "ST05-009",
+       4
+      ],
+      [
+       "ST05-015",
+       4
+      ],
+      [
+       "ST05-012",
+       4
+      ],
+      [
+       "ST05-002",
+       4
+      ],
+      [
+       "ST05-004",
+       2
+      ],
+      [
+       "ST05-013",
+       4
+      ],
+      [
+       "ST05-006",
+       2
+      ],
+      [
+       "ST05-008",
+       2
+      ],
+      [
+       "ST05-010",
+       2
+      ],
+      [
+       "ST05-011",
+       2
+      ],
+      [
+       "ST05-017",
+       4
+      ],
+      [
+       "ST05-016",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st05-cardlists/",
+     "fixes": [
+      "\"ダグラス・バレット\" is listed as ST06-011: the product's card of that name is ST05-011",
+      "\"ビンズ\" is listed as ST06-013: the product's card of that name is ST05-013"
+     ],
+     "leaders": [
+      "ST05-001"
+     ],
+     "cards": [
+      [
+       "ST05-002",
+       4
+      ],
+      [
+       "ST05-003",
+       4
+      ],
+      [
+       "ST05-004",
+       2
+      ],
+      [
+       "ST05-005",
+       2
+      ],
+      [
+       "ST05-006",
+       2
+      ],
+      [
+       "ST05-007",
+       4
+      ],
+      [
+       "ST05-008",
+       2
+      ],
+      [
+       "ST05-009",
+       4
+      ],
+      [
+       "ST05-010",
+       2
+      ],
+      [
+       "ST05-011",
+       2
+      ],
+      [
+       "ST05-012",
+       4
+      ],
+      [
+       "ST05-013",
+       4
+      ],
+      [
+       "ST05-014",
+       4
+      ],
+      [
+       "ST05-015",
+       4
+      ],
+      [
+       "ST05-016",
+       2
+      ],
+      [
+       "ST05-017",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "laughtale",
+     "name": "LaughTale (JP) card list with counts",
+     "url": "https://laughtale-pirates.com/askerbert/one-piece-cardlist-starterdeck05",
+     "leaders": [
+      "ST05-001"
+     ],
+     "cards": [
+      [
+       "ST05-002",
+       4
+      ],
+      [
+       "ST05-003",
+       4
+      ],
+      [
+       "ST05-004",
+       2
+      ],
+      [
+       "ST05-005",
+       2
+      ],
+      [
+       "ST05-006",
+       2
+      ],
+      [
+       "ST05-007",
+       4
+      ],
+      [
+       "ST05-008",
+       2
+      ],
+      [
+       "ST05-009",
+       4
+      ],
+      [
+       "ST05-010",
+       2
+      ],
+      [
+       "ST05-011",
+       2
+      ],
+      [
+       "ST05-012",
+       4
+      ],
+      [
+       "ST05-013",
+       4
+      ],
+      [
+       "ST05-014",
+       4
+      ],
+      [
+       "ST05-015",
+       4
+      ],
+      [
+       "ST05-016",
+       2
+      ],
+      [
+       "ST05-017",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST05-001",
+   "status": "4 sources agree",
+   "cards": [
+    [
+     "ST05-007",
+     4
+    ],
+    [
+     "ST05-014",
+     4
+    ],
+    [
+     "ST05-003",
+     4
+    ],
+    [
+     "ST05-005",
+     2
+    ],
+    [
+     "ST05-009",
+     4
+    ],
+    [
+     "ST05-015",
+     4
+    ],
+    [
+     "ST05-012",
+     4
+    ],
+    [
+     "ST05-002",
+     4
+    ],
+    [
+     "ST05-004",
+     2
+    ],
+    [
+     "ST05-013",
+     4
+    ],
+    [
+     "ST05-006",
+     2
+    ],
+    [
+     "ST05-008",
+     2
+    ],
+    [
+     "ST05-010",
+     2
+    ],
+    [
+     "ST05-011",
+     2
+    ],
+    [
+     "ST05-017",
+     4
+    ],
+    [
+     "ST05-016",
+     2
+    ]
+   ]
+  },
+  "ST-06": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st06.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569006",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST06",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST06-001"
+     ],
+     "cards": [
+      [
+       "ST06-002",
+       2
+      ],
+      [
+       "ST06-003",
+       4
+      ],
+      [
+       "ST06-004",
+       2
+      ],
+      [
+       "ST06-005",
+       4
+      ],
+      [
+       "ST06-006",
+       4
+      ],
+      [
+       "ST06-007",
+       4
+      ],
+      [
+       "ST06-008",
+       2
+      ],
+      [
+       "ST06-009",
+       4
+      ],
+      [
+       "ST06-010",
+       4
+      ],
+      [
+       "ST06-011",
+       4
+      ],
+      [
+       "ST06-012",
+       2
+      ],
+      [
+       "ST06-013",
+       4
+      ],
+      [
+       "ST06-014",
+       2
+      ],
+      [
+       "ST06-015",
+       2
+      ],
+      [
+       "ST06-016",
+       4
+      ],
+      [
+       "ST06-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st06-cardlists/",
+     "leaders": [
+      "ST06-001"
+     ],
+     "cards": [
+      [
+       "ST06-002",
+       2
+      ],
+      [
+       "ST06-003",
+       4
+      ],
+      [
+       "ST06-004",
+       2
+      ],
+      [
+       "ST06-005",
+       4
+      ],
+      [
+       "ST06-006",
+       4
+      ],
+      [
+       "ST06-007",
+       4
+      ],
+      [
+       "ST06-008",
+       2
+      ],
+      [
+       "ST06-009",
+       4
+      ],
+      [
+       "ST06-010",
+       4
+      ],
+      [
+       "ST06-011",
+       4
+      ],
+      [
+       "ST06-012",
+       2
+      ],
+      [
+       "ST06-013",
+       4
+      ],
+      [
+       "ST06-014",
+       2
+      ],
+      [
+       "ST06-015",
+       2
+      ],
+      [
+       "ST06-016",
+       4
+      ],
+      [
+       "ST06-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "laughtale",
+     "name": "LaughTale (JP) card list with counts",
+     "url": "https://laughtale-pirates.com/askerbert/one-piece-cardlist-starterdeck06",
+     "leaders": [
+      "ST06-001"
+     ],
+     "cards": [
+      [
+       "ST06-002",
+       2
+      ],
+      [
+       "ST06-003",
+       4
+      ],
+      [
+       "ST06-004",
+       2
+      ],
+      [
+       "ST06-005",
+       4
+      ],
+      [
+       "ST06-006",
+       4
+      ],
+      [
+       "ST06-007",
+       4
+      ],
+      [
+       "ST06-008",
+       2
+      ],
+      [
+       "ST06-009",
+       4
+      ],
+      [
+       "ST06-010",
+       4
+      ],
+      [
+       "ST06-011",
+       4
+      ],
+      [
+       "ST06-012",
+       2
+      ],
+      [
+       "ST06-013",
+       4
+      ],
+      [
+       "ST06-014",
+       2
+      ],
+      [
+       "ST06-015",
+       2
+      ],
+      [
+       "ST06-016",
+       4
+      ],
+      [
+       "ST06-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST06-001",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "ST06-002",
+     2
+    ],
+    [
+     "ST06-003",
+     4
+    ],
+    [
+     "ST06-007",
+     4
+    ],
+    [
+     "ST06-009",
+     4
+    ],
+    [
+     "ST06-010",
+     4
+    ],
+    [
+     "ST06-006",
+     4
+    ],
+    [
+     "ST06-008",
+     2
+    ],
+    [
+     "ST06-013",
+     4
+    ],
+    [
+     "ST06-011",
+     4
+    ],
+    [
+     "ST06-004",
+     2
+    ],
+    [
+     "ST06-005",
+     4
+    ],
+    [
+     "ST06-012",
+     2
+    ],
+    [
+     "ST06-015",
+     2
+    ],
+    [
+     "ST06-016",
+     4
+    ],
+    [
+     "ST06-014",
+     2
+    ],
+    [
+     "ST06-017",
+     2
+    ]
+   ]
+  },
+  "ST-07": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st07.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569007",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST07",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST07-001"
+     ],
+     "cards": [
+      [
+       "ST07-007",
+       2
+      ],
+      [
+       "ST07-002",
+       4
+      ],
+      [
+       "ST07-008",
+       4
+      ],
+      [
+       "ST07-011",
+       4
+      ],
+      [
+       "ST07-013",
+       4
+      ],
+      [
+       "ST07-006",
+       4
+      ],
+      [
+       "ST07-009",
+       2
+      ],
+      [
+       "ST07-014",
+       4
+      ],
+      [
+       "ST07-005",
+       2
+      ],
+      [
+       "ST07-003",
+       2
+      ],
+      [
+       "ST07-012",
+       4
+      ],
+      [
+       "ST07-004",
+       4
+      ],
+      [
+       "ST07-010",
+       2
+      ],
+      [
+       "ST07-016",
+       2
+      ],
+      [
+       "ST07-015",
+       4
+      ],
+      [
+       "ST07-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st07-cardlists/",
+     "leaders": [
+      "ST07-001"
+     ],
+     "cards": [
+      [
+       "ST07-002",
+       4
+      ],
+      [
+       "ST07-003",
+       2
+      ],
+      [
+       "ST07-004",
+       4
+      ],
+      [
+       "ST07-005",
+       2
+      ],
+      [
+       "ST07-006",
+       4
+      ],
+      [
+       "ST07-007",
+       2
+      ],
+      [
+       "ST07-008",
+       4
+      ],
+      [
+       "ST07-009",
+       2
+      ],
+      [
+       "ST07-010",
+       2
+      ],
+      [
+       "ST07-011",
+       4
+      ],
+      [
+       "ST07-012",
+       4
+      ],
+      [
+       "ST07-013",
+       4
+      ],
+      [
+       "ST07-014",
+       4
+      ],
+      [
+       "ST07-015",
+       4
+      ],
+      [
+       "ST07-016",
+       2
+      ],
+      [
+       "ST07-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "laughtale",
+     "name": "LaughTale (JP) card list with counts",
+     "url": "https://laughtale-pirates.com/askerbert/one-piece-cardlist-starterdeck07",
+     "fixes": [
+      "\"魂への言葉\" matches no card name in the product; it is the only entry left and ST07-015 (ソウル・ポーカス) the only card left"
+     ],
+     "leaders": [
+      "ST07-001"
+     ],
+     "cards": [
+      [
+       "ST07-002",
+       4
+      ],
+      [
+       "ST07-003",
+       2
+      ],
+      [
+       "ST07-004",
+       4
+      ],
+      [
+       "ST07-005",
+       2
+      ],
+      [
+       "ST07-006",
+       4
+      ],
+      [
+       "ST07-007",
+       2
+      ],
+      [
+       "ST07-008",
+       4
+      ],
+      [
+       "ST07-009",
+       2
+      ],
+      [
+       "ST07-010",
+       2
+      ],
+      [
+       "ST07-011",
+       4
+      ],
+      [
+       "ST07-012",
+       4
+      ],
+      [
+       "ST07-013",
+       4
+      ],
+      [
+       "ST07-014",
+       4
+      ],
+      [
+       "ST07-015",
+       4
+      ],
+      [
+       "ST07-016",
+       2
+      ],
+      [
+       "ST07-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST07-001",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "ST07-002",
+     4
+    ],
+    [
+     "ST07-006",
+     4
+    ],
+    [
+     "ST07-008",
+     4
+    ],
+    [
+     "ST07-007",
+     2
+    ],
+    [
+     "ST07-009",
+     2
+    ],
+    [
+     "ST07-011",
+     4
+    ],
+    [
+     "ST07-013",
+     4
+    ],
+    [
+     "ST07-014",
+     4
+    ],
+    [
+     "ST07-003",
+     2
+    ],
+    [
+     "ST07-005",
+     2
+    ],
+    [
+     "ST07-012",
+     4
+    ],
+    [
+     "ST07-004",
+     4
+    ],
+    [
+     "ST07-010",
+     2
+    ],
+    [
+     "ST07-016",
+     2
+    ],
+    [
+     "ST07-015",
+     4
+    ],
+    [
+     "ST07-017",
+     2
+    ]
+   ]
+  },
+  "ST-08": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st08.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569008",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST08",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST08-001"
+     ],
+     "cards": [
+      [
+       "ST08-002",
+       2
+      ],
+      [
+       "ST08-003",
+       4
+      ],
+      [
+       "ST08-004",
+       4
+      ],
+      [
+       "ST08-005",
+       2
+      ],
+      [
+       "ST08-006",
+       4
+      ],
+      [
+       "ST08-007",
+       4
+      ],
+      [
+       "ST08-008",
+       4
+      ],
+      [
+       "ST08-009",
+       4
+      ],
+      [
+       "ST08-010",
+       4
+      ],
+      [
+       "ST08-011",
+       4
+      ],
+      [
+       "ST08-012",
+       4
+      ],
+      [
+       "ST08-013",
+       4
+      ],
+      [
+       "ST08-014",
+       4
+      ],
+      [
+       "ST08-015",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st08-cardlists/",
+     "fixes": [
+      "\"ゴムゴムの鐘\" is listed as ST08-015: the product's card of that name is ST08-014",
+      "\"ゴムゴムの銃\" is listed as ST08-014: the product's card of that name is ST08-015"
+     ],
+     "leaders": [
+      "ST08-001"
+     ],
+     "cards": [
+      [
+       "ST08-002",
+       2
+      ],
+      [
+       "ST08-003",
+       4
+      ],
+      [
+       "ST08-004",
+       4
+      ],
+      [
+       "ST08-005",
+       2
+      ],
+      [
+       "ST08-006",
+       4
+      ],
+      [
+       "ST08-007",
+       4
+      ],
+      [
+       "ST08-008",
+       4
+      ],
+      [
+       "ST08-009",
+       4
+      ],
+      [
+       "ST08-010",
+       4
+      ],
+      [
+       "ST08-011",
+       4
+      ],
+      [
+       "ST08-012",
+       4
+      ],
+      [
+       "ST08-013",
+       4
+      ],
+      [
+       "ST08-014",
+       4
+      ],
+      [
+       "ST08-015",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "laughtale",
+     "name": "LaughTale (JP) card list with counts",
+     "url": "https://laughtale-pirates.com/askerbert/one-piece-cardlist-starterdeck08",
+     "leaders": [
+      "ST08-001"
+     ],
+     "cards": [
+      [
+       "ST08-002",
+       2
+      ],
+      [
+       "ST08-003",
+       4
+      ],
+      [
+       "ST08-004",
+       4
+      ],
+      [
+       "ST08-005",
+       2
+      ],
+      [
+       "ST08-006",
+       4
+      ],
+      [
+       "ST08-007",
+       4
+      ],
+      [
+       "ST08-008",
+       4
+      ],
+      [
+       "ST08-009",
+       4
+      ],
+      [
+       "ST08-010",
+       4
+      ],
+      [
+       "ST08-011",
+       4
+      ],
+      [
+       "ST08-012",
+       4
+      ],
+      [
+       "ST08-013",
+       4
+      ],
+      [
+       "ST08-014",
+       4
+      ],
+      [
+       "ST08-015",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST08-001",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "ST08-008",
+     4
+    ],
+    [
+     "ST08-002",
+     2
+    ],
+    [
+     "ST08-003",
+     4
+    ],
+    [
+     "ST08-009",
+     4
+    ],
+    [
+     "ST08-007",
+     4
+    ],
+    [
+     "ST08-011",
+     4
+    ],
+    [
+     "ST08-004",
+     4
+    ],
+    [
+     "ST08-006",
+     4
+    ],
+    [
+     "ST08-012",
+     4
+    ],
+    [
+     "ST08-010",
+     4
+    ],
+    [
+     "ST08-013",
+     4
+    ],
+    [
+     "ST08-005",
+     2
+    ],
+    [
+     "ST08-014",
+     4
+    ],
+    [
+     "ST08-015",
+     2
+    ]
+   ]
+  },
+  "ST-09": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st09.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569009",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST09",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST09-001"
+     ],
+     "cards": [
+      [
+       "ST09-002",
+       4
+      ],
+      [
+       "ST09-003",
+       4
+      ],
+      [
+       "ST09-004",
+       4
+      ],
+      [
+       "ST09-005",
+       2
+      ],
+      [
+       "ST09-006",
+       4
+      ],
+      [
+       "ST09-007",
+       4
+      ],
+      [
+       "ST09-008",
+       4
+      ],
+      [
+       "ST09-009",
+       4
+      ],
+      [
+       "ST09-010",
+       2
+      ],
+      [
+       "ST09-011",
+       4
+      ],
+      [
+       "ST09-012",
+       4
+      ],
+      [
+       "ST09-013",
+       4
+      ],
+      [
+       "ST09-014",
+       2
+      ],
+      [
+       "ST09-015",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st09-cardlists/",
+     "leaders": [
+      "ST09-001"
+     ],
+     "cards": [
+      [
+       "ST09-002",
+       4
+      ],
+      [
+       "ST09-003",
+       4
+      ],
+      [
+       "ST09-004",
+       4
+      ],
+      [
+       "ST09-005",
+       2
+      ],
+      [
+       "ST09-006",
+       4
+      ],
+      [
+       "ST09-007",
+       4
+      ],
+      [
+       "ST09-008",
+       4
+      ],
+      [
+       "ST09-009",
+       4
+      ],
+      [
+       "ST09-010",
+       2
+      ],
+      [
+       "ST09-011",
+       4
+      ],
+      [
+       "ST09-012",
+       4
+      ],
+      [
+       "ST09-013",
+       4
+      ],
+      [
+       "ST09-014",
+       2
+      ],
+      [
+       "ST09-015",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "laughtale",
+     "name": "LaughTale (JP) card list with counts",
+     "url": "https://laughtale-pirates.com/askerbert/one-piece-cardlist-starterdeck09",
+     "fixes": [
+      "\"ヤマト\" (x4): several cards in the product have that name; the page lists cards in number order, so this row is ST09-012"
+     ],
+     "leaders": [
+      "ST09-001"
+     ],
+     "cards": [
+      [
+       "ST09-002",
+       4
+      ],
+      [
+       "ST09-003",
+       4
+      ],
+      [
+       "ST09-004",
+       4
+      ],
+      [
+       "ST09-005",
+       2
+      ],
+      [
+       "ST09-006",
+       4
+      ],
+      [
+       "ST09-007",
+       4
+      ],
+      [
+       "ST09-008",
+       4
+      ],
+      [
+       "ST09-009",
+       4
+      ],
+      [
+       "ST09-010",
+       2
+      ],
+      [
+       "ST09-011",
+       4
+      ],
+      [
+       "ST09-012",
+       4
+      ],
+      [
+       "ST09-013",
+       4
+      ],
+      [
+       "ST09-014",
+       2
+      ],
+      [
+       "ST09-015",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST09-001",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "ST09-006",
+     4
+    ],
+    [
+     "ST09-007",
+     4
+    ],
+    [
+     "ST09-009",
+     4
+    ],
+    [
+     "ST09-011",
+     4
+    ],
+    [
+     "ST09-012",
+     4
+    ],
+    [
+     "ST09-002",
+     4
+    ],
+    [
+     "ST09-003",
+     4
+    ],
+    [
+     "ST09-004",
+     4
+    ],
+    [
+     "ST09-008",
+     4
+    ],
+    [
+     "ST09-013",
+     4
+    ],
+    [
+     "ST09-010",
+     2
+    ],
+    [
+     "ST09-005",
+     2
+    ],
+    [
+     "ST09-014",
+     2
+    ],
+    [
+     "ST09-015",
+     4
+    ]
+   ]
+  },
+  "ST-10": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st10.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569010",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST10",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST10-002"
+     ],
+     "cards": [
+      [
+       "ST10-004",
+       4
+      ],
+      [
+       "ST10-005",
+       2
+      ],
+      [
+       "ST10-006",
+       2
+      ],
+      [
+       "ST10-007",
+       4
+      ],
+      [
+       "ST10-008",
+       4
+      ],
+      [
+       "ST10-009",
+       4
+      ],
+      [
+       "ST10-010",
+       2
+      ],
+      [
+       "ST10-011",
+       4
+      ],
+      [
+       "ST10-012",
+       4
+      ],
+      [
+       "ST10-013",
+       2
+      ],
+      [
+       "ST10-014",
+       4
+      ],
+      [
+       "ST10-015",
+       2
+      ],
+      [
+       "ST10-016",
+       2
+      ],
+      [
+       "ST10-017",
+       2
+      ],
+      [
+       "OP01-025",
+       4
+      ],
+      [
+       "OP01-016",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st10-cardlists/",
+     "leaders": [
+      "ST10-001",
+      "ST10-002",
+      "ST10-003"
+     ],
+     "cards": [
+      [
+       "ST10-004",
+       4
+      ],
+      [
+       "ST10-005",
+       2
+      ],
+      [
+       "ST10-006",
+       2
+      ],
+      [
+       "ST10-007",
+       4
+      ],
+      [
+       "ST10-008",
+       4
+      ],
+      [
+       "ST10-009",
+       4
+      ],
+      [
+       "ST10-010",
+       2
+      ],
+      [
+       "ST10-011",
+       4
+      ],
+      [
+       "ST10-012",
+       4
+      ],
+      [
+       "ST10-013",
+       2
+      ],
+      [
+       "ST10-014",
+       4
+      ],
+      [
+       "ST10-015",
+       2
+      ],
+      [
+       "ST10-016",
+       2
+      ],
+      [
+       "ST10-017",
+       2
+      ],
+      [
+       "OP01-016",
+       4
+      ],
+      [
+       "OP01-025",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "yuyutei",
+     "name": "yuyu-tei (JP shop) deck article",
+     "url": "https://yuyu-tei.jp/show/opc/content/20829",
+     "fixes": [
+      "\"ナミ\" is listed as ST10-018: the product's card of that name is OP01-016",
+      "\"ロロノア・ゾロ\" is listed as ST10-019: the product's card of that name is OP01-025"
+     ],
+     "leaders": [
+      "ST10-001",
+      "ST10-002",
+      "ST10-003"
+     ],
+     "cards": [
+      [
+       "OP01-016",
+       4
+      ],
+      [
+       "ST10-005",
+       2
+      ],
+      [
+       "OP01-025",
+       4
+      ],
+      [
+       "ST10-011",
+       4
+      ],
+      [
+       "ST10-014",
+       4
+      ],
+      [
+       "ST10-008",
+       4
+      ],
+      [
+       "ST10-009",
+       4
+      ],
+      [
+       "ST10-010",
+       2
+      ],
+      [
+       "ST10-012",
+       4
+      ],
+      [
+       "ST10-007",
+       4
+      ],
+      [
+       "ST10-004",
+       4
+      ],
+      [
+       "ST10-013",
+       2
+      ],
+      [
+       "ST10-006",
+       2
+      ],
+      [
+       "ST10-015",
+       2
+      ],
+      [
+       "ST10-016",
+       2
+      ],
+      [
+       "ST10-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST10-002",
+   "leaderNote": "the product holds 3 Leaders (ST10-001, ST10-002, ST10-003), all legal with these 50 cards; we play ST10-002",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "OP01-016",
+     4
+    ],
+    [
+     "ST10-005",
+     2
+    ],
+    [
+     "OP01-025",
+     4
+    ],
+    [
+     "ST10-011",
+     4
+    ],
+    [
+     "ST10-014",
+     4
+    ],
+    [
+     "ST10-008",
+     4
+    ],
+    [
+     "ST10-009",
+     4
+    ],
+    [
+     "ST10-010",
+     2
+    ],
+    [
+     "ST10-012",
+     4
+    ],
+    [
+     "ST10-007",
+     4
+    ],
+    [
+     "ST10-004",
+     4
+    ],
+    [
+     "ST10-013",
+     2
+    ],
+    [
+     "ST10-006",
+     2
+    ],
+    [
+     "ST10-015",
+     2
+    ],
+    [
+     "ST10-017",
+     2
+    ],
+    [
+     "ST10-016",
+     2
+    ]
+   ]
+  },
+  "ST-11": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st11.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569011",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST11",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST11-001"
+     ],
+     "cards": [
+      [
+       "OP02-034",
+       4
+      ],
+      [
+       "OP02-035",
+       4
+      ],
+      [
+       "OP02-033",
+       4
+      ],
+      [
+       "OP02-037",
+       4
+      ],
+      [
+       "ST11-002",
+       2
+      ],
+      [
+       "OP02-028",
+       4
+      ],
+      [
+       "OP02-040",
+       4
+      ],
+      [
+       "OP02-043",
+       4
+      ],
+      [
+       "OP02-039",
+       4
+      ],
+      [
+       "OP02-041",
+       4
+      ],
+      [
+       "ST11-004",
+       2
+      ],
+      [
+       "ST11-003",
+       2
+      ],
+      [
+       "OP02-045",
+       4
+      ],
+      [
+       "ST11-005",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st11_cardlists/",
+     "leaders": [
+      "ST11-001"
+     ],
+     "cards": [
+      [
+       "ST11-002",
+       2
+      ],
+      [
+       "ST11-003",
+       2
+      ],
+      [
+       "ST11-004",
+       2
+      ],
+      [
+       "ST11-005",
+       4
+      ],
+      [
+       "OP02-028",
+       4
+      ],
+      [
+       "OP02-033",
+       4
+      ],
+      [
+       "OP02-034",
+       4
+      ],
+      [
+       "OP02-035",
+       4
+      ],
+      [
+       "OP02-037",
+       4
+      ],
+      [
+       "OP02-039",
+       4
+      ],
+      [
+       "OP02-040",
+       4
+      ],
+      [
+       "OP02-041",
+       4
+      ],
+      [
+       "OP02-043",
+       4
+      ],
+      [
+       "OP02-045",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "yuyutei",
+     "name": "yuyu-tei (JP shop) deck article",
+     "url": "https://yuyu-tei.jp/show/opc/content/21132",
+     "fixes": [
+      "\"ジンベエ\" is listed as OP02-045: the product's card of that name is OP02-033",
+      "\"トニートニー・チョッパー\" is listed as OP02-046: the product's card of that name is OP02-034",
+      "\"トラファルガー・ロー\" is listed as OP02-047: the product's card of that name is OP02-035",
+      "\"ウソップ\" is listed as OP02-038: the product's card of that name is OP02-028",
+      "\"ニコ・ロビン\" is listed as OP02-050: the product's card of that name is OP02-037",
+      "\"ブルック\" is listed as ST11-006: the product's card of that name is OP02-040",
+      "\"ロロノア・ゾロ\" is listed as OP02-057: the product's card of that name is OP02-043",
+      "\"フランキー\" is listed as OP02-052: the product's card of that name is OP02-039",
+      "\"モンキー・Ｄ・ルフィ\" is listed as ST11-007: the product's card of that name is OP02-041",
+      "\"三刀流 鬼斬り\" is listed as OP02-059: the product's card of that name is OP02-045"
+     ],
+     "leaders": [
+      "ST11-001"
+     ],
+     "cards": [
+      [
+       "OP02-033",
+       4
+      ],
+      [
+       "OP02-034",
+       4
+      ],
+      [
+       "OP02-035",
+       4
+      ],
+      [
+       "OP02-028",
+       4
+      ],
+      [
+       "OP02-037",
+       4
+      ],
+      [
+       "ST11-002",
+       2
+      ],
+      [
+       "OP02-040",
+       4
+      ],
+      [
+       "OP02-043",
+       4
+      ],
+      [
+       "OP02-039",
+       4
+      ],
+      [
+       "OP02-041",
+       4
+      ],
+      [
+       "ST11-004",
+       2
+      ],
+      [
+       "ST11-003",
+       2
+      ],
+      [
+       "ST11-005",
+       4
+      ],
+      [
+       "OP02-045",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST11-001",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "OP02-033",
+     4
+    ],
+    [
+     "OP02-034",
+     4
+    ],
+    [
+     "OP02-035",
+     4
+    ],
+    [
+     "OP02-028",
+     4
+    ],
+    [
+     "OP02-037",
+     4
+    ],
+    [
+     "ST11-002",
+     2
+    ],
+    [
+     "OP02-040",
+     4
+    ],
+    [
+     "OP02-043",
+     4
+    ],
+    [
+     "OP02-039",
+     4
+    ],
+    [
+     "OP02-041",
+     4
+    ],
+    [
+     "ST11-004",
+     2
+    ],
+    [
+     "ST11-003",
+     2
+    ],
+    [
+     "OP02-045",
+     4
+    ],
+    [
+     "ST11-005",
+     4
+    ]
+   ]
+  },
+  "ST-12": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st12.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569012",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST12",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST12-001"
+     ],
+     "cards": [
+      [
+       "ST12-002",
+       4
+      ],
+      [
+       "ST12-003",
+       2
+      ],
+      [
+       "ST12-004",
+       4
+      ],
+      [
+       "ST12-005",
+       4
+      ],
+      [
+       "ST12-006",
+       4
+      ],
+      [
+       "ST12-007",
+       4
+      ],
+      [
+       "ST12-008",
+       2
+      ],
+      [
+       "ST12-009",
+       4
+      ],
+      [
+       "ST12-010",
+       2
+      ],
+      [
+       "ST12-011",
+       2
+      ],
+      [
+       "ST12-012",
+       4
+      ],
+      [
+       "ST12-013",
+       4
+      ],
+      [
+       "ST12-014",
+       2
+      ],
+      [
+       "ST12-015",
+       4
+      ],
+      [
+       "ST12-016",
+       2
+      ],
+      [
+       "ST12-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st12_cardlists/",
+     "fixes": [
+      "\"ゾロ&サンジ\" is listed as ST14-001: the product's card of that name is ST12-001"
+     ],
+     "leaders": [
+      "ST12-001"
+     ],
+     "cards": [
+      [
+       "ST12-002",
+       4
+      ],
+      [
+       "ST12-003",
+       2
+      ],
+      [
+       "ST12-004",
+       4
+      ],
+      [
+       "ST12-005",
+       4
+      ],
+      [
+       "ST12-006",
+       4
+      ],
+      [
+       "ST12-007",
+       4
+      ],
+      [
+       "ST12-008",
+       2
+      ],
+      [
+       "ST12-009",
+       4
+      ],
+      [
+       "ST12-010",
+       2
+      ],
+      [
+       "ST12-011",
+       2
+      ],
+      [
+       "ST12-012",
+       4
+      ],
+      [
+       "ST12-013",
+       4
+      ],
+      [
+       "ST12-014",
+       2
+      ],
+      [
+       "ST12-015",
+       4
+      ],
+      [
+       "ST12-016",
+       2
+      ],
+      [
+       "ST12-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "yuyutei",
+     "name": "yuyu-tei (JP shop) deck article",
+     "url": "https://yuyu-tei.jp/show/opc/content/21241",
+     "leaders": [
+      "ST12-001"
+     ],
+     "cards": [
+      [
+       "ST12-002",
+       4
+      ],
+      [
+       "ST12-003",
+       2
+      ],
+      [
+       "ST12-004",
+       4
+      ],
+      [
+       "ST12-005",
+       4
+      ],
+      [
+       "ST12-006",
+       4
+      ],
+      [
+       "ST12-007",
+       4
+      ],
+      [
+       "ST12-008",
+       2
+      ],
+      [
+       "ST12-009",
+       4
+      ],
+      [
+       "ST12-010",
+       2
+      ],
+      [
+       "ST12-011",
+       2
+      ],
+      [
+       "ST12-012",
+       4
+      ],
+      [
+       "ST12-013",
+       4
+      ],
+      [
+       "ST12-014",
+       2
+      ],
+      [
+       "ST12-015",
+       4
+      ],
+      [
+       "ST12-016",
+       2
+      ],
+      [
+       "ST12-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST12-001",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "ST12-009",
+     4
+    ],
+    [
+     "ST12-006",
+     4
+    ],
+    [
+     "ST12-007",
+     4
+    ],
+    [
+     "ST12-011",
+     2
+    ],
+    [
+     "ST12-012",
+     4
+    ],
+    [
+     "ST12-014",
+     2
+    ],
+    [
+     "ST12-015",
+     4
+    ],
+    [
+     "ST12-002",
+     4
+    ],
+    [
+     "ST12-003",
+     2
+    ],
+    [
+     "ST12-004",
+     4
+    ],
+    [
+     "ST12-010",
+     2
+    ],
+    [
+     "ST12-005",
+     4
+    ],
+    [
+     "ST12-008",
+     2
+    ],
+    [
+     "ST12-013",
+     4
+    ],
+    [
+     "ST12-017",
+     2
+    ],
+    [
+     "ST12-016",
+     2
+    ]
+   ]
+  },
+  "ST-13": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st13.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569013",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST13",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST13-003"
+     ],
+     "cards": [
+      [
+       "ST13-004",
+       4
+      ],
+      [
+       "ST13-005",
+       2
+      ],
+      [
+       "ST13-006",
+       4
+      ],
+      [
+       "ST13-007",
+       4
+      ],
+      [
+       "ST13-008",
+       2
+      ],
+      [
+       "ST13-009",
+       4
+      ],
+      [
+       "ST13-010",
+       4
+      ],
+      [
+       "ST13-011",
+       2
+      ],
+      [
+       "ST13-012",
+       4
+      ],
+      [
+       "ST13-013",
+       2
+      ],
+      [
+       "ST13-014",
+       4
+      ],
+      [
+       "ST13-015",
+       2
+      ],
+      [
+       "ST13-016",
+       4
+      ],
+      [
+       "ST13-019",
+       4
+      ],
+      [
+       "ST13-018",
+       2
+      ],
+      [
+       "ST13-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st13_cardlists/",
+     "leaders": [
+      "ST13-001",
+      "ST13-002",
+      "ST13-003"
+     ],
+     "cards": [
+      [
+       "ST13-004",
+       4
+      ],
+      [
+       "ST13-005",
+       2
+      ],
+      [
+       "ST13-006",
+       4
+      ],
+      [
+       "ST13-007",
+       4
+      ],
+      [
+       "ST13-008",
+       2
+      ],
+      [
+       "ST13-009",
+       4
+      ],
+      [
+       "ST13-010",
+       4
+      ],
+      [
+       "ST13-011",
+       2
+      ],
+      [
+       "ST13-012",
+       4
+      ],
+      [
+       "ST13-013",
+       2
+      ],
+      [
+       "ST13-014",
+       4
+      ],
+      [
+       "ST13-015",
+       2
+      ],
+      [
+       "ST13-016",
+       4
+      ],
+      [
+       "ST13-017",
+       2
+      ],
+      [
+       "ST13-018",
+       2
+      ],
+      [
+       "ST13-019",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tubuke",
+     "name": "tubukeblog (JP) opened-box list",
+     "url": "https://tubukeblog.com/blog/ultimate-deck-3-brotherly-bond-card-list",
+     "leaders": [
+      "ST13-001",
+      "ST13-002",
+      "ST13-003"
+     ],
+     "cards": [
+      [
+       "ST13-004",
+       4
+      ],
+      [
+       "ST13-005",
+       2
+      ],
+      [
+       "ST13-006",
+       4
+      ],
+      [
+       "ST13-007",
+       4
+      ],
+      [
+       "ST13-008",
+       2
+      ],
+      [
+       "ST13-009",
+       4
+      ],
+      [
+       "ST13-010",
+       4
+      ],
+      [
+       "ST13-011",
+       2
+      ],
+      [
+       "ST13-012",
+       4
+      ],
+      [
+       "ST13-013",
+       2
+      ],
+      [
+       "ST13-014",
+       4
+      ],
+      [
+       "ST13-015",
+       2
+      ],
+      [
+       "ST13-016",
+       4
+      ],
+      [
+       "ST13-017",
+       2
+      ],
+      [
+       "ST13-018",
+       2
+      ],
+      [
+       "ST13-019",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST13-003",
+   "leaderNote": "the product holds 3 Leaders (ST13-001, ST13-002, ST13-003), all legal with these 50 cards; we play ST13-003",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "ST13-012",
+     4
+    ],
+    [
+     "ST13-013",
+     2
+    ],
+    [
+     "ST13-007",
+     4
+    ],
+    [
+     "ST13-010",
+     4
+    ],
+    [
+     "ST13-014",
+     4
+    ],
+    [
+     "ST13-005",
+     2
+    ],
+    [
+     "ST13-006",
+     4
+    ],
+    [
+     "ST13-008",
+     2
+    ],
+    [
+     "ST13-011",
+     2
+    ],
+    [
+     "ST13-015",
+     2
+    ],
+    [
+     "ST13-016",
+     4
+    ],
+    [
+     "ST13-004",
+     4
+    ],
+    [
+     "ST13-009",
+     4
+    ],
+    [
+     "ST13-018",
+     2
+    ],
+    [
+     "ST13-019",
+     4
+    ],
+    [
+     "ST13-017",
+     2
+    ]
+   ]
+  },
+  "ST-14": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st14.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569014",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST14",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST14-001"
+     ],
+     "cards": [
+      [
+       "ST14-002",
+       4
+      ],
+      [
+       "ST14-003",
+       2
+      ],
+      [
+       "ST14-004",
+       4
+      ],
+      [
+       "ST14-005",
+       4
+      ],
+      [
+       "ST14-006",
+       2
+      ],
+      [
+       "ST14-007",
+       4
+      ],
+      [
+       "ST14-008",
+       4
+      ],
+      [
+       "ST14-009",
+       4
+      ],
+      [
+       "ST14-010",
+       4
+      ],
+      [
+       "ST14-011",
+       4
+      ],
+      [
+       "ST14-012",
+       2
+      ],
+      [
+       "ST14-013",
+       4
+      ],
+      [
+       "ST14-014",
+       2
+      ],
+      [
+       "ST14-015",
+       2
+      ],
+      [
+       "ST14-016",
+       2
+      ],
+      [
+       "ST14-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st14_cardlists/",
+     "leaders": [
+      "ST14-001"
+     ],
+     "cards": [
+      [
+       "ST14-002",
+       4
+      ],
+      [
+       "ST14-003",
+       2
+      ],
+      [
+       "ST14-004",
+       4
+      ],
+      [
+       "ST14-005",
+       4
+      ],
+      [
+       "ST14-006",
+       2
+      ],
+      [
+       "ST14-007",
+       4
+      ],
+      [
+       "ST14-008",
+       4
+      ],
+      [
+       "ST14-009",
+       4
+      ],
+      [
+       "ST14-010",
+       4
+      ],
+      [
+       "ST14-011",
+       4
+      ],
+      [
+       "ST14-012",
+       2
+      ],
+      [
+       "ST14-013",
+       4
+      ],
+      [
+       "ST14-014",
+       2
+      ],
+      [
+       "ST14-015",
+       2
+      ],
+      [
+       "ST14-016",
+       2
+      ],
+      [
+       "ST14-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "yuyutei",
+     "name": "yuyu-tei (JP shop) deck article",
+     "url": "https://yuyu-tei.jp/show/opc/content/22238",
+     "leaders": [
+      "ST14-001"
+     ],
+     "cards": [
+      [
+       "ST14-002",
+       4
+      ],
+      [
+       "ST14-003",
+       2
+      ],
+      [
+       "ST14-004",
+       4
+      ],
+      [
+       "ST14-005",
+       4
+      ],
+      [
+       "ST14-006",
+       2
+      ],
+      [
+       "ST14-007",
+       4
+      ],
+      [
+       "ST14-008",
+       4
+      ],
+      [
+       "ST14-009",
+       4
+      ],
+      [
+       "ST14-010",
+       4
+      ],
+      [
+       "ST14-011",
+       4
+      ],
+      [
+       "ST14-012",
+       2
+      ],
+      [
+       "ST14-013",
+       4
+      ],
+      [
+       "ST14-014",
+       2
+      ],
+      [
+       "ST14-015",
+       2
+      ],
+      [
+       "ST14-016",
+       2
+      ],
+      [
+       "ST14-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST14-001",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "ST14-008",
+     4
+    ],
+    [
+     "ST14-011",
+     4
+    ],
+    [
+     "ST14-002",
+     4
+    ],
+    [
+     "ST14-004",
+     4
+    ],
+    [
+     "ST14-006",
+     2
+    ],
+    [
+     "ST14-005",
+     4
+    ],
+    [
+     "ST14-003",
+     2
+    ],
+    [
+     "ST14-009",
+     4
+    ],
+    [
+     "ST14-010",
+     4
+    ],
+    [
+     "ST14-007",
+     4
+    ],
+    [
+     "ST14-013",
+     4
+    ],
+    [
+     "ST14-012",
+     2
+    ],
+    [
+     "ST14-014",
+     2
+    ],
+    [
+     "ST14-016",
+     2
+    ],
+    [
+     "ST14-015",
+     2
+    ],
+    [
+     "ST14-017",
+     2
+    ]
+   ]
+  },
+  "ST-15": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st15-20.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569015",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST15",
+     "leaders": [
+      "OP02-001"
+     ],
+     "cards": [
+      [
+       "OP03-003",
+       4
+      ],
+      [
+       "ST15-004",
+       2
+      ],
+      [
+       "OP03-009",
+       4
+      ],
+      [
+       "OP03-010",
+       4
+      ],
+      [
+       "ST15-003",
+       4
+      ],
+      [
+       "OP02-019",
+       4
+      ],
+      [
+       "OP03-007",
+       4
+      ],
+      [
+       "ST15-001",
+       4
+      ],
+      [
+       "OP02-008",
+       4
+      ],
+      [
+       "OP02-018",
+       4
+      ],
+      [
+       "OP03-006",
+       4
+      ],
+      [
+       "ST15-005",
+       2
+      ],
+      [
+       "ST15-002",
+       2
+      ],
+      [
+       "OP02-023",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP02-001"
+     ],
+     "cards": [
+      [
+       "ST15-001",
+       4
+      ],
+      [
+       "ST15-002",
+       2
+      ],
+      [
+       "ST15-003",
+       4
+      ],
+      [
+       "ST15-004",
+       2
+      ],
+      [
+       "ST15-005",
+       2
+      ],
+      [
+       "OP02-008",
+       4
+      ],
+      [
+       "OP02-018",
+       4
+      ],
+      [
+       "OP02-019",
+       4
+      ],
+      [
+       "OP02-023",
+       4
+      ],
+      [
+       "OP03-003",
+       4
+      ],
+      [
+       "OP03-006",
+       4
+      ],
+      [
+       "OP03-007",
+       4
+      ],
+      [
+       "OP03-009",
+       4
+      ],
+      [
+       "OP03-010",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st15_cardlists/",
+     "leaders": [
+      "OP02-001"
+     ],
+     "cards": [
+      [
+       "ST15-001",
+       4
+      ],
+      [
+       "ST15-002",
+       2
+      ],
+      [
+       "ST15-003",
+       4
+      ],
+      [
+       "ST15-004",
+       2
+      ],
+      [
+       "ST15-005",
+       2
+      ],
+      [
+       "OP02-008",
+       4
+      ],
+      [
+       "OP02-018",
+       4
+      ],
+      [
+       "OP02-019",
+       4
+      ],
+      [
+       "OP03-003",
+       4
+      ],
+      [
+       "OP03-006",
+       4
+      ],
+      [
+       "OP03-007",
+       4
+      ],
+      [
+       "OP03-009",
+       4
+      ],
+      [
+       "OP03-010",
+       4
+      ],
+      [
+       "OP02-023",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "OP02-001",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "OP03-003",
+     4
+    ],
+    [
+     "ST15-004",
+     2
+    ],
+    [
+     "OP03-009",
+     4
+    ],
+    [
+     "OP03-010",
+     4
+    ],
+    [
+     "OP02-019",
+     4
+    ],
+    [
+     "OP03-007",
+     4
+    ],
+    [
+     "ST15-003",
+     4
+    ],
+    [
+     "OP02-008",
+     4
+    ],
+    [
+     "OP02-018",
+     4
+    ],
+    [
+     "OP03-006",
+     4
+    ],
+    [
+     "ST15-001",
+     4
+    ],
+    [
+     "ST15-005",
+     2
+    ],
+    [
+     "ST15-002",
+     2
+    ],
+    [
+     "OP02-023",
+     4
+    ]
+   ]
+  },
+  "ST-16": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st15-20.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569016",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST16",
+     "leaders": [
+      "ST11-001"
+     ],
+     "cards": [
+      [
+       "ST16-002",
+       4
+      ],
+      [
+       "P-029",
+       4
+      ],
+      [
+       "ST16-005",
+       2
+      ],
+      [
+       "ST16-003",
+       4
+      ],
+      [
+       "ST16-001",
+       2
+      ],
+      [
+       "P-061",
+       4
+      ],
+      [
+       "ST16-004",
+       2
+      ],
+      [
+       "ST11-004",
+       4
+      ],
+      [
+       "ST11-003",
+       4
+      ],
+      [
+       "P-058",
+       4
+      ],
+      [
+       "P-059",
+       4
+      ],
+      [
+       "P-060",
+       4
+      ],
+      [
+       "ST11-005",
+       4
+      ],
+      [
+       "P-057",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST11-001"
+     ],
+     "cards": [
+      [
+       "ST16-001",
+       2
+      ],
+      [
+       "ST16-002",
+       4
+      ],
+      [
+       "ST16-003",
+       4
+      ],
+      [
+       "ST16-004",
+       2
+      ],
+      [
+       "ST16-005",
+       2
+      ],
+      [
+       "P-057",
+       4
+      ],
+      [
+       "P-058",
+       4
+      ],
+      [
+       "P-059",
+       4
+      ],
+      [
+       "P-029",
+       4
+      ],
+      [
+       "P-060",
+       4
+      ],
+      [
+       "P-061",
+       4
+      ],
+      [
+       "ST11-003",
+       4
+      ],
+      [
+       "ST11-004",
+       4
+      ],
+      [
+       "ST11-005",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st16_cardlists/",
+     "leaders": [
+      "ST11-001"
+     ],
+     "cards": [
+      [
+       "ST16-001",
+       2
+      ],
+      [
+       "ST16-002",
+       4
+      ],
+      [
+       "ST16-003",
+       4
+      ],
+      [
+       "ST16-004",
+       2
+      ],
+      [
+       "ST16-005",
+       2
+      ],
+      [
+       "P-029",
+       4
+      ],
+      [
+       "P-061",
+       4
+      ],
+      [
+       "ST11-003",
+       4
+      ],
+      [
+       "ST11-004",
+       4
+      ],
+      [
+       "ST11-005",
+       4
+      ],
+      [
+       "P-057",
+       4
+      ],
+      [
+       "P-058",
+       4
+      ],
+      [
+       "P-059",
+       4
+      ],
+      [
+       "P-060",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST11-001",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "P-029",
+     4
+    ],
+    [
+     "ST16-002",
+     4
+    ],
+    [
+     "ST16-005",
+     2
+    ],
+    [
+     "ST16-003",
+     4
+    ],
+    [
+     "ST16-001",
+     2
+    ],
+    [
+     "P-061",
+     4
+    ],
+    [
+     "ST16-004",
+     2
+    ],
+    [
+     "ST11-004",
+     4
+    ],
+    [
+     "P-058",
+     4
+    ],
+    [
+     "P-059",
+     4
+    ],
+    [
+     "P-060",
+     4
+    ],
+    [
+     "ST11-003",
+     4
+    ],
+    [
+     "P-057",
+     4
+    ],
+    [
+     "ST11-005",
+     4
+    ]
+   ]
+  },
+  "ST-17": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st15-20.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569017",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST17",
+     "leaders": [
+      "OP01-060"
+     ],
+     "cards": [
+      [
+       "ST03-008",
+       4
+      ],
+      [
+       "ST17-003",
+       2
+      ],
+      [
+       "ST17-005",
+       4
+      ],
+      [
+       "OP01-073",
+       4
+      ],
+      [
+       "OP02-057",
+       4
+      ],
+      [
+       "ST03-002",
+       4
+      ],
+      [
+       "ST17-001",
+       4
+      ],
+      [
+       "P-030",
+       4
+      ],
+      [
+       "OP02-054",
+       4
+      ],
+      [
+       "ST03-005",
+       4
+      ],
+      [
+       "ST03-004",
+       4
+      ],
+      [
+       "ST17-002",
+       2
+      ],
+      [
+       "ST17-004",
+       2
+      ],
+      [
+       "OP01-086",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP01-060"
+     ],
+     "cards": [
+      [
+       "ST17-001",
+       4
+      ],
+      [
+       "ST17-002",
+       2
+      ],
+      [
+       "ST17-003",
+       2
+      ],
+      [
+       "ST17-004",
+       2
+      ],
+      [
+       "ST17-005",
+       4
+      ],
+      [
+       "OP01-073",
+       4
+      ],
+      [
+       "OP01-086",
+       4
+      ],
+      [
+       "OP02-054",
+       4
+      ],
+      [
+       "OP02-057",
+       4
+      ],
+      [
+       "ST03-002",
+       4
+      ],
+      [
+       "ST03-004",
+       4
+      ],
+      [
+       "ST03-005",
+       4
+      ],
+      [
+       "ST03-008",
+       4
+      ],
+      [
+       "P-030",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st17_cardlists/",
+     "fixes": [
+      "\"トラファルガー・ロー\" is listed as ST03-002: the product's card of that name is ST03-008",
+      "\"エドワード・ウィーブル\" is listed as ST03-004: the product's card of that name is ST03-002",
+      "\"ゲッコー・モリア\" is listed as ST03-005: the product's card of that name is ST03-004",
+      "\"ジュラキュール・ミホーク\" is listed as ST03-008: the product's card of that name is ST03-005"
+     ],
+     "leaders": [
+      "OP01-060"
+     ],
+     "cards": [
+      [
+       "ST17-001",
+       4
+      ],
+      [
+       "ST17-002",
+       2
+      ],
+      [
+       "ST17-003",
+       2
+      ],
+      [
+       "ST17-004",
+       2
+      ],
+      [
+       "ST17-005",
+       4
+      ],
+      [
+       "OP01-073",
+       4
+      ],
+      [
+       "OP02-054",
+       4
+      ],
+      [
+       "OP02-057",
+       4
+      ],
+      [
+       "ST03-008",
+       4
+      ],
+      [
+       "ST03-002",
+       4
+      ],
+      [
+       "ST03-004",
+       4
+      ],
+      [
+       "ST03-005",
+       4
+      ],
+      [
+       "P-030",
+       4
+      ],
+      [
+       "OP01-086",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "OP01-060",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "ST03-008",
+     4
+    ],
+    [
+     "ST17-003",
+     2
+    ],
+    [
+     "ST17-005",
+     4
+    ],
+    [
+     "OP01-073",
+     4
+    ],
+    [
+     "OP02-057",
+     4
+    ],
+    [
+     "ST03-002",
+     4
+    ],
+    [
+     "OP02-054",
+     4
+    ],
+    [
+     "P-030",
+     4
+    ],
+    [
+     "ST03-004",
+     4
+    ],
+    [
+     "ST03-005",
+     4
+    ],
+    [
+     "ST17-001",
+     4
+    ],
+    [
+     "ST17-002",
+     2
+    ],
+    [
+     "ST17-004",
+     2
+    ],
+    [
+     "OP01-086",
+     4
+    ]
+   ]
+  },
+  "ST-18": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st15-20.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569018",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST18",
+     "leaders": [
+      "OP05-060"
+     ],
+     "cards": [
+      [
+       "OP05-068",
+       4
+      ],
+      [
+       "OP05-061",
+       4
+      ],
+      [
+       "OP05-067",
+       4
+      ],
+      [
+       "ST18-001",
+       2
+      ],
+      [
+       "ST18-002",
+       4
+      ],
+      [
+       "OP05-063",
+       4
+      ],
+      [
+       "OP05-072",
+       4
+      ],
+      [
+       "ST18-004",
+       2
+      ],
+      [
+       "ST18-003",
+       4
+      ],
+      [
+       "OP05-066",
+       4
+      ],
+      [
+       "OP05-070",
+       4
+      ],
+      [
+       "ST18-005",
+       2
+      ],
+      [
+       "P-041",
+       4
+      ],
+      [
+       "OP05-076",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP05-060"
+     ],
+     "cards": [
+      [
+       "ST18-001",
+       2
+      ],
+      [
+       "ST18-002",
+       4
+      ],
+      [
+       "ST18-003",
+       4
+      ],
+      [
+       "ST18-004",
+       2
+      ],
+      [
+       "ST18-005",
+       2
+      ],
+      [
+       "OP05-061",
+       4
+      ],
+      [
+       "OP05-063",
+       4
+      ],
+      [
+       "OP05-066",
+       4
+      ],
+      [
+       "OP05-067",
+       4
+      ],
+      [
+       "OP05-068",
+       4
+      ],
+      [
+       "OP05-070",
+       4
+      ],
+      [
+       "OP05-072",
+       4
+      ],
+      [
+       "P-041",
+       4
+      ],
+      [
+       "OP05-076",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st18_cardlists/",
+     "leaders": [
+      "OP05-060"
+     ],
+     "cards": [
+      [
+       "ST18-001",
+       2
+      ],
+      [
+       "ST18-002",
+       4
+      ],
+      [
+       "ST18-003",
+       4
+      ],
+      [
+       "ST18-004",
+       2
+      ],
+      [
+       "ST18-005",
+       2
+      ],
+      [
+       "OP05-061",
+       4
+      ],
+      [
+       "OP05-063",
+       4
+      ],
+      [
+       "OP05-066",
+       4
+      ],
+      [
+       "OP05-067",
+       4
+      ],
+      [
+       "OP05-068",
+       4
+      ],
+      [
+       "OP05-070",
+       4
+      ],
+      [
+       "OP05-072",
+       4
+      ],
+      [
+       "P-041",
+       4
+      ],
+      [
+       "OP05-076",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "OP05-060",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "OP05-068",
+     4
+    ],
+    [
+     "OP05-061",
+     4
+    ],
+    [
+     "OP05-067",
+     4
+    ],
+    [
+     "ST18-001",
+     2
+    ],
+    [
+     "OP05-063",
+     4
+    ],
+    [
+     "OP05-072",
+     4
+    ],
+    [
+     "ST18-002",
+     4
+    ],
+    [
+     "ST18-004",
+     2
+    ],
+    [
+     "OP05-066",
+     4
+    ],
+    [
+     "OP05-070",
+     4
+    ],
+    [
+     "ST18-003",
+     4
+    ],
+    [
+     "ST18-005",
+     2
+    ],
+    [
+     "P-041",
+     4
+    ],
+    [
+     "OP05-076",
+     4
+    ]
+   ]
+  },
+  "ST-19": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st15-20.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569019",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST19",
+     "leaders": [
+      "OP02-093"
+     ],
+     "cards": [
+      [
+       "OP02-106",
+       4
+      ],
+      [
+       "ST19-002",
+       2
+      ],
+      [
+       "OP02-108",
+       4
+      ],
+      [
+       "OP03-089",
+       4
+      ],
+      [
+       "ST19-005",
+       4
+      ],
+      [
+       "OP02-098",
+       4
+      ],
+      [
+       "OP02-113",
+       4
+      ],
+      [
+       "OP02-116",
+       4
+      ],
+      [
+       "OP02-109",
+       4
+      ],
+      [
+       "ST19-004",
+       2
+      ],
+      [
+       "OP03-079",
+       4
+      ],
+      [
+       "ST19-003",
+       2
+      ],
+      [
+       "ST19-001",
+       4
+      ],
+      [
+       "OP02-117",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP02-093"
+     ],
+     "cards": [
+      [
+       "ST19-001",
+       4
+      ],
+      [
+       "ST19-002",
+       2
+      ],
+      [
+       "ST19-003",
+       2
+      ],
+      [
+       "ST19-004",
+       2
+      ],
+      [
+       "ST19-005",
+       4
+      ],
+      [
+       "OP02-098",
+       4
+      ],
+      [
+       "OP02-106",
+       4
+      ],
+      [
+       "OP02-108",
+       4
+      ],
+      [
+       "OP02-109",
+       4
+      ],
+      [
+       "OP02-113",
+       4
+      ],
+      [
+       "OP02-116",
+       4
+      ],
+      [
+       "OP02-117",
+       4
+      ],
+      [
+       "OP03-079",
+       4
+      ],
+      [
+       "OP03-089",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st19_cardlists/",
+     "leaders": [
+      "OP02-093"
+     ],
+     "cards": [
+      [
+       "ST19-001",
+       4
+      ],
+      [
+       "ST19-002",
+       2
+      ],
+      [
+       "ST19-003",
+       2
+      ],
+      [
+       "ST19-004",
+       2
+      ],
+      [
+       "ST19-005",
+       4
+      ],
+      [
+       "OP02-098",
+       4
+      ],
+      [
+       "OP02-106",
+       4
+      ],
+      [
+       "OP02-108",
+       4
+      ],
+      [
+       "OP02-109",
+       4
+      ],
+      [
+       "OP02-113",
+       4
+      ],
+      [
+       "OP02-116",
+       4
+      ],
+      [
+       "OP03-079",
+       4
+      ],
+      [
+       "OP03-089",
+       4
+      ],
+      [
+       "OP02-117",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "OP02-093",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "OP02-106",
+     4
+    ],
+    [
+     "ST19-002",
+     2
+    ],
+    [
+     "OP02-108",
+     4
+    ],
+    [
+     "OP03-089",
+     4
+    ],
+    [
+     "OP02-098",
+     4
+    ],
+    [
+     "OP02-113",
+     4
+    ],
+    [
+     "OP02-116",
+     4
+    ],
+    [
+     "ST19-005",
+     4
+    ],
+    [
+     "OP02-109",
+     4
+    ],
+    [
+     "ST19-004",
+     2
+    ],
+    [
+     "OP03-079",
+     4
+    ],
+    [
+     "ST19-003",
+     2
+    ],
+    [
+     "ST19-001",
+     4
+    ],
+    [
+     "OP02-117",
+     4
+    ]
+   ]
+  },
+  "ST-20": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st15-20.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569020",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST20",
+     "leaders": [
+      "OP03-099"
+     ],
+     "cards": [
+      [
+       "OP03-112",
+       4
+      ],
+      [
+       "OP03-115",
+       4
+      ],
+      [
+       "OP03-107",
+       4
+      ],
+      [
+       "ST20-003",
+       4
+      ],
+      [
+       "ST07-014",
+       4
+      ],
+      [
+       "ST20-004",
+       2
+      ],
+      [
+       "ST20-002",
+       4
+      ],
+      [
+       "OP03-106",
+       4
+      ],
+      [
+       "OP03-110",
+       4
+      ],
+      [
+       "ST07-005",
+       4
+      ],
+      [
+       "ST20-001",
+       2
+      ],
+      [
+       "ST20-005",
+       2
+      ],
+      [
+       "OP03-118",
+       4
+      ],
+      [
+       "OP03-121",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP03-099"
+     ],
+     "cards": [
+      [
+       "ST20-001",
+       2
+      ],
+      [
+       "ST20-002",
+       4
+      ],
+      [
+       "ST20-003",
+       4
+      ],
+      [
+       "ST20-004",
+       2
+      ],
+      [
+       "ST20-005",
+       2
+      ],
+      [
+       "ST07-005",
+       4
+      ],
+      [
+       "ST07-014",
+       4
+      ],
+      [
+       "OP03-106",
+       4
+      ],
+      [
+       "OP03-107",
+       4
+      ],
+      [
+       "OP03-110",
+       4
+      ],
+      [
+       "OP03-112",
+       4
+      ],
+      [
+       "OP03-115",
+       4
+      ],
+      [
+       "OP03-118",
+       4
+      ],
+      [
+       "OP03-121",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st20_cardlists/",
+     "leaders": [
+      "OP03-099"
+     ],
+     "cards": [
+      [
+       "ST20-001",
+       2
+      ],
+      [
+       "ST20-002",
+       4
+      ],
+      [
+       "ST20-003",
+       4
+      ],
+      [
+       "ST20-004",
+       2
+      ],
+      [
+       "ST20-005",
+       2
+      ],
+      [
+       "OP03-106",
+       4
+      ],
+      [
+       "OP03-107",
+       4
+      ],
+      [
+       "OP03-110",
+       4
+      ],
+      [
+       "OP03-112",
+       4
+      ],
+      [
+       "OP03-115",
+       4
+      ],
+      [
+       "ST07-005",
+       4
+      ],
+      [
+       "ST07-014",
+       4
+      ],
+      [
+       "OP03-118",
+       4
+      ],
+      [
+       "OP03-121",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "OP03-099",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "OP03-112",
+     4
+    ],
+    [
+     "OP03-115",
+     4
+    ],
+    [
+     "OP03-107",
+     4
+    ],
+    [
+     "ST07-014",
+     4
+    ],
+    [
+     "ST20-003",
+     4
+    ],
+    [
+     "ST20-004",
+     2
+    ],
+    [
+     "OP03-106",
+     4
+    ],
+    [
+     "OP03-110",
+     4
+    ],
+    [
+     "ST07-005",
+     4
+    ],
+    [
+     "ST20-002",
+     4
+    ],
+    [
+     "ST20-001",
+     2
+    ],
+    [
+     "ST20-005",
+     2
+    ],
+    [
+     "OP03-118",
+     4
+    ],
+    [
+     "OP03-121",
+     4
+    ]
+   ]
+  },
+  "ST-21": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st21.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569021",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST21",
+     "leaders": [
+      "ST21-001"
+     ],
+     "cards": [
+      [
+       "ST21-004",
+       4
+      ],
+      [
+       "ST21-013",
+       4
+      ],
+      [
+       "ST21-005",
+       4
+      ],
+      [
+       "ST21-007",
+       4
+      ],
+      [
+       "ST21-002",
+       2
+      ],
+      [
+       "ST21-003",
+       2
+      ],
+      [
+       "ST21-006",
+       4
+      ],
+      [
+       "ST21-009",
+       4
+      ],
+      [
+       "ST21-011",
+       4
+      ],
+      [
+       "ST21-012",
+       4
+      ],
+      [
+       "ST21-010",
+       2
+      ],
+      [
+       "ST21-008",
+       4
+      ],
+      [
+       "ST21-015",
+       2
+      ],
+      [
+       "ST21-014",
+       2
+      ],
+      [
+       "ST21-016",
+       2
+      ],
+      [
+       "ST21-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST21-001"
+     ],
+     "cards": [
+      [
+       "ST21-014",
+       2
+      ],
+      [
+       "ST21-015",
+       2
+      ],
+      [
+       "ST21-002",
+       2
+      ],
+      [
+       "ST21-003",
+       2
+      ],
+      [
+       "ST21-004",
+       4
+      ],
+      [
+       "ST21-005",
+       4
+      ],
+      [
+       "ST21-006",
+       4
+      ],
+      [
+       "ST21-007",
+       4
+      ],
+      [
+       "ST21-008",
+       4
+      ],
+      [
+       "ST21-009",
+       4
+      ],
+      [
+       "ST21-010",
+       2
+      ],
+      [
+       "ST21-011",
+       4
+      ],
+      [
+       "ST21-012",
+       4
+      ],
+      [
+       "ST21-013",
+       4
+      ],
+      [
+       "ST21-016",
+       2
+      ],
+      [
+       "ST21-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st21_cardlists/",
+     "leaders": [
+      "ST21-001"
+     ],
+     "cards": [
+      [
+       "ST21-002",
+       2
+      ],
+      [
+       "ST21-003",
+       2
+      ],
+      [
+       "ST21-004",
+       4
+      ],
+      [
+       "ST21-005",
+       4
+      ],
+      [
+       "ST21-006",
+       4
+      ],
+      [
+       "ST21-007",
+       4
+      ],
+      [
+       "ST21-008",
+       4
+      ],
+      [
+       "ST21-009",
+       4
+      ],
+      [
+       "ST21-010",
+       2
+      ],
+      [
+       "ST21-011",
+       4
+      ],
+      [
+       "ST21-012",
+       4
+      ],
+      [
+       "ST21-013",
+       4
+      ],
+      [
+       "ST21-014",
+       2
+      ],
+      [
+       "ST21-015",
+       2
+      ],
+      [
+       "ST21-016",
+       2
+      ],
+      [
+       "ST21-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST21-001",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "ST21-004",
+     4
+    ],
+    [
+     "ST21-013",
+     4
+    ],
+    [
+     "ST21-002",
+     2
+    ],
+    [
+     "ST21-003",
+     2
+    ],
+    [
+     "ST21-005",
+     4
+    ],
+    [
+     "ST21-007",
+     4
+    ],
+    [
+     "ST21-006",
+     4
+    ],
+    [
+     "ST21-009",
+     4
+    ],
+    [
+     "ST21-010",
+     2
+    ],
+    [
+     "ST21-011",
+     4
+    ],
+    [
+     "ST21-012",
+     4
+    ],
+    [
+     "ST21-008",
+     4
+    ],
+    [
+     "ST21-015",
+     2
+    ],
+    [
+     "ST21-014",
+     2
+    ],
+    [
+     "ST21-016",
+     2
+    ],
+    [
+     "ST21-017",
+     2
+    ]
+   ]
+  },
+  "ST-22": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st22.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569022",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST22",
+     "leaders": [
+      "ST22-001"
+     ],
+     "cards": [
+      [
+       "ST22-009",
+       4
+      ],
+      [
+       "ST22-002",
+       2
+      ],
+      [
+       "ST22-007",
+       2
+      ],
+      [
+       "ST22-011",
+       2
+      ],
+      [
+       "ST22-008",
+       4
+      ],
+      [
+       "ST22-004",
+       4
+      ],
+      [
+       "ST22-012",
+       4
+      ],
+      [
+       "ST22-014",
+       4
+      ],
+      [
+       "ST22-013",
+       4
+      ],
+      [
+       "ST22-010",
+       2
+      ],
+      [
+       "ST22-006",
+       4
+      ],
+      [
+       "ST22-005",
+       2
+      ],
+      [
+       "ST22-003",
+       4
+      ],
+      [
+       "ST22-016",
+       2
+      ],
+      [
+       "ST22-017",
+       2
+      ],
+      [
+       "ST22-015",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST22-001"
+     ],
+     "cards": [
+      [
+       "ST22-002",
+       2
+      ],
+      [
+       "ST22-003",
+       2
+      ],
+      [
+       "ST22-004",
+       4
+      ],
+      [
+       "ST22-005",
+       2
+      ],
+      [
+       "ST22-006",
+       4
+      ],
+      [
+       "ST22-007",
+       4
+      ],
+      [
+       "ST22-008",
+       4
+      ],
+      [
+       "ST22-009",
+       2
+      ],
+      [
+       "ST22-010",
+       4
+      ],
+      [
+       "ST22-011",
+       4
+      ],
+      [
+       "ST22-012",
+       4
+      ],
+      [
+       "ST22-013",
+       4
+      ],
+      [
+       "ST22-014",
+       4
+      ],
+      [
+       "ST22-015",
+       2
+      ],
+      [
+       "ST22-016",
+       2
+      ],
+      [
+       "ST22-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": false,
+     "differs": [
+      "ST22-009 x2 (the others: x4)",
+      "ST22-007 x4 (the others: x2)",
+      "ST22-011 x4 (the others: x2)",
+      "ST22-010 x4 (the others: x2)",
+      "ST22-003 x2 (the others: x4)",
+      "ST22-015 x2 (the others: x4)"
+     ]
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st22-cardlists/",
+     "fixes": [
+      "\"イゾウ\" is listed as ST22-001: the product's card of that name is ST22-002"
+     ],
+     "leaders": [
+      "ST22-001"
+     ],
+     "cards": [
+      [
+       "ST22-002",
+       2
+      ],
+      [
+       "ST22-003",
+       4
+      ],
+      [
+       "ST22-004",
+       4
+      ],
+      [
+       "ST22-005",
+       2
+      ],
+      [
+       "ST22-006",
+       4
+      ],
+      [
+       "ST22-007",
+       2
+      ],
+      [
+       "ST22-008",
+       4
+      ],
+      [
+       "ST22-009",
+       4
+      ],
+      [
+       "ST22-010",
+       2
+      ],
+      [
+       "ST22-011",
+       2
+      ],
+      [
+       "ST22-012",
+       4
+      ],
+      [
+       "ST22-013",
+       4
+      ],
+      [
+       "ST22-014",
+       4
+      ],
+      [
+       "ST22-015",
+       4
+      ],
+      [
+       "ST22-016",
+       2
+      ],
+      [
+       "ST22-017",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST22-001",
+   "status": "2 sources agree; egman differs",
+   "cards": [
+    [
+     "ST22-002",
+     2
+    ],
+    [
+     "ST22-007",
+     2
+    ],
+    [
+     "ST22-009",
+     4
+    ],
+    [
+     "ST22-011",
+     2
+    ],
+    [
+     "ST22-008",
+     4
+    ],
+    [
+     "ST22-004",
+     4
+    ],
+    [
+     "ST22-012",
+     4
+    ],
+    [
+     "ST22-014",
+     4
+    ],
+    [
+     "ST22-010",
+     2
+    ],
+    [
+     "ST22-013",
+     4
+    ],
+    [
+     "ST22-005",
+     2
+    ],
+    [
+     "ST22-006",
+     4
+    ],
+    [
+     "ST22-003",
+     4
+    ],
+    [
+     "ST22-016",
+     2
+    ],
+    [
+     "ST22-017",
+     2
+    ],
+    [
+     "ST22-015",
+     4
+    ]
+   ]
+  },
+  "ST-23": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st23.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569023",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST23",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP09-001"
+     ],
+     "cards": [
+      [
+       "ST23-001",
+       2
+      ],
+      [
+       "ST23-002",
+       2
+      ],
+      [
+       "ST23-003",
+       2
+      ],
+      [
+       "ST23-004",
+       4
+      ],
+      [
+       "ST23-005",
+       4
+      ],
+      [
+       "OP09-006",
+       4
+      ],
+      [
+       "OP09-010",
+       4
+      ],
+      [
+       "OP09-011",
+       4
+      ],
+      [
+       "OP09-012",
+       4
+      ],
+      [
+       "OP09-013",
+       4
+      ],
+      [
+       "OP09-014",
+       4
+      ],
+      [
+       "OP09-015",
+       4
+      ],
+      [
+       "OP09-016",
+       4
+      ],
+      [
+       "OP09-020",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st23_cardlists/",
+     "leaders": [
+      "OP09-001"
+     ],
+     "cards": [
+      [
+       "ST23-001",
+       2
+      ],
+      [
+       "ST23-002",
+       2
+      ],
+      [
+       "ST23-003",
+       2
+      ],
+      [
+       "ST23-004",
+       4
+      ],
+      [
+       "ST23-005",
+       4
+      ],
+      [
+       "OP09-006",
+       4
+      ],
+      [
+       "OP09-010",
+       4
+      ],
+      [
+       "OP09-011",
+       4
+      ],
+      [
+       "OP09-012",
+       4
+      ],
+      [
+       "OP09-013",
+       4
+      ],
+      [
+       "OP09-014",
+       4
+      ],
+      [
+       "OP09-015",
+       4
+      ],
+      [
+       "OP09-016",
+       4
+      ],
+      [
+       "OP09-020",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tcgplayer",
+     "name": "TCGplayer upgrade guide, base decklist",
+     "url": "https://www.tcgplayer.com/content/article/How-to-Upgrade-the-One-Piece-TCG-Starter-Deck-23-RED-Shanks/3bff8ee9-3d6f-43ab-be3b-9e857b69bd5c/",
+     "fixes": [
+      "\"Bonk Punch\" is listed as OP01-010: the product's card of that name is OP09-010",
+      "\"Yasopp\" is listed as OP09-012: the product's card of that name is OP09-013"
+     ],
+     "leaders": [
+      "OP09-001"
+     ],
+     "cards": [
+      [
+       "ST23-001",
+       2
+      ],
+      [
+       "ST23-002",
+       2
+      ],
+      [
+       "ST23-003",
+       2
+      ],
+      [
+       "ST23-004",
+       4
+      ],
+      [
+       "ST23-005",
+       4
+      ],
+      [
+       "OP09-006",
+       4
+      ],
+      [
+       "OP09-010",
+       4
+      ],
+      [
+       "OP09-011",
+       4
+      ],
+      [
+       "OP09-012",
+       4
+      ],
+      [
+       "OP09-013",
+       4
+      ],
+      [
+       "OP09-014",
+       4
+      ],
+      [
+       "OP09-015",
+       4
+      ],
+      [
+       "OP09-016",
+       4
+      ],
+      [
+       "OP09-020",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "OP09-001",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "ST23-004",
+     4
+    ],
+    [
+     "ST23-005",
+     4
+    ],
+    [
+     "OP09-011",
+     4
+    ],
+    [
+     "OP09-012",
+     4
+    ],
+    [
+     "OP09-014",
+     4
+    ],
+    [
+     "OP09-010",
+     4
+    ],
+    [
+     "OP09-015",
+     4
+    ],
+    [
+     "OP09-016",
+     4
+    ],
+    [
+     "ST23-003",
+     2
+    ],
+    [
+     "OP09-006",
+     4
+    ],
+    [
+     "OP09-013",
+     4
+    ],
+    [
+     "ST23-001",
+     2
+    ],
+    [
+     "ST23-002",
+     2
+    ],
+    [
+     "OP09-020",
+     4
+    ]
+   ]
+  },
+  "ST-24": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st24.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569024",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST24",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP07-019"
+     ],
+     "cards": [
+      [
+       "ST24-003",
+       2
+      ],
+      [
+       "ST24-002",
+       2
+      ],
+      [
+       "ST24-004",
+       2
+      ],
+      [
+       "ST24-001",
+       4
+      ],
+      [
+       "ST24-005",
+       4
+      ],
+      [
+       "EB01-015",
+       4
+      ],
+      [
+       "OP07-021",
+       4
+      ],
+      [
+       "OP07-023",
+       4
+      ],
+      [
+       "OP07-025",
+       4
+      ],
+      [
+       "OP07-031",
+       4
+      ],
+      [
+       "OP07-033",
+       4
+      ],
+      [
+       "OP07-034",
+       4
+      ],
+      [
+       "OP07-036",
+       4
+      ],
+      [
+       "OP07-037",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st24_cardlists/",
+     "fixes": [
+      "\"ロー&ベポ\" is listed as ST24-005: the product's card of that name is ST24-004",
+      "\"X・ドレーク\" is listed as ST24-004: the product's card of that name is ST24-005"
+     ],
+     "leaders": [
+      "OP07-019"
+     ],
+     "cards": [
+      [
+       "ST24-001",
+       4
+      ],
+      [
+       "ST24-002",
+       2
+      ],
+      [
+       "ST24-003",
+       2
+      ],
+      [
+       "ST24-004",
+       2
+      ],
+      [
+       "ST24-005",
+       4
+      ],
+      [
+       "EB01-015",
+       4
+      ],
+      [
+       "OP07-021",
+       4
+      ],
+      [
+       "OP07-023",
+       4
+      ],
+      [
+       "OP07-025",
+       4
+      ],
+      [
+       "OP07-031",
+       4
+      ],
+      [
+       "OP07-033",
+       4
+      ],
+      [
+       "OP07-034",
+       4
+      ],
+      [
+       "OP07-036",
+       4
+      ],
+      [
+       "OP07-037",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tcgplayer",
+     "name": "TCGplayer upgrade guide, base decklist",
+     "url": "https://www.tcgplayer.com/content/article/How-to-Upgrade-the-One-Piece-TCG-Starter-Deck-24-GREEN-Jewelry-Bonney/e305b37a-0ff9-4c30-b9fa-998d20de324e/",
+     "leaders": [
+      "OP07-019"
+     ],
+     "cards": [
+      [
+       "ST24-002",
+       2
+      ],
+      [
+       "ST24-003",
+       2
+      ],
+      [
+       "ST24-004",
+       2
+      ],
+      [
+       "ST24-001",
+       4
+      ],
+      [
+       "ST24-005",
+       4
+      ],
+      [
+       "EB01-015",
+       4
+      ],
+      [
+       "OP07-021",
+       4
+      ],
+      [
+       "OP07-023",
+       4
+      ],
+      [
+       "OP07-025",
+       4
+      ],
+      [
+       "OP07-031",
+       4
+      ],
+      [
+       "OP07-033",
+       4
+      ],
+      [
+       "OP07-034",
+       4
+      ],
+      [
+       "OP07-036",
+       4
+      ],
+      [
+       "OP07-037",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "OP07-019",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "EB01-015",
+     4
+    ],
+    [
+     "OP07-034",
+     4
+    ],
+    [
+     "ST24-001",
+     4
+    ],
+    [
+     "ST24-002",
+     2
+    ],
+    [
+     "OP07-025",
+     4
+    ],
+    [
+     "OP07-031",
+     4
+    ],
+    [
+     "OP07-021",
+     4
+    ],
+    [
+     "OP07-023",
+     4
+    ],
+    [
+     "ST24-003",
+     2
+    ],
+    [
+     "OP07-033",
+     4
+    ],
+    [
+     "ST24-005",
+     4
+    ],
+    [
+     "ST24-004",
+     2
+    ],
+    [
+     "OP07-037",
+     4
+    ],
+    [
+     "OP07-036",
+     4
+    ]
+   ]
+  },
+  "ST-25": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st25.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569025",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST25",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP09-042"
+     ],
+     "cards": [
+      [
+       "ST25-003",
+       2
+      ],
+      [
+       "ST25-004",
+       2
+      ],
+      [
+       "ST25-001",
+       2
+      ],
+      [
+       "ST25-002",
+       4
+      ],
+      [
+       "ST25-005",
+       4
+      ],
+      [
+       "OP09-043",
+       4
+      ],
+      [
+       "OP09-045",
+       4
+      ],
+      [
+       "OP09-051",
+       4
+      ],
+      [
+       "OP09-053",
+       4
+      ],
+      [
+       "OP09-054",
+       4
+      ],
+      [
+       "OP09-055",
+       4
+      ],
+      [
+       "OP09-056",
+       4
+      ],
+      [
+       "P-084",
+       4
+      ],
+      [
+       "OP09-057",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st25_cardlists/",
+     "leaders": [
+      "OP09-042"
+     ],
+     "cards": [
+      [
+       "ST25-001",
+       2
+      ],
+      [
+       "ST25-002",
+       4
+      ],
+      [
+       "ST25-003",
+       2
+      ],
+      [
+       "ST25-004",
+       2
+      ],
+      [
+       "ST25-005",
+       4
+      ],
+      [
+       "OP09-043",
+       4
+      ],
+      [
+       "OP09-045",
+       4
+      ],
+      [
+       "OP09-051",
+       4
+      ],
+      [
+       "OP09-053",
+       4
+      ],
+      [
+       "OP09-054",
+       4
+      ],
+      [
+       "OP09-055",
+       4
+      ],
+      [
+       "OP09-056",
+       4
+      ],
+      [
+       "P-084",
+       4
+      ],
+      [
+       "OP09-057",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tcgplayer",
+     "name": "TCGplayer upgrade guide, base decklist",
+     "url": "https://www.tcgplayer.com/content/article/How-to-Upgrade-the-One-Piece-TCG-Starter-Deck-25-BLUE-Buggy/17edd14d-fbbc-495f-a7af-3e3706611261/",
+     "leaders": [
+      "OP09-042"
+     ],
+     "cards": [
+      [
+       "ST25-003",
+       2
+      ],
+      [
+       "ST25-004",
+       2
+      ],
+      [
+       "ST25-001",
+       2
+      ],
+      [
+       "ST25-002",
+       4
+      ],
+      [
+       "ST25-005",
+       4
+      ],
+      [
+       "OP09-043",
+       4
+      ],
+      [
+       "OP09-045",
+       4
+      ],
+      [
+       "OP09-051",
+       4
+      ],
+      [
+       "OP09-053",
+       4
+      ],
+      [
+       "OP09-054",
+       4
+      ],
+      [
+       "OP09-055",
+       4
+      ],
+      [
+       "OP09-056",
+       4
+      ],
+      [
+       "P-084",
+       4
+      ],
+      [
+       "OP09-057",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "OP09-042",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "OP09-056",
+     4
+    ],
+    [
+     "OP09-054",
+     4
+    ],
+    [
+     "ST25-001",
+     2
+    ],
+    [
+     "ST25-002",
+     4
+    ],
+    [
+     "ST25-004",
+     2
+    ],
+    [
+     "ST25-005",
+     4
+    ],
+    [
+     "OP09-043",
+     4
+    ],
+    [
+     "OP09-045",
+     4
+    ],
+    [
+     "OP09-053",
+     4
+    ],
+    [
+     "OP09-055",
+     4
+    ],
+    [
+     "P-084",
+     4
+    ],
+    [
+     "ST25-003",
+     2
+    ],
+    [
+     "OP09-051",
+     4
+    ],
+    [
+     "OP09-057",
+     4
+    ]
+   ]
+  },
+  "ST-26": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st26.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569026",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST26",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP09-061"
+     ],
+     "cards": [
+      [
+       "OP05-066",
+       4
+      ],
+      [
+       "OP05-070",
+       4
+      ],
+      [
+       "OP09-063",
+       4
+      ],
+      [
+       "OP09-070",
+       4
+      ],
+      [
+       "OP09-077",
+       4
+      ],
+      [
+       "OP09-078",
+       2
+      ],
+      [
+       "ST26-001",
+       4
+      ],
+      [
+       "ST26-002",
+       4
+      ],
+      [
+       "ST26-004",
+       4
+      ],
+      [
+       "ST26-005",
+       2
+      ],
+      [
+       "ST26-003",
+       2
+      ],
+      [
+       "OP09-076",
+       4
+      ],
+      [
+       "OP05-065",
+       4
+      ],
+      [
+       "ST14-010",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": false,
+     "differs": [
+      "ST26-002 x4 (the others: x2)",
+      "OP09-078 x2 (the others: x4)"
+     ]
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st26_cardlists/",
+     "leaders": [
+      "OP09-061"
+     ],
+     "cards": [
+      [
+       "ST26-001",
+       4
+      ],
+      [
+       "ST26-002",
+       2
+      ],
+      [
+       "ST26-003",
+       2
+      ],
+      [
+       "ST26-004",
+       4
+      ],
+      [
+       "ST26-005",
+       2
+      ],
+      [
+       "OP05-065",
+       4
+      ],
+      [
+       "OP05-066",
+       4
+      ],
+      [
+       "OP05-070",
+       4
+      ],
+      [
+       "OP09-063",
+       4
+      ],
+      [
+       "OP09-070",
+       4
+      ],
+      [
+       "OP09-076",
+       4
+      ],
+      [
+       "ST14-010",
+       4
+      ],
+      [
+       "OP09-077",
+       4
+      ],
+      [
+       "OP09-078",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tcgplayer",
+     "name": "TCGplayer upgrade guide, base decklist",
+     "url": "https://www.tcgplayer.com/content/article/How-to-Upgrade-the-One-Piece-TCG-Starter-Deck-26-PURPLE-BLACK-Luffy/9ae55697-e61d-439c-b064-8a7d1cfd6dbb/",
+     "leaders": [
+      "OP09-061"
+     ],
+     "cards": [
+      [
+       "ST26-003",
+       2
+      ],
+      [
+       "ST26-005",
+       2
+      ],
+      [
+       "ST26-002",
+       2
+      ],
+      [
+       "ST26-001",
+       4
+      ],
+      [
+       "ST26-004",
+       4
+      ],
+      [
+       "OP05-065",
+       4
+      ],
+      [
+       "OP05-066",
+       4
+      ],
+      [
+       "OP05-070",
+       4
+      ],
+      [
+       "OP09-063",
+       4
+      ],
+      [
+       "OP09-070",
+       4
+      ],
+      [
+       "OP09-076",
+       4
+      ],
+      [
+       "ST14-010",
+       4
+      ],
+      [
+       "OP09-077",
+       4
+      ],
+      [
+       "OP09-078",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "OP09-061",
+   "status": "2 sources agree; egman differs",
+   "cards": [
+    [
+     "OP09-070",
+     4
+    ],
+    [
+     "OP09-076",
+     4
+    ],
+    [
+     "ST26-002",
+     2
+    ],
+    [
+     "ST26-003",
+     2
+    ],
+    [
+     "OP09-063",
+     4
+    ],
+    [
+     "OP05-066",
+     4
+    ],
+    [
+     "OP05-070",
+     4
+    ],
+    [
+     "ST14-010",
+     4
+    ],
+    [
+     "OP05-065",
+     4
+    ],
+    [
+     "ST26-005",
+     2
+    ],
+    [
+     "ST26-001",
+     4
+    ],
+    [
+     "ST26-004",
+     4
+    ],
+    [
+     "OP09-078",
+     4
+    ],
+    [
+     "OP09-077",
+     4
+    ]
+   ]
+  },
+  "ST-27": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st27.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569027",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST27",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP09-081"
+     ],
+     "cards": [
+      [
+       "ST27-001",
+       4
+      ],
+      [
+       "ST27-002",
+       2
+      ],
+      [
+       "ST27-003",
+       2
+      ],
+      [
+       "ST27-005",
+       2
+      ],
+      [
+       "ST27-004",
+       4
+      ],
+      [
+       "OP09-083",
+       4
+      ],
+      [
+       "OP09-086",
+       4
+      ],
+      [
+       "OP09-088",
+       4
+      ],
+      [
+       "OP09-089",
+       4
+      ],
+      [
+       "OP09-090",
+       4
+      ],
+      [
+       "OP09-091",
+       4
+      ],
+      [
+       "OP09-095",
+       4
+      ],
+      [
+       "OP09-099",
+       4
+      ],
+      [
+       "OP10-084",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": false,
+     "differs": [
+      "ST27-002 x2 (the others: x4)",
+      "ST27-004 x4 (the others: x2)"
+     ]
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st27_cardlists/",
+     "fixes": [
+      "\"サンファン・ウルフ\" is listed as OP09-084: the product's card of that name is OP10-084"
+     ],
+     "leaders": [
+      "OP09-081"
+     ],
+     "cards": [
+      [
+       "ST27-001",
+       4
+      ],
+      [
+       "ST27-002",
+       4
+      ],
+      [
+       "ST27-003",
+       2
+      ],
+      [
+       "ST27-004",
+       2
+      ],
+      [
+       "ST27-005",
+       2
+      ],
+      [
+       "OP09-083",
+       4
+      ],
+      [
+       "OP10-084",
+       4
+      ],
+      [
+       "OP09-086",
+       4
+      ],
+      [
+       "OP09-088",
+       4
+      ],
+      [
+       "OP09-089",
+       4
+      ],
+      [
+       "OP09-090",
+       4
+      ],
+      [
+       "OP09-091",
+       4
+      ],
+      [
+       "OP09-095",
+       4
+      ],
+      [
+       "OP09-099",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tcgplayer",
+     "name": "TCGplayer upgrade guide, base decklist",
+     "url": "https://www.tcgplayer.com/content/article/How-to-Upgrade-the-One-Piece-TCG-Starter-Deck-27-BLACK-Marshall-D-Teach/6396491b-6ff1-4028-b6df-ed66c71ece91/",
+     "leaders": [
+      "OP09-081"
+     ],
+     "cards": [
+      [
+       "ST27-003",
+       2
+      ],
+      [
+       "ST27-005",
+       2
+      ],
+      [
+       "ST27-004",
+       2
+      ],
+      [
+       "ST27-001",
+       4
+      ],
+      [
+       "ST27-002",
+       4
+      ],
+      [
+       "OP09-083",
+       4
+      ],
+      [
+       "OP09-086",
+       4
+      ],
+      [
+       "OP09-088",
+       4
+      ],
+      [
+       "OP09-089",
+       4
+      ],
+      [
+       "OP09-090",
+       4
+      ],
+      [
+       "OP09-091",
+       4
+      ],
+      [
+       "OP09-095",
+       4
+      ],
+      [
+       "OP10-084",
+       4
+      ],
+      [
+       "OP09-099",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "OP09-081",
+   "status": "2 sources agree; egman differs",
+   "cards": [
+    [
+     "OP09-089",
+     4
+    ],
+    [
+     "OP09-095",
+     4
+    ],
+    [
+     "ST27-001",
+     4
+    ],
+    [
+     "ST27-002",
+     4
+    ],
+    [
+     "OP09-090",
+     4
+    ],
+    [
+     "OP09-091",
+     4
+    ],
+    [
+     "OP09-088",
+     4
+    ],
+    [
+     "OP09-086",
+     4
+    ],
+    [
+     "ST27-004",
+     2
+    ],
+    [
+     "OP09-083",
+     4
+    ],
+    [
+     "OP10-084",
+     4
+    ],
+    [
+     "ST27-003",
+     2
+    ],
+    [
+     "ST27-005",
+     2
+    ],
+    [
+     "OP09-099",
+     4
+    ]
+   ]
+  },
+  "ST-28": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st28.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569028",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST28",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP06-022"
+     ],
+     "cards": [
+      [
+       "ST28-004",
+       2
+      ],
+      [
+       "ST28-005",
+       2
+      ],
+      [
+       "ST28-003",
+       2
+      ],
+      [
+       "ST28-002",
+       4
+      ],
+      [
+       "ST28-001",
+       4
+      ],
+      [
+       "OP09-035",
+       4
+      ],
+      [
+       "OP06-100",
+       4
+      ],
+      [
+       "OP06-103",
+       4
+      ],
+      [
+       "OP06-104",
+       4
+      ],
+      [
+       "OP06-109",
+       4
+      ],
+      [
+       "OP06-110",
+       4
+      ],
+      [
+       "OP06-112",
+       4
+      ],
+      [
+       "ST13-016",
+       4
+      ],
+      [
+       "OP07-116",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st28_cardlists/",
+     "fixes": [
+      "\"ヤマト\" is listed as OP09-042: the product's card of that name is OP06-022"
+     ],
+     "leaders": [
+      "OP06-022"
+     ],
+     "cards": [
+      [
+       "ST28-001",
+       4
+      ],
+      [
+       "ST28-002",
+       4
+      ],
+      [
+       "ST28-003",
+       2
+      ],
+      [
+       "ST28-004",
+       2
+      ],
+      [
+       "ST28-005",
+       2
+      ],
+      [
+       "OP06-100",
+       4
+      ],
+      [
+       "OP06-103",
+       4
+      ],
+      [
+       "OP06-104",
+       4
+      ],
+      [
+       "OP06-109",
+       4
+      ],
+      [
+       "OP06-110",
+       4
+      ],
+      [
+       "OP06-112",
+       4
+      ],
+      [
+       "OP09-035",
+       4
+      ],
+      [
+       "ST13-016",
+       4
+      ],
+      [
+       "OP07-116",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tcgplayer",
+     "name": "TCGplayer upgrade guide, base decklist",
+     "url": "https://www.tcgplayer.com/content/article/How-to-Upgrade-the-One-Piece-TCG-Starter-Deck-28-GREEN-YELLOW-Yamato/52b5d7f8-66cd-46ac-941e-daca960c2952/",
+     "leaders": [
+      "OP06-022"
+     ],
+     "cards": [
+      [
+       "ST28-004",
+       2
+      ],
+      [
+       "ST28-005",
+       2
+      ],
+      [
+       "ST28-003",
+       2
+      ],
+      [
+       "ST28-001",
+       4
+      ],
+      [
+       "ST28-002",
+       4
+      ],
+      [
+       "OP09-035",
+       4
+      ],
+      [
+       "OP06-100",
+       4
+      ],
+      [
+       "OP06-103",
+       4
+      ],
+      [
+       "OP06-104",
+       4
+      ],
+      [
+       "OP06-109",
+       4
+      ],
+      [
+       "OP06-110",
+       4
+      ],
+      [
+       "OP06-112",
+       4
+      ],
+      [
+       "ST13-016",
+       4
+      ],
+      [
+       "OP07-116",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "OP06-022",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "ST28-005",
+     2
+    ],
+    [
+     "ST28-002",
+     4
+    ],
+    [
+     "OP06-103",
+     4
+    ],
+    [
+     "OP06-112",
+     4
+    ],
+    [
+     "ST28-001",
+     4
+    ],
+    [
+     "OP06-100",
+     4
+    ],
+    [
+     "OP06-104",
+     4
+    ],
+    [
+     "OP06-110",
+     4
+    ],
+    [
+     "ST28-003",
+     2
+    ],
+    [
+     "OP06-109",
+     4
+    ],
+    [
+     "OP09-035",
+     4
+    ],
+    [
+     "ST13-016",
+     4
+    ],
+    [
+     "ST28-004",
+     2
+    ],
+    [
+     "OP07-116",
+     4
+    ]
+   ]
+  },
+  "ST-29": {
+   "product": "https://en.onepiece-cardgame.com/products/decks/st29.php",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569029",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST29",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST29-001"
+     ],
+     "cards": [
+      [
+       "ST29-004",
+       2
+      ],
+      [
+       "ST29-014",
+       2
+      ],
+      [
+       "ST29-002",
+       4
+      ],
+      [
+       "ST29-003",
+       4
+      ],
+      [
+       "ST29-005",
+       2
+      ],
+      [
+       "ST29-006",
+       4
+      ],
+      [
+       "ST29-007",
+       2
+      ],
+      [
+       "ST29-008",
+       2
+      ],
+      [
+       "ST29-010",
+       4
+      ],
+      [
+       "ST29-011",
+       4
+      ],
+      [
+       "ST29-012",
+       4
+      ],
+      [
+       "ST29-009",
+       2
+      ],
+      [
+       "ST29-013",
+       4
+      ],
+      [
+       "ST29-015",
+       4
+      ],
+      [
+       "ST29-016",
+       2
+      ],
+      [
+       "ST29-017",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st29-card-list/",
+     "leaders": [
+      "ST29-001"
+     ],
+     "cards": [
+      [
+       "ST29-002",
+       4
+      ],
+      [
+       "ST29-003",
+       4
+      ],
+      [
+       "ST29-004",
+       2
+      ],
+      [
+       "ST29-005",
+       2
+      ],
+      [
+       "ST29-006",
+       4
+      ],
+      [
+       "ST29-007",
+       2
+      ],
+      [
+       "ST29-008",
+       2
+      ],
+      [
+       "ST29-009",
+       2
+      ],
+      [
+       "ST29-010",
+       4
+      ],
+      [
+       "ST29-011",
+       4
+      ],
+      [
+       "ST29-012",
+       4
+      ],
+      [
+       "ST29-013",
+       4
+      ],
+      [
+       "ST29-014",
+       2
+      ],
+      [
+       "ST29-015",
+       4
+      ],
+      [
+       "ST29-016",
+       2
+      ],
+      [
+       "ST29-017",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST29-001",
+   "status": "2 sources agree",
+   "cards": [
+    [
+     "ST29-012",
+     4
+    ],
+    [
+     "ST29-011",
+     4
+    ],
+    [
+     "ST29-002",
+     4
+    ],
+    [
+     "ST29-008",
+     2
+    ],
+    [
+     "ST29-003",
+     4
+    ],
+    [
+     "ST29-004",
+     2
+    ],
+    [
+     "ST29-007",
+     2
+    ],
+    [
+     "ST29-009",
+     2
+    ],
+    [
+     "ST29-010",
+     4
+    ],
+    [
+     "ST29-013",
+     4
+    ],
+    [
+     "ST29-005",
+     2
+    ],
+    [
+     "ST29-006",
+     4
+    ],
+    [
+     "ST29-014",
+     2
+    ],
+    [
+     "ST29-015",
+     4
+    ],
+    [
+     "ST29-016",
+     2
+    ],
+    [
+     "ST29-017",
+     4
+    ]
+   ]
+  },
+  "ST-30": {
+   "product": "https://en.onepiece-cardgame.com/products/st30.html",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569030",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST30",
+     "leaders": [
+      "ST30-001"
+     ],
+     "cards": [
+      [
+       "ST30-009",
+       4
+      ],
+      [
+       "ST30-004",
+       2
+      ],
+      [
+       "ST30-002",
+       2
+      ],
+      [
+       "ST30-014",
+       2
+      ],
+      [
+       "ST30-011",
+       2
+      ],
+      [
+       "ST30-013",
+       4
+      ],
+      [
+       "ST30-012",
+       2
+      ],
+      [
+       "ST30-007",
+       2
+      ],
+      [
+       "ST30-008",
+       4
+      ],
+      [
+       "ST30-006",
+       4
+      ],
+      [
+       "ST30-005",
+       4
+      ],
+      [
+       "ST30-010",
+       4
+      ],
+      [
+       "ST30-003",
+       4
+      ],
+      [
+       "ST30-015",
+       4
+      ],
+      [
+       "ST30-017",
+       4
+      ],
+      [
+       "ST30-016",
+       2
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST30-001"
+     ],
+     "cards": [
+      [
+       "ST30-002",
+       2
+      ],
+      [
+       "ST30-003",
+       4
+      ],
+      [
+       "ST30-004",
+       2
+      ],
+      [
+       "ST30-005",
+       4
+      ],
+      [
+       "ST30-006",
+       4
+      ],
+      [
+       "ST30-007",
+       2
+      ],
+      [
+       "ST30-008",
+       4
+      ],
+      [
+       "ST30-009",
+       4
+      ],
+      [
+       "ST30-010",
+       4
+      ],
+      [
+       "ST30-011",
+       2
+      ],
+      [
+       "ST30-012",
+       2
+      ],
+      [
+       "ST30-013",
+       4
+      ],
+      [
+       "ST30-014",
+       2
+      ],
+      [
+       "ST30-015",
+       4
+      ],
+      [
+       "ST30-016",
+       2
+      ],
+      [
+       "ST30-017",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st30-card-list/",
+     "leaders": [
+      "ST30-001"
+     ],
+     "cards": [
+      [
+       "ST30-002",
+       2
+      ],
+      [
+       "ST30-003",
+       4
+      ],
+      [
+       "ST30-004",
+       2
+      ],
+      [
+       "ST30-005",
+       4
+      ],
+      [
+       "ST30-006",
+       4
+      ],
+      [
+       "ST30-007",
+       2
+      ],
+      [
+       "ST30-008",
+       4
+      ],
+      [
+       "ST30-009",
+       4
+      ],
+      [
+       "ST30-010",
+       4
+      ],
+      [
+       "ST30-011",
+       2
+      ],
+      [
+       "ST30-012",
+       2
+      ],
+      [
+       "ST30-013",
+       4
+      ],
+      [
+       "ST30-014",
+       2
+      ],
+      [
+       "ST30-015",
+       4
+      ],
+      [
+       "ST30-016",
+       2
+      ],
+      [
+       "ST30-017",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    }
+   ],
+   "leader": "ST30-001",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "ST30-002",
+     2
+    ],
+    [
+     "ST30-004",
+     2
+    ],
+    [
+     "ST30-009",
+     4
+    ],
+    [
+     "ST30-011",
+     2
+    ],
+    [
+     "ST30-014",
+     2
+    ],
+    [
+     "ST30-007",
+     2
+    ],
+    [
+     "ST30-012",
+     2
+    ],
+    [
+     "ST30-013",
+     4
+    ],
+    [
+     "ST30-005",
+     4
+    ],
+    [
+     "ST30-006",
+     4
+    ],
+    [
+     "ST30-008",
+     4
+    ],
+    [
+     "ST30-010",
+     4
+    ],
+    [
+     "ST30-003",
+     4
+    ],
+    [
+     "ST30-015",
+     4
+    ],
+    [
+     "ST30-016",
+     2
+    ],
+    [
+     "ST30-017",
+     4
+    ]
+   ]
+  },
+  "ST-31": {
+   "product": "https://en.onepiece-cardgame.com/products/st31.html",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569031",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST31",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "ST21-001"
+     ],
+     "cards": [
+      [
+       "ST31-005",
+       2
+      ],
+      [
+       "ST31-004",
+       2
+      ],
+      [
+       "ST31-001",
+       2
+      ],
+      [
+       "ST31-002",
+       4
+      ],
+      [
+       "ST31-003",
+       4
+      ],
+      [
+       "OP01-016",
+       4
+      ],
+      [
+       "OP11-003",
+       4
+      ],
+      [
+       "OP11-009",
+       4
+      ],
+      [
+       "OP11-012",
+       4
+      ],
+      [
+       "OP14-015",
+       4
+      ],
+      [
+       "ST23-004",
+       4
+      ],
+      [
+       "P-101",
+       4
+      ],
+      [
+       "OP04-016",
+       4
+      ],
+      [
+       "OP13-021",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st31-card-list/",
+     "leaders": [
+      "ST21-001"
+     ],
+     "cards": [
+      [
+       "ST31-001",
+       2
+      ],
+      [
+       "ST31-002",
+       4
+      ],
+      [
+       "ST31-003",
+       4
+      ],
+      [
+       "ST31-004",
+       2
+      ],
+      [
+       "ST31-005",
+       2
+      ],
+      [
+       "OP01-016",
+       4
+      ],
+      [
+       "OP11-003",
+       4
+      ],
+      [
+       "OP11-009",
+       4
+      ],
+      [
+       "OP11-012",
+       4
+      ],
+      [
+       "OP14-015",
+       4
+      ],
+      [
+       "ST23-004",
+       4
+      ],
+      [
+       "P-101",
+       4
+      ],
+      [
+       "OP04-016",
+       4
+      ],
+      [
+       "OP13-021",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "photo",
+     "name": "One Piece Merch News post: photo of the opened deck (read pile by pile) and the post text",
+     "url": "https://x.com/OPMerchandise/status/2073444961509605822",
+     "leaders": [
+      "ST21-001"
+     ],
+     "cards": [
+      [
+       "ST31-001",
+       2
+      ],
+      [
+       "ST31-004",
+       2
+      ],
+      [
+       "ST31-002",
+       4
+      ],
+      [
+       "ST31-003",
+       4
+      ],
+      [
+       "ST31-005",
+       2
+      ],
+      [
+       "OP01-016",
+       4
+      ],
+      [
+       "OP11-003",
+       4
+      ],
+      [
+       "OP11-009",
+       4
+      ],
+      [
+       "OP11-012",
+       4
+      ],
+      [
+       "OP14-015",
+       4
+      ],
+      [
+       "ST23-004",
+       4
+      ],
+      [
+       "P-101",
+       4
+      ],
+      [
+       "OP04-016",
+       4
+      ],
+      [
+       "OP13-021",
+       4
+      ]
+     ],
+     "total": 50,
+     "textNotChecked": [
+      "x2 Monkey D. Luffy"
+     ],
+     "textAgrees": "the post's text names 8 of these cards, all with the same counts",
+     "agrees": true
+    }
+   ],
+   "leader": "ST21-001",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "OP01-016",
+     4
+    ],
+    [
+     "ST23-004",
+     4
+    ],
+    [
+     "ST31-003",
+     4
+    ],
+    [
+     "OP11-009",
+     4
+    ],
+    [
+     "OP11-012",
+     4
+    ],
+    [
+     "P-101",
+     4
+    ],
+    [
+     "OP11-003",
+     4
+    ],
+    [
+     "ST31-001",
+     2
+    ],
+    [
+     "ST31-002",
+     4
+    ],
+    [
+     "OP14-015",
+     4
+    ],
+    [
+     "ST31-004",
+     2
+    ],
+    [
+     "OP04-016",
+     4
+    ],
+    [
+     "OP13-021",
+     4
+    ],
+    [
+     "ST31-005",
+     2
+    ]
+   ]
+  },
+  "ST-32": {
+   "product": "https://en.onepiece-cardgame.com/products/st32.html",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569032",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST32",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP12-020"
+     ],
+     "cards": [
+      [
+       "OP12-028",
+       4
+      ],
+      [
+       "ST32-001",
+       4
+      ],
+      [
+       "ST32-002",
+       2
+      ],
+      [
+       "OP12-023",
+       4
+      ],
+      [
+       "ST32-003",
+       2
+      ],
+      [
+       "ST32-004",
+       4
+      ],
+      [
+       "ST32-005",
+       2
+      ],
+      [
+       "OP10-036",
+       4
+      ],
+      [
+       "OP12-026",
+       4
+      ],
+      [
+       "OP15-036",
+       4
+      ],
+      [
+       "OP12-031",
+       4
+      ],
+      [
+       "ST24-005",
+       4
+      ],
+      [
+       "OP12-027",
+       4
+      ],
+      [
+       "OP12-039",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st32-card-list/",
+     "fixes": [
+      "\"河松\" is listed as OP10-036: the product's card of that name is OP12-023"
+     ],
+     "leaders": [
+      "OP12-020"
+     ],
+     "cards": [
+      [
+       "ST32-001",
+       4
+      ],
+      [
+       "ST32-002",
+       2
+      ],
+      [
+       "ST32-003",
+       2
+      ],
+      [
+       "ST32-004",
+       4
+      ],
+      [
+       "ST32-005",
+       2
+      ],
+      [
+       "OP10-036",
+       4
+      ],
+      [
+       "OP12-023",
+       4
+      ],
+      [
+       "OP12-026",
+       4
+      ],
+      [
+       "OP12-027",
+       4
+      ],
+      [
+       "OP12-028",
+       4
+      ],
+      [
+       "OP12-031",
+       4
+      ],
+      [
+       "OP15-036",
+       4
+      ],
+      [
+       "ST24-005",
+       4
+      ],
+      [
+       "OP12-039",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "photo",
+     "name": "One Piece Merch News post: photo of the opened deck (read pile by pile) and the post text",
+     "url": "https://x.com/OPMerchandise/status/2073446851483951406",
+     "leaders": [
+      "OP12-020"
+     ],
+     "cards": [
+      [
+       "ST32-002",
+       2
+      ],
+      [
+       "ST32-003",
+       2
+      ],
+      [
+       "ST32-001",
+       4
+      ],
+      [
+       "ST32-004",
+       4
+      ],
+      [
+       "ST32-005",
+       2
+      ],
+      [
+       "OP10-036",
+       4
+      ],
+      [
+       "OP12-023",
+       4
+      ],
+      [
+       "OP12-026",
+       4
+      ],
+      [
+       "OP12-027",
+       4
+      ],
+      [
+       "OP12-028",
+       4
+      ],
+      [
+       "OP12-031",
+       4
+      ],
+      [
+       "OP15-036",
+       4
+      ],
+      [
+       "ST24-005",
+       4
+      ],
+      [
+       "OP12-039",
+       4
+      ]
+     ],
+     "total": 50,
+     "textAgrees": "the post's text names 8 of these cards, all with the same counts",
+     "agrees": true
+    }
+   ],
+   "leader": "OP12-020",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "OP12-028",
+     4
+    ],
+    [
+     "ST32-001",
+     4
+    ],
+    [
+     "ST32-005",
+     2
+    ],
+    [
+     "OP12-027",
+     4
+    ],
+    [
+     "OP10-036",
+     4
+    ],
+    [
+     "OP12-026",
+     4
+    ],
+    [
+     "ST32-004",
+     4
+    ],
+    [
+     "OP12-023",
+     4
+    ],
+    [
+     "OP12-031",
+     4
+    ],
+    [
+     "ST24-005",
+     4
+    ],
+    [
+     "ST32-002",
+     2
+    ],
+    [
+     "OP15-036",
+     4
+    ],
+    [
+     "ST32-003",
+     2
+    ],
+    [
+     "OP12-039",
+     4
+    ]
+   ]
+  },
+  "ST-33": {
+   "product": "https://en.onepiece-cardgame.com/products/st33.html",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569033",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST33",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP12-040"
+     ],
+     "cards": [
+      [
+       "ST33-001",
+       4
+      ],
+      [
+       "ST33-002",
+       4
+      ],
+      [
+       "ST33-003",
+       2
+      ],
+      [
+       "ST33-004",
+       2
+      ],
+      [
+       "ST33-005",
+       2
+      ],
+      [
+       "EB04-026",
+       4
+      ],
+      [
+       "EB04-028",
+       4
+      ],
+      [
+       "OP12-043",
+       4
+      ],
+      [
+       "OP12-045",
+       4
+      ],
+      [
+       "OP12-047",
+       4
+      ],
+      [
+       "OP12-050",
+       4
+      ],
+      [
+       "OP12-052",
+       4
+      ],
+      [
+       "OP12-046",
+       4
+      ],
+      [
+       "OP12-057",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st33-card-list/",
+     "leaders": [
+      "OP12-040"
+     ],
+     "cards": [
+      [
+       "ST33-001",
+       4
+      ],
+      [
+       "ST33-002",
+       4
+      ],
+      [
+       "ST33-003",
+       2
+      ],
+      [
+       "ST33-004",
+       2
+      ],
+      [
+       "ST33-005",
+       2
+      ],
+      [
+       "EB04-026",
+       4
+      ],
+      [
+       "OP12-043",
+       4
+      ],
+      [
+       "OP12-045",
+       4
+      ],
+      [
+       "OP12-046",
+       4
+      ],
+      [
+       "OP12-047",
+       4
+      ],
+      [
+       "OP12-050",
+       4
+      ],
+      [
+       "OP12-052",
+       4
+      ],
+      [
+       "EB04-028",
+       4
+      ],
+      [
+       "OP12-057",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "photo",
+     "name": "One Piece Merch News post: photo of the opened deck (read pile by pile) and the post text",
+     "url": "https://x.com/OPMerchandise/status/2073449244451815538",
+     "leaders": [
+      "OP12-040"
+     ],
+     "cards": [
+      [
+       "ST33-004",
+       2
+      ],
+      [
+       "ST33-005",
+       2
+      ],
+      [
+       "ST33-001",
+       4
+      ],
+      [
+       "ST33-002",
+       4
+      ],
+      [
+       "ST33-003",
+       2
+      ],
+      [
+       "EB04-026",
+       4
+      ],
+      [
+       "OP12-043",
+       4
+      ],
+      [
+       "OP12-045",
+       4
+      ],
+      [
+       "OP12-046",
+       4
+      ],
+      [
+       "OP12-047",
+       4
+      ],
+      [
+       "OP12-050",
+       4
+      ],
+      [
+       "OP12-052",
+       4
+      ],
+      [
+       "EB04-028",
+       4
+      ],
+      [
+       "OP12-057",
+       4
+      ]
+     ],
+     "total": 50,
+     "textAgrees": "the post's text names 9 of these cards, all with the same counts",
+     "agrees": true
+    }
+   ],
+   "leader": "OP12-040",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "ST33-001",
+     4
+    ],
+    [
+     "ST33-003",
+     2
+    ],
+    [
+     "OP12-047",
+     4
+    ],
+    [
+     "EB04-026",
+     4
+    ],
+    [
+     "OP12-052",
+     4
+    ],
+    [
+     "ST33-002",
+     4
+    ],
+    [
+     "OP12-046",
+     4
+    ],
+    [
+     "OP12-043",
+     4
+    ],
+    [
+     "OP12-045",
+     4
+    ],
+    [
+     "OP12-050",
+     4
+    ],
+    [
+     "ST33-004",
+     2
+    ],
+    [
+     "ST33-005",
+     2
+    ],
+    [
+     "OP12-057",
+     4
+    ],
+    [
+     "EB04-028",
+     4
+    ]
+   ]
+  },
+  "ST-34": {
+   "product": "https://en.onepiece-cardgame.com/products/st34.html",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569034",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST34",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP11-062"
+     ],
+     "cards": [
+      [
+       "ST34-001",
+       2
+      ],
+      [
+       "ST34-002",
+       4
+      ],
+      [
+       "ST34-003",
+       2
+      ],
+      [
+       "ST34-004",
+       2
+      ],
+      [
+       "ST34-005",
+       4
+      ],
+      [
+       "EB03-032",
+       4
+      ],
+      [
+       "EB03-035",
+       4
+      ],
+      [
+       "OP11-065",
+       4
+      ],
+      [
+       "OP11-066",
+       4
+      ],
+      [
+       "OP11-068",
+       4
+      ],
+      [
+       "OP11-071",
+       4
+      ],
+      [
+       "OP11-079",
+       4
+      ],
+      [
+       "OP11-081",
+       4
+      ],
+      [
+       "P-090",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st34-card-list/",
+     "leaders": [
+      "OP11-062"
+     ],
+     "cards": [
+      [
+       "ST34-001",
+       2
+      ],
+      [
+       "ST34-002",
+       4
+      ],
+      [
+       "ST34-003",
+       2
+      ],
+      [
+       "ST34-004",
+       2
+      ],
+      [
+       "ST34-005",
+       4
+      ],
+      [
+       "EB03-032",
+       4
+      ],
+      [
+       "EB03-035",
+       4
+      ],
+      [
+       "OP11-065",
+       4
+      ],
+      [
+       "OP11-066",
+       4
+      ],
+      [
+       "OP11-068",
+       4
+      ],
+      [
+       "OP11-071",
+       4
+      ],
+      [
+       "P-090",
+       4
+      ],
+      [
+       "OP11-079",
+       4
+      ],
+      [
+       "OP11-081",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "photo",
+     "name": "One Piece Merch News post: photo of the opened deck (read pile by pile) and the post text",
+     "url": "https://x.com/OPMerchandise/status/2073452499948978618",
+     "leaders": [
+      "OP11-062"
+     ],
+     "cards": [
+      [
+       "ST34-001",
+       2
+      ],
+      [
+       "ST34-004",
+       2
+      ],
+      [
+       "ST34-002",
+       4
+      ],
+      [
+       "ST34-003",
+       2
+      ],
+      [
+       "ST34-005",
+       4
+      ],
+      [
+       "EB03-032",
+       4
+      ],
+      [
+       "EB03-035",
+       4
+      ],
+      [
+       "OP11-065",
+       4
+      ],
+      [
+       "OP11-066",
+       4
+      ],
+      [
+       "OP11-068",
+       4
+      ],
+      [
+       "OP11-071",
+       4
+      ],
+      [
+       "P-090",
+       4
+      ],
+      [
+       "OP11-079",
+       4
+      ],
+      [
+       "OP11-081",
+       4
+      ]
+     ],
+     "total": 50,
+     "textAgrees": "the post's text names 6 of these cards, all with the same counts",
+     "agrees": true
+    }
+   ],
+   "leader": "OP11-062",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "EB03-032",
+     4
+    ],
+    [
+     "OP11-065",
+     4
+    ],
+    [
+     "ST34-003",
+     2
+    ],
+    [
+     "ST34-005",
+     4
+    ],
+    [
+     "EB03-035",
+     4
+    ],
+    [
+     "OP11-066",
+     4
+    ],
+    [
+     "ST34-002",
+     4
+    ],
+    [
+     "OP11-071",
+     4
+    ],
+    [
+     "ST34-001",
+     2
+    ],
+    [
+     "OP11-068",
+     4
+    ],
+    [
+     "P-090",
+     4
+    ],
+    [
+     "ST34-004",
+     2
+    ],
+    [
+     "OP11-079",
+     4
+    ],
+    [
+     "OP11-081",
+     4
+    ]
+   ]
+  },
+  "ST-35": {
+   "product": "https://en.onepiece-cardgame.com/products/st35.html",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569035",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST35",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP13-004"
+     ],
+     "cards": [
+      [
+       "ST35-001",
+       4
+      ],
+      [
+       "ST35-002",
+       2
+      ],
+      [
+       "ST35-003",
+       4
+      ],
+      [
+       "ST35-004",
+       2
+      ],
+      [
+       "ST35-005",
+       2
+      ],
+      [
+       "OP13-081",
+       4
+      ],
+      [
+       "OP13-008",
+       4
+      ],
+      [
+       "OP12-090",
+       4
+      ],
+      [
+       "OP12-093",
+       4
+      ],
+      [
+       "OP12-098",
+       4
+      ],
+      [
+       "OP13-005",
+       4
+      ],
+      [
+       "P-105",
+       4
+      ],
+      [
+       "OP13-019",
+       4
+      ],
+      [
+       "OP13-017",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st35-card-list/",
+     "leaders": [
+      "OP13-004"
+     ],
+     "cards": [
+      [
+       "ST35-001",
+       4
+      ],
+      [
+       "ST35-002",
+       2
+      ],
+      [
+       "ST35-003",
+       4
+      ],
+      [
+       "ST35-004",
+       2
+      ],
+      [
+       "ST35-005",
+       2
+      ],
+      [
+       "OP12-090",
+       4
+      ],
+      [
+       "OP12-093",
+       4
+      ],
+      [
+       "OP13-005",
+       4
+      ],
+      [
+       "OP13-008",
+       4
+      ],
+      [
+       "OP13-017",
+       4
+      ],
+      [
+       "OP13-081",
+       4
+      ],
+      [
+       "P-105",
+       4
+      ],
+      [
+       "OP12-098",
+       4
+      ],
+      [
+       "OP13-019",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "photo",
+     "name": "One Piece Merch News post: photo of the opened deck (read pile by pile) and the post text",
+     "url": "https://x.com/OPMerchandise/status/2073454304040820780",
+     "leaders": [
+      "OP13-004"
+     ],
+     "cards": [
+      [
+       "ST35-004",
+       2
+      ],
+      [
+       "ST35-005",
+       2
+      ],
+      [
+       "ST35-001",
+       4
+      ],
+      [
+       "ST35-002",
+       2
+      ],
+      [
+       "ST35-003",
+       4
+      ],
+      [
+       "OP12-090",
+       4
+      ],
+      [
+       "OP12-093",
+       4
+      ],
+      [
+       "OP13-005",
+       4
+      ],
+      [
+       "OP13-008",
+       4
+      ],
+      [
+       "OP13-017",
+       4
+      ],
+      [
+       "OP13-081",
+       4
+      ],
+      [
+       "P-105",
+       4
+      ],
+      [
+       "OP12-098",
+       4
+      ],
+      [
+       "OP13-019",
+       4
+      ]
+     ],
+     "total": 50,
+     "textAgrees": "the post's text names 9 of these cards, all with the same counts",
+     "agrees": true
+    }
+   ],
+   "leader": "OP13-004",
+   "status": "3 sources agree",
+   "cards": [
+    [
+     "OP13-008",
+     4
+    ],
+    [
+     "OP12-090",
+     4
+    ],
+    [
+     "ST35-003",
+     4
+    ],
+    [
+     "OP12-093",
+     4
+    ],
+    [
+     "OP13-005",
+     4
+    ],
+    [
+     "P-105",
+     4
+    ],
+    [
+     "ST35-001",
+     4
+    ],
+    [
+     "ST35-002",
+     2
+    ],
+    [
+     "OP13-081",
+     4
+    ],
+    [
+     "ST35-005",
+     2
+    ],
+    [
+     "OP13-017",
+     4
+    ],
+    [
+     "ST35-004",
+     2
+    ],
+    [
+     "OP12-098",
+     4
+    ],
+    [
+     "OP13-019",
+     4
+    ]
+   ]
+  },
+  "ST-36": {
+   "product": "https://en.onepiece-cardgame.com/products/st36.html",
+   "cardList": "https://en.onepiece-cardgame.com/cardlist/?series=569036",
+   "sources": [
+    {
+     "source": "limitless",
+     "name": "Limitless TCG set page (decklist image link)",
+     "url": "https://onepiece.limitlesstcg.com/cards/ST36",
+     "status": "no list on the page"
+    },
+    {
+     "source": "egman",
+     "name": "Egman Events deck builder, starter decks",
+     "url": "https://deckbuilder.egmanevents.com/optcg/collection?tab=starter",
+     "leaders": [
+      "OP10-099"
+     ],
+     "cards": [
+      [
+       "ST36-002",
+       2
+      ],
+      [
+       "ST36-005",
+       2
+      ],
+      [
+       "ST36-001",
+       4
+      ],
+      [
+       "ST36-003",
+       2
+      ],
+      [
+       "ST36-004",
+       4
+      ],
+      [
+       "OP13-116",
+       4
+      ],
+      [
+       "OP10-101",
+       4
+      ],
+      [
+       "OP10-103",
+       4
+      ],
+      [
+       "OP10-109",
+       4
+      ],
+      [
+       "OP10-111",
+       4
+      ],
+      [
+       "P-088",
+       4
+      ],
+      [
+       "P-085",
+       4
+      ],
+      [
+       "OP12-113",
+       4
+      ],
+      [
+       "OP10-114",
+       4
+      ]
+     ],
+     "total": 50,
+     "agrees": true
+    },
+    {
+     "source": "tierone",
+     "name": "Tier One Media (JP) card list with counts",
+     "url": "https://tier-one-onepiece.jp/blog/st36-card-list/",
+     "status": "no list on the page"
+    },
+    {
+     "source": "photo",
+     "name": "One Piece Merch News post: photo of the opened deck (read pile by pile) and the post text",
+     "url": "https://x.com/OPMerchandise/status/2073456328232804634",
+     "leaders": [
+      "OP10-099"
+     ],
+     "cards": [
+      [
+       "ST36-002",
+       2
+      ],
+      [
+       "ST36-005",
+       2
+      ],
+      [
+       "ST36-001",
+       4
+      ],
+      [
+       "ST36-003",
+       2
+      ],
+      [
+       "ST36-004",
+       4
+      ],
+      [
+       "OP10-101",
+       4
+      ],
+      [
+       "OP10-103",
+       4
+      ],
+      [
+       "OP10-109",
+       4
+      ],
+      [
+       "OP10-111",
+       4
+      ],
+      [
+       "OP10-114",
+       4
+      ],
+      [
+       "OP12-113",
+       4
+      ],
+      [
+       "P-085",
+       4
+      ],
+      [
+       "P-088",
+       4
+      ],
+      [
+       "OP13-116",
+       4
+      ]
+     ],
+     "total": 50,
+     "textAgrees": "the post's text names 7 of these cards, all with the same counts",
+     "agrees": true
+    }
+   ],
+   "leader": "OP10-099",
+   "status": "2 sources agree",
+   "cards": [
+    [
+     "OP10-103",
+     4
+    ],
+    [
+     "OP10-111",
+     4
+    ],
+    [
+     "ST36-004",
+     4
+    ],
+    [
+     "OP10-114",
+     4
+    ],
+    [
+     "ST36-001",
+     4
+    ],
+    [
+     "OP10-109",
+     4
+    ],
+    [
+     "P-088",
+     4
+    ],
+    [
+     "ST36-002",
+     2
+    ],
+    [
+     "ST36-003",
+     2
+    ],
+    [
+     "OP10-101",
+     4
+    ],
+    [
+     "OP12-113",
+     4
+    ],
+    [
+     "P-085",
+     4
+    ],
+    [
+     "ST36-005",
+     2
+    ],
+    [
+     "OP13-116",
+     4
+    ]
+   ]
+  }
+ },
+ "officialEntryConflicts": [
+  "ST07-008: ST07-008_p1 (en-569901) has text \"[On Play] Look at up to 1 card from the top of yours or your opponent's Life cards, and place it at the top or bottom of the Life cards.\"; the normal print has \"[On Play] Look at up to 1 card from the top of your or your opponent's Life cards, and place it at the top or bottom of the Life cards.\" (kept)",
+  "ST11-005: the normal print's type reads \"音楽/FILM\" (Japanese); used \"Music/FILM\" from ST11-005_p2",
+  "ST23-004: ST23-004_r1 (en-569031) has type \"Animal/Straw Hat Crew\"; the normal print has \"FILM/Supernovas/Straw Hat Crew\" (kept)",
+  "OP07-019: OP07-019_p3 (en-569024) has text \"[On Your Opponent's Attack] [Once Per Turn] You may rest 1 of your DON!! cards: Rest up to 1 of your opponent's Leader or Character cards.\"; the normal print has \"[On Your Opponent's Attack] [Once Per Turn] ① (You may rest the specified number of DON!! cards in your cost area.): Rest up to 1 of your opponent's Leader or Character cards.\" (kept)",
+  "OP07-019: OP07-019_p2 (en-569202) has text \"[On Your Opponent's Attack] [Once Per Turn] You may rest 1 of your DON!! cards: Rest up to 1 of your opponent's Leader or Character cards.\"; the normal print has \"[On Your Opponent's Attack] [Once Per Turn] ① (You may rest the specified number of DON!! cards in your cost area.): Rest up to 1 of your opponent's Leader or Character cards.\" (kept)",
+  "ST32-002: ST32-002_p1 (en-569117) has text \"[On Play] Draw 1 card, and up to 1 of your opponent's Characters with a base cost of 6 or less cannot be rested until the end of your opponent's next End Phase.\"; the normal print has \"[On Play] Draw 1 card and up to 1 of your opponent's Characters with a base cost of 6 or less cannot be rested until the end of your opponent's next End Phase.\" (kept)"
+ ]
+}
