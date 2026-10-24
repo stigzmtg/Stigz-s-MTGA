@@ -25,18 +25,18 @@ export const HANDLED = {
   steps: ['select', 'power', 'basePower', 'cost', 'ko', 'rest', 'setActive', 'giveDon', 'donActive', 'restDon', 'addDon', 'draw',
     'discard', 'bounce', 'bottom', 'grant', 'noBlocker', 'noBlockerIfAttacks', 'restrict', 'playerFlag', 'playSelf', 'selfToHand',
     'runEffect', 'look', 'play', 'toHand', 'deckToLife', 'trashLife', 'lifeToHand', 'handToLife', 'fieldToLife', 'lookLife', 'choose',
-    'may', 'reveal', 'delayed', 'custom'],
+    'may', 'reveal', 'delayed', 'custom', 'playThat', 'freeze', 'bounceAny', 'discardAny', 'handToDeck', 'trashField'],
   costs: ['restDon', 'returnDon', 'returnDonAny', 'restSelf', 'trashSelf', 'trashHand', 'revealHand', 'lifeToHand', 'trashLife',
-    'restOwn', 'bounceOwn', 'handToDeck', 'trashToDeck', 'millSelf', 'lifeFaceUp', 'lifeFaceDown', 'charToLife', 'returnGivenDon'],
+    'restOwn', 'bounceOwn', 'handToDeck', 'trashToDeck', 'millSelf', 'lifeFaceUp', 'lifeFaceDown', 'charToLife', 'returnGivenDon', 'bounceSelf'],
   conds: ['and', 'or', 'not', 'cmp', 'exists', 'self', 'leader', 'turn', 'did', 'that'],
   filters: ['rested', 'active', 'cost', 'baseCost', 'costRange', 'power', 'basePower', 'trait', 'traitHas', 'name', 'notName', 'notSelf',
-    'color', 'multicolor', 'attr', 'kw', 'hasTrigger', 'cat', 'playedThisTurn', 'faceUp', 'or', 'not'],
+    'color', 'multicolor', 'attr', 'kw', 'hasTrigger', 'vanilla', 'cat', 'playedThisTurn', 'faceUp', 'or', 'not'],
   amounts: ['life', 'lifeTotal', 'hand', 'trash', 'donField', 'donRested', 'restedCards', 'count', 'per', 'neg', 'var'],
   refs: ['self', 'leader', 'oppLeader', 'selected', 'replaced', 'battleOpp'],
   durations: ['battle', 'turn', 'startOfYourNextTurn', 'endOfYourNextTurn', 'endOfOppNextTurn', 'oppNextRefresh', 'game'],
   // static mods and effect flags something in here reads
   mods: ['power', 'cost', 'grant', 'noKO', 'canAttackActive', 'cantAttack', 'cantAttackChar', 'cantBlock', 'cantRest', 'faceUpLifeToDeck'],
-  playerFlags: ['noKOAll'],
+  playerFlags: ['noKOAll', 'noOwnLifeToHand'],
   zones: ['field', 'hand', 'trash', 'deck', 'life', 'handOrTrash'],
 };
 
@@ -331,21 +331,37 @@ export class OnePieceGame {
 
   // ------------------------------------------------------------ static (permanent) effects (8-1-3-3)
   // every static ability on the field whose conditions hold: [{ src, ab }]
+  // what static conditions can depend on, so the list is worked out again whenever any of it changes
+  staticKey() {
+    const fx = this.effects;
+    let k = `${this.turn}:${this.current}:${this.phase}:${fx.length}:${fx.length ? fx[fx.length - 1].id : 0}:${this.fight ? this.fight.boosts.length : '-'}`;
+    for (const p of this.players) {
+      k += `|${p.life.length}.${p.life.filter(c => c.faceUp).length},${p.hand.length},${p.trash.length},${p.deck.length},${p.donActive},${p.donRested},${p.donDeck}`;
+      for (const c of this.field(p.id)) k += `,${c.inst}${c.rested ? 'r' : ''}${c.don}`;
+    }
+    return k;
+  }
   statics() {
-    if (this.statCache && this.statCache.v === this.version) return this.statCache.list;
-    if (this.inStatics) return [];
-    this.inStatics = true;
-    let list;
+    if (this.inStatics) return this.inStatics;
+    const key = this.staticKey();
+    if (this.statCache && this.statCache.key === key) return this.statCache.list;
+    // while the conditions are checked, the effects found so far apply: the unconditional ones first, so "All of your
+    // Characters gain +1 cost. If you have a Character with a cost of 8 or more, ..." sees the +1
+    const list = [];
+    this.inStatics = list;
+    // a power or cost being worked out when this started doesn't count as "in progress" for the conditions
+    const guards = [this.powerGuard, this.costGuard];
+    this.powerGuard = new Set(); this.costGuard = new Set();
     try {
-      list = [];
+      const conditional = [];
       for (const p of this.players) for (const c of this.field(p.id)) for (const ab of this.abilities(c)) {
         if (ab.kind !== 'static' || ab.hand) continue;
         if (!this.abilityConditions(c, ab)) continue;
-        if (ab.cond && !this.test(ab.cond, { pid: c.owner, src: c, ab, vars: {} })) continue;
-        list.push({ src: c, ab });
+        if (ab.cond) conditional.push({ src: c, ab }); else list.push({ src: c, ab });
       }
-    } finally { this.inStatics = false; }
-    this.statCache = { v: this.version, list };
+      for (const x of conditional) if (this.test(x.ab.cond, { pid: x.src.owner, src: x.src, ab: x.ab, vars: {} })) list.push(x);
+    } finally { this.inStatics = null; [this.powerGuard, this.costGuard] = guards; }
+    this.statCache = { key, list };
     return list;
   }
   // the [DON!! xX], [Your Turn], [Opponent's Turn] conditions of an ability (8-3-2)
@@ -464,6 +480,7 @@ export class OnePieceGame {
       case 'attr': return f.any.some(a => (card.def.attr || []).includes(a));
       case 'kw': return this.onField(card) ? this.has(card, f.kw) : compileCard(card.def).abilities.some(a => a.kind === 'keyword' && a.kw === f.kw);
       case 'hasTrigger': return !!card.def.trigger;
+      case 'vanilla': return !card.def.text && !card.def.trigger;
       case 'cat': return f.any.includes(card.cat);
       case 'playedThisTurn': return this.onField(card) && card.playedTurn === this.turn;
       case 'faceUp': return card.zone === 'life' && card.faceUp === f.v;
@@ -790,7 +807,9 @@ export class OnePieceGame {
         case 'restSelf': if (!this.onField(card) || card.rested) return false; break;
         case 'trashSelf': if (!this.onField(card)) return false; break;
         case 'trashHand': case 'revealHand': if (hand(c).length < c.n) return false; break;
-        case 'lifeToHand': case 'trashLife': if (!p.life.length) return false; break;
+        case 'lifeToHand': if (!p.life.length || this.ownLifeLocked(pid)) return false; break;
+        case 'trashLife': if (!p.life.length) return false; break;
+        case 'bounceSelf': if (!this.onField(card) || card.cat !== 'C') return false; break;
         case 'restOwn': if (this.candidates({ who: 'you', cats: c.cats || ['C'], f: [...(c.f || []), { k: 'active' }] }, ctx).filter(x => !c.notSelf || x !== card).length < (c.n || 1)) return false; break;
         case 'bounceOwn': if (this.candidates({ who: 'you', cats: ['C'], f: c.f }, ctx).filter(x => !c.notSelf || x !== card).length < c.n) return false; break;
         case 'handToDeck': if (p.hand.filter(x => x !== card).length < c.n) return false; break;
@@ -823,6 +842,7 @@ export class OnePieceGame {
         }
         case 'restSelf': card.rested = true; this.event('rest', { card: card.uid }); this.fire('rested', { pid, card, byEffect: true, by: pid }); break;
         case 'trashSelf': this.moveCard(card, 'trash'); this.log(`${p.name} trashes ${card.name}.`, { pid }); this.event('trash', { pid, card: card.uid }); break;
+        case 'bounceSelf': this.moveCard(card, 'hand'); this.log(`${card.name} returns to ${p.name}'s hand.`, { pid }); this.event('return', { card: card.uid, to: 'hand' }); break;
         case 'trashHand': case 'revealHand': {
           const opts = this.candidates({ zone: 'hand', who: 'you', cats: c.cats, f: c.f }, ctx).filter(x => x !== card);
           const trash = c.op === 'trashHand';
@@ -904,10 +924,11 @@ export class OnePieceGame {
     }
     return ok(top) ? top : null;
   }
-  // a Life card goes to its owner's hand (face-up ones go to the bottom of the deck under ST13-003's Leader)
+  // a Life card goes to its owner's hand. Under ST13-003's Leader, face-up ones that damage (the rules) would add to
+  // the hand go to the bottom of the deck instead; effects still add them to the hand ("according to the rules")
   async lifeToHand(pid, c, { byEffect = false } = {}) {
     const p = this.players[pid];
-    if (c.faceUp && this.flag(p.leader, 'faceUpLifeToDeck')) {
+    if (c.faceUp && !byEffect && this.flag(p.leader, 'faceUpLifeToDeck')) {
       this.moveCard(c, 'deck', { top: false });
       this.log(`${p.name}'s face-up Life card ${c.name} goes to the bottom of their deck.`, { pid });
     } else {
@@ -1199,6 +1220,8 @@ export class OnePieceGame {
     if (!this.inDamage) await this.resolvePending();
   }
   triggerAbility(card) { return this.abilities(card).find(a => a.kind === 'trigger') || null; }
+  // "you cannot add Life cards to your hand using your own effects during this turn" (costs included, 8-2-1-1)
+  ownLifeLocked(pid) { return this.effects.some(e => e.kind === 'noOwnLifeToHand' && e.pid === pid); }
 
   // ------------------------------------------------------------ K.O. and leaving the field (10-2-1)
   canBeKOd(card, { by, pid, attacker } = {}) {
@@ -1249,8 +1272,9 @@ export class OnePieceGame {
   async runSteps(steps, ctx) {
     for (const s of steps || []) {
       if (this.over) return;
-      // 4-10-1: an "if" that fails stops what depends on it
-      if (s.cond && !this.test(s.cond, ctx)) { if (s.gate) return; continue; }
+      // 4-10-1: when an "if" clause can't be resolved, the clauses after it can't be either ("If your Leader is ...,
+      // A. Then, B." does neither); a "then" clause that does nothing doesn't stop the rest (4-10-2)
+      if (s.cond && !this.test(s.cond, ctx)) return;
       await this.step(s, ctx);
     }
   }
@@ -1452,15 +1476,22 @@ export class OnePieceGame {
         return;
       }
       case 'lifeToHand': {
+        if (this.ownLifeLocked(pid)) return;
         const n = Math.min(this.amount(s.n || 1, ctx), p.life.length);
         for (let k = 0; k < n; k++) { const c = await this.pickLife(pid, s.where || 'top', 'Add which Life card to your hand?'); if (c) await this.lifeToHand(pid, c, { byEffect: true }); }
         return;
       }
       case 'handToLife': {
-        const opts = this.candidates({ zone: 'hand', who: 'you', cats: s.cats, f: s.f }, ctx);
-        const got = await this.chooseCards(pid, opts, { min: s.upTo ? 0 : 1, max: s.n || 1, prompt: 'Add which card from your hand to the top of your Life cards?', from: 'hand', hint: 'to-life' });
-        for (const c of got) { this.moveCard(c, 'life', { top: true, faceUp: !!s.faceUp }); this.event('life-add', { pid, card: c.uid }); }
-        if (got.length) this.log(`${p.name} adds ${cards(got.length)} from their hand to the top of their Life cards${s.faceUp ? ' face-up' : ''}.`, { pid });
+        // "Add up to N ... from your hand (or trash) to the top of your Life cards (face-up)"
+        const from = s.from || 'hand';
+        const opts = this.candidates({ zone: from, who: 'you', cats: s.cats, f: s.f }, ctx);
+        const where = from === 'handOrTrash' ? 'hand or trash' : from;
+        const got = await this.chooseCards(pid, opts, { min: s.upTo ? 0 : 1, max: this.amount(s.n || 1, ctx), prompt: `Add which card${s.n > 1 ? 's' : ''} from your ${where} to the top of your Life cards${s.faceUp ? ' face-up' : ''}?`, from: from === 'trash' ? 'trash' : 'hand', hint: 'to-life' });
+        for (const c of got) {
+          if (s.reveal) { this.event('reveal', { pid, card: c.uid }); this.log(`${p.name} reveals ${c.name}.`, { pid }); }
+          this.moveCard(c, 'life', { top: true, faceUp: !!s.faceUp }); this.event('life-add', { pid, card: c.uid });
+        }
+        if (got.length) this.log(`${p.name} adds ${cards(got.length)} from their ${where} to the top of their Life cards${s.faceUp ? ' face-up' : ''}.`, { pid });
         return;
       }
       case 'fieldToLife': {
@@ -1501,6 +1532,57 @@ export class OnePieceGame {
         return;
       }
       case 'delayed': this.addEffect({ kind: 'delayed', steps: s.steps, src: ctx.src, ab: ctx.ab }, 'turn', pid); return;
+      case 'playThat': {
+        // "If that card is a ..., you may play that card": the card revealed from the top of the deck or Life
+        const c = (ctx.vars.that || [])[0];
+        ctx.vars.did = false;
+        if (!c || c.cat !== 'C' && c.cat !== 'S' || (c.zone !== 'deck' && c.zone !== 'life') || c.owner !== pid) return;
+        if (!(await this.confirm(pid, `Play ${c.name}${s.rested ? ' rested' : ''}?`, 'may', { card: c.uid }))) return;
+        ctx.vars.did = await this.putIntoPlay(pid, c, { from: c.zone === 'life' ? 'Life' : c.zone, rested: !!s.rested });
+        return;
+      }
+      case 'freeze': {
+        // "... will not become active in your opponent's next Refresh Phase"
+        const got = await this.select(s.sel, ctx, "Which Characters stay rested in the next Refresh Phase?", 'freeze');
+        for (const c of got) { this.addEffect({ kind: 'noRefresh', card: c, text: 'stays rested next Refresh Phase' }, 'oppNextRefresh', pid); this.log(`${c.name} won't become active in ${this.players[c.owner].name}'s next Refresh Phase.`, { pid }); }
+        return;
+      }
+      case 'bounceAny': {
+        // "You may return any number of Characters on your field to the owner's hand"
+        const got = await this.chooseOnField(pid, [...p.characters], { min: 0, max: p.characters.length, prompt: 'Return any number of your Characters to your hand', hint: 'bounce-own' });
+        for (const c of got) { this.moveCard(c, 'hand'); this.event('return', { card: c.uid, to: 'hand' }); }
+        if (got.length) this.log(`${p.name} returns ${got.map(c => c.name).join(', ')} to their hand.`, { pid });
+        ctx.vars.returned = got.length;
+        return;
+      }
+      case 'discardAny': {
+        // "You may trash any number of {Music} type cards from your hand"
+        const opts = this.candidates({ zone: 'hand', who: 'you', cats: s.cats, f: s.f }, ctx);
+        const got = await this.chooseCards(pid, opts, { min: 0, max: opts.length, prompt: 'Trash any number of these cards from your hand', from: 'hand', hint: 'discard-any' });
+        for (const c of got) { this.moveCard(c, 'trash'); this.event('trash', { pid, card: c.uid, from: 'hand' }); }
+        if (got.length) { this.log(`${p.name} trashes ${got.map(c => c.name).join(', ')} from their hand.`, { pid }); this.fire('handTrashed', { pid, n: got.length, byEffect: true, src: ctx.src }); }
+        ctx.vars.trashed = got.length;
+        return;
+      }
+      case 'handToDeck': {
+        const n = Math.min(this.amount(s.n, ctx), p.hand.length);
+        const got = await this.chooseCards(pid, [...p.hand], { min: n, max: n, prompt: `Place ${cards(n)} from your hand at the ${s.bottom ? 'bottom' : 'top'} of your deck`, from: 'hand', hint: 'topdeck' });
+        for (const c of got) this.moveCard(c, 'deck', { top: !s.bottom });
+        if (got.length) this.log(`${p.name} places ${cards(got.length)} from their hand at the ${s.bottom ? 'bottom' : 'top'} of their deck.`, { pid });
+        return;
+      }
+      case 'trashField': {
+        // "Trash up to 1 of your opponent's Characters ...": leaves the field, but it isn't a K.O.
+        const got = await this.select(s.sel, ctx, 'Trash which Character?', 'trash-char');
+        for (const c of got) {
+          if (!this.onField(c) || c.cat === 'L') continue;
+          if (c.owner !== pid && (await this.replaceRemoval(c, 'remove', pid))) continue;
+          this.moveCard(c, 'trash');
+          this.log(`${c.name} is trashed.`, { pid });
+          this.event('trash', { pid: c.owner, card: c.uid, from: 'field' });
+        }
+        return;
+      }
       case 'custom': return s.fn(this, ctx, s);
       default: throw new Error(`unknown step ${s.op}`);
     }
@@ -1517,8 +1599,14 @@ export class OnePieceGame {
     const n = Math.min(this.amount(s.n, ctx), p.deck.length);
     if (!n) return;
     const seen = p.deck.slice(0, n);
-    this.log(`${p.name} looks at ${cards(n)} from the top of their deck.`, { pid });
-    this.event('look', { pid, n });
+    if (s.reveal) {
+      // "Reveal 1 card from the top of your deck and ...": both players see it
+      this.log(`${p.name} reveals ${seen.map(c => c.name).join(', ')} from the top of their deck.`, { pid });
+      for (const c of seen) this.event('reveal', { pid, card: c.uid });
+    } else {
+      this.log(`${p.name} looks at ${cards(n)} from the top of their deck.`, { pid });
+      this.event('look', { pid, n });
+    }
     let taken = [];
     if (s.pick) {
       const ok = seen.filter(c => (!s.pick.cats || s.pick.cats.includes(c.cat)) && (s.pick.f || []).every(f => this.filter(c, f, ctx)));
@@ -1563,7 +1651,7 @@ export class OnePieceGame {
     if (s.each) {
       // "Play up to 1 each of [A], [B] and [C]"
       for (const nm of s.each) {
-        const [c] = await this.chooseCards(pid, opts.filter(x => x.name === nm && x.zone === (zone === 'handOrTrash' ? x.zone : zone)), { min: 0, max: 1, prompt: `Play ${nm}?`, from: zone, hint: 'play' });
+        const [c] = await this.chooseCards(pid, opts.filter(x => x.name === nm && (zone === 'handOrTrash' ? x.zone === 'hand' || x.zone === 'trash' : x.zone === zone)), { min: 0, max: 1, prompt: `Play ${nm}?`, from: zone === 'handOrTrash' ? 'hand' : zone, hint: 'play' });
         if (c) await this.putIntoPlay(pid, c, { from: c.zone, rested: !!s.rested });
       }
       return;
@@ -1580,9 +1668,17 @@ export class OnePieceGame {
     const q = this.players[whose];
     if (!q.life.length) return;
     if (s.all) {
-      // "Look at all of your Life cards and place them back in your Life area in any order"
-      const seen = [...q.life];
+      // "Look at all of your Life cards and place them back in your Life area in any order" (ST13-004: "place 1 card at
+      // the top of your deck and place the rest back ...")
+      let seen = [...q.life];
       this.log(`${this.players[pid].name} looks at their Life cards.`, { pid });
+      this.peeked = (this.peeked || 0) + 1;
+      if (s.toDeckTop) {
+        const got = await this.chooseCards(pid, seen, { min: s.toDeckTop, max: s.toDeckTop, prompt: `Place ${cards(s.toDeckTop)} from your Life at the top of your deck`, from: 'life', hint: 'topdeck', shown: seen });
+        for (const c of got) { this.moveCard(c, 'deck', { top: true }); this.log(`${this.players[pid].name} places a Life card at the top of their deck.`, { pid }); }
+        seen = seen.filter(c => !got.includes(c));
+        if (!seen.length) return;
+      }
       const order = await this.chooseOrder(pid, seen, 'Put your Life cards back in order (first = top)', 'order-life');
       q.life.splice(0, q.life.length, ...order);
       return;

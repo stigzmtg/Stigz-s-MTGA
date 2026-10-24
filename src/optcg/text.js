@@ -125,7 +125,7 @@ function parseAbility(raw, def) {
   }
   if (t.length) return [{ kind: 'auto', timings: t, don: head.don, turn: head.turn, once: head.once, ...parseCostEffect(s, def, 'auto') }];
   // no timing: a permanent effect, a replacement effect, or an auto effect with its own "when" (8-1-3-1-1)
-  return [parseNoTiming(s, def, head)];
+  return [parseNoTiming(s, def, head)].flat();
 }
 
 // ------------------------------------------------------------ costs (8-3)
@@ -183,6 +183,7 @@ function parseCost(s, def) {
     else if ((m = /^return 1 or more DON!! cards from your field to your DON!! deck/i.exec(t))) cost.push({ op: 'returnDonAny' });
     else if ((m = /^return (\d+) total of your currently given DON!! cards to your cost area rested/i.exec(t))) cost.push({ op: 'returnGivenDon', n: +m[1] });
     else if ((m = /^add 1 of your ((?:(?!\bto the top of your Life cards\b).)*?) to the top of your Life cards face-up/i.exec(t))) cost.push({ op: 'charToLife', ...ownCards(m[1], def) });
+    else if ((m = /^return this (?:Character|card) to the owner's hand/i.exec(t))) cost.push({ op: 'bounceSelf' });
     else fail(`cost "${t}"`);
     t = t.slice(m[0].length);
   }
@@ -228,8 +229,12 @@ export function parseSel(phrase, def, { zone = 'field' } = {}) {
     else if ((m = /^(red|green|blue|purple|black|yellow)\s+/.exec(s))) sel.f.push({ k: 'color', any: [cap(m[1])] });
     else if ((m = /^multicolou?red\s+/.exec(s))) sel.f.push({ k: 'multicolor' });
     else if ((m = /^face-up\s+/.exec(s))) sel.f.push({ k: 'faceUp', v: true });
+    // alternatives of different kinds: "[Sanji] or {Big Mom Pirates} type", "{Muggy Kingdom} type or <Slash> attribute"
+    else if ((m = /^\[([^\]]+)\] or \{([^}]+)\} type\s+/.exec(s))) sel.f.push({ k: 'or', any: [[{ k: 'name', any: [m[1]] }], [{ k: 'trait', any: [m[2]] }]] });
+    else if ((m = /^\{([^}]+)\} type or <([^>]+)> attribute\s+/.exec(s))) sel.f.push({ k: 'or', any: [[{ k: 'trait', any: [m[1]] }], [{ k: 'attr', any: [m[2]] }]] });
+    else if ((m = /^\{([^}]+)\} type card or card with a type including "([^"]+)"\s*/.exec(s))) { sel.f.push({ k: 'or', any: [[{ k: 'trait', any: [m[1]] }], [{ k: 'traitHas', any: [m[2]] }]] }); s = 'card ' + s.slice(m[0].length); continue; }
     else if ((m = /^((?:\{[^}]+\}|"[^"]+")(?:,? (?:or )?(?:\{[^}]+\}|"[^"]+"))*) type\s+/.exec(s))) sel.f.push({ k: 'trait', any: [...m[1].matchAll(/\{([^}]+)\}|"([^"]+)"/g)].map(x => x[1] || x[2]) });
-    else if ((m = /^((?:\[[^\]]+\])(?:,? (?:and |or )?(?:\[[^\]]+\]))*)\s+(?=(?:type\s+)?(?:Leader|Character|card|Event|Stage|with|cards|$))/.exec(s))) {
+    else if ((m = /^((?:\[[^\]]+\])(?:,? (?:and |or )?(?:\[[^\]]+\]))*)(?:\s+|$)(?=(?:type\s+)?(?:Leader|Character|card|Event|Stage|with|cards|other|$))/.exec(s))) {
       const names = [...m[1].matchAll(/\[([^\]]+)\]/g)].map(x => x[1]);
       if (names.every(n => KW.includes(n))) sel.f.push({ k: 'kw', kw: names[0] });
       else if (/^type\s/.test(s.slice(m[0].length))) { sel.f.push({ k: 'trait', any: names }); s = s.slice(m[0].length); m = /^type\s+/.exec(s); }
@@ -262,6 +267,8 @@ export function parseSel(phrase, def, { zone = 'field' } = {}) {
     else if ((m = /^(?:with|and) the ((?:\{[^}]+\}|"[^"]+")) type\b/.exec(s))) sel.f.push({ k: 'trait', any: [m[1].slice(1, -1)] });
     else if ((m = /^with a type including "([^"]+)"/.exec(s))) sel.f.push({ k: 'traitHas', any: [m[1]] });
     else if ((m = /^with a \[Trigger\]/.exec(s))) sel.f.push({ k: 'hasTrigger' });
+    // "no base effect": no card text at all (2-8-5)
+    else if ((m = /^(?:and|with) no base effect\b/.exec(s))) sel.f.push({ k: 'vanilla' });
     else if ((m = /^other than (?:this (?:card|Character|Leader))\b/.exec(s))) sel.f.push({ k: 'notSelf' });
     else if ((m = /^other than ((?:\[[^\]]+\])(?:,? (?:or |and )?\[[^\]]+\])*)/.exec(s))) sel.f.push({ k: 'notName', any: [...m[1].matchAll(/\[([^\]]+)\]/g)].map(x => x[1]) });
     else if ((m = /^that is either \[([^\]]+)\] or has the <([^>]+)> attribute/.exec(s))) sel.f.push({ k: 'or', any: [[{ k: 'name', any: [m[1]] }], [{ k: 'attr', any: [m[2]] }]] });
@@ -289,7 +296,7 @@ function target(phrase, def) {
     if (x && !x.rest) return { ref: 'leader', f: x.f };
   }
   if ((m = /^up to 1 of your Leader$/.exec(p))) return { ref: 'leader' };
-  if (/^this Leader or 1 of your Characters$/.test(p)) { const x = sel('up to 1 of your Leader or Character cards', def); x.upTo = false; return x; }
+  if (/^(?:this|your) Leader or 1 of your Characters$/i.test(p)) { const x = sel('up to 1 of your Leader or Character cards', def); x.upTo = false; return x; }
   if ((m = /^that (Leader or Character|Character|card)$/i.exec(p))) return { ref: 'selected' };
   if (/^the opponent's (Character|Leader or Character) (you battled with|this Character battled with|battling this Character)$/.test(p)) return { ref: 'battleOpp' };
   return sel(p, def);
@@ -324,7 +331,8 @@ export function parseCond(s, def) {
   // "A and B"
   const parts = splitTop(t, ' and ');
   if (parts.length > 1) {
-    try { return { k: 'and', all: parts.map(x => parseCond(x, def)) }; } catch (e) { if (!(e instanceof ParseError)) throw e; }
+    // "you have 6 or less cards in your hand and a Character with a cost of 8 or more": the subject carries over
+    try { return { k: 'and', all: parts.map((x, i) => parseCond(i && /^an? /.test(x) ? `you have ${x}` : x, def)) }; } catch (e) { if (!(e instanceof ParseError)) throw e; }
   }
   if ((m = /^you have (\d+) or (more|less) (rested )?Characters$/.exec(t))) return { k: 'cmp', a: count('you', ['C'], m[3] ? [{ k: 'rested' }] : []), op: cmpWord(m[2]), b: +m[1] };
   if ((m = /^you have (\d+) or (more|less) Characters with a (base )?cost of (\d+) or more$/.exec(t))) return { k: 'cmp', a: count('you', ['C'], [{ k: m[3] ? 'baseCost' : 'cost', op: '>=', n: +m[4] }]), op: cmpWord(m[2]), b: +m[1] };
@@ -348,14 +356,14 @@ export function parseCond(s, def) {
   if ((m = /^your Leader's type includes "([^"]+)"$/.exec(t))) return { k: 'leader', who: 'you', f: [{ k: 'traitHas', any: [m[1]] }] };
   if ((m = /^your Leader is multicolou?red$/.exec(t))) return { k: 'leader', who: 'you', f: [{ k: 'multicolor' }] };
   if ((m = /^there is a (.+)$/.exec(t))) return { k: 'exists', sel: sel(`up to 1 ${m[1]}`, def) };
+  // rested cards: Leader, Characters, Stage and the cost area's DON!! cards
+  if ((m = /^you have (\d+) or more rested cards$/.exec(t))) return { k: 'cmp', a: { k: 'restedCards', who: 'you' }, op: '>=', b: +m[1] };
   if ((m = /^(you|your opponent) (?:have|has) (an?|\d+ or more) (.+)$/.exec(t))) {
     const n = /^\d/.test(m[2]) ? parseInt(m[2], 10) : 1;
     const x = sel(`up to 1 of ${m[1] === 'you' ? 'your' : "your opponent's"} ${m[3]}`, def);
     return { k: 'exists', sel: x, n };
   }
   if ((m = /^you have (\[[^\]]+\]) and (\[[^\]]+\]) (Characters.*)$/.exec(t))) return { k: 'and', all: [m[1], m[2]].map(nm => ({ k: 'exists', sel: sel(`up to 1 of your ${nm} ${m[3].replace(/^Characters/, 'Character')}`, def) })) };
-  // rested cards: Leader, Characters, Stage and the cost area's DON!! cards
-  if ((m = /^you have (\d+) or more rested cards$/.exec(t))) return { k: 'cmp', a: { k: 'restedCards', who: 'you' }, op: '>=', b: +m[1] };
   if ((m = /^this Character is rested$/.exec(t))) return { k: 'self', f: [{ k: 'rested' }] };
   if ((m = /^this Character was played on this turn$/.exec(t))) return { k: 'self', f: [{ k: 'playedThisTurn' }] };
   // "that card": the card the effect just revealed or chose
@@ -483,15 +491,19 @@ function tryClause(t, def) {
 function parseClause(text, def) {
   const t = text.trim().replace(/\.$/, '');
   let m;
+  // ---- "... at the end of this turn": a delayed effect (6-6-1-2)
+  if ((m = /^(.+) at the end of this turn$/.exec(t))) return [{ op: 'delayed', steps: parseClause(cap(m[1]), def) }];
   // ---- K.O.
   if ((m = /^K\.O\. (.+)$/i.exec(t))) return [{ op: 'ko', sel: target(m[1], def) }];
   // ---- rest / set active
   if ((m = /^[Rr]est up to (\d+) of your opponent's DON!! cards?$/.exec(t))) return [{ op: 'restDon', who: 'opp', n: +m[1], upTo: true }];
   if ((m = /^[Rr]est (.+?)( and that Character will not become active in your opponent's next Refresh Phase)?$/.exec(t)) && !/DON!!/.test(m[1])) return [{ op: 'rest', sel: target(m[1], def), noRefresh: !!m[2] }];
   if ((m = /^[Ss]et up to (\d+) of your DON!! cards as active$/.exec(t))) return [{ op: 'donActive', n: +m[1], upTo: true }];
-  if ((m = /^[Ss]et up to (\d+) of your DON!! cards as active at the end of this turn$/.exec(t))) return [{ op: 'delayed', steps: [{ op: 'donActive', n: +m[1], upTo: true }] }];
   if ((m = /^[Ss]et (.+?) as active$/.exec(t))) return [{ op: 'setActive', sel: target(m[1], def) }];
+  if ((m = /^(.+?) will not become active in your opponent's next Refresh Phase$/.exec(t))) return [{ op: 'freeze', sel: target(cap(m[1]).replace(/^Up to/, 'up to'), def) }];
   // ---- power
+  // "+1000 power during this battle for every card trashed / returned Character"
+  if ((m = /^(.+?) gains? ([+-]\d+) power (.+?) for every (card trashed|returned Character)$/.exec(t))) return [{ op: 'power', sel: target(m[1], def), n: { k: 'per', each: +m[2], of: { k: 'var', name: m[4] === 'card trashed' ? 'trashed' : 'returned' } }, dur: dur(m[3]) || fail('power with no duration') }];
   if ((m = /^(.+?) gains? ([+-]\d+) power(?: (.+))?$/.exec(t)) && !/^give /i.test(t)) {
     const d = dur(m[3]);
     if (!d) fail('power with no duration in an effect');
@@ -511,6 +523,8 @@ function parseClause(text, def) {
     if (m[3]) out.push({ op: 'power', sel: target(m[1], def), n: +m[3], dur: dur(m[4]) });
     return out;
   }
+  // "[On Play] ... this Character gains [Rush]" with no duration: for as long as it stays on the field
+  if ((m = /^(this Character|this Leader) gains? \[(Rush|Blocker|Double Attack|Banish|Unblockable|Rush: Character)\]$/i.exec(t))) return [{ op: 'grant', sel: target(m[1], def), kw: m[2], dur: 'game' }];
   // ---- DON!!
   if ((m = /^[Gg]ive (.+?) up to (\d+) rested DON!! cards?$/.exec(t))) return [{ op: 'giveDon', sel: target(m[1], def), n: +m[2], upTo: true }];
   if ((m = /^[Gg]ive up to (\d+) rested DON!! cards? to (.+)$/.exec(t))) return [{ op: 'giveDon', sel: donTarget(m[2], def), n: +m[1], upTo: true }];
@@ -529,14 +543,31 @@ function parseClause(text, def) {
     const x = sel(`up to ${m[2]} ${m[3]}`, def, { zone: 'deck' });
     return [{ op: 'look', n: +m[1], pick: { max: +m[2], cats: x.cats, f: x.f, to: 'hand' } }];
   }
-  if ((m = /^[Pp]lace the rest at the (bottom|top) of your deck in any order$/.exec(t))) return [{ op: 'rest', placeRest: m[1] }];
+  if ((m = /^[Pp]lace the rest at the (bottom|top) of your deck(?: in any order)?$/.exec(t))) return [{ op: 'rest', placeRest: m[1] }];
   if ((m = /^[Tt]rash the rest$/.exec(t))) return [{ op: 'rest', placeRest: 'trash' }];
-  if ((m = /^[Pp]lace the rest at the top or bottom of the deck in any order$/.exec(t))) return [{ op: 'rest', placeRest: 'topOrBottom' }];
+  if ((m = /^[Pp]lace the rest at the top or bottom of (?:the|your) deck(?: in any order)?$/.exec(t))) return [{ op: 'rest', placeRest: 'topOrBottom' }];
+  // "Reveal 1 card from the top of your deck and add up to 1 {FILM} type card to your hand" (or play it): a look
+  // at 1 card that both players see
+  if ((m = /^[Rr]eveal 1 card from the top of your deck,? and add up to 1 (.+?) to your hand$/.exec(t))) { const x = sel(`up to 1 ${m[1]}`, def, { zone: 'deck' }); return [{ op: 'look', n: 1, reveal: true, pick: { max: 1, cats: x.cats, f: x.f, to: 'hand' } }]; }
+  if ((m = /^[Rr]eveal 1 card from the top of your deck(?:,| and) play up to 1 (.+?)( rested)?(?:,? and place the rest at the (top or bottom|bottom|top) of your deck)?$/.exec(t))) {
+    const x = sel(`up to 1 ${m[1]}`, def, { zone: 'deck' });
+    const out = { op: 'look', n: 1, reveal: true, pick: { max: 1, cats: x.cats || ['C'], f: x.f, to: 'play', rested: !!m[2] } };
+    if (m[3]) out.rest = m[3] === 'top or bottom' ? 'topOrBottom' : m[3];
+    return [out];
+  }
+  if ((m = /^[Pp]lace (\d+) cards? from your hand at the (top|bottom) of your deck$/.exec(t))) return [{ op: 'handToDeck', n: +m[1], bottom: m[2] === 'bottom' }];
   if ((m = /^[Ll]ook at (\d+) cards from the top of your deck and (?:place|return) them (?:at|to) the (top or bottom|top) of (?:the|your) deck in any order$/.exec(t))) return [{ op: 'look', n: +m[1], rest: m[2] === 'top' ? 'top' : 'topOrBottom' }];
   // ---- playing cards
   if ((m = /^[Pp]lay this card$/.exec(t))) return [{ op: 'playSelf' }];
   if ((m = /^[Pp]lay this Character card from your trash( rested)?$/.exec(t))) return [{ op: 'playSelf', fromTrash: true, rested: !!m[1] }];
   if ((m = /^[Aa]ctivate this card's \[(Main|Counter)\] effect$/.exec(t))) return [{ op: 'runEffect', which: m[1].toLowerCase() }];
+  // "Play up to 1 each of [Sabo], [Portgas.D.Ace], and [Monkey.D.Luffy] with a cost of 2 from your hand"
+  if ((m = /^[Pp]lay up to 1 each of ((?:\[[^\]]+\](?:,? (?:and )?)?)+)\s*(.*?) from your (hand|trash|deck|hand or trash)( rested)?$/.exec(t))) {
+    const each = [...m[1].matchAll(/\[([^\]]+)\]/g)].map(x => x[1]);
+    const x = m[2] ? sel(`up to 1 Character card ${m[2]}`, def, { zone: 'hand' }) : { f: [] };
+    return [{ op: 'play', from: m[3] === 'hand or trash' ? 'handOrTrash' : m[3], each, cats: ['C'], f: x.f, rested: !!m[4] }];
+  }
+  if ((m = /^[Yy]ou may play that card( rested)?$/.exec(t))) return [{ op: 'playThat', rested: !!m[1] }];
   if ((m = /^[Pp]lay up to (\d+) (.+?) from your (hand|trash|deck|hand or trash)( rested)?(?:, then shuffle your deck)?$/.exec(t))) {
     const x = sel(`up to ${m[1]} ${m[2]}`, def, { zone: 'hand' });
     return [{ op: 'play', from: m[3] === 'hand or trash' ? 'handOrTrash' : m[3], n: +m[1], cats: x.cats || ['C'], f: x.f, rested: !!m[4] }];
@@ -555,6 +586,19 @@ function parseClause(text, def) {
   if ((m = /^[Ll]ook at up to 1 card from the top of your or your opponent's Life cards, and place it at the top or bottom of the Life cards$/.exec(t))) return [{ op: 'lookLife', who: 'either' }];
   if ((m = /^[Ll]ook at up to 1 card from the top of your opponent's Life cards, and place it at the top or bottom of the Life cards$/.exec(t))) return [{ op: 'lookLife', who: 'opp' }];
   if ((m = /^[Aa]dd up to (\d+) cards? from your hand to the top of your Life cards$/.exec(t))) return [{ op: 'handToLife', n: +m[1], upTo: true }];
+  if ((m = /^[Aa]dd up to (\d+) (.+?) from your (hand|trash|hand or trash) to the top of your Life cards(?: face-(up|down))?$/.exec(t))) {
+    const x = sel(`up to ${m[1]} ${m[2]}`, def, { zone: 'hand' });
+    return [{ op: 'handToLife', from: m[3] === 'hand or trash' ? 'handOrTrash' : m[3], n: +m[1], upTo: true, cats: x.cats, f: x.f, faceUp: m[4] === 'up' }];
+  }
+  if ((m = /^[Rr]eveal up to (\d+) (.+?) from your hand and add (?:it|them) to the top of your Life cards(?: face-(up|down))?$/.exec(t))) {
+    const x = sel(`up to ${m[1]} ${m[2]}`, def, { zone: 'hand' });
+    return [{ op: 'handToLife', from: 'hand', n: +m[1], upTo: true, cats: x.cats, f: x.f, faceUp: m[3] === 'up', reveal: true }];
+  }
+  if ((m = /^[Tt]rash (\d+) cards? from the top of your Life cards$/.exec(t))) return [{ op: 'trashLife', who: 'you', n: +m[1] }];
+  if ((m = /^[Ll]ook at all (?:of )?your Life cards and place them back in your Life area in any order$/.exec(t))) return [{ op: 'lookLife', who: 'you', all: true }];
+  if ((m = /^[Ll]ook at all (?:of )?your Life cards; place 1(?: card)? at the top of your deck and place the rest back in your Life area in any order$/.exec(t))) return [{ op: 'lookLife', who: 'you', all: true, toDeckTop: 1 }];
+  if ((m = /^[Rr]eveal 1 card from the top of your Life cards$/.exec(t))) return [{ op: 'reveal', from: 'life' }];
+  if (/^you cannot add Life cards to your hand using your own effects during this turn$/i.test(t)) return [{ op: 'playerFlag', flag: 'noOwnLifeToHand', who: 'you', dur: 'turn' }];
   if ((m = /^[Aa]dd (.+?) to the (top or bottom|top) of the owner's Life cards( face-up)?$/.exec(t))) return [{ op: 'fieldToLife', sel: target(m[1], def), where: m[2] === 'top' ? 'top' : 'topOrBottom', faceUp: !!m[3] }];
   // ---- the card itself from a [Trigger]
   if ((m = /^add this card to your hand$/i.exec(t))) return [{ op: 'selfToHand' }];
@@ -564,6 +608,11 @@ function parseClause(text, def) {
   if ((m = /^(.+?) cannot attack (until .+|during this turn)$/.exec(t))) return [{ op: 'restrict', flag: 'cantAttack', sel: target(m[1], def), dur: dur(m[2]), text: "can't attack" }];
   // ---- reveal
   if ((m = /^[Rr]eveal 1 card from the top of your deck$/.exec(t))) return [{ op: 'reveal' }];
+  // ---- "any number of"
+  if ((m = /^[Yy]ou may return any number of Characters on your field to the owner's hand$/.exec(t))) return [{ op: 'bounceAny' }];
+  if ((m = /^[Yy]ou may trash any number of (.+?) from your hand$/.exec(t))) return [{ op: 'discardAny', ...handCards(m[1].replace(/^(.*?)cards$/, '$1card'), def) }];
+  // ---- trash from the field (not a K.O.)
+  if ((m = /^[Tt]rash (up to \d+ of (?:your|your opponent's) .+)$/.exec(t))) { const x = target(m[1], def); if (x.zone && x.zone !== 'field') fail('trash from the field'); return [{ op: 'trashField', sel: x }]; }
   fail(`clause "${t}"`);
 }
 // "your Leader or 1 of your Characters", "1 of your {X} type Leader or Character cards", "your Leader"
@@ -614,9 +663,15 @@ function parseNoTiming(s, def, head) {
     const w = parseWhen(m[1], def);
     if (w) return { kind: 'auto', timings: [w.timing], when: w.when, ...parseCostEffect(cap(m[2]), def, 'auto'), ...base };
   }
-  // permanent effects (8-1-3-3)
-  let cond = null, body = s;
-  if ((m = /^If (.+?), ((?:this|your|all|All|give) .+)$/.exec(s))) { cond = parseCond(m[1], def); body = m[2]; }
+  // permanent effects (8-1-3-3), one per sentence ("All of your Characters gain +1 cost. If you have ..., this Leader
+  // gains +1000 power." under one [DON!! x1])
+  const sentences = splitSentences(s);
+  if (sentences.length > 1) return sentences.map(x => parseStatic(x, def, base));
+  return parseStatic(s, def, base);
+}
+function parseStatic(s, def, base) {
+  let m, cond = null, body = s;
+  if ((m = /^If (.+?), ((?:this|This|your|Your|all|All|give) .+)$/.exec(s))) { cond = parseCond(m[1], def); body = m[2]; }
   const mods = parseMods(body, def);
   return { kind: 'static', mods, cond, ...base, hand: mods.some(x => x.hand) };
 }
@@ -653,6 +708,14 @@ function parseMods(text, def) {
     if (/^(this Leader|This Leader|your Leader|Your Leader)$/.test(x)) return { ref: 'leader' };
     return target(x.replace(/^All /, 'all ').replace(/^Your /, 'your ').replace(/^your (?!opponent)/, 'all of your '), def);
   };
+  // "this Character cannot be K.O.'d by your opponent's effects and gains +2000 power": the subject carries over
+  if (parts.length > 1 && parts.slice(1).every(x => /^(?:cannot|can|gains?) /.test(x))) {
+    const subj = (/^(.+?) (?:cannot|can|gains?) /.exec(parts[0]) || [])[1];
+    if (subj) {
+      try { return parts.flatMap((x, i) => parseMods(i ? `${subj} ${x}` : x, def)); }
+      catch (e) { if (!(e instanceof ParseError)) throw e; }
+    }
+  }
   if ((m = /^(.+?) gains? (?:\[(Rush|Blocker|Double Attack|Banish|Unblockable|Rush: Character)\]|([+-]\d+) (power|cost))(?: and (?:\[(Rush|Blocker|Double Attack|Banish|Unblockable)\]|([+-]\d+) (power|cost)))?$/.exec(t))) {
     const s1 = who(m[1]);
     const out = [];
@@ -667,6 +730,7 @@ function parseMods(text, def) {
     return [{ k: 'noKO', sel: who(m[1]), how }];
   }
   if ((m = /^(.+?) can also attack your opponent's active Characters$/.exec(t))) return [{ k: 'canAttackActive', sel: who(m[1]) }];
-  void parts;
+  // ST13-003: damage (the rules) doesn't add face-up Life cards to the hand
+  if (/^Your face-up Life cards are placed at the bottom of your deck instead of being added to your hand, according to the rules$/.test(t)) return [{ k: 'faceUpLifeToDeck', sel: { ref: 'leader' } }];
   fail(`permanent effect "${t}"`);
 }
