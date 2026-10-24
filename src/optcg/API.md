@@ -110,6 +110,10 @@ gets to see (for example all 5 cards looked at from the deck), of which `options
 "Up to" choices have `min: 0`. A few effects pick from two areas at once (Koala's "from your hand or trash"): those
 come with `from: 'hand'` and options from both.
 
+`from: 'opp-hand'` (hint 'discard-opp'): the player picks cards from the opponent's hand without seeing them
+(ST10-010 Law's "trash 2 cards from your opponent's hand": the player of the effect chooses, 8-4-4-3, and can't see
+the opponent's hand, 3-4-3). Show the options as card backs.
+
 ### `counter`
 
 `options` lists `{ card, kind: 'counter', value }` (a Character card's Counter from the hand) and
@@ -124,15 +128,16 @@ The coin-flip winner gets an `option` request with `hint: 'first'` and the value
 
 ### Hints
 
-- `cards`: 'take' (to the hand), 'discard', 'play', 'reveal', 'topdeck', 'recycle', 'to-life', 'keep-top', and for
+- `cards`: 'take' (to the hand), 'discard', 'discard-opp', 'play', 'reveal', 'topdeck', 'recycle', 'to-life', 'keep-top', and for
   `from: 'field'` 'ko', 'rest', 'buff', 'debuff', 'cost-up', 'cost-down', 'bounce', 'bottom', 'grant', 'give-don',
   'set-active', 'select', 'trash-for-room', 'rest-cost', 'bounce-cost', 'don-unattach'
 - `option`: 'first', 'don-return' (which DON!! card goes back for a DON!! −X), 'life-end' (top or bottom Life card),
   'life-whose', 'choose-one', 'order-effects' (which of several simultaneous effects resolves first)
 - `number`: 'don-n' (how many DON!! cards), 'don-return-n'
 - `order`: 'order-top', 'order-bottom', 'order-life'
-- `confirm`: 'pay-cost' ("You may ..." costs of effects that activate on their own), 'may', 'replace'
-  ("instead" effects)
+- `confirm`: 'pay-cost' ("You may ..." costs of effects that activate on their own, including ① and DON!! −X, whose
+  printed reminder says "You may"; the request also carries `card` and `ability`, the effect's card uid and index),
+  'may', 'replace' ("instead" effects)
 - 'main', 'block', 'counter', 'trigger', 'mulligan' for those types
 
 ## Events

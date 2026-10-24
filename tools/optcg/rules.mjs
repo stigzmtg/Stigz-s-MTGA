@@ -26,7 +26,7 @@ class Scripted {
 function setup({ leaders = ['ST01-001', 'ST02-001'], seed = 5 } = {}) {
   const a = new Scripted(), b = new Scripted();
   const g = new OnePieceGame({ db, seed, players: [{ name: 'A', deck: deckOf(leaders[0]), agent: a }, { name: 'B', deck: deckOf(leaders[1]), agent: b }] });
-  g.throwErrors = true;
+  g.throwErrors = true; lastGame = g;
   g.turn = 3; g.current = 0; g.first = 0; g.phase = 'main';
   for (const p of g.players) { p.turns = 2; p.donDeck = 10; }
   const mk = (pid, id) => { const d = db[id]; if (!d) throw new Error('no card ' + id); const c = new OCard(d, pid, g.uid++); c.inst = g.uid++; return c; };
@@ -75,6 +75,7 @@ function setup({ leaders = ['ST01-001', 'ST02-001'], seed = 5 } = {}) {
 }
 
 const tests = [];
+let lastGame = null;      // the newest test game, for DEBUG=1 logs
 const test = (name, fn) => tests.push({ name, fn });
 const expect = (c, msg) => { if (!c) throw new Error('expected: ' + msg); };
 const ONLY = process.argv[2] ? new RegExp(process.argv[2], 'i') : null;
@@ -620,11 +621,301 @@ test('ST02-017 Straw Sword: [Main] rest up to 1 of the opponent\'s Characters', 
   expect(c.rested, 'rested');
 });
 
+// ================================================================ ST-03 to ST-10
+test('DON!! −X costs are optional ("You may return ...", 8-3-1-4): ST04-003 Kaido [On Play] DON!! −5 declined does nothing', async () => {
+  const T = setup();
+  const t = T.char(1, FILLER);
+  T.don(0, 9, 1);
+  T.a.on('pay-cost', () => false);
+  const k = T.hand(0, 'ST04-003');
+  await T.play(k);
+  expect(T.B.characters.includes(t) && !T.g.has(k, 'Rush') && T.A.donDeck === 0, 'no K.O., no [Rush], no DON!! returned');
+  const T2 = setup();
+  const t2 = T2.char(1, FILLER);
+  T2.don(0, 10);
+  T2.a.on('pay-cost', () => true);
+  const k2 = T2.hand(0, 'ST04-003');
+  await T2.play(k2);
+  expect(T2.B.trash.includes(t2) && T2.g.has(k2, 'Rush') && T2.A.donDeck === 5 && T2.A.donRested + T2.A.donActive === 5, 'paid: 5 DON!! back to the DON!! deck, K.O. and [Rush]');
+});
+test('AI: doesn\'t pay DON!! −1 for ST04-004 King\'s K.O. when there is nothing to K.O.', async () => {
+  const T = setup();
+  T.don(0, 7);
+  await T.play(T.hand(0, 'ST04-004'));
+  expect(T.A.donDeck === 3, `no DON!! returned (${T.A.donDeck} in the DON!! deck)`);
+});
+test('ST03-001 Crocodile (Leader): DON!! −4 counts given DON!! too (8-3-1-6); return a cost 5 or less Character to the hand', async () => {
+  const T = setup({ leaders: ['ST03-001', 'ST01-001'] });
+  const mine = T.char(0, FILLER);
+  T.don(0, 4); await T.give(mine); await T.give(mine);
+  const t = T.char(1, 'ST03-003');                       // cost 5
+  const asked = [];
+  T.a.on('don-return', req => { asked.push(req.options.map(o => o.value)); return req.options.find(o => o.value === mine.uid) ? mine.uid : req.options[0].value; });
+  T.a.on('bounce', () => [t.uid]);
+  await T.activate(T.A.leader);
+  expect(T.B.hand.includes(t) && T.A.donDeck === 10 && mine.don === 0 && T.A.donActive === 0, `bounced; all 4 DON!! back in the DON!! deck (${T.A.donDeck}, given ${mine.don})`);
+  expect(asked.length === 2 && asked[0].includes(mine.uid), 'asked per DON!! card while there is a choice, given ones offered');
+});
+test('ST03-007 Sentomaru: [DON!! x1] ②: play a [Pacifista] with a cost of 4 or less from the deck, then shuffle', async () => {
+  const T = setup();
+  const s = T.char(0, 'ST03-007');
+  T.don(0, 3);
+  expect(!T.can({ t: 'activate', card: s.uid }), 'needs [DON!! x1]');
+  await T.give(s);
+  const [p] = T.deckTop(0, ['ST03-012']);
+  let req0;
+  T.a.on('play', req => { req0 = req; return [p.uid]; });
+  await T.activate(s);
+  expect(T.A.characters.includes(p) && req0.options.length === 1 && req0.shown.length === T.A.deck.length + 1, 'Pacifista played from the deck (the whole deck shown)');
+  expect(T.g.events.some(e => e.kind === 'shuffle' && e.pid === 0), 'deck shuffled');
+});
+test('ST03-010 Kuma: [On Play] look at 3, put them back at the top or bottom in any order', async () => {
+  const T = setup();
+  T.don(0, 2);
+  const top = T.deckTop(0, ['ST03-012', 'ST03-002', 'ST03-006']);
+  T.a.on('keep-top', () => [top[2].uid, top[0].uid]);
+  T.a.on('order-top', () => [top[2].uid, top[0].uid]);
+  await T.play(T.hand(0, 'ST03-010'));
+  expect(T.A.deck[0] === top[2] && T.A.deck[1] === top[0] && T.A.deck[T.A.deck.length - 1] === top[1], 'Jinbe, Pacifista on top; Weevil at the bottom');
+});
+test('ST04-001 Kaido (Leader): DON!! −7: trash the top card of the opponent\'s Life', async () => {
+  const T = setup({ leaders: ['ST04-001', 'ST01-001'] });
+  T.don(0, 7);
+  const l = [...T.life(1, [FILLER, 'ST01-012'])];
+  await T.activate(T.A.leader);
+  expect(T.B.trash.includes(l[0]) && T.B.life.length === 1 && T.A.donDeck === 10, 'top Life card trashed');
+});
+test('ST05-010 Zephyr: when it battles a <Strike> Character, +3000 this turn; not against others (decided: when the battle\'s two cards are settled, after the Block Step)', async () => {
+  const T = setup();
+  T.quiet();
+  const z = T.char(0, 'ST05-010');
+  const strike = T.char(1, 'ST03-006', { rested: true });     // Jinbe <Strike>
+  const slash = T.char(1, 'ST03-002', { rested: true });      // Weevil <Slash>
+  await T.attack(z, slash);
+  expect(T.g.power(z) === 8000, `no boost vs <Slash> (${T.g.power(z)})`);
+  z.rested = false;
+  await T.attack(z, strike);
+  expect(T.g.power(z) === 11000 && T.B.trash.includes(strike), `+3000 vs <Strike> (${T.g.power(z)})`);
+  // attacked by a <Strike> Character on the opponent's turn: 8000 + 3000 beats 10000
+  const T2 = setup();
+  T2.quiet(0);
+  const z2 = T2.char(0, 'ST05-010', { rested: true });
+  const big = T2.char(1, 'ST04-003');                           // Kaido 10000 <Strike>
+  T2.g.current = 1; T2.B.turns = 3;
+  await T2.attack(big, z2);
+  expect(T2.A.characters.includes(z2) && T2.g.power(z2) === 11000, `Zephyr survives at 11000 (${T2.g.power(z2)})`);
+});
+test('ST05-017 Union Armada: +4000; if the chosen card is a Character it can\'t be K.O.\'d this turn', async () => {
+  for (const pickLeader of [false, true]) {
+    const T = setup({ leaders: ['ST01-001', 'ST05-001'] });
+    const bins = T.char(1, 'ST05-013', { rested: true });    // FILM, 6000
+    T.hand(1, 'ST05-017'); T.don(1, 2);
+    T.b.on('blocker', () => null);
+    let n = 0;
+    T.b.on('counter', req => (n++ ? null : req.options.find(o => o.kind === 'event')));
+    T.b.on('buff', () => [pickLeader ? T.B.leader.uid : bins.uid]);
+    const att = T.char(0, FILLER); T.don(0, 3); await T.give(att, 3);   // 8000
+    await T.attack(att, bins);
+    if (pickLeader) expect(T.B.trash.includes(bins), 'Leader chosen: Bins is K.O.\'d');
+    else expect(T.B.characters.includes(bins) && !T.g.canBeKOd(bins, { by: 'effect', pid: 0 }), 'Bins survives at 10000 and can\'t be K.O.\'d this turn');
+  }
+});
+test('ST05-008 Shiki: with 8 or more DON!! on your field, can\'t be K.O.\'d in battle', async () => {
+  const T = setup();
+  T.quiet(0);
+  const s = T.char(1, 'ST05-008', { rested: true });
+  T.don(1, 8);
+  const att = T.char(0, FILLER); T.don(0, 2); await T.give(att, 2);
+  T.B.donActive = 8; T.B.donDeck = 2;
+  await T.attack(att, s);
+  expect(T.B.characters.includes(s), 'not K.O.\'d with 8 DON!!');
+  T.B.donActive = 7; T.B.donDeck = 3; T.g.touch();
+  const att2 = T.char(0, 'ST04-003');
+  await T.attack(att2, s);
+  expect(T.B.trash.includes(s), 'K.O.\'d with 7');
+});
+test('ST06-004 Smoker: can\'t be K.O.\'d by effects; [DON!! x1] [Double Attack] while there is a Character with a cost of 0', async () => {
+  const T = setup();
+  const s = T.char(0, 'ST06-004');
+  T.don(0, 1); await T.give(s);
+  expect(!T.g.has(s, 'Double Attack'), 'no cost-0 Character yet');
+  const c = T.char(1, FILLER);
+  T.g.addEffect({ kind: 'cost', card: c, n: -3 }, 'turn', 0);
+  expect(T.g.has(s, 'Double Attack'), 'Double Attack with a cost-0 Character on the field');
+  expect(!(await T.g.ko(s, { by: 'effect', pid: 1 })) && T.A.characters.includes(s), 'an effect can\'t K.O. it');
+});
+test('ST06-016 White Out: [Trigger] none of your Characters can be K.O.\'d during this turn', async () => {
+  const T = setup();
+  T.quiet(); T.b.on('trigger', () => true);
+  T.life(1, ['ST06-016', FILLER]);
+  const r = T.char(1, FILLER, { rested: true });
+  await T.attack(T.A.leader, T.B.leader);
+  const big = T.char(0, 'ST04-003');
+  await T.attack(big, r);
+  expect(T.B.characters.includes(r), 'not K.O.\'d in battle this turn');
+});
+test('ST07-001 Linlin (Leader): [DON!! x2] [When Attacking] Life card to hand (top or bottom), then with 2 or less Life add a card from the hand to the top of Life', async () => {
+  const T = setup({ leaders: ['ST07-001', 'ST01-001'] });
+  T.quiet();
+  T.life(1, [FILLER]);
+  const l = [...T.life(0, [FILLER, FILLER, 'ST01-012'])];
+  const h = T.hand(0, 'ST07-002');
+  T.don(0, 2); await T.give(T.A.leader, 2);
+  T.a.on('pay-cost', () => true); T.a.on('life-end', () => 'bottom'); T.a.on('to-life', () => [h.uid]);
+  await T.attack(T.A.leader, T.B.leader);
+  expect(T.A.hand.includes(l[2]) && T.A.life[0] === h && T.A.life.length === 3, 'bottom Life card to hand, Anana to the top of Life');
+});
+test('ST07-003 Katakuri: [On Play] look at the top Life card of either player, then [Rush] if you have less Life', async () => {
+  const T = setup();
+  T.life(0, [FILLER, FILLER]);
+  const bl = [...T.life(1, ['ST01-012', FILLER, FILLER])];
+  T.don(0, 4);
+  T.a.on('life-whose', () => 1); T.a.on('life-end', () => 'bottom');
+  const k = T.hand(0, 'ST07-003');
+  await T.play(k);
+  expect(T.B.life[2] === bl[0] && T.g.has(k, 'Rush') && T.can({ t: 'attack', card: k.uid }), 'B\'s top Life card moved to the bottom; [Rush]');
+});
+test('ST07-010 Linlin: [On Play] the opponent chooses: trash the top of their Life, or you add a card to your Life', async () => {
+  for (const pick of [0, 1]) {
+    const T = setup();
+    T.life(0, [FILLER]); T.life(1, [FILLER, FILLER]);
+    T.don(0, 7);
+    T.b.on('choose-one', req => req.options[pick].value);
+    await T.play(T.hand(0, 'ST07-010'));
+    expect(pick === 0 ? T.B.life.length === 1 && T.A.life.length === 1 : T.B.life.length === 2 && T.A.life.length === 2, `option ${pick}`);
+  }
+});
+test('ST07-017 Queen Mama Chanter: rest it and take a Life card: a cost-3 Character goes to the top of your Life face-up', async () => {
+  const T = setup();
+  const s = T.stage(0, 'ST07-017');
+  const c = T.char(0, FILLER);
+  T.life(0, ['ST01-012']);
+  await T.activate(s);
+  expect(T.A.life[0] === c && c.faceUp && s.rested && T.A.hand.length === 1, 'Robin is the top Life card, face-up');
+});
+test('ST08-001 Luffy (Leader): [Your Turn] when a Character is K.O.\'d, give up to 1 rested DON!! to this Leader', async () => {
+  const T = setup({ leaders: ['ST08-001', 'ST01-001'] });
+  T.quiet();
+  T.don(0, 0, 2);
+  await T.attack(T.char(0, 'ST04-003'), T.char(1, FILLER, { rested: true }));
+  expect(T.A.leader.don === 1 && T.A.donRested === 1, `1 rested DON!! given (${T.A.leader.don})`);
+  T.g.current = 1;
+  await T.g.ko(T.char(1, FILLER), { by: 'effect', pid: 1 }); await T.g.resolvePending();
+  expect(T.A.leader.don === 1, 'not on the opponent\'s turn');
+});
+test('ST08-002 Uta: can\'t be K.O.\'d in battle by Leaders', async () => {
+  const T = setup();
+  T.quiet();
+  const u = T.char(1, 'ST08-002', { rested: true });
+  await T.attack(T.A.leader, u);
+  expect(T.B.characters.includes(u), 'the Leader doesn\'t K.O. it');
+  await T.attack(T.char(0, FILLER), u);
+  expect(T.B.trash.includes(u), 'a Character does');
+});
+test('ST08-013 Mr.2: [DON!! x1] at the end of a battle with a Character, may K.O. it; if you do, K.O. Mr.2', async () => {
+  const T = setup();
+  T.quiet();
+  const m = T.char(0, 'ST08-013');
+  T.don(0, 1); await T.give(m);
+  const big = T.char(1, 'ST05-011', { rested: true });     // 10000
+  T.a.on('may', () => true);
+  await T.attack(m, big);
+  expect(T.B.trash.includes(big) && T.A.trash.includes(m), 'lost the battle, then K.O.\'d both');
+  const T2 = setup();
+  T2.quiet();
+  const m2 = T2.char(0, 'ST08-013');
+  T2.don(0, 1); await T2.give(m2);
+  const small = T2.char(1, FILLER, { rested: true });
+  T2.a.on('may', () => true);
+  await T2.attack(m2, small);
+  expect(T2.B.trash.includes(small) && T2.A.characters.includes(m2), 'won: nothing left to K.O., so Mr.2 stays');
+});
+test('ST09-001 Yamato (Leader): [DON!! x1] [Opponent\'s Turn] +1000 with 2 or less Life (no DON!! bonus on the opponent\'s turn)', async () => {
+  const T = setup({ leaders: ['ST01-001', 'ST09-001'] });
+  T.B.leader.don = 1; T.B.donDeck = 9;
+  T.life(1, [FILLER, FILLER]);
+  expect(T.g.power(T.B.leader) === 6000, `6000 (${T.g.power(T.B.leader)})`);
+  T.life(1, [FILLER, FILLER, FILLER]); T.g.touch();
+  expect(T.g.power(T.B.leader) === 5000, `5000 with 3 Life (${T.g.power(T.B.leader)})`);
+});
+test('ST09-010 Ace: [Once Per Turn] if it would be K.O.\'d, trash a top or bottom Life card instead', async () => {
+  const T = setup();
+  const ace = T.char(1, 'ST09-010');
+  const l = [...T.life(1, [FILLER, 'ST01-012'])];
+  T.b.on('replace', () => true); T.b.on('life-end', () => 'bottom');
+  await T.g.ko(ace, { by: 'effect', pid: 0 });
+  expect(T.B.characters.includes(ace) && T.B.trash.includes(l[1]), 'stays; the bottom Life card is trashed');
+  await T.g.ko(ace, { by: 'effect', pid: 0 });
+  expect(T.B.trash.includes(ace), 'K.O.\'d the second time this turn');
+});
+test('ST09-015 Thunder Bagua: [Counter] +4000; with 2 or less Life, the attacker (cost 3) goes to its owner\'s Life face-up and the battle ends', async () => {
+  const T = setup();
+  T.life(1, [FILLER, FILLER]);
+  T.hand(1, 'ST09-015'); T.don(1, 2);
+  T.b.on('blocker', () => null);
+  let n = 0;
+  T.b.on('counter', req => (n++ ? null : req.options.find(o => o.kind === 'event')));
+  T.b.on('buff', () => [T.B.leader.uid]);
+  const att = T.char(0, FILLER);
+  T.a.on('life-end', () => 'top');
+  T.b.on('to-life', () => [att.uid]);
+  T.b.on('life-end', () => 'top');
+  await T.attack(att, T.B.leader);
+  expect(T.A.life[0] === att && att.faceUp && T.B.life.length === 2 && !T.g.fight, 'the attacker is A\'s top Life card; no damage');
+});
+test('ST10-002 Luffy (Leader): [Activate: Main] with 0 or 8+ DON!! on the field, add 1 active DON!!', async () => {
+  const T = setup({ leaders: ['ST10-002', 'ST01-001'] });
+  T.don(0, 0);
+  await T.activate(T.A.leader);
+  expect(T.A.donActive === 1, 'added with 0');
+  const T2 = setup({ leaders: ['ST10-002', 'ST01-001'] });
+  T2.don(0, 5);
+  await T2.activate(T2.A.leader);
+  expect(T2.A.donActive === 5, 'nothing with 5');
+});
+test('ST10-006 Luffy: [Once Per Turn] when the opponent activates a [Blocker], K.O. a Character with 8000 power or less (the blocker: the battle ends)', async () => {
+  const T = setup();
+  T.life(1, [FILLER]);
+  const bl = T.char(1, 'ST06-007');
+  T.b.on('blocker', req => req.options[0]); T.b.on('counter', () => null);
+  T.a.on('ko', () => [bl.uid]);
+  const l = T.char(0, 'ST10-006');
+  await T.attack(l, T.B.leader);
+  expect(T.B.trash.includes(bl) && T.B.life.length === 1, 'blocker K.O.\'d, no damage');
+});
+test('ST10-007 Killer, ST10-011 Heat, ST10-014 Wire: when a DON!! card is returned to the DON!! deck', async () => {
+  const T = setup();
+  const k = T.char(0, 'ST10-007'), h = T.char(0, 'ST10-011'), w = T.char(0, 'ST10-014');
+  const z = T.char(0, 'ST05-010');
+  const r = T.char(1, FILLER, { rested: true });
+  T.don(0, 2);
+  const card = T.hand(0, 'ST01-012');
+  T.a.on('ko', () => [r.uid]); T.a.on('discard', () => [card.uid]);
+  const order = [];
+  T.a.on('order-effects', req => { order.push(req.options.length); return req.options[0].value; });
+  await T.activate(z, 1);
+  expect(T.B.trash.includes(r), 'Killer K.O.\'d the rested cost-3 Character');
+  expect(T.g.power(h) === 6000, `Heat +2000 (${T.g.power(h)})`);
+  expect(T.A.trash.includes(card), 'Wire drew and trashed');
+  expect(order[0] === 3, 'the player ordered the three effects');
+  void k; void w;
+});
+test('ST10-010 Law: [On Play] DON!! −1: with 7+ cards in the opponent\'s hand, the player trashes 2 of them, face-down (8-4-4-3, 3-4-3)', async () => {
+  const T = setup();
+  for (let i = 0; i < 7; i++) T.hand(1, FILLER);
+  T.don(0, 5);
+  let req0;
+  T.a.on('discard-opp', req => { req0 = req; return req.options.slice(-2); });
+  await T.play(T.hand(0, 'ST10-010'));
+  expect(T.B.hand.length === 5 && T.B.trash.length === 2 && req0.from === 'opp-hand' && req0.min === 2, 'A picked 2 from B\'s hand');
+  expect(!T.b.asked.some(r => r.hint === 'discard'), 'B wasn\'t asked');
+});
+
 // ================================================================
 let pass = 0, fail = 0;
 for (const t of tests) {
   if (ONLY && !ONLY.test(t.name)) continue;
-  try { await t.fn(); pass++; } catch (e) { fail++; console.log(`FAIL ${t.name}: ${e.message}${e.message.startsWith('expected') ? '' : '\n' + (e.stack || '').split('\n').slice(1, 5).join('\n')}`); }
+  try { await t.fn(); pass++; } catch (e) { fail++; console.log(`FAIL ${t.name}: ${e.message}${e.message.startsWith("expected") ? "" : "\n" + (e.stack || "").split("\n").slice(1, 5).join("\n")}`); if (process.env.DEBUG && lastGame) console.log(lastGame.logs.slice(-25).map(l => "    | " + l.text).join("\n")); }
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
