@@ -202,6 +202,8 @@ export class OnePieceAI {
         // for "rest", only active ones matter; for debuffs, the Characters that fight
         const list = hint === 'rest' ? [...theirs.filter(c => !c.rested), ...theirs.filter(c => c.rested)] : theirs;
         if (list.length) return pickN(list, n);
+        // our own Character to our Life (Queen Mama Chanter): the cheapest one
+        if (hint === 'to-life') return pickN(byVal(opts.filter(mine), 1), Math.max(req.min, 1));
         return req.min ? pickN(byVal(opts, 1), req.min) : [];
       }
       if (['trash-for-room', 'rest-cost', 'bounce-cost', 'don-unattach'].includes(hint)) return pickN(byVal(opts.filter(mine), 1), req.min || 1);
@@ -211,6 +213,8 @@ export class OnePieceAI {
       if (own.length) return pickN(own, n);
       return req.min ? pickN(opts, req.min) : [];
     }
+    // face-down cards from the opponent's hand: no information to go on
+    if (req.from === 'opp-hand') return pickN(opts, req.min || 1);
     if (hint === 'discard' || hint === 'topdeck' || hint === 'to-life' || hint === 'recycle') return pickN(byVal(opts, 1), req.min || 1);
     if (hint === 'keep-top') return opts.filter(c => isChar(c) && this.value(g, c) > 5).slice(0, req.max).map(c => c.uid);
     if (hint === 'play') {
@@ -223,15 +227,30 @@ export class OnePieceAI {
   }
   confirm(g, pid, req) {
     const hint = req.hint || '';
-    if (hint === 'pay-cost') return this.costOk(g, pid, req.prompt);
+    if (hint === 'pay-cost') return this.costOk(g, pid, req);
     if (hint === 'replace') return true;
     return true;
   }
-  costOk(g, pid, prompt) {
-    const me = g.players[pid];
+  costOk(g, pid, req) {
+    const me = g.players[pid], prompt = req.prompt;
     if (/trash \d+ cards? from your hand/i.test(prompt) && me.hand.length <= 2) return false;
     if (/Life cards to your hand/i.test(prompt) && me.life.length <= 1) return false;
-    return true;
+    const card = req.card != null && g.cardByUid(req.card);
+    const ab = card && g.abilities(card).find(a => a.idx === req.ability);
+    return !ab || this.worthPaying(g, pid, card, ab);
+  }
+  // would the effect do anything? (a K.O. with nothing to K.O. only wastes the DON!!)
+  worthPaying(g, pid, card, ab) {
+    const ctx = { pid, src: card, ab, vars: {}, data: {} };
+    const holds = c => { try { return g.test(c, ctx); } catch { return true; } };
+    for (const s of ab.steps || []) {
+      if (s.cond && !holds(s.cond)) { if (s.gate) return false; continue; }
+      if (s.sel && !s.sel.ref) { try { if (!g.candidates(s.sel, ctx).length) continue; } catch { /* count it */ } }
+      if (s.op === 'play' && s.from !== 'deck' && !g.candidates({ zone: s.from, who: 'you', cats: s.cats || ['C'], f: s.f }, ctx).length) continue;
+      if (s.op === 'discard' && s.who === 'opp' && !g.players[g.opp(pid)].hand.length) continue;
+      return true;
+    }
+    return false;
   }
   option(g, pid, req) {
     const opts = req.options;

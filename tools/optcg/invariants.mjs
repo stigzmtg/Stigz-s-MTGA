@@ -125,7 +125,7 @@ class Checker {
         for (const id of [...opts, ...(req.shown || [])]) if (!g.cardByUid(id)) this.fail(`card #${id} is nowhere (${req.prompt})`);
         if (req.shown && opts.some(id => !req.shown.includes(id))) this.fail(`a card offered that isn't shown (${req.prompt})`);
         if (req.type === 'cards') {
-          const zoneOk = { hand: c => c.zone === 'hand', trash: c => c.zone === 'trash', deck: c => c.zone === 'deck', life: c => c.zone === 'life', field: c => g.onField(c) }[req.from];
+          const zoneOk = { hand: c => c.zone === 'hand' && c.owner === pid, 'opp-hand': c => c.zone === 'hand' && c.owner !== pid, trash: c => c.zone === 'trash', deck: c => c.zone === 'deck', life: c => c.zone === 'life', field: c => g.onField(c) }[req.from];
           if (!zoneOk) this.fail(`a card choice from "${req.from}"`);
           for (const id of opts) { const c = g.cardByUid(id); if (!zoneOk(c) && !(req.from === 'hand' && c.zone === 'trash')) this.fail(`a card choice from ${req.from} offering ${c.name} from ${c.zone} (${req.prompt})`); }
         }

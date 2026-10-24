@@ -35,6 +35,10 @@ export function normalize(s) {
     .replace(/[\u2780-\u2789]/g, ch => `{R${ch.charCodeAt(0) - 0x277F}}`)
     .replace(/[\u2776-\u277F]/g, ch => `{R${ch.charCodeAt(0) - 0x2775}}`)
     .replace(/(^|[\s\]])[([](\d{1,2})[)\]](?=\s|:|$)/g, (m, a, n) => `${a}{R${n}}`)
+    .replace(/\uFF1C/g, '<').replace(/\uFF1E/g, '>')
+    .replace(/[\u2018\u2019\u2032]/g, "'").replace(/[\u201C\u201D]/g, '"')
+    // "choose one:" options printed as "- " lines
+    .replace(/^[ \t]*[-\u2212\u2013][ \t]+(?=[A-Z])/gm, '\u2022 ')
     .replace(/[\u2212\u2013\u2014]/g, '-')
     // explanatory notes (2-8-4): reminder text in parentheses
     .replace(/\s*\((?:This card|This Character|After your opponent|You may rest the specified|You may return the specified|When this card|Your opponent cannot activate|This Leader)[^()]*\)/g, '')
@@ -182,6 +186,8 @@ function parseCost(s, def) {
     else fail(`cost "${t}"`);
     t = t.slice(m[0].length);
   }
+  // ① and DON!! −X: "You may rest / return the specified number of DON!! cards" (their printed reminder, 8-3-1-4)
+  if (cost.some(c => c.op === 'restDon' || c.op === 'returnDon')) optional = true;
   return { cost, optional };
 }
 // "1 black {Navy} type card" in a hand cost: { cats, f }
@@ -235,8 +241,10 @@ export function parseSel(phrase, def, { zone = 'field' } = {}) {
     else break;
     s = s.slice(m[0].length);
   }
-  for (const [re, cats] of CAT_NOUNS) if ((m = re.exec(s))) { sel.cats = cats; s = s.slice(m[0].length).trim(); break; }
-  if (!m) return null;
+  let noun = false;
+  for (const [re, cats] of CAT_NOUNS) if ((m = re.exec(s))) { sel.cats = cats; s = s.slice(m[0].length).trim(); noun = true; break; }
+  // "[Pacifista] with a cost of 4 or less": a name stands for the card
+  if (!noun && !sel.f.some(f => f.k === 'name')) return null;
   if (sel.cats && sel.cats.includes('DON')) return null;
   // after the noun
   for (;;) {
@@ -248,6 +256,7 @@ export function parseSel(phrase, def, { zone = 'field' } = {}) {
     else if ((m = /^(?:with|and) a (base )?cost of (\d+)\b/.exec(s))) sel.f.push({ k: m[1] ? 'baseCost' : 'cost', op: '=', n: +m[2] });
     else if ((m = /^(?:with|and) a (base )?cost equal to or less than (.+?)(?= other than| from |$)/.exec(s))) sel.f.push({ k: m[1] ? 'baseCost' : 'cost', op: '<=', n: parseAmount(m[2]) });
     else if ((m = /^(?:with|and|that has|that have) (\d+) (base )?power or (less|more)\b/.exec(s))) sel.f.push({ k: m[2] ? 'basePower' : 'power', op: m[3] === 'less' ? '<=' : '>=', n: +m[1] });
+    else if ((m = /^(?:with|and|that has|that have) (\d+) or (less|more) (base )?power\b/.exec(s))) sel.f.push({ k: m[3] ? 'basePower' : 'power', op: m[2] === 'less' ? '<=' : '>=', n: +m[1] });
     else if ((m = /^(?:with|and) a base power of (\d+) or (less|more)\b/.exec(s))) sel.f.push({ k: 'basePower', op: m[2] === 'less' ? '<=' : '>=', n: +m[1] });
     else if ((m = /^(?:with|and) (\d+) (base )?power\b/.exec(s))) sel.f.push({ k: m[2] ? 'basePower' : 'power', op: '=', n: +m[1] });
     else if ((m = /^(?:with|and) the ((?:\{[^}]+\}|"[^"]+")) type\b/.exec(s))) sel.f.push({ k: 'trait', any: [m[1].slice(1, -1)] });
@@ -282,6 +291,7 @@ function target(phrase, def) {
   if ((m = /^up to 1 of your Leader$/.exec(p))) return { ref: 'leader' };
   if (/^this Leader or 1 of your Characters$/.test(p)) { const x = sel('up to 1 of your Leader or Character cards', def); x.upTo = false; return x; }
   if ((m = /^that (Leader or Character|Character|card)$/i.exec(p))) return { ref: 'selected' };
+  if (/^the opponent's (Character|Leader or Character) (you battled with|this Character battled with|battling this Character)$/.test(p)) return { ref: 'battleOpp' };
   return sel(p, def);
 }
 function parseAmount(s) {
@@ -344,13 +354,13 @@ export function parseCond(s, def) {
     return { k: 'exists', sel: x, n };
   }
   if ((m = /^you have (\[[^\]]+\]) and (\[[^\]]+\]) (Characters.*)$/.exec(t))) return { k: 'and', all: [m[1], m[2]].map(nm => ({ k: 'exists', sel: sel(`up to 1 of your ${nm} ${m[3].replace(/^Characters/, 'Character')}`, def) })) };
-  if ((m = /^you have (\d+) or more rested cards$/.exec(t))) return { k: 'cmp', a: { k: 'count', sel: { who: 'you', cats: ['L', 'C', 'S'], f: [{ k: 'rested' }] } }, op: '>=', b: { k: 'neg', v: { k: 'neg', v: +m[1] } }, plusRestedDon: true, rest: true };
+  // rested cards: Leader, Characters, Stage and the cost area's DON!! cards
+  if ((m = /^you have (\d+) or more rested cards$/.exec(t))) return { k: 'cmp', a: { k: 'restedCards', who: 'you' }, op: '>=', b: +m[1] };
   if ((m = /^this Character is rested$/.exec(t))) return { k: 'self', f: [{ k: 'rested' }] };
   if ((m = /^this Character was played on this turn$/.exec(t))) return { k: 'self', f: [{ k: 'playedThisTurn' }] };
-  if ((m = /^that card is a (.+)$/.exec(t))) { const x = sel(`up to 1 ${m[1]}`, def, { zone: 'deck' }); return { k: 'revealed', cats: x.cats, f: x.f }; }
-  if ((m = /^that card's type includes "([^"]+)"$/.exec(t))) return { k: 'revealed', f: [{ k: 'traitHas', any: [m[1]] }] };
-  if ((m = /^the revealed card has the chosen cost$/.exec(t))) return { k: 'chosenCost' };
-  if ((m = /^that card is a Character$/.exec(t))) return { k: 'selected', cats: ['C'] };
+  // "that card": the card the effect just revealed or chose
+  if ((m = /^that card is an? (.+)$/.exec(t))) { const x = sel(`up to 1 ${m[1]}`, def, { zone: 'deck' }); return { k: 'that', cats: x.cats, f: x.f }; }
+  if ((m = /^that card's type includes "([^"]+)"$/.exec(t))) return { k: 'that', f: [{ k: 'traitHas', any: [m[1]] }] };
   fail(`condition "${s}"`);
 }
 // split at a separator outside brackets and quotes
@@ -385,7 +395,7 @@ export function parseEffect(text, def) {
   for (let i = 0; i < sentences.length; i++) {
     let s = sentences[i];
     let then = false;
-    if (/^Then,\s*/.test(s)) { then = true; s = s.replace(/^Then,\s*/, ''); }
+    if (/^Then,\s*/.test(s)) { then = true; s = cap(s.replace(/^Then,\s*/, '')); }
     // "You may X. If you do, Y."
     if (/^[Yy]ou may /.test(s) && sentences[i + 1] && /^If you do, /.test(sentences[i + 1])) {
       const body = s.replace(/^[Yy]ou may /, '');
@@ -510,6 +520,8 @@ function parseClause(text, def) {
   if ((m = /^[Dd]raw (\d+) cards?$/.exec(t))) return [{ op: 'draw', n: +m[1] }];
   if ((m = /^[Tt]rash (\d+) cards? from your hand$/.exec(t))) return [{ op: 'discard', n: +m[1] }];
   if ((m = /^[Yy]our opponent trashes (\d+) cards? from their hand$/.exec(t))) return [{ op: 'discard', who: 'opp', n: +m[1] }];
+  // the player of the effect chooses (8-4-4-3), without seeing them (3-4-3)
+  if ((m = /^[Tt]rash (\d+) cards? from your opponent's hand$/.exec(t))) return [{ op: 'discard', who: 'opp', n: +m[1], blind: true }];
   if ((m = /^[Yy]our opponent chooses (\d+) cards? from their hand and trashes (?:it|them)$/.exec(t))) return [{ op: 'discard', who: 'opp', n: +m[1] }];
   if ((m = /^[Rr]eturn (.+?) to the owner's hand$/.exec(t))) return [{ op: 'bounce', sel: target(m[1], def) }];
   if ((m = /^[Pp]lace (.+?) at the bottom of the owner's deck$/.exec(t))) return [{ op: 'bottom', sel: target(m[1], def) }];
@@ -596,12 +608,35 @@ function parseNoTiming(s, def, head) {
     return { kind: 'replace', replace: r, ...base };
   }
   // "If this Character battles your opponent's Character, ...": at the end of the battle (7-1-5-2)
-  if ((m = /^If this Character battles your opponent's Character, (.+)$/.exec(s))) return { kind: 'auto', timings: ['endOfBattle'], when: { withChar: true }, cost: [], optional: false, steps: parseEffect(m[1], def), ...base };
+  if ((m = /^(?:If this Character battles your opponent's Character|At the end of a battle in which this Character battles your opponent's Character), (.+)$/.exec(s))) return { kind: 'auto', timings: ['endOfBattle'], when: { withChar: true }, ...parseCostEffect(cap(m[1]), def, 'auto'), ...base };
+  // "When X, Y": an auto effect with its own timing (8-1-3-1-1)
+  if ((m = /^When (.+?), (.+)$/.exec(s))) {
+    const w = parseWhen(m[1], def);
+    if (w) return { kind: 'auto', timings: [w.timing], when: w.when, ...parseCostEffect(cap(m[2]), def, 'auto'), ...base };
+  }
   // permanent effects (8-1-3-3)
   let cond = null, body = s;
   if ((m = /^If (.+?), ((?:this|your|all|All|give) .+)$/.exec(s))) { cond = parseCond(m[1], def); body = m[2]; }
   const mods = parseMods(body, def);
   return { kind: 'static', mods, cond, ...base, hand: mods.some(x => x.hand) };
+}
+// the events of "When ..." auto effects: { timing, when } (the names game.js fires, the fields whenMatches reads)
+function parseWhen(s, def) {
+  const t = s.trim();
+  let m;
+  if (/^a Character is K\.O\.'d$/.test(t)) return { timing: 'charKO', when: {} };
+  if ((m = /^(?:a|1) of your (.+?) is K\.O\.'d$/.exec(t)) || (m = /^your (?!opponent's)(.+?) is K\.O\.'d$/.exec(t))) return { timing: 'charKO', when: { sel: sel(`up to 1 of your ${m[1]}`, def) } };
+  if ((m = /^(?:a|1) of your opponent's (.+?) is K\.O\.'d$/.exec(t)) || (m = /^your opponent's (.+?) is K\.O\.'d$/.exec(t))) return { timing: 'charKO', when: { sel: sel(`up to 1 of your opponent's ${m[1]}`, def) } };
+  if (/^this Character is K\.O\.'d by an effect$/.test(t)) return { timing: 'ko', when: { byEffect: true } };
+  if (/^this Character is K\.O\.'d by your opponent's effect$/.test(t)) return { timing: 'ko', when: { byEffect: true, byOpp: true } };
+  if (/^your opponent activates a \[Blocker\]$/.test(t)) return { timing: 'blockerActivated', when: { who: 'opp' } };
+  if (/^your opponent activates an Event$/.test(t)) return { timing: 'eventActivated', when: { who: 'opp' } };
+  if (/^a DON!! card on your field is returned to your DON!! deck$/.test(t)) return { timing: 'donReturned', when: { who: 'you' } };
+  if ((m = /^(\d+) or more DON!! cards on your field are returned to your DON!! deck$/.exec(t))) return { timing: 'donReturned', when: { who: 'you', minN: +m[1] } };
+  if (/^this Character becomes rested$/.test(t)) return { timing: 'rested', when: { self: true } };
+  // "When this Character battles <Strike> attribute Characters": once the two cards of the battle are settled
+  if ((m = /^this Character battles (.+)$/.exec(t))) return { timing: 'battling', when: { battleSel: sel(`up to 1 ${m[1]}`, def) } };
+  return null;
 }
 function tryCostLike(s, def) {
   try { const c = parseCost(s, def); return c.cost.length ? c.cost : null; } catch (e) { if (e instanceof ParseError) return null; throw e; }

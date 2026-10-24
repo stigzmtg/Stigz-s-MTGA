@@ -15,6 +15,31 @@ const FIELD = new Set(['leader', 'characters', 'stage']);
 // card questions about these areas show the player cards they couldn't see before
 const HIDDEN_ZONES = new Set(['deck', 'life', 'opp-hand']);
 
+// Everything this interpreter understands. tools/optcg/coverage.mjs checks every compiled card against these lists,
+// so a card whose compiled text uses something not handled here fails the check instead of misbehaving in a game.
+export const HANDLED = {
+  timings: ['onPlay', 'whenAttacking', 'onOppAttack', 'onBlock', 'ko', 'endOfYourTurn', 'endOfOppTurn', 'startOfTurn', 'startOfMain',
+    'startOfGame', 'endOfBattle', 'battling', 'charKO', 'charPlayed', 'blockerActivated', 'donReturned', 'eventActivated', 'rested',
+    'handTrashed', 'lifeToHand'],
+  when: ['self', 'who', 'byEffect', 'byYou', 'byOpp', 'sel', 'minN', 'withChar', 'battleSel'],
+  steps: ['select', 'power', 'basePower', 'cost', 'ko', 'rest', 'setActive', 'giveDon', 'donActive', 'restDon', 'addDon', 'draw',
+    'discard', 'bounce', 'bottom', 'grant', 'noBlocker', 'noBlockerIfAttacks', 'restrict', 'playerFlag', 'playSelf', 'selfToHand',
+    'runEffect', 'look', 'play', 'toHand', 'deckToLife', 'trashLife', 'lifeToHand', 'handToLife', 'fieldToLife', 'lookLife', 'choose',
+    'may', 'reveal', 'delayed', 'custom'],
+  costs: ['restDon', 'returnDon', 'returnDonAny', 'restSelf', 'trashSelf', 'trashHand', 'revealHand', 'lifeToHand', 'trashLife',
+    'restOwn', 'bounceOwn', 'handToDeck', 'trashToDeck', 'millSelf', 'lifeFaceUp', 'lifeFaceDown', 'charToLife', 'returnGivenDon'],
+  conds: ['and', 'or', 'not', 'cmp', 'exists', 'self', 'leader', 'turn', 'did', 'that'],
+  filters: ['rested', 'active', 'cost', 'baseCost', 'costRange', 'power', 'basePower', 'trait', 'traitHas', 'name', 'notName', 'notSelf',
+    'color', 'multicolor', 'attr', 'kw', 'hasTrigger', 'cat', 'playedThisTurn', 'faceUp', 'or', 'not'],
+  amounts: ['life', 'lifeTotal', 'hand', 'trash', 'donField', 'donRested', 'restedCards', 'count', 'per', 'neg', 'var'],
+  refs: ['self', 'leader', 'oppLeader', 'selected', 'replaced', 'battleOpp'],
+  durations: ['battle', 'turn', 'startOfYourNextTurn', 'endOfYourNextTurn', 'endOfOppNextTurn', 'oppNextRefresh', 'game'],
+  // static mods and effect flags something in here reads
+  mods: ['power', 'cost', 'grant', 'noKO', 'canAttackActive', 'cantAttack', 'cantAttackChar', 'cantBlock', 'cantRest', 'faceUpLifeToDeck'],
+  playerFlags: ['noKOAll'],
+  zones: ['field', 'hand', 'trash', 'deck', 'life', 'handOrTrash'],
+};
+
 // a physical card: uid (unique in the game, stable), id (the card number), def (its cards.json entry), owner.
 // On the field it carries its state. Moving to another area makes it a new card for the rules (3-1-6): `inst`
 // changes, so effects on it end, its given DON!! go back to the cost area, and its state is cleared.
@@ -133,7 +158,7 @@ export class OnePieceGame {
     if (out.length < min) out = out.concat(list.filter(c => !out.includes(c)).slice(0, min - out.length));
     return out;
   }
-  async confirm(pid, prompt, hint = '') { return (await this.ask(pid, { type: 'confirm', prompt, hint })) === true; }
+  async confirm(pid, prompt, hint = '', extra = {}) { return (await this.ask(pid, { type: 'confirm', prompt, hint, ...extra })) === true; }
   async chooseOption(pid, options, prompt, hint = '') {
     if (!options.length) return null;
     if (options.length === 1) return options[0].value;
@@ -460,6 +485,7 @@ export class OnePieceGame {
       case 'trash': return q.trash.length;
       case 'donField': return this.donOnField(q.id);
       case 'donRested': return q.donRested;
+      case 'restedCards': return q.donRested + this.field(q.id).filter(c => c.rested).length;
       case 'count': return this.candidates(n.sel, ctx).length;
       case 'per': return n.each * Math.floor(this.amount(n.of, ctx) / (n.div || 1));
       case 'neg': return -this.amount(n.v, ctx);
@@ -482,8 +508,8 @@ export class OnePieceGame {
       case 'leader': return this.matches((c.who === 'opp' ? o : p).leader, { f: c.f }, ctx);
       case 'turn': return c.who === 'you' ? this.current === ctx.pid : this.current !== ctx.pid;
       case 'did': return !!ctx.vars.did;
-      case 'revealed': return !!ctx.vars.revealed && this.matches(ctx.vars.revealed, { f: c.f, cats: c.cats }, ctx);
-      case 'selected': return (ctx.vars.selected || []).some(x => this.matches(x, { f: c.f, cats: c.cats }, ctx));
+      // "If that card is a Character": the card just revealed or chosen
+      case 'that': return (ctx.vars.that || []).some(x => this.matches(x, { f: c.f, cats: c.cats }, ctx));
       default: throw new Error(`unknown condition ${c.k}`);
     }
   }
@@ -784,7 +810,7 @@ export class OnePieceGame {
     const pid = card.owner, p = this.players[pid];
     if (!(ab.cost || []).length) return true;
     if (!this.costPayable(card, ab)) return false;
-    if (ab.optional && ask && !(await this.confirm(pid, `${card.name}: ${ab.costText || 'pay the cost'}?`, 'pay-cost'))) return false;
+    if (ab.optional && ask && !(await this.confirm(pid, `${card.name}: ${ab.costText || 'pay the cost'}?`, 'pay-cost', { card: card.uid, ability: ab.idx }))) return false;
     for (const c of ab.cost) {
       switch (c.op) {
         case 'restDon': this.payDon(pid, c.n); break;
@@ -901,7 +927,8 @@ export class OnePieceGame {
   }
   async activateEvent(card, ab, { counter = false } = {}) {
     const ctx = { pid: card.owner, src: card, ab, vars: {}, counter };
-    if (!(await this.payCost(card, ab, ctx))) { this.log(`${card.name}'s effect does nothing.`, { pid: card.owner }); return; }
+    // the player chose to activate it: its cost isn't asked about again
+    if (!(await this.payCost(card, ab, ctx, { ask: false }))) { this.log(`${card.name}'s effect does nothing.`, { pid: card.owner }); return; }
     await this.runSteps(ab.steps, ctx);
   }
   // an auto effect resolving (or an effect run for a card: [Trigger], "activate this card's [Main] effect")
@@ -936,7 +963,7 @@ export class OnePieceGame {
       case 'endOfYourTurn': return this.current === pid;
       case 'endOfOppTurn': return this.current !== pid;
       case 'startOfTurn': case 'startOfMain': return ab.when ? this.whenMatches(c, ab, data) : this.current === pid;
-      case 'endOfBattle': return data.cards.includes(c) && (!ab.when || this.whenMatches(c, ab, data));
+      case 'endOfBattle': case 'battling': return data.cards.includes(c) && (!ab.when || this.whenMatches(c, ab, data));
       default: return !ab.when || this.whenMatches(c, ab, data);
     }
   }
@@ -951,7 +978,12 @@ export class OnePieceGame {
     if (w.sel && !(data.card && this.matches(data.card, w.sel, { pid, src: c, vars: {} }))) return false;
     if (w.minN && (data.n || 0) < w.minN) return false;
     // "If this Character battles your opponent's Character": the other card in the battle
-    if (w.withChar) { const other = data.attacker === c ? data.target : data.attacker; if (!other || other.cat !== 'C' || other.owner === pid) return false; }
+    if (w.withChar || w.battleSel) {
+      const other = data.attacker === c ? data.target : data.attacker;
+      if (!other || other.owner === pid) return false;
+      if (w.withChar && other.cat !== 'C') return false;
+      if (w.battleSel && !this.matches(other, w.battleSel, { pid, src: c, vars: {} })) return false;
+    }
     return true;
   }
   async fireAndResolve(kind, data) { this.fire(kind, data); await this.resolvePending(); }
@@ -982,7 +1014,7 @@ export class OnePieceGame {
     const ctx = { pid: card.owner, src: card, ab, vars: {}, data };
     if (ab.need && !this.test(ab.need, ctx)) return;
     if (!this.costPayable(card, ab)) return;
-    if (ab.optional && !(await this.confirm(card.owner, `${card.name}: ${ab.costText || 'activate this effect'}?`, 'pay-cost'))) return;
+    if (ab.optional && !(await this.confirm(card.owner, `${card.name}: ${ab.costText || 'activate this effect'}?`, 'pay-cost', { card: card.uid, ability: ab.idx }))) return;
     this.log(`${card.name}'s effect activates.`, { pid: card.owner, type: 'effect' });
     this.event('activate', { pid: card.owner, card: card.uid, timing: item.kind });
     if (!(await this.payCost(card, ab, ctx, { ask: false }))) return;
@@ -1031,6 +1063,10 @@ export class OnePieceGame {
         if (this.battleBroken()) return this.endBattle();
       }
     }
+    // "When this Character battles ...": the two cards of the battle are settled once the Block Step is over
+    this.fire('battling', { pid, cards: f.cards, attacker: a, target: f.target });
+    await this.resolvePending();
+    if (this.battleBroken()) return this.endBattle();
     // Counter Step (7-1-3)
     this.syncBattle('counter');
     await this.counterStep();
@@ -1229,9 +1265,11 @@ export class OnePieceGame {
       case 'battleOpp': { const d = ctx.data || {}; const other = d.attacker === ctx.src ? d.target : d.attacker; return other && this.onField(other) ? [other] : []; }
     }
     const opts = this.candidates(sel, ctx);
-    if (sel.all) return opts;
     const max = this.amount(sel.n == null ? 1 : sel.n, ctx);
-    return this.chooseOnField(ctx.pid, opts, { min: sel.upTo ? 0 : max, max, prompt, hint });
+    const got = sel.all ? opts : await this.chooseOnField(ctx.pid, opts, { min: sel.upTo ? 0 : max, max, prompt, hint });
+    // later text says "that Character" / "that card" for these
+    ctx.vars.selected = got; ctx.vars.that = got;
+    return got;
   }
   durText(d) { return { battle: 'during this battle', turn: 'during this turn', startOfYourNextTurn: 'until the start of your next turn', endOfOppNextTurn: "until the end of your opponent's next turn", endOfYourNextTurn: 'until the end of your next turn', oppNextRefresh: '' }[d] || ''; }
 
@@ -1325,9 +1363,13 @@ export class OnePieceGame {
         const q = s.who === 'opp' ? o : p;
         const n = Math.min(this.amount(s.n, ctx), q.hand.length);
         if (n <= 0) return;
-        const got = await this.chooseCards(q.id, [...q.hand], { min: n, max: n, prompt: `Trash ${cards(n)} from your hand`, from: 'hand', hint: 'discard' });
-        for (const c of got) { this.moveCard(c, 'trash'); this.event('trash', { pid: q.id, card: c.uid }); }
-        this.log(`${q.name} trashes ${got.map(c => c.name).join(', ')} from their hand.`, { pid: q.id });
+        // "trash 2 cards from your opponent's hand": the player of the effect picks them face-down
+        const whose = q.name === 'You' ? 'your' : `${q.name}'s`;
+        const got = s.blind
+          ? await this.chooseCards(pid, [...q.hand], { min: n, max: n, prompt: `Trash ${cards(n)} from your opponent's hand (face-down)`, from: 'opp-hand', hint: 'discard-opp' })
+          : await this.chooseCards(q.id, [...q.hand], { min: n, max: n, prompt: `Trash ${cards(n)} from your hand`, from: 'hand', hint: 'discard' });
+        for (const c of got) { this.moveCard(c, 'trash'); this.event('trash', { pid: q.id, card: c.uid, from: 'hand' }); }
+        this.log(s.blind ? `${p.name} trashes ${got.map(c => c.name).join(', ')} from ${whose} hand.` : `${q.name} trashes ${got.map(c => c.name).join(', ')} from their hand.`, { pid: q.id });
         this.fire('handTrashed', { pid: q.id, n: got.length, byEffect: true });
         return;
       }
@@ -1454,7 +1496,7 @@ export class OnePieceGame {
       case 'reveal': {
         const q = s.who === 'opp' ? o : p;
         const c = (s.from === 'life' ? q.life : q.deck)[0];
-        ctx.vars.revealed = c || null;
+        ctx.vars.revealed = c || null; ctx.vars.that = c ? [c] : [];
         if (c) { this.log(`${q.name} reveals ${c.name} from the top of their ${s.from === 'life' ? 'Life cards' : 'deck'}.`, { pid }); this.event('reveal', { pid: q.id, card: c.uid }); }
         return;
       }
