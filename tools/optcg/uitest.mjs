@@ -27,6 +27,7 @@ const safeClick = async el => {
     return false;
   }
 };
+const seenKinds = new Set();
 let last = '', stuck = 0, clicks = 0, shots = 0, attacks = 0, counters = 0, dons = 0, plays = 0;
 const t0 = Date.now();
 for (let i = 0; i < 4000 && Date.now() - t0 < 300000; i++) {
@@ -37,6 +38,11 @@ for (let i = 0; i < 4000 && Date.now() - t0 < 300000; i++) {
   if (state === last) stuck++; else { stuck = 0; last = state; }
   if (stuck > 150) { console.log('STUCK at turn', t, state.slice(0, 200)); break; }
   if (await page.$('.menu')) { const items = await page.$$('.menu .mi'); if (items.length) { await rnd(items).click(); clicks++; continue; } }
+  if (process.env.SHOTS) {
+    const kind = await page.evaluate(() => { const d = document.querySelector('.dialog'); if (d) return 'dialog-' + (d.querySelector('h2') || {}).textContent; const st = (document.querySelector('.op-prompt .step') || {}).textContent || ''; const txt = (document.querySelector('.op-prompt .txt') || {}).textContent || ''; if (document.querySelector('.op-prompt .op-num')) return 'number'; if (/Yes/.test((document.querySelector('.op-prompt .acts') || {}).textContent || '')) return 'confirm'; if (st) return 'bar-' + st.split(' ·')[0]; return txt ? 'bar-other' : ''; });
+    const key = kind.replace(/[^\w-]+/g, '_').slice(0, 40);
+    if (key && !seenKinds.has(key)) { seenKinds.add(key); await page.waitForTimeout(700); await page.screenshot({ path: `${process.env.SHOTS}/${key}.png` }); }
+  }
   const dlg = await page.$('.dialog');
   if (dlg) {
     const trig = await page.$('.dialog .btn:has-text("Use the Trigger")');

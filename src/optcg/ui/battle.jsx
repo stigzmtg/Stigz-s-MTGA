@@ -20,6 +20,11 @@ import { uiScale } from '../../ui/common.js';
 
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, useSyncExternalStore } = React;
 const youText = t => secondPerson(String(t || ''));
+// an [Activate: Main] action's button: short, with the effect's words as the tooltip
+const effectWords = a => String(a.label || '').replace(/^[^:]*?: (?=\[)/, '');
+const shortWords = (t, n = 46) => { const w = t.replace(/\[(Activate: Main|Once Per Turn)\]\s*/g, '').replace(/[{}]/g, '').trim(); return w.length > n ? w.slice(0, n - 1).trimEnd() + '…' : w; };
+// option buttons fit in the bar only when they're few and short; otherwise they get a list of their own
+const barOptions = req => req.options.length <= 4 && req.options.every(o => String(o.label).length <= 34);
 
 // ---------------------------------------------------------------- cards
 export function OpCard({ card, def, cls = '', onClick, onEnter, onLeave, fly, title }) {
@@ -94,7 +99,7 @@ function EmptySlot({ label }) { return <div className="op-slot empty"><div class
 function DonArea({ p, pick, onPick }) {
   const act = p.donActive || 0, rest = p.donRested || 0;
   return (
-    <div className="op-cost" data-pile={`${p.id}:don`} title={`${act} active, ${rest} rested DON!! in the cost area; ${p.donDeck} in the DON!! deck`}>
+    <div className={`op-cost ${act + rest > 6 ? 'tight' : ''}`} data-pile={`${p.id}:don`} title={`${act} active, ${rest} rested DON!! in the cost area; ${p.donDeck} in the DON!! deck`}>
       <span className="label">DON!!</span>
       {Array.from({ length: act }, (_, i) => <span key={'a' + i} className={`op-don ${pick ? 'pick' : ''}`} onClick={pick ? onPick : undefined} role={pick ? 'button' : undefined} aria-label={pick ? 'Give a DON!! card' : undefined} />)}
       {Array.from({ length: rest }, (_, i) => <span key={'r' + i} className="op-don rested" />)}
@@ -127,7 +132,8 @@ function Piles({ p, onOpen, sleeve, hand }) {
 
 // ---------------------------------------------------------------- dialogs
 const ZONE_NAME = { hand: 'hand', trash: 'trash', deck: 'deck', life: 'Life cards', limbo: 'card', leader: 'Leader', characters: 'Characters', stage: 'Stage' };
-function CardsDialog({ game, req, respond, onHover, me }) {
+function CardsDialog({ game, req, respond, onHover, me, sleeves }) {
+  const hidden = req.from === 'opp-hand';
   const [sel, setSel] = useState([]);
   const opts = new Set(req.options);
   const shown = (req.shown || req.options).map(id => game.cardByUid(id)).filter(Boolean);
@@ -146,7 +152,9 @@ function CardsDialog({ game, req, respond, onHover, me }) {
           const can = opts.has(c.uid), on = sel.includes(c.uid);
           return (
             <div key={c.uid} className={`op-pick ${can ? '' : 'off'} ${on ? 'on' : ''}`}>
-              <OpCard card={c} onClick={can ? () => toggle(c.uid) : undefined} onEnter={() => onHover(c.uid)} onLeave={() => onHover(null)} />
+              {hidden
+                ? <div className="op-pickback" onClick={can ? () => toggle(c.uid) : undefined} role="button" tabIndex={0} aria-label="A card from their hand" onKeyDown={e => { if (can && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(c.uid); } }}><CardBack sleeve={sleeves && sleeves[c.owner]} /></div>
+                : <OpCard card={c} onClick={can ? () => toggle(c.uid) : undefined} onEnter={() => onHover(c.uid)} onLeave={() => onHover(null)} />}
               {on ? <span className="tick">{req.max > 1 ? sel.indexOf(c.uid) + 1 : '✓'}</span> : null}
             </div>
           );
@@ -166,11 +174,12 @@ function OrderDialog({ game, req, respond, onHover }) {
   const cards = req.options.map(id => game.cardByUid(id)).filter(Boolean);
   const toggle = id => setSeq(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
   const done = seq.length === cards.length;
-  const where = req.hint === 'order-bottom' ? 'the bottom of your deck' : req.hint === 'order-life' ? 'your Life cards' : 'the top of your deck';
+  const how = req.hint === 'order-bottom' ? 'Card 1 sits highest of them, at the bottom of your deck.' : req.hint === 'order-life' ? 'Card 1 becomes your top Life card.' : 'Card 1 becomes the top card of your deck.';
   return (
     <Modal label={req.prompt}>
       <h2>Put them in order</h2>
-      <p className="sub">{youText(req.prompt)} Click the cards in order: number 1 ends up on top of {where}.</p>
+      <p className="sub">{youText(req.prompt).replace(/\s*\(first = [^)]*\)/, '')}.</p>
+      <p className="sub">Click the cards in the order you want. {how}</p>
       <div className="op-picks">
         {cards.map(c => {
           const n = seq.indexOf(c.uid);
@@ -320,6 +329,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
   const attackers = new Set(actions.filter(a => a.t === 'attack').map(a => a.card));
 
   const stateOf = c => {
+    if (req && req.type === 'confirm' && req.card === c.uid) return 'selected';
     if (game.battle && game.battle.attacker === c.uid) return 'attacking';
     if (game.battle && (game.battle.blocker || game.battle.target) === c.uid) return 'defending';
     if (targets.has(c.uid)) return sel.includes(c.uid) ? 'selected' : 'targetable';
@@ -344,7 +354,8 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
     if (!mine.length && !don) return;
     const items = [];
     if (mine.some(a => a.t === 'attack')) items.push({ label: 'Attack…', primary: true, run: () => { donMode.current = false; setMode({ kind: 'attack', card: c.uid }); } });
-    for (const a of mine.filter(x => x.t === 'activate')) items.push({ label: a.label || 'Activate', run: () => respond(a) });
+    const acts = mine.filter(x => x.t === 'activate');
+    for (const a of acts) items.push({ label: acts.length === 1 ? 'Use its [Activate: Main]' : `Use: ${shortWords(effectWords(a))}`, title: effectWords(a), run: () => respond(a) });
     if (don) items.push({ label: `Give 1 DON!! (+1000 power)`, run: () => respond(don) });
     const r = e && e.currentTarget ? e.currentTarget.getBoundingClientRect() : null;
     setMenu({ x: r ? r.right : 200, y: r ? r.top : 200, title: c.def.name, items });
@@ -376,7 +387,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
     bar = <div className="msg"><div className="step">Game over</div><div className="txt">{result}{result === 'You win!' ? ' ' : '. '}{youText(game.result || '')}</div></div>;
   } else if (req && req.type === 'confirm') {
     bar = <><div className="msg"><div className="txt">{youText(req.prompt)}</div></div><div className="acts"><button className="btn primary" onClick={() => respond(true)}>Yes</button><button className="btn" onClick={() => respond(false)}>No</button></div></>;
-  } else if (req && req.type === 'option' && req.options.length <= 6) {
+  } else if (req && req.type === 'option' && barOptions(req)) {
     bar = <><div className="msg"><div className="txt">{youText(req.prompt)}</div></div><div className="acts">{req.options.map(o => <button key={String(o.value)} className="btn" onClick={() => respond(o.value)}>{o.label}</button>)}</div></>;
   } else if (req && req.type === 'number') {
     bar = <><div className="msg"><div className="txt">{youText(req.prompt)}</div></div><div className="acts op-num"><button className="btn" onClick={() => setNum(n => Math.max(req.min, n - 1))} aria-label="Less">−</button><b>{num}</b><button className="btn" onClick={() => setNum(n => Math.min(req.max, n + 1))} aria-label="More">+</button><button className="btn primary" onClick={() => respond(num)}>OK</button></div></>;
@@ -397,12 +408,16 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
       <div className="acts op-acts">
         {mode || giving ? <button className="btn" onClick={() => { setMode(null); donMode.current = false; }}>Cancel</button> : null}
         {!mode && !giving && donActs.length ? <button className="btn" onClick={() => setMode({ kind: 'don' })}>Give DON!!</button> : null}
-        {actions.filter(a => a.t === 'activate' && game.cardByUid(a.card) === P.stage).map(a => <button key={a.card + ':' + a.ability} className="btn" onClick={() => respond(a)}>{a.label || 'Use Stage'}</button>)}
+        {actions.filter(a => a.t === 'activate' && game.cardByUid(a.card) === P.stage).map(a => <button key={a.card + ':' + a.ability} className="btn" title={effectWords(a)} onMouseEnter={() => setHover(a.card)} onClick={() => respond(a)}>Use {P.stage.def.name}</button>)}
         <button className="btn primary" onClick={() => { setMode(null); donMode.current = false; respond(actions.find(a => a.t === 'end') || { t: 'end' }); }}>End turn</button>
       </div>
     </>;
+  } else if (req && !watching) {
+    // a question answered in a window of its own
+    bar = <div className="msg"><div className="step">Choose</div><div className="txt">{youText(req.prompt)}</div></div>;
   } else {
-    const doing = game.battle ? `${cardName(game.battle.attacker)} attacks ${cardName(game.battle.blocker || game.battle.target)}` : `${game.players[game.current].name === 'You' ? 'You' : game.players[game.current].name} ${game.phase === 'main' ? 'is thinking' : 'is getting ready'}`;
+    const who = game.current === me && !watching ? 'You are' : `${game.players[game.current].name} is`;
+    const doing = game.battle ? `${cardName(game.battle.attacker)} attacks ${cardName(game.battle.blocker || game.battle.target)}` : `${who} ${game.phase === 'main' ? 'thinking' : 'getting ready'}`;
     bar = <div className="msg waiting"><div className="step">{game.turn ? `${game.current === me && !watching ? 'Your' : `${game.players[game.current].name}'s`} turn` : 'Getting ready'}</div><div className="txt thinking">{doing}</div></div>;
   }
 
@@ -460,9 +475,9 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
   const playable = new Set(actions.filter(a => a.t === 'play').map(a => a.card));
   const dialog = (() => {
     if (!req || game.over) return null;
-    if (req.type === 'cards' && req.from !== 'field') return <CardsDialog key={pend.id} game={game} req={req} respond={respond} onHover={setHover} me={me} />;
+    if (req.type === 'cards' && req.from !== 'field') return <CardsDialog key={pend.id} game={game} req={req} respond={respond} onHover={setHover} me={me} sleeves={sleeves} />;
     if (req.type === 'order') return <OrderDialog key={pend.id} game={game} req={req} respond={respond} onHover={setHover} />;
-    if (req.type === 'option' && req.options.length > 6) return <Modal label={req.prompt}><h2>{youText(req.prompt)}</h2><div className="optlist">{req.options.map(o => <button key={String(o.value)} className="btn" onClick={() => respond(o.value)}>{o.label}</button>)}</div></Modal>;
+    if (req.type === 'option' && !barOptions(req)) return <Modal label={req.prompt}><h2>Choose</h2><p className="sub">{youText(req.prompt)}</p><div className="optlist">{req.options.map(o => <button key={String(o.value)} className="btn" onClick={() => respond(o.value)}>{youText(o.label)}</button>)}</div></Modal>;
     if (req.type === 'trigger') {
       const c = game.cardByUid(req.card);
       return (
@@ -515,8 +530,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
         <main className={`op-board ${game.over && !watching && result !== 'You win!' ? 'lost-game' : ''}`} ref={boardRef} onClick={e => { if (e.target === e.currentTarget) { setMode(null); donMode.current = false; } }}>
           {side(O, false)}
           <div className="op-mid">
-            <div className={`prompt op-prompt ${req ? '' : 'waiting'}`}>{bar}</div>
-            {fight}
+            <div className={`prompt op-prompt ${req ? '' : 'waiting'}`}>{bar}{fight}</div>
             {fx.coin ? <div key={fx.coin.key} className="op-coin">{fx.coin.text}</div> : null}
           </div>
           {side(P, true)}
@@ -537,7 +551,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
           {!replay && !watching ? <Coach kind="op" tips={tips} /> : null}
         </main>
         <aside className="rail">
-          <section className="preview-sec"><Preview game={game} uid={hover != null ? hover : P.leader ? P.leader.uid : null} me={me} /></section>
+          <section className="preview-sec"><Preview game={game} uid={hover != null ? hover : req && req.card != null && req.type !== 'trigger' ? req.card : P.leader ? P.leader.uid : null} me={me} /></section>
           <section className="log-sec"><h3>Battle log</h3><Log game={game} me={watching ? null : me} /></section>
         </aside>
       </div>

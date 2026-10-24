@@ -335,7 +335,7 @@ export function Menu({ menu, onClose }) {
       <div className="menu" ref={ref} style={pos} role="menu">
         {menu.title ? <div className="mh">{menu.title}</div> : null}
         {menu.items.map((it, i) => it === '-' ? <hr key={i} /> : it.header ? <div key={i} className="mh">{it.header}</div> : it.note ? <div key={i} className="mnote">{it.note}</div> :
-          <button key={i} className={`mi ${it.primary ? 'cast' : ''}`} role="menuitem" onClick={() => { onClose(); it.run(); }}><RulesText text={it.label} /></button>)}
+          <button key={i} className={`mi ${it.primary ? 'cast' : ''}`} role="menuitem" title={it.title} onClick={() => { onClose(); it.run(); }}><RulesText text={it.label} /></button>)}
       </div>
     </div>
   );

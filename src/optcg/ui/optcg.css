@@ -117,6 +117,11 @@
 .op-don { position: relative; width: var(--op-don); aspect-ratio: 63 / 88; border-radius: 4px; flex: none; display: grid; place-items: center; background: radial-gradient(circle at 50% 40%, #3b3b45, #121216 70%); box-shadow: 0 2px 5px rgba(0, 0, 0, 0.55), inset 0 0 0 1.5px rgba(243, 214, 143, 0.7); color: #f3d68f; font: 900 calc(var(--op-don) * 0.24)/1 var(--font-display); letter-spacing: -0.02em; transition: transform 0.25s, opacity 0.25s; }
 .op-don::after { content: "DON!!"; transform: rotate(-12deg); }
 .op-don.rested { transform: rotate(90deg) scale(0.92); opacity: 0.55; margin: 0 calc(var(--op-don) * 0.2); }
+/* many DON!! cards: they overlap instead of wrapping onto a second row */
+.op-cost.tight { flex-wrap: nowrap; }
+.op-cost.tight .op-don + .op-don { margin-left: calc(var(--op-don) * -0.36); }
+.op-cost.tight .op-don.rested { margin-right: 0; }
+.op-cost.tight .op-don.rested + .op-don.rested { margin-left: calc(var(--op-don) * -0.62); }
 .op-don.pick { cursor: pointer; box-shadow: 0 0 0 2px var(--brass-hi), 0 0 12px rgba(243, 214, 143, 0.7); }
 .op-don.chosen { box-shadow: 0 0 0 3px var(--danger), 0 0 14px rgba(234, 109, 82, 0.7); transform: translateY(-4px); }
 /* the player's card: name, Life and hand */
@@ -146,7 +151,9 @@
 .op-mid { position: relative; z-index: 12; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: center; }
 .op-prompt { position: relative; }
 .op-prompt .acts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.op-fight { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 4; display: flex; align-items: center; gap: 14px; padding: 8px 16px; border-radius: 14px; background: linear-gradient(180deg, rgba(40, 18, 14, 0.96), rgba(16, 8, 6, 0.96)); border: 1px solid rgba(255, 122, 92, 0.6); box-shadow: 0 12px 34px rgba(0, 0, 0, 0.6); pointer-events: none; }
+.op-prompt .acts .btn { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.op-prompt .msg { order: 0; } .op-prompt .acts { order: 2; }
+.op-fight { order: 1; flex: none; display: flex; align-items: center; gap: 14px; padding: 6px 14px; border-radius: 14px; background: linear-gradient(180deg, rgba(40, 18, 14, 0.96), rgba(16, 8, 6, 0.96)); border: 1px solid rgba(255, 122, 92, 0.6); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); pointer-events: none; }
 .op-fight .side { display: grid; justify-items: center; gap: 2px; }
 .op-fight .side small { font-size: 11.5px; color: var(--ink-dim); max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .op-fight .side b { font: 800 22px/1 var(--font-ui); font-variant-numeric: tabular-nums; }
@@ -187,6 +194,9 @@
 .op-pick { position: relative; width: 116px; }
 .op-pick .op-card { cursor: pointer; }
 .op-pick.off { opacity: 0.32; }
+.op-pickback { cursor: pointer; border-radius: 6px; }
+.op-pickback .op-card { width: 100%; }
+.op-pick.on .op-pickback .op-card { box-shadow: 0 0 0 3px var(--brass-hi), 0 0 16px rgba(243, 214, 143, 0.7); }
 .op-pick.off .op-card { cursor: default; }
 .op-pick.on .op-card { box-shadow: 0 0 0 3px var(--brass-hi), 0 0 16px rgba(243, 214, 143, 0.7); }
 .op-pick .tick { position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; border-radius: 12px; display: grid; place-items: center; background: var(--brass-hi); color: #1c1407; font-weight: 800; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6); }
@@ -207,6 +217,8 @@
   .op-life { --life-w: 22px; grid-column: 2; grid-row: 1 / span 2; grid-auto-flow: column; align-items: center; gap: 8px; border-top: 0; padding-top: 0; }
   .op-life .stack { width: 58px; }
   .op-back { gap: 8px; }
+  .op-cost .label { display: none; }
+  .op-cost.tight .op-don + .op-don { margin-left: calc(var(--op-don) * -0.5); }
   .op-chars { gap: 4px; }
   .op .rail .preview-sec { display: block; }
   .op-preview > img, .op-preview > .op-card { max-width: 220px; }

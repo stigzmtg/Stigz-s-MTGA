@@ -56,7 +56,7 @@ function newReplayBattle(data, rep) {
   const agent = new ReplayAgent(rep.log, ctl, null, opDelay);
   const byId = Object.fromEntries(data.decks.map(d => [d.id, d]));
   const game = new OnePieceGame({
-    db: data.cards, seed: rep.seed, onUpdate: () => store.bump(), maxTurns: rep.maxTurns || 120,
+    db: data.cards, seed: rep.seed, onUpdate: () => store.bump(), maxTurns: rep.maxTurns || 60,
     players: rep.players.map(p => ({ name: p.name, deck: byId[p.deckId] || data.decks[0], agent, human: p.human })),
   });
   game.start().then(() => { ctl.end(); store.bump(); }, e => { console.error(e); store.bump(); });
