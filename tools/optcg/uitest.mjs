@@ -18,6 +18,15 @@ await page.click('button:has-text("Battle!")');
 await page.waitForSelector('.op-board');
 const turnNow = () => page.evaluate(() => +(document.querySelector('.topbar .turninfo b') || {}).textContent || 0);
 const rnd = a => a[Math.floor(Math.random() * a.length)];
+// a card a person can't click (covered by something) is a bug: report what covers it, with a screenshot
+let covered = 0;
+const safeClick = async el => {
+  try { await el.click({ timeout: 4000 }); return true; } catch (e) {
+    const info = await el.evaluate(n => { const b = n.getBoundingClientRect(); const x = b.left + b.width / 2, y = b.top + b.height / 2; const top = document.elementFromPoint(x, y); const side = n.closest('.op-side'); const sb = side && side.getBoundingClientRect(); return `card ${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.width)}x${Math.round(b.height)} in ${side && side.className} (${sb && `${Math.round(sb.top)}..${Math.round(sb.bottom)}`}) covered by ${top && top.className} ${top && top.closest('.op-mid') ? `mid ${Math.round(top.closest('.op-mid').getBoundingClientRect().top)}..${Math.round(top.closest('.op-mid').getBoundingClientRect().bottom)}` : ''}`; }).catch(() => 'gone');
+    if (info !== 'gone') { covered++; errors.push('covered: ' + info); await page.screenshot({ path: `${out}/covered-${covered}.png` }); }
+    return false;
+  }
+};
 let last = '', stuck = 0, clicks = 0, shots = 0, attacks = 0, counters = 0, dons = 0, plays = 0;
 const t0 = Date.now();
 for (let i = 0; i < 4000 && Date.now() - t0 < 300000; i++) {
@@ -54,7 +63,7 @@ for (let i = 0; i < 4000 && Date.now() - t0 < 300000; i++) {
   }
   if (/Block/.test(step)) {
     const bl = await page.$$('.op-slot.targetable .op-card');
-    if (bl.length && Math.random() < 0.5) { await rnd(bl).click(); continue; }
+    if (bl.length && Math.random() < 0.5) { await safeClick(rnd(bl)); continue; }
     await page.click('.op-prompt .btn.primary'); continue;
   }
   if (await page.$('.op-prompt .op-num')) {
@@ -66,7 +75,7 @@ for (let i = 0; i < 4000 && Date.now() - t0 < 300000; i++) {
   if (yes) { await (Math.random() < 0.8 ? yes : await page.$('.op-prompt .btn:has-text("No")')).click(); continue; }
   const tgt = await page.$$('.op-slot.targetable .op-card');
   if (tgt.length) {
-    await rnd(tgt).click(); clicks++;
+    await safeClick(rnd(tgt)); clicks++;
     const done = await page.$('.op-prompt .btn.primary:has-text("Done"):not([disabled])'); if (done && Math.random() < 0.6) await done.click();
     continue;
   }
@@ -76,12 +85,12 @@ for (let i = 0; i < 4000 && Date.now() - t0 < 300000; i++) {
     const playable = await page.$$('.op-handslot.playable .op-card');
     if (playable.length && Math.random() < 0.8) { await rnd(playable).click(); plays++; clicks++; await page.waitForTimeout(30); continue; }
     const give = await page.$('.op-prompt .btn:has-text("Give DON!!")');
-    if (give && Math.random() < 0.5) { await give.click(); await page.waitForTimeout(30); const tg = await page.$$('.op-slot.targetable .op-card'); if (tg.length) { await rnd(tg).click(); dons++; } continue; }
+    if (give && Math.random() < 0.5) { await give.click(); await page.waitForTimeout(30); const tg = await page.$$('.op-slot.targetable .op-card'); if (tg.length && await safeClick(rnd(tg))) dons++; continue; }
     const can = await page.$$('.op-side.me .op-slot.can .op-card');
     if (can.length && Math.random() < 0.85) {
-      await rnd(can).click(); await page.waitForTimeout(40);
+      await safeClick(rnd(can)); await page.waitForTimeout(40);
       const atk = await page.$('.menu .mi:has-text("Attack")');
-      if (atk) { await atk.click(); await page.waitForTimeout(40); const tg = await page.$$('.op-side.opp .op-slot.targetable .op-card'); if (tg.length) { await rnd(tg).click(); attacks++; } }
+      if (atk) { await atk.click(); await page.waitForTimeout(40); const tg = await page.$$('.op-side.opp .op-slot.targetable .op-card'); if (tg.length && await safeClick(rnd(tg))) attacks++; }
       else await page.keyboard.press('Escape');
       continue;
     }
@@ -94,6 +103,21 @@ for (let i = 0; i < 4000 && Date.now() - t0 < 300000; i++) {
 }
 const t = await turnNow();
 await page.screenshot({ path: `${out}/final.png` });
+// REPLAY=1: watch the finished game's replay and check it ends exactly the same way
+const boardSummary = () => page.evaluate(() => [...document.querySelectorAll('.op-side')].map(s => [s.querySelector('.op-life .cap b').textContent, [...s.querySelectorAll('.op-piles .pile b')].map(b => b.textContent).join('/'), [...s.querySelectorAll('.op-slot:not(.empty)')].length].join(' ')).join(' | ') + ' :: ' + (document.querySelector('.dialog[aria-label="Game over"] h2') || {}).textContent);
+let replayNote = '';
+if (process.env.REPLAY && await page.$('.dialog[aria-label="Game over"]')) {
+  const before = await boardSummary();
+  await page.click('.dialog .btn:has-text("Watch replay")');
+  await page.waitForSelector('.replaybar, [aria-label="Replay speed"]');
+  await page.click('[aria-label="Replay speed"] button:has-text("4×")');
+  await page.waitForSelector('.dialog[aria-label="Game over"]', { timeout: 600000 });
+  await page.waitForTimeout(1500);
+  const after = await boardSummary();
+  replayNote = before === after ? 'replay matches' : `REPLAY DIFFERS:\n  game   ${before}\n  replay ${after}`;
+  if (before !== after) errors.push('replay differs');
+}
+if (replayNote) console.log(replayNote);
 console.log(`reached turn ${t}, ${clicks} clicks (${plays} plays, ${dons} DON!!, ${attacks} attacks, ${counters} counters), ${((Date.now() - t0) / 1000).toFixed(0)}s`, errors.length ? 'ERRORS:\n' + errors.slice(0, 8).join('\n') : 'no page errors');
 await browser.close();
 process.exit(errors.length ? 1 : 0);

@@ -60,7 +60,7 @@
 @media (max-width: 520px) { .pk-chosen-body { grid-template-columns: 110px minmax(0, 1fr); } .pk-decks { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); } }
 
 /* ================================================================ battle table */
-.pk-board { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: 8px; padding: 8px 12px 0; min-height: 0; overflow: hidden; }
+.pk-board { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: 8px; padding: 8px 12px 0; min-height: 0; overflow: hidden; overflow: clip; }
 .pk-side { position: relative; display: grid; grid-template-columns: 158px minmax(0, 1fr) 124px; gap: 12px; align-items: stretch; min-height: 0; padding: 9px 11px; border-radius: var(--r-xl); border: 1px solid rgba(232, 200, 132, 0.13);
   background: radial-gradient(ellipse 75% 65% at 50% 50%, rgba(255, 255, 255, 0.04), transparent 72%), linear-gradient(180deg, rgba(7, 19, 14, 0.74), rgba(3, 10, 7, 0.8));
   box-shadow: inset 0 2px 24px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(0, 0, 0, 0.3), 0 1px 0 rgba(255, 255, 255, 0.035); }
