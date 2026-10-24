@@ -39,7 +39,7 @@ export const isStyleCode = c => typeof c === 'string' && /^\d{1,2}(\.\d{1,2}){3}
 const hash = s => { let h = 7; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
 
 // a deck's box until you pick one: its colors and an emblem to match
-const COLOR_OF = { W: [10, 3], U: [6, 6], B: [12, 8], R: [0, 4], G: [4, 5], Grass: [4, 5], Fire: [0, 4], Water: [6, 6], Lightning: [2, 7], Psychic: [8, 2], Fighting: [13, 11], Darkness: [12, 8], Metal: [11, 14], Dragon: [2, 9], Colorless: [10, 1] };
+const COLOR_OF = { W: [10, 3], U: [6, 6], B: [12, 8], R: [0, 4], G: [4, 5], Grass: [4, 5], Fire: [0, 4], Water: [6, 6], Lightning: [2, 7], Psychic: [8, 2], Fighting: [13, 11], Darkness: [12, 8], Metal: [11, 14], Dragon: [2, 9], Colorless: [10, 1], Red: [0, 4], Green: [4, 5], Blue: [6, 6], Purple: [8, 2], Black: [12, 8], Yellow: [2, 7] };
 export function defaultBox(id, colors = []) {
   const [c, e] = COLOR_OF[colors[0]] || [7, 14];
   return [hash(id) % 2, c, c === 2 || c === 10 ? 3 : 0, colors.length >= 3 ? 14 : e].join('.');
@@ -188,7 +188,7 @@ export function DeckStyleEditor({ kind, deck, colors, onClose }) {
         <div className="ds-preview">
           <DeckBox code={bc} sleeve={plain ? null : sc} label={deck.name} size={176} />
           <div className="ds-fan" aria-label="Your sleeves">
-            {[-1, 0, 1].map(i => <div key={i} className={`ds-back ${plain ? 'plain' : ''}`} style={{ '--r': `${i * 9}deg`, '--x': `${i * 34}px` }}>{plain ? <div className={kind === 'pk' ? 'pk-card back' : 'card back'}>{kind === 'pk' ? <span className="ball" /> : <div className="oval" />}</div> : <Sleeve code={sc} />}</div>)}
+            {[-1, 0, 1].map(i => <div key={i} className={`ds-back ${plain ? 'plain' : ''}`} style={{ '--r': `${i * 9}deg`, '--x': `${i * 34}px` }}>{plain ? <div className={kind === 'pk' ? 'pk-card back' : kind === 'op' ? 'op-card back' : 'card back'}>{kind === 'pk' ? <span className="ball" /> : kind === 'op' ? <span className="op-mark" /> : <div className="oval" />}</div> : <Sleeve code={sc} />}</div>)}
           </div>
           <button className="btn sm" onClick={surprise}>Surprise me</button>
         </div>

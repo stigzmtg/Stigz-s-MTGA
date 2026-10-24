@@ -14,9 +14,12 @@ for (const [name, text] of Object.entries(cards)) { const issues = analyzeCard(t
 fs.writeFileSync('data/support.json', JSON.stringify(support));
 for (const f of ['cards.json', 'tokens.json', 'decks.json', 'support.json', 'images.json']) if (fs.existsSync(path.join('data', f))) fs.copyFileSync(path.join('data', f), path.join(DIST, 'data', f));
 // the Pokémon side's data
-fs.mkdirSync(path.join(DIST, 'data', 'ptcg'), { recursive: true });
-for (const f of ['cards.json', 'decks.json', 'images.json']) if (fs.existsSync(path.join('data', 'ptcg', f))) fs.copyFileSync(path.join('data', 'ptcg', f), path.join(DIST, 'data', 'ptcg', f));
-if (!fs.existsSync('data/ptcg/images.json')) fs.writeFileSync(path.join(DIST, 'data', 'ptcg', 'images.json'), JSON.stringify({ v: 1, type: 'image/avif', packs: [], cards: {} }));
+// the Pokémon and One Piece sides' data
+for (const side of ['ptcg', 'optcg']) {
+  fs.mkdirSync(path.join(DIST, 'data', side), { recursive: true });
+  for (const f of ['cards.json', 'decks.json', 'images.json']) if (fs.existsSync(path.join('data', side, f))) fs.copyFileSync(path.join('data', side, f), path.join(DIST, 'data', side, f));
+  if (!fs.existsSync(`data/${side}/images.json`)) fs.writeFileSync(path.join(DIST, 'data', side, 'images.json'), JSON.stringify({ v: 1, type: 'image/avif', packs: [], cards: {} }));
+}
 // no packed card images yet: an empty index keeps the page from requesting a missing file
 if (!fs.existsSync('data/images.json')) fs.writeFileSync(path.join(DIST, 'data', 'images.json'), JSON.stringify({ v: 2, type: 'image/avif', packs: [], images: [], decks: {}, lobby: {}, tokens: {} }));
 // cache-busting: a rebuilt picture pack keeps its file name, so its address carries a hash of its contents
@@ -24,14 +27,14 @@ if (!fs.existsSync('data/images.json')) fs.writeFileSync(path.join(DIST, 'data',
 // the CDN never hand back last build's deck lists or pictures
 const crypto = await import('node:crypto');
 const hashOf = buf => crypto.createHash('sha1').update(buf).digest('hex').slice(0, 10);
-for (const f of ['images.json', 'ptcg/images.json']) {
+for (const f of ['images.json', 'ptcg/images.json', 'optcg/images.json']) {
   const file = path.join(DIST, 'data', f);
   const ix = JSON.parse(fs.readFileSync(file, 'utf8'));
   ix.packs = (ix.packs || []).map(p => { const bare = p.split('?')[0]; const src = path.join(DIST, bare); return fs.existsSync(src) ? `${bare}?v=${hashOf(fs.readFileSync(src))}` : bare; });
   fs.writeFileSync(file, JSON.stringify(ix));
 }
 const dataHash = crypto.createHash('sha1');
-for (const f of ['cards.json', 'tokens.json', 'decks.json', 'support.json', 'images.json', 'ptcg/cards.json', 'ptcg/decks.json', 'ptcg/images.json']) if (fs.existsSync(path.join(DIST, 'data', f))) dataHash.update(fs.readFileSync(path.join(DIST, 'data', f)));
+for (const f of ['cards.json', 'tokens.json', 'decks.json', 'support.json', 'images.json', 'ptcg/cards.json', 'ptcg/decks.json', 'ptcg/images.json', 'optcg/cards.json', 'optcg/decks.json', 'optcg/images.json']) if (fs.existsSync(path.join(DIST, 'data', f))) dataHash.update(fs.readFileSync(path.join(DIST, 'data', f)));
 const DATA_VERSION = dataHash.digest('hex').slice(0, 10);
 
 await build({
@@ -53,7 +56,7 @@ const APP_VERSION = hashOf(fs.readFileSync(path.join(DIST, 'app.js')));
 // styles.css raises at wide, tall windows (1 on laptops). Media and container query conditions and url(...) contents stay as they are.
 // (a negative size keeps its sign inside the calc: -16px -> calc(-16px * var(--s)), not the invalid -calc(16px * …))
 const scalePx = css => css.replace(/(@(?:media|container)[^{]*\{)|(url\([^)]*\))|(-?\d*\.?\d+)px\b/g, (m, media, url, num) => (media || url || Math.abs(parseFloat(num)) < 3 ? m : `calc(${num}px * var(--s))`));
-const css = fs.readFileSync('src/ui/generated/symbols.css', 'utf8') + '\n' + scalePx(fs.readFileSync('src/ui/styles.css', 'utf8') + '\n' + fs.readFileSync('src/ptcg/ui/ptcg.css', 'utf8') + '\n' + fs.readFileSync('src/ui/home.css', 'utf8'));
+const css = fs.readFileSync('src/ui/generated/symbols.css', 'utf8') + '\n' + scalePx(fs.readFileSync('src/ui/styles.css', 'utf8') + '\n' + fs.readFileSync('src/ptcg/ui/ptcg.css', 'utf8') + '\n' + fs.readFileSync('src/optcg/ui/optcg.css', 'utf8') + '\n' + fs.readFileSync('src/ui/home.css', 'utf8'));
 const fonts = 'https://fonts.googleapis.com/css2?family=Alegreya+Sans+SC:wght@500;700;800&family=Alegreya+Sans:wght@400;600;700;800&family=Alegreya:ital,wght@0,400;0,500;1,400&family=Cinzel:wght@600;700&display=swap';
 const react = 'https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js';
 const reactDom = 'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js';
@@ -111,7 +114,7 @@ fs.writeFileSync(path.join(DIST, 'manifest.webmanifest'), JSON.stringify({
 }, null, 2));
 {
   const h = crypto.createHash('sha1');
-  for (const f of ['app.js', 'index.html', 'data/decks.json', 'data/ptcg/decks.json', 'data/ptcg/cards.json', 'data/images.json', 'data/ptcg/images.json']) if (fs.existsSync(path.join(DIST, f))) h.update(fs.readFileSync(path.join(DIST, f)));
+  for (const f of ['app.js', 'index.html', 'data/decks.json', 'data/ptcg/decks.json', 'data/ptcg/cards.json', 'data/images.json', 'data/ptcg/images.json', 'data/optcg/decks.json', 'data/optcg/cards.json', 'data/optcg/images.json']) if (fs.existsSync(path.join(DIST, f))) h.update(fs.readFileSync(path.join(DIST, f)));
   fs.writeFileSync(path.join(DIST, 'sw.js'), fs.readFileSync('src/sw.js', 'utf8').replace('__VERSION__', h.digest('hex').slice(0, 12)));
 }
 const kb = f => (fs.statSync(path.join(DIST, f)).size / 1024).toFixed(0) + 'KB';

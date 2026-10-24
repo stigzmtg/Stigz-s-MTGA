@@ -1,6 +1,8 @@
 // The front door: a title under drifting card art, the two games as arched gates with everything each one offers,
 // shelves of decks you can jump straight into, a box for joining a friend's room, and what makes the tables play well.
 import { initPkImages, pkImage, subscribePk, pkImagesVersion, preloadPk } from '../ptcg/ui/images.js';
+import { initOpImages, opImage, subscribeOp, opImagesVersion, preloadOp } from '../optcg/ui/images.js';
+import { ColorDot, OP_COLORS } from '../optcg/ui/colors.jsx';
 import { initImages, lobbyImages, subscribeImages, imagesVersion } from './images.js';
 import { Pip } from './cardview.jsx';
 import { Energy } from '../ptcg/ui/energy.jsx';
@@ -31,6 +33,9 @@ const MTG_FEATURED = [
   ['c17-feline-ferocity', 'Feline Ferocity', 'Arahbo, Roar of the World', 'WG', 'Commander 2017', 2017, 'At the start of every combat on your turn, another Cat gets +3/+3.'],
   ['c18-nature-s-vengeance', "Nature's Vengeance", 'Lord Windgrace', 'BRG', 'Commander 2018', 2018, 'A planeswalker commander that brings lands back from the graveyard and turns them into value.'],
 ];
+// One Piece Leaders in the doorway, and drifting through the title
+const OP_FAN = ['ST01-001', 'ST13-003', 'ST21-001', 'ST23-001', 'ST30-001'];
+const OP_COMPASS = <span className="compass" aria-hidden="true" />;
 const PK_TYPES = ['Grass', 'Fire', 'Water', 'Lightning', 'Psychic', 'Fighting', 'Darkness', 'Metal'];
 
 // ---------------------------------------------------------------- small pieces
@@ -166,13 +171,29 @@ function PkTile({ d, onPick }) {
   );
 }
 
+function OpTile({ d, leader, onPick }) {
+  const img = opImage(d.featured || d.leader);
+  return (
+    <button className="deck-tile op" onClick={() => onPick(d.id)} aria-label={`${d.code} ${d.name}. Pick this deck`}>
+      <span className="dt-art op">{img ? <img src={img} alt="" draggable="false" /> : <span className="dt-ph">{leader ? leader.name : d.name}</span>}<span className="dt-badge">{d.code}</span></span>
+      <span className="dt-body">
+        <span className="dt-top"><span className="dt-colors"><ColorDot colors={d.colors} size={15} /></span><span className="dt-set">{d.colors.join(' / ')}</span></span>
+        <b className="dt-name">{d.name}</b>
+        <span className="dt-sub">{leader ? `Leader: ${leader.name}` : ''}</span>
+        <span className="dt-text">{d.blurb}</span>
+        <span className="dt-go">Pick this deck</span>
+      </span>
+    </button>
+  );
+}
+
 // ---------------------------------------------------------------- joining a friend's room
 function JoinBox({ onJoin }) {
   const [game, setGame] = useState(() => safeStorage.getItem('pa-home-join') || 'mtg');
   const [code, setCode] = useState('');
   const change = v => {
     // a pasted invite link says which game it is for
-    if (/#pk-/i.test(v)) setGame('pokemon'); else if (v.includes('#')) setGame('mtg');
+    if (/#pk-/i.test(v)) setGame('pokemon'); else if (/#op-/i.test(v)) setGame('onepiece'); else if (v.includes('#')) setGame('mtg');
     setCode(codeFromInput(v));
   };
   const go = e => { e.preventDefault(); if (!isRoomCode(code)) return; safeStorage.setItem('pa-home-join', game); onJoin(game, code); };
@@ -183,6 +204,7 @@ function JoinBox({ onJoin }) {
       <div className="seg" role="group" aria-label="Which game">
         <button type="button" className={game === 'mtg' ? 'on' : ''} aria-pressed={game === 'mtg'} onClick={() => setGame('mtg')}>Commander</button>
         <button type="button" className={game === 'pokemon' ? 'on' : ''} aria-pressed={game === 'pokemon'} onClick={() => setGame('pokemon')}>Pokémon</button>
+        <button type="button" className={game === 'onepiece' ? 'on' : ''} aria-pressed={game === 'onepiece'} onClick={() => setGame('onepiece')}>One Piece</button>
       </div>
       <div className="join-row">
         <label className="sr" htmlFor="home-code">Room code</label>
@@ -204,6 +226,7 @@ const when = t => {
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 const RESULT = { win: 'Win', loss: 'Loss', draw: 'Draw' };
+const KIND_LABEL = { mtg: 'Commander', pk: 'Pokémon', op: 'One Piece' };
 
 function Summary({ kind, label }) {
   const t = tally(kind);
@@ -230,6 +253,7 @@ function RecordSection({ onWatch }) {
       <div className="rec-grid">
         <Summary kind="mtg" label="Commander" />
         <Summary kind="pk" label="Pokémon" />
+        <Summary kind="op" label="One Piece" />
       </div>
       {recs.length ? (
         <ol className="rec-list" aria-label="Recent games">
@@ -237,7 +261,7 @@ function RecordSection({ onWatch }) {
             <li key={r.id} className={r.kind}>
               <span className={`res ${r.result}`}>{RESULT[r.result]}</span>
               <span className="what"><b>{r.deck.name}</b><span>vs {r.opps.map(o => o.deck || o.name).join(', ')}</span></span>
-              <span className="meta">{r.kind === 'pk' ? 'Pokémon' : 'Commander'} · {r.mode === 'online' ? 'with friends' : 'vs computer'} · {r.turns} turns · {when(r.at)}</span>
+              <span className="meta">{KIND_LABEL[r.kind] || 'Commander'} · {r.mode === 'online' ? 'with friends' : 'vs computer'} · {r.turns} turns · {when(r.at)}</span>
               {r.replay ? <button className="btn sm" onClick={() => onWatch(r)}>Watch replay</button> : <span className="noreplay">No replay</span>}
             </li>
           ))}
@@ -250,22 +274,28 @@ function RecordSection({ onWatch }) {
 // ---------------------------------------------------------------- the page
 export function Home({ onPick, onJoin }) {
   useSyncExternalStore(subscribePk, pkImagesVersion);
+  useSyncExternalStore(subscribeOp, opImagesVersion);
   useSyncExternalStore(subscribeImages, imagesVersion);
   const [pkDecks, setPkDecks] = useState(null);
+  const [op, setOp] = useState(null);
   const installable = useSyncExternalStore(subscribeInstall, canInstall);
   useEffect(() => {
     initPkImages().then(ok => { if (ok) preloadPk(); });
     initImages();
     fetchJSON('data/ptcg/decks.json').then(setPkDecks, () => setPkDecks([]));
+    initOpImages().then(ok => { if (ok) preloadOp(); });
+    Promise.all([fetchJSON('data/optcg/decks.json'), fetchJSON('data/optcg/cards.json')]).then(([decks, cards]) => setOp({ decks, cards }), () => setOp({ decks: [], cards: {} }));
   }, []);
   const mtg = id => lobbyImages(id)[0] || null;
+  const opDecks = op ? op.decks : [];
+  const opCards = op ? Object.keys(op.cards).length : 0;
   // two mixed bands: each alternates the games
   const a = [], b = [];
   for (let i = 0; i < 10; i++) { a.push(i % 2 ? pkImage(PK_DRIFT[i]) : mtg(MTG_DRIFT[i])); b.push(i % 2 ? mtg(MTG_DRIFT[(i + 5) % 10]) : pkImage(PK_DRIFT[(i + 2) % 12])); }
   const scrollTo = id => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   // open a game, in a mode, optionally with a deck already picked in its lobby
   const open = (game, mode = 'solo', deck = null) => {
-    const [modeKey, lobbyKey] = game === 'mtg' ? ['pa-mode', 'pa-lobby'] : ['pk-mode', 'pk-lobby'];
+    const [modeKey, lobbyKey] = game === 'mtg' ? ['pa-mode', 'pa-lobby'] : game === 'onepiece' ? ['op-mode', 'op-lobby'] : ['pk-mode', 'pk-lobby'];
     safeStorage.setItem(modeKey, mode);
     if (deck) { let s = {}; try { s = JSON.parse(safeStorage.getItem(lobbyKey) || '{}') || {}; } catch { /* corrupt entry */ } safeStorage.setItem(lobbyKey, JSON.stringify({ ...s, mine: deck })); }
     onPick(game);
@@ -287,18 +317,19 @@ export function Home({ onPick, onJoin }) {
         <SizeButton cls="navbtn sizebtn" />
         <button className="navbtn mtg" onClick={() => open('mtg')}>Commander</button>
         <button className="navbtn pk" onClick={() => open('pokemon')}>Pokémon</button>
+        <button className="navbtn op" onClick={() => open('onepiece')}>One Piece</button>
       </nav>
 
       <header className="hero">
         <Drift rows={[a, b]} />
         <div className="hero-copy">
-          <button className="newpill" onClick={() => scrollTo('friends')}><b>New</b>Pokémon battles with friends</button>
-          <div className="eyebrow">Two card battle simulators</div>
+          <button className="newpill" onClick={() => scrollTo('games')}><b>New</b>The One Piece Card Game</button>
+          <div className="eyebrow">Three card battle simulators</div>
           <h1 className="title">Stigz’s TCG Arena</h1>
           <p className="lede">Bring a ready-made deck, take your seat, and battle the computer or your friends. Every card plays by the rules, right in your browser.</p>
           <dl className="stats">
-            <div><dt>Decks ready to play</dt><dd>248</dd></div>
-            <div><dt>Cards with rules</dt><dd>6,863</dd></div>
+            <div><dt>Decks ready to play</dt><dd>{(248 + opDecks.length).toLocaleString('en-US')}</dd></div>
+            <div><dt>Cards with rules</dt><dd>{(6863 + opCards).toLocaleString('en-US')}</dd></div>
             <div><dt>Players a table</dt><dd>2–4</dd></div>
             <div><dt>Accounts needed</dt><dd>0</dd></div>
           </dl>
@@ -306,7 +337,7 @@ export function Home({ onPick, onJoin }) {
       </header>
 
       <section className="home-sec games" aria-labelledby="games">
-        <SectionHead id="games" eyebrow="Choose your table" title="Two games, one arena">Each game has its own rules engine, its own computer opponent and its own rooms for friends.</SectionHead>
+        <SectionHead id="games" eyebrow="Choose your table" title="Three games, one arena">Each game has its own rules engine, its own computer opponent and its own rooms for friends.</SectionHead>
         <div className="gates">
           <Gate game="mtg" title="Magic: The Gathering" kind="Commander" keystone="✦"
             pips={['W', 'U', 'B', 'R', 'G'].map(s => <Pip key={s} s={s} />)}
@@ -322,6 +353,13 @@ export function Home({ onPick, onJoin }) {
             facts={[['54', 'top decks'], ['1v1', 'vs computer or a friend'], ['441', 'cards coded']]}
             points={['Weakness, Resistance and special conditions', 'Coin flips, Abilities and every Trainer', 'Evolution, Rare Candy and retreat', 'Knock Out an ex for 2 Prizes, a Mega ex for 3']}
             onPlay={mode => open('pokemon', mode)} />
+          <Gate game="op" title="One Piece Card Game" kind="Starter decks" keystone={OP_COMPASS}
+            pips={OP_COLORS.map(c => <ColorDot key={c} colors={c} size={17} />)}
+            fan={OP_FAN.map(opImage)} fanLabel="Leaders: Monkey.D.Luffy, Portgas.D.Ace, Gear 5 Luffy, Shanks, Luffy and Ace"
+            blurb={`All ${opDecks.length || 36} starter decks, each exactly as it comes in the box: a Leader, 50 cards and 10 DON!!. One on one, Life cards on the line.`}
+            facts={[[String(opDecks.length || 36), 'starter decks'], ['1v1', 'vs computer or a friend'], [opCards ? opCards.toLocaleString('en-US') : '500+', 'cards coded']]}
+            points={['DON!! to power up your Leader and crew', 'Blockers and Counters to defend', 'Life cards with surprise Triggers', 'Every [On Play] and [When Attacking] effect']}
+            onPlay={mode => open('onepiece', mode)} />
         </div>
       </section>
 
@@ -337,6 +375,11 @@ export function Home({ onPick, onJoin }) {
           <button className="linkbtn" onClick={() => open('pokemon')}>Open the Pokémon lobby</button>
         </div>
         <div className="shelf">{(pkDecks || []).map(d => <PkTile key={d.id} d={d} onPick={id => open('pokemon', 'solo', id)} />)}</div>
+        <div className="shelf-head op">
+          <h3><span className="sh-pips" aria-hidden="true"><ColorDot colors="Red" size={16} /><ColorDot colors="Blue" size={16} /><ColorDot colors="Purple" size={16} /></span>One Piece starter decks</h3>
+          <button className="linkbtn" onClick={() => open('onepiece')}>Open the One Piece lobby</button>
+        </div>
+        <div className="shelf">{opDecks.map(d => <OpTile key={d.id} d={d} leader={op.cards[d.leader]} onPick={id => open('onepiece', 'solo', id)} />)}</div>
       </section>
 
       <section className="home-sec friends" aria-labelledby="friends">
@@ -345,7 +388,7 @@ export function Home({ onPick, onJoin }) {
             <div className="eyebrow">Play together</div>
             <h2 id="friends">Battle your friends</h2>
             <Ornament />
-            <p>Everyone plays on their own screen, in their own browser. Rooms work for both games, and late arrivals can watch.</p>
+            <p>Everyone plays on their own screen, in their own browser. Rooms work for all three games, and late arrivals can watch.</p>
             <ol className="steps">
               <li><b>Make a room</b><span>Open a game, choose <i>Play with friends</i> and press <i>Create a room</i>.</span></li>
               <li><b>Send the link</b><span>Copy the invite link and send it in a chat. Friends open it and take a seat.</span></li>
@@ -356,7 +399,7 @@ export function Home({ onPick, onJoin }) {
         </div>
       </section>
 
-      <RecordSection onWatch={r => { try { sessionStorage.setItem('pa-open-replay', r.id); } catch { /* storage blocked */ } onPick(r.kind === 'pk' ? 'pokemon' : 'mtg'); }} />
+      <RecordSection onWatch={r => { try { sessionStorage.setItem('pa-open-replay', r.id); } catch { /* storage blocked */ } onPick(r.kind === 'pk' ? 'pokemon' : r.kind === 'op' ? 'onepiece' : 'mtg'); }} />
 
       <section className="home-sec why" aria-labelledby="why">
         <SectionHead id="why" eyebrow="Built for real games" title="Why it plays well" />
@@ -373,14 +416,14 @@ export function Home({ onPick, onJoin }) {
       <footer className="home-foot">
         <div className="foot-grid">
           <div className="foot-brand"><span className="brandmark"><Crest size={26} />Stigz’s TCG Arena</span><p>A free fan-made arena for playing preconstructed decks by the rules.</p></div>
-          <div><h4>Play</h4><button className="linkbtn" onClick={() => open('mtg')}>Commander</button><button className="linkbtn" onClick={() => open('pokemon')}>Pokémon TCG</button><button className="linkbtn" onClick={() => scrollTo('friends')}>Join a room</button></div>
+          <div><h4>Play</h4><button className="linkbtn" onClick={() => open('mtg')}>Commander</button><button className="linkbtn" onClick={() => open('pokemon')}>Pokémon TCG</button><button className="linkbtn" onClick={() => open('onepiece')}>One Piece Card Game</button><button className="linkbtn" onClick={() => scrollTo('friends')}>Join a room</button></div>
           <div><h4>Credits</h4>
             <span>Commander rules from <a href="https://github.com/Card-Forge/forge" target="_blank" rel="noopener">Forge</a> (GPL-3.0)</span>
             <span>Decklists from <a href="https://github.com/taw/magic-preconstructed-decks" target="_blank" rel="noopener">taw</a> and <a href="https://limitlesstcg.com" target="_blank" rel="noopener">Limitless</a></span>
-            <span>Card data from <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a> and <a href="https://tcgdex.dev" target="_blank" rel="noopener">TCGdex</a></span>
+            <span>Card data from <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a>, <a href="https://tcgdex.dev" target="_blank" rel="noopener">TCGdex</a> and <a href="https://optcgapi.com" target="_blank" rel="noopener">optcgapi</a></span>
           </div>
         </div>
-        <p className="legal">Unofficial fan project. Magic: The Gathering is a trademark of Wizards of the Coast; Pokémon and the Pokémon TCG are trademarks of Nintendo, Creatures and GAME FREAK.</p>
+        <p className="legal">Unofficial fan project. Magic: The Gathering is a trademark of Wizards of the Coast; Pokémon and the Pokémon TCG are trademarks of Nintendo, Creatures and GAME FREAK; ONE PIECE and the ONE PIECE CARD GAME are trademarks of Eiichiro Oda/Shueisha, Toei Animation and Bandai.</p>
       </footer>
     </div>
   );

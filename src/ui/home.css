@@ -3,7 +3,7 @@
    (fan of cards inside, details and two ways to play below), shelves of decks, a band for playing with friends,
    what makes it play well, and a footer. Felt, brass and Cinzel throughout; each game adds its own light. */
 .app.home {
-  --gate-card: clamp(100px, 12vw, 172px);
+  --gate-card: clamp(88px, 9vw, 142px);
   --gutter-l: max(16px, env(safe-area-inset-left, 0px));
   --gutter-r: max(16px, env(safe-area-inset-right, 0px));
   --mtg-light: 243, 190, 96;      /* candlelight on the Commander side */
@@ -14,6 +14,9 @@
   --pk-deep: #07122b;
   --pk-sky: #1d4bb0;
   --volt: #ffd23f;
+  --op-light: 255, 112, 82;       /* a sunset over the Grand Line on the One Piece side */
+  --op-line: rgba(255, 128, 98, 0.5);
+  --op-deep: #08172f;
   position: relative;
   overflow-x: clip;
   background:
@@ -38,6 +41,7 @@
 .home .navbtn { border-radius: 999px; padding: 8px 16px; font-weight: 800; font-size: 14px; cursor: pointer; transition: filter 0.15s, transform 0.15s; white-space: nowrap; }
 .home .navbtn:hover { filter: brightness(1.15); }
 .home .navbtn.mtg { color: var(--brass-hi); border: 1px solid var(--mtg-line); background: rgba(var(--mtg-light), 0.09); }
+.home .navbtn.op { color: #ffd2c4; border: 1px solid rgba(var(--op-light), 0.5); background: rgba(178, 44, 30, 0.32); }
 .home .navbtn.pk { color: #ffe27a; border: 1px solid rgba(var(--pk-light), 0.45); background: rgba(29, 75, 176, 0.38); }
 
 /* ---- title, drifting art and the arena's numbers */
@@ -77,9 +81,11 @@
 .home .ornament { display: block; width: 200px; max-width: 70%; height: 14px; color: var(--brass); opacity: 0.85; }
 
 /* ---- the gates */
-.home .gates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(18px, 3vw, 44px); }
+.home .gates { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(16px, 2.2vw, 34px); }
+.home .gates .points { grid-template-columns: minmax(0, 1fr); }
 .home .gate { display: grid; grid-template-rows: auto 1fr; color: var(--ink); text-align: center; border-radius: 18px; transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); animation: homerise 0.8s ease-out both; }
 .home .gate.pk { animation-delay: 0.12s; }
+.home .gate.op { animation-delay: 0.24s; }
 .home .gate:hover { transform: translateY(-4px); }
 .home .arch { appearance: none; position: relative; display: block; width: 100%; height: clamp(250px, 26vw, 330px); padding: 0; font: inherit; color: inherit; cursor: pointer; overflow: hidden;
   border: 1px solid var(--line-c); border-bottom: 0; border-radius: 50% 50% 0 0 / 44% 44% 0 0; background: var(--arch-bg); box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.55); transition: box-shadow 0.35s; }
@@ -89,6 +95,8 @@
 .home .gate:hover .arch { box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.45), 0 0 46px rgba(var(--light), 0.28); }
 .home .gate:hover .arch::after { opacity: 1; }
 .home .gate.mtg { --line-c: var(--mtg-line); --light: var(--mtg-light); --arch-bg: linear-gradient(180deg, #2e1f0d 0%, var(--mtg-deep) 72%); }
+.home .gate.op { --line-c: var(--op-line); --light: var(--op-light); --arch-bg: linear-gradient(180deg, #b8402a 0%, #5b1f2a 30%, #12305c 62%, var(--op-deep) 86%); }
+.home .compass { position: relative; display: inline-block; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid #2a1c08; background: conic-gradient(from 45deg, #b8402a 0 12.5%, transparent 0 25%, #2a1c08 0 37.5%, transparent 0 50%, #b8402a 0 62.5%, transparent 0 75%, #2a1c08 0 87.5%, transparent 0); }
 .home .gate.pk { --line-c: var(--pk-line); --light: var(--pk-light); --arch-bg: linear-gradient(180deg, var(--pk-sky) 0%, #0e2559 38%, var(--pk-deep) 78%); }
 .home .keystone { position: absolute; z-index: 3; left: 50%; top: 4px; width: 34px; height: 34px; transform: translateX(-50%) rotate(45deg); display: grid; place-items: center; background: linear-gradient(135deg, #f6dc96, #a8792c); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.6); color: #2a1c08; font-size: 17px; line-height: 1; }
 .home .keystone > * { transform: rotate(-45deg); }
@@ -126,6 +134,7 @@
 .home .cta:disabled { opacity: 0.45; cursor: default; filter: none; }
 .home .cta:disabled::after { transform: none; }
 .home .gate.mtg .cta, .home .joinbox .cta { color: #1c1407; background: linear-gradient(180deg, #f0cd7c, #c08f3b); box-shadow: 0 0 0 1px #f6dc96 inset, 0 6px 18px rgba(var(--mtg-light), 0.25); }
+.home .gate.op .cta { color: #fff3ee; background: linear-gradient(180deg, #f2674c, #c0321f); box-shadow: 0 0 0 1px #ff9f86 inset, 0 6px 18px rgba(var(--op-light), 0.3); text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35); }
 .home .gate.pk .cta { color: #0b1633; background: linear-gradient(180deg, #ffe066, #f2b705); box-shadow: 0 0 0 1px #fff0a8 inset, 0 6px 18px rgba(var(--pk-light), 0.28); }
 .home .cta2 { color: rgb(var(--light)); border: 1px solid rgba(var(--light), 0.5); background: rgba(var(--light), 0.07); }
 .home .cta2 svg { width: 18px; height: 18px; fill: currentColor; }
@@ -143,6 +152,7 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(0, 0, 0, 0.22)), var(--panel-solid); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
   transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s, border-color 0.25s; }
 .home .deck-tile.mtg { --tile-line: rgba(243, 212, 136, 0.65); --tile-glow: rgba(var(--mtg-light), 0.2); --tile-ink: var(--brass-hi); }
+.home .deck-tile.op { --tile-line: rgba(var(--op-light), 0.6); --tile-glow: rgba(var(--op-light), 0.26); --tile-ink: #ffc2b2; }
 .home .deck-tile.pk { --tile-line: rgba(var(--pk-light), 0.6); --tile-glow: rgba(70, 120, 255, 0.28); --tile-ink: #ffe27a; }
 .home .deck-tile:hover, .home .deck-tile:focus-visible { transform: translateY(-5px); border-color: var(--tile-line); box-shadow: 0 18px 36px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--tile-line), 0 0 34px var(--tile-glow); outline: none; }
 /* the picture is cropped to the card's art box */
@@ -150,6 +160,8 @@
 .home .dt-art.pk { aspect-ratio: 1.7; }
 .home .dt-art img { display: block; width: 119%; max-width: none; margin-left: -9.5%; margin-top: -19%; transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .home .dt-art.pk img { margin-top: -26%; }
+.home .dt-art.op { aspect-ratio: 1.6; }
+.home .dt-art.op img { margin-top: -14%; }
 .home .dt-badge { position: absolute; z-index: 1; left: 10px; bottom: 7px; right: 10px; font: 700 11.5px/1.2 var(--font-ui); letter-spacing: 0.12em; text-transform: uppercase; color: var(--brass-hi); text-shadow: 0 1px 3px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .home .dt-art::after { content: ""; position: absolute; inset: auto 0 0; height: 38%; background: linear-gradient(180deg, transparent, rgba(14, 31, 24, 0.95)); pointer-events: none; }
 .home .deck-tile:hover .dt-art img { transform: scale(1.07); }
@@ -223,8 +235,11 @@
   .home .friends-grid { grid-template-columns: minmax(0, 1fr); }
   .home-nav .links { display: none; }
 }
+@media (max-width: 1180px) { .home .gates { grid-template-columns: repeat(2, minmax(0, 1fr)); } .home .gate.op { grid-column: 1 / -1; } .home .gate.op .points { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .home .rec-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) {
   .app.home { --gate-card: clamp(90px, 25vw, 132px); }
+  .home .gate.op .points { grid-template-columns: minmax(0, 1fr); }
   .home .gates { grid-template-columns: minmax(0, 1fr); }
   .home .arch { height: clamp(210px, 60vw, 290px); }
   .home .drift { height: 400px; }
@@ -254,10 +269,11 @@
 }
 
 /* ---- your record */
-.home .rec-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.home .rec-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .home .rec-sum { display: grid; gap: 8px; padding: 18px 20px; border-radius: 14px; border: 1px solid var(--line); background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.18)); }
 .home .rec-sum.mtg { border-color: rgba(243, 212, 136, 0.3); }
 .home .rec-sum.pk { border-color: rgba(132, 176, 255, 0.35); }
+.home .rec-sum.op { border-color: rgba(var(--op-light), 0.35); }
 .home .rec-sum > b { font: 700 18px/1.2 var(--font-display); letter-spacing: 0.03em; }
 .home .rec-sum .none { color: var(--ink-dim); font-size: 14.5px; }
 .home .rec-sum .wl { font: 700 34px/1 var(--font-display); color: var(--ink-dim); font-variant-numeric: tabular-nums; }

@@ -6,7 +6,7 @@ const VERSION = '__VERSION__';
 const SHELL = 'tcg-arena-' + VERSION;
 const IMG = 'tcg-arena-img';      // card picture packs, kept until their index changes
 const LIB = 'tcg-arena-lib';      // React and fonts from their CDNs
-const PRECACHE = ['./', 'index.html', 'app.js', 'manifest.webmanifest', 'data/decks.json', 'data/images.json', 'data/ptcg/cards.json', 'data/ptcg/decks.json', 'data/ptcg/images.json'];
+const PRECACHE = ['./', 'index.html', 'app.js', 'manifest.webmanifest', 'data/decks.json', 'data/images.json', 'data/ptcg/cards.json', 'data/ptcg/decks.json', 'data/ptcg/images.json', 'data/optcg/cards.json', 'data/optcg/decks.json', 'data/optcg/images.json'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL).then(c => c.addAll(PRECACHE)).catch(() => {}).then(() => self.skipWaiting()));
@@ -27,7 +27,7 @@ self.addEventListener('fetch', e => {
   if (url.pathname.includes('/relay/')) return;   // friends' rooms are live
   if (lib) return e.respondWith(cacheFirst(LIB, req));
   if (/\/img\/[^/]+\.(avif|png)$/.test(url.pathname)) return e.respondWith(cacheFirst(IMG, req));
-  e.respondWith(networkFirst(req, /\/data\/(ptcg\/)?images\.json$/.test(url.pathname)));
+  e.respondWith(networkFirst(req, /\/data\/((pt|op)cg\/)?images\.json$/.test(url.pathname)));
 });
 
 async function cacheFirst(name, req) {

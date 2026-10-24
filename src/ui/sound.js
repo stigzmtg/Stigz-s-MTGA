@@ -95,13 +95,15 @@ export const soundKinds = Object.keys(SOUNDS);
 
 // ---- what each game's happenings sound like
 const MTG_LOG = { land: 'land', mana: 'tap', cast: 'cast', activate: 'ability', attack: 'attack', block: 'block', damage: 'hit', token: 'token', draw: 'draw', attach: 'card', counter: 'token', pump: 'token' };
+const OP_EVENT = { draw: 'draw', play: 'card', don: 'energy', attack: 'attack', block: 'block', counter: 'ability', damage: 'hit', life: 'prize', trigger: 'cast', ko: 'ko', coin: 'coin', first: 'coin', activate: 'ability', event: 'cast', stage: 'card' };
 const PK_EVENT = { draw: 'draw', enter: 'card', evolve: 'cast', energy: 'energy', trainer: 'card', ability: 'ability', attack: 'attack', damage: 'hit', heal: 'heal', coin: 'coin', ko: 'ko', prize: 'prize', switch: 'card', condition: 'ability' };
 const seen = new WeakMap();
 
 // call on every render of a game screen: plays the sounds for whatever happened since the last render
 export function useGameSounds(game, { kind, me = 0, watching = false } = {}) {
   let s = seen.get(game);
-  const list = kind === 'pk' ? game.events : game.logs;
+  const evented = kind === 'pk' || kind === 'op';
+  const list = evented ? game.events : game.logs;
   const newest = list.length ? list[list.length - 1].id : 0;
   if (!s) { seen.set(game, s = { last: newest, over: game.over }); return; }   // nothing for what happened before we looked
   if (newest > s.last) {
@@ -110,7 +112,7 @@ export function useGameSounds(game, { kind, me = 0, watching = false } = {}) {
     let n = 0;
     for (const e of fresh) {
       let k = null;
-      if (kind === 'pk') k = e.kind === 'turn' ? (e.pid === me && !watching ? 'turn' : 'otherTurn') : PK_EVENT[e.kind];
+      if (evented) k = e.kind === 'turn' ? (e.pid === me && !watching ? 'turn' : 'otherTurn') : (kind === 'op' ? OP_EVENT : PK_EVENT)[e.kind];
       else if (e.type === 'turn') k = !watching && game.players[me] && e.text.endsWith(': ' + game.players[me].name) ? 'turn' : 'otherTurn';
       else if (e.type === 'life') k = /gains/.test(e.text) ? 'heal' : 'hit';
       else k = MTG_LOG[e.type];

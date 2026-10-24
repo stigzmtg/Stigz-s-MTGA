@@ -54,7 +54,8 @@ export function recordGame(session, kind) {
   const { game } = session;
   if (!game.over || saved.has(game) || session.replay || session.spectator || game.error) return null;
   saved.add(game);
-  const me = kind === 'pk' ? (session.me || 0) : (session.human.pid != null ? session.human.pid : 0);
+  const side = kind === 'pk' || kind === 'op';   // the Pokémon and One Piece games share field names (turn, result, human)
+  const me = side ? (session.me || 0) : (session.human.pid != null ? session.human.pid : 0);
   const p = game.players[me];
   const log = session.online
     ? [...session.online.net.log.values()].sort((a, b) => a[0] - b[0]).filter((e, i) => e[0] === i)
@@ -64,21 +65,21 @@ export function recordGame(session, kind) {
     id, kind, at: Date.now(), mode: session.online ? 'online' : 'solo', seat: me,
     deck: { id: p.deckId, name: p.deckName },
     opps: game.players.filter((_, i) => i !== me).map(o => ({ name: o.name, deck: o.deckName })),
-    result: resultOf(game, me), turns: kind === 'pk' ? game.turn : game.turnNumber,
-    reason: kind === 'pk' ? game.result || '' : game.resultText || '',
+    result: resultOf(game, me), turns: side ? game.turn : game.turnNumber,
+    reason: side ? game.result || '' : game.resultText || '',
     replay: !!(log && log.length),
   };
   if (rec.replay) {
     const rep = {
       v: 1, kind, seed: game.seed, seat: me, maxTurns: game.maxTurns, cal: !!game.continueAfterHumanLoss,
-      players: game.players.map(q => ({ name: q.name, deckId: q.deckId, human: kind === 'pk' ? !!q.human : !!q.isHuman, ...(customDeck(q.deckId) ? { deck: packDeck(customDeck(q.deckId)) } : {}) })),
+      players: game.players.map(q => ({ name: q.name, deckId: q.deckId, human: side ? !!q.human : !!q.isHuman, ...(customDeck(q.deckId) ? { deck: packDeck(customDeck(q.deckId)) } : {}) })),
       log,
     };
     if (!store(REPLAY_KEY(id), rep)) rec.replay = false;
   }
   const all = [rec, ...loadRecords()];
   // keep the newest replays of each game, and a long history of results
-  const kept = { mtg: 0, pk: 0 };
+  const kept = { mtg: 0, pk: 0, op: 0 };
   for (const r of all) if (r.replay && ++kept[r.kind] > KEEP_REPLAYS) { safeStorage.setItem(REPLAY_KEY(r.id), ''); try { localStorage.removeItem(REPLAY_KEY(r.id)); } catch { /* blocked */ } r.replay = false; }
   store(REC_KEY, all.slice(0, KEEP_RECORDS));
   return rec;

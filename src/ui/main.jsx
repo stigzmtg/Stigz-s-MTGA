@@ -13,6 +13,7 @@ import { makePace, gamePacer } from './pacing.js';
 import { createStore, loadSettings, saveSettings, safeStorage, fetchJSON } from './common.js';
 import { Home } from './home.jsx';
 import { PokemonApp, pkRoomFromHash } from '../ptcg/ui/app.jsx';
+import { OnePieceApp, opRoomFromHash } from '../optcg/ui/app.jsx';
 import { Recorder, ReplayControl, ReplayAgent, mtgDelay, loadReplay } from './records.js';
 import { initApp } from './install.js';
 import { initUiScale } from './uisize.js';
@@ -272,12 +273,13 @@ function MtgApp({ onHome }) {
     onReplay={id => { const rep = loadReplay(id); if (!rep) return; endSession(session); setSession(newReplaySession(all, { ...rep, id })); }} />;
 }
 
-// which game: the address says (#pokemon, #mtg, or a room invite: #abc123 for Commander, #pk-abc123 for Pokémon),
-// else the home screen
+// which game: the address says (#pokemon, #onepiece, #mtg, or a room invite: #abc123 for Commander, #pk-abc123 for
+// Pokémon, #op-abc123 for One Piece), else the home screen
 function gameFromHash() {
   const h = location.hash.slice(1);
   if (isRoomCode(h) || h === 'mtg') return 'mtg';
   if (h === 'pokemon' || pkRoomFromHash()) return 'pokemon';
+  if (h === 'onepiece' || opRoomFromHash()) return 'onepiece';
   return null;
 }
 function Root() {
@@ -293,10 +295,11 @@ function Root() {
   };
   // a room code typed on the home screen: open that game with the code in the address, as an invite link would
   const join = (g, code) => {
-    try { location.hash = (g === 'pokemon' ? 'pk-' : '') + code; } catch { /* sandboxed frame */ }
+    try { location.hash = (g === 'pokemon' ? 'pk-' : g === 'onepiece' ? 'op-' : '') + code; } catch { /* sandboxed frame */ }
     setGame(g);
   };
   if (game === 'pokemon') return <PokemonApp onHome={() => pick(null)} />;
+  if (game === 'onepiece') return <OnePieceApp onHome={() => pick(null)} />;
   if (game === 'mtg') return <MtgApp onHome={() => pick(null)} />;
   return <Home onPick={pick} onJoin={join} />;
 }
