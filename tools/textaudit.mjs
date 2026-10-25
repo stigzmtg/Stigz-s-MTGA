@@ -1,7 +1,7 @@
 // Readability audit: every visible piece of text on the main screens, checked for size, contrast against what is
 // actually drawn behind it (sampled from a screenshot), and for blur-prone rendering: text under a scale or a
 // fractional translate, or under filter / backdrop-filter layers.
-// Usage: node tools/textaudit.mjs [out dir]   (serve dist/ on :8765 first)
+// Usage: node tools/textaudit.mjs [out dir]   (serve dist/ on :8765 first; ONLY=op, pk or mtg audits one game)
 import { chromium } from 'playwright';
 import sharp from 'sharp';
 import fs from 'node:fs';
@@ -86,12 +86,26 @@ async function audit(page, name) {
 }
 
 const views = [[1440, 900], [390, 844]];
+const only = process.env.ONLY || '';
 for (const [w, h] of views) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h } });
-  await ctx.addInitScript(() => { window.__pkAutoplay = 4; window.__paAutoplay = 3; try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'instant' })); } catch {} });
+  await ctx.addInitScript(() => { window.__pkAutoplay = 4; window.__paAutoplay = 3; window.__opAutoplay = 4; try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'instant' })); } catch {} });
   const page = await ctx.newPage();
-  await page.goto(BASE); await page.waitForSelector('.app.home .deck-tile.pk'); await page.waitForTimeout(1500);
-  await audit(page, `home-${w}`);
+  if (!only) { await page.goto(BASE); await page.waitForSelector('.app.home .deck-tile.pk'); await page.waitForTimeout(1500); await audit(page, `home-${w}`); }
+  if (!only || only === 'op') {
+    await page.goto(BASE + '#onepiece'); await page.reload(); await page.waitForSelector('.op-lobby'); await page.waitForTimeout(1200);
+    await audit(page, `op-lobby-${w}`);
+    await page.click('.modeswitch button:has-text("Play with friends")');
+    await audit(page, `op-friends-${w}`);
+    await page.click('.modeswitch button:has-text("computer")');
+    await page.click('button:has-text("Battle!")'); await page.waitForSelector('.op-board');
+    await page.waitForFunction(() => +(document.querySelector('.topbar .turninfo b') || {}).textContent >= 4, null, { timeout: 120000 }).catch(() => {});
+    await page.waitForTimeout(2000);
+    await audit(page, `op-battle-${w}`);
+  }
+  if (only && only !== 'pk' && only !== 'mtg') { await ctx.close(); continue; }
+  if (only === 'mtg') { await page.goto(BASE); }
+  else {
   await page.goto(BASE + '#pokemon'); await page.reload(); await page.waitForSelector('.pk-lobby');
   await audit(page, `pk-lobby-${w}`);
   await page.click('.modeswitch button:has-text("Play with friends")');
@@ -101,6 +115,8 @@ for (const [w, h] of views) {
   await page.waitForFunction(() => +(document.querySelector('.topbar .turninfo b') || {}).textContent >= 4, null, { timeout: 120000 }).catch(() => {});
   await page.waitForTimeout(1500);
   await audit(page, `pk-battle-${w}`);
+  }
+  if (only === 'pk') { await ctx.close(); continue; }
   await page.goto(BASE + '#mtg'); await page.reload(); await page.waitForSelector('text=Pick a precon', { timeout: 90000 });
   await audit(page, `mtg-lobby-${w}`);
   await page.click('button:has-text("Shuffle up")'); await page.waitForSelector('.topbar .turninfo', { timeout: 60000 });

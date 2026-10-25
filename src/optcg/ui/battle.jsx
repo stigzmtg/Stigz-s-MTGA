@@ -127,10 +127,10 @@ function Piles({ p, onOpen, sleeve, hand }) {
   const top = p.trash[p.trash.length - 1];
   return (
     <div className="op-piles">
-      {hand ? <div className="pile hand" data-pile={`${p.id}:hand`} title={`${p.hand.length} cards in hand`}><span className="op-card back" style={{ width: 24 }}><span className="op-mark" /></span><span><b>{p.hand.length}</b> in hand</span></div> : null}
-      <div className="pile" data-pile={`${p.id}:deck`} title={`Deck: ${p.deck.length} cards`}><CardBack sleeve={sleeve} /><span><b>{p.deck.length}</b> Deck</span></div>
-      <button className="pile" data-pile={`${p.id}:trash`} onClick={() => onOpen('trash')} title="See the trash">{top ? <OpCard card={top} /> : <span className="op-card slot" />}<span><b>{p.trash.length}</b> Trash</span></button>
-      <div className="pile" title={`${p.donDeck} DON!! cards left in the DON!! deck`}><span className="op-don" style={{ '--op-don': '24px' }} /><span><b>{p.donDeck}</b> DON!! deck</span></div>
+      {hand ? <div className="pile hand" data-pile={`${p.id}:hand`} title={`${p.hand.length} cards in hand`}><span className="op-card back" style={{ width: 24 }}><span className="op-mark" /></span><span><b>{p.hand.length}</b><span className="lbl"> in hand</span></span></div> : null}
+      <div className="pile" data-pile={`${p.id}:deck`} title={`Deck: ${p.deck.length} cards`}><CardBack sleeve={sleeve} /><span><b>{p.deck.length}</b><span className="lbl"> Deck</span></span></div>
+      <button className="pile" data-pile={`${p.id}:trash`} onClick={() => onOpen('trash')} title="See the trash">{top ? <OpCard card={top} /> : <span className="op-card slot" />}<span><b>{p.trash.length}</b><span className="lbl"> Trash</span></span></button>
+      <div className="pile" title={`${p.donDeck} DON!! cards left in the DON!! deck`}><span className="op-don" style={{ '--op-don': '24px' }} /><span><b>{p.donDeck}</b><span className="lbl"> DON!! deck</span></span></div>
     </div>
   );
 }
