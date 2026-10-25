@@ -135,9 +135,9 @@ export function OpLobby({ data, online, onStart, onHome, onHelp }) {
             )}
             <section className="panel op-chosen" aria-label="Selected deck">
               <div className="panel-head"><h2>{deck.code} · {deck.name}</h2><ColorDot colors={deck.colors} size={16} /></div>
-              <div className="op-chosen-body">
+              <div className="op-chosen-body" key={deck.id}>
                 <div className="op-feature">
-                  {preview ? <img src={preview} alt={hovered ? hovered.name : deck.name} /> : <div className="op-card big drawn"><b>{hovered ? hovered.name : deck.name}</b></div>}
+                  {preview ? <img key={preview} src={preview} alt={hovered ? hovered.name : deck.name} /> : <div className="op-card big drawn"><b>{hovered ? hovered.name : deck.name}</b></div>}
                 </div>
                 <div className="op-chosen-info">
                   <DeckStyleButton kind="op" deck={deck} colors={deck.colors} />
@@ -150,7 +150,7 @@ export function OpLobby({ data, online, onStart, onHome, onHelp }) {
                   <DeckRecord kind="op" id={deck.id} />
                 </div>
               </div>
-              <DeckList deck={deck} cards={data.cards} onHover={setHover} />
+              <DeckList key={deck.id} deck={deck} cards={data.cards} onHover={setHover} />
             </section>
           </div>
         </div>

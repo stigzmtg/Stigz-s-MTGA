@@ -17,6 +17,7 @@ import { AnimalAvatar, myAvatar } from '../../ui/avatar.jsx';
 import { Sleeve, savedStyle } from '../../ui/deckstyle.jsx';
 import { createFlights, runFlights, shake, strike, motionOn } from '../../ui/motion.js';
 import { uiScale } from '../../ui/common.js';
+import { donSlots, createTableMotion, runTableMotion, AttackArrow } from './motion.jsx';
 
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, useSyncExternalStore } = React;
 // the log and prompts in the second person ("You add a Life card to your hand", not "... to their hand")
@@ -52,6 +53,27 @@ function cardZones(game) {
     for (const c of [p.leader, ...(p.characters || []), p.stage].filter(Boolean)) z.set(String(c.uid), `${p.id}:field`);
   }
   return z;
+}
+
+// a number that counts to its new value instead of jumping (the fight's powers through Counters)
+function Tween({ v }) {
+  const [shown, setShown] = useState(v);
+  const from = useRef(v);
+  useEffect(() => {
+    if (from.current === v) return;
+    if (!motionOn()) { from.current = v; setShown(v); return; }
+    const a = from.current, t0 = performance.now();
+    let raf = 0;
+    const step = t => {
+      const k = Math.min(1, (t - t0) / 450), e = 1 - Math.pow(1 - k, 3);
+      setShown(k < 1 ? Math.round((a + (v - a) * e) / 100) * 100 : v);
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    from.current = v;
+    return () => cancelAnimationFrame(raf);
+  }, [v]);
+  return shown;
 }
 
 // ---------------------------------------------------------------- effects: hits, K.O.s, banners
@@ -101,13 +123,14 @@ function InPlay({ game, card, lead, state = '', fx, onClick, onHover, me }) {
 
 function EmptySlot({ label }) { return <div className="op-slot empty"><div className="op-card slot"><span className="slotname">{label}</span></div></div>; }
 
-function DonArea({ p, pick, onPick }) {
+function DonArea({ p, pick, onPick, slots }) {
   const act = p.donActive || 0, rest = p.donRested || 0;
+  const ids = donSlots(slots, p);
   return (
     <div className={`op-cost ${act + rest * 1.5 > 6 ? 'tight' : ''}`} data-pile={`${p.id}:don`} title={`${act} active, ${rest} rested DON!! in the cost area; ${p.donDeck} in the DON!! deck`}>
       <span className="label">DON!!</span>
-      {Array.from({ length: act }, (_, i) => <span key={'a' + i} className={`op-don ${pick ? 'pick' : ''}`} onClick={pick ? onPick : undefined} role={pick ? 'button' : undefined} aria-label={pick ? 'Give a DON!! card' : undefined} />)}
-      {Array.from({ length: rest }, (_, i) => <span key={'r' + i} className="op-don rested" />)}
+      {ids.act.map(id => <span key={id} data-don={id} data-pid={p.id} className={`op-don ${pick ? 'pick' : ''}`} onClick={pick ? onPick : undefined} role={pick ? 'button' : undefined} aria-label={pick ? 'Give a DON!! card' : undefined} />)}
+      {ids.rest.map(id => <span key={id} data-don={id} data-pid={p.id} className="op-don rested" />)}
       {!act && !rest ? <span className="note">none yet</span> : <span className="cnt"><b>{act}</b> active{rest ? <><br /><b>{rest}</b> rested</> : null}</span>}
     </div>
   );
@@ -130,7 +153,7 @@ function Piles({ p, onOpen, sleeve, hand }) {
       {hand ? <div className="pile hand" data-pile={`${p.id}:hand`} title={`${p.hand.length} cards in hand`}><span className="op-card back" style={{ width: 24 }}><span className="op-mark" /></span><span><b>{p.hand.length}</b><span className="lbl"> in hand</span></span></div> : null}
       <div className="pile" data-pile={`${p.id}:deck`} title={`Deck: ${p.deck.length} cards`}><CardBack sleeve={sleeve} /><span><b>{p.deck.length}</b><span className="lbl"> Deck</span></span></div>
       <button className="pile" data-pile={`${p.id}:trash`} onClick={() => onOpen('trash')} title="See the trash">{top ? <OpCard card={top} /> : <span className="op-card slot" />}<span><b>{p.trash.length}</b><span className="lbl"> Trash</span></span></button>
-      <div className="pile" title={`${p.donDeck} DON!! cards left in the DON!! deck`}><span className="op-don" style={{ '--op-don': '24px' }} /><span><b>{p.donDeck}</b><span className="lbl"> DON!! deck</span></span></div>
+      <div className="pile" data-pile={`${p.id}:dondeck`} title={`${p.donDeck} DON!! cards left in the DON!! deck`}><span className="op-don" style={{ '--op-don': '24px' }} /><span><b>{p.donDeck}</b><span className="lbl"> DON!! deck</span></span></div>
     </div>
   );
 }
@@ -239,12 +262,20 @@ function Preview({ game, uid, me }) {
   );
 }
 
+// the log only re-renders when a line is added; each line keeps its own key, so only new lines are added (and fade in)
+const logKeys = new WeakMap();
+let logSeq = 0;
+const logKey = l => logKeys.get(l) || (logKeys.set(l, ++logSeq), logSeq);
+const LogLines = React.memo(function LogLines({ logs, me }) {
+  return logs.map(l => { const t = youText(l.text); return <div key={logKey(l)} className={`e ${l.type || ''} ${me != null && l.pid === me ? 'mine' : ''}`}>{l.type === 'turn' ? <b>{t}</b> : t}</div>; });
+}, (a, b) => a.last === b.last && a.n === b.n && a.me === b.me);
 function Log({ game, me }) {
   const ref = useRef(null);
-  useEffect(() => { const el = ref.current; if (el) el.scrollTop = el.scrollHeight; }, [game.logs.length]);
+  const n = game.logs.length, last = game.logs[n - 1];
+  useEffect(() => { const el = ref.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: motionOn() ? 'smooth' : 'auto' }); }, [n, last]);
   return (
     <div className="log op-log" ref={ref}>
-      {game.logs.slice(-220).map((l, i) => { const t = youText(l.text); return <div key={i} className={`e ${l.type || ''} ${me != null && l.pid === me ? 'mine' : ''}`}>{l.type === 'turn' ? <b>{t}</b> : t}</div>; })}
+      <LogLines logs={game.logs.slice(-220)} last={last} n={n} me={me} />
     </div>
   );
 }
@@ -277,12 +308,17 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
   // cards glide between hand, field, trash and Life; a played Event is shown big before it goes to the trash
   const flights = useRef(null);
   if (!flights.current) flights.current = createFlights();
+  const tableMotion = useRef(null);
+  if (!tableMotion.current) tableMotion.current = createTableMotion();
+  const donIds = useRef({});
   useLayoutEffect(() => {
     const mine = watching ? null : me;
     runFlights(flights.current, boardRef.current, game, {
       zones: cardZones(game),
       isPublic: z => !(z.endsWith(':deck') || z.endsWith(':life') || (z.endsWith(':hand') && z !== `${mine}:hand`)),
       look: (id, face) => { const c = game.cardByUid(+id); return face && c ? { img: opImage(c.def.id) || opThumb(c.def.id), name: c.def.name, cls: 'op' } : { back: true, cls: 'op' }; },
+      // the other player's Characters and Stages are shown big as they're played, then set down
+      intoKind: (id, from, to) => (from && to && from.endsWith(':hand') && to.endsWith(':field') && from !== `${mine}:hand` ? 'showinto' : 'into'),
       kindOf: (id, from, to) => {
         if (!to || !from) return 'move';
         if (from.endsWith(':field') && to.endsWith(':trash')) return 'die';
@@ -297,6 +333,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
         return { left: b.left + b.width / 2 - w / 2, top: b.top + b.height / 2 - h / 2, width: w, height: h };
       },
     });
+    runTableMotion(tableMotion.current, boardRef.current, game);
   });
   // this battle's pictures: the packs holding both decks (once the decks are on the table)
   const preloaded = useRef(false);
@@ -447,6 +484,9 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
     bar = <div className="msg waiting"><div className="step">{game.turn ? `${game.current === me && !watching ? 'Your' : `${game.players[game.current].name}'s`} turn` : 'Getting ready'}</div><div className="txt thinking">{doing}</div></div>;
   }
 
+  // the bar's content eases in when the question changes (not on every action of your Main Phase)
+  const barKey = game.over ? 'over' : req && !watching ? `${req.type}:${req.type === 'main' ? (mode ? mode.kind : giving ? 'don' : '') : req.prompt}` : `wait:${game.turn}:${game.current}:${game.battle ? 'b' : ''}`;
+
   // the fight in progress: attacker's power against the defender's, live through Counters
   let fight = null;
   if (game.battle && game.power) {
@@ -455,9 +495,9 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
       const ap = game.power(a), tp = game.power(t);
       fight = (
         <div className="op-fight" aria-live="polite">
-          <span className={`side ${ap >= tp ? 'win' : ''}`}><small>{a.def.name}</small><b>{ap}</b></span>
+          <span className={`side ${ap >= tp ? 'win' : ''}`}><small>{a.def.name}</small><b><Tween v={ap} /></b></span>
           <span className="vs">VS</span>
-          <span className={`side ${tp > ap ? 'win' : ''}`}><small>{t.def.name}{game.battle.blocker ? ' (blocking)' : ''}</small><b>{tp}</b></span>
+          <span className={`side ${tp > ap ? 'win' : ''}`}><small>{t.def.name}{game.battle.blocker ? ' (blocking)' : ''}</small><b><Tween v={tp} /></b></span>
         </div>
       );
     }
@@ -477,7 +517,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
       <div className="op-back">
         {p.leader ? <InPlay game={game} card={p.leader} lead state={stateOf(p.leader)} fx={fx} me={me} onClick={e => onField(p.leader, e)} onHover={setHover} /> : <EmptySlot label="Leader" />}
         {p.stage ? <InPlay game={game} card={p.stage} state={stateOf(p.stage)} fx={fx} me={me} onClick={e => onField(p.stage, e)} onHover={setHover} /> : <EmptySlot label="Stage" />}
-        <DonArea p={p} pick={bottom && myTurn && !watching && donActs.length > 0 && !mode} onPick={() => setMode({ kind: 'don' })} />
+        <DonArea p={p} slots={donIds.current} pick={bottom && myTurn && !watching && donActs.length > 0 && !mode} onPick={() => setMode({ kind: 'don' })} />
       </div>
     );
     const ld = p.leader ? p.leader.def : null;
@@ -567,7 +607,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
         <main className={`op-board ${game.over && !watching && result !== 'You win!' ? 'lost-game' : ''}`} ref={boardRef} onClick={e => { if (e.target === e.currentTarget) { setMode(null); donMode.current = false; } }}>
           {side(O, false)}
           <div className="op-mid">
-            <div className={`prompt op-prompt ${req ? '' : 'waiting'}`}>{bar}{fight}</div>
+            <div className={`prompt op-prompt ${req ? '' : 'waiting'}`}><React.Fragment key={barKey}>{bar}</React.Fragment>{fight}</div>
             {fx.coin ? <div key={fx.coin.key} className="op-coin">{fx.coin.text}</div> : null}
           </div>
           {side(P, true)}
@@ -583,6 +623,9 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
             })}
             {!hand.length ? <span className="empty">{watching ? `${P.name}'s` : 'Your'} hand is empty</span> : null}
           </div>
+          {game.battle && !game.over
+            ? <AttackArrow boardRef={boardRef} from={game.battle.attacker} to={game.battle.blocker || game.battle.target} />
+            : <AttackArrow boardRef={boardRef} aim from={mode && mode.kind === 'attack' ? mode.card : null} to={mode && mode.kind === 'attack' && targets.has(hover) ? hover : null} />}
           {fx.banner ? <div key={fx.banner.key} className={`op-banner ${fx.banner.kind}`}>{fx.banner.text}</div> : null}
           {fx.reveal ? <div key={fx.reveal.key} className="op-reveal" aria-hidden="true">{fx.reveal.cards.map(uid => { const c = game.cardByUid(uid); return c ? <OpCard key={uid} card={c} /> : null; })}</div> : null}
           <WatcherEmotes list={emotes.watchers} />

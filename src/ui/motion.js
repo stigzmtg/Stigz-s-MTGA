@@ -105,6 +105,15 @@ function launch(st, key, g, home, from, to, { kind = 'move', delay = 0, hold = n
       { transform: at(to, 0.6), filter: 'brightness(2.6) saturate(0)', opacity: 0 },
     ];
     duration += 160;
+  } else if (kind === 'showinto' && hold) {
+    // the other player's card shown big in the middle of the table, then set down where it was played
+    frames = [
+      { transform: at(from, 0.6), opacity: 0, offset: 0 },
+      { transform: at(hold), opacity: 1, offset: 0.22 },
+      { transform: at(hold, 1.02), opacity: 1, offset: 0.66 },
+      { transform: at(to), opacity: 1, offset: 1 },
+    ];
+    duration = 1500;
   } else if (kind === 'show' && hold) {
     // a played card shown big in the middle of the table, then put away
     frames = [
@@ -121,7 +130,7 @@ function launch(st, key, g, home, from, to, { kind = 'move', delay = 0, hold = n
       { transform: at(to), opacity: kind === 'into' ? 1 : 0.35 },
     ];
   }
-  const anim = g.animate(frames, { duration, delay, easing: kind === 'show' ? 'ease-in-out' : EASE, fill: 'both' });
+  const anim = g.animate(frames, { duration, delay, easing: kind === 'show' || kind === 'showinto' ? 'ease-in-out' : EASE, fill: 'both' });
   if (key != null) st.ghosts.set(key, g);
   const done = () => { g.remove(); if (key != null && st.ghosts.get(key) === g) st.ghosts.delete(key); if (onLand) onLand(); };
   anim.onfinish = done;
@@ -155,7 +164,7 @@ function popIn(el, delay = 0) {
 }
 
 // opts: zones (Map card id -> zone), isPublic(zone), look(id, faceUp) -> { img, name, back, cls }, kindOf(id, from, to),
-// showAt() -> rect for a played card's showcase (or null)
+// intoKind(id, from, to) ('showinto' shows an arriving card big first), showAt() -> rect for a showcase (or null)
 export function runFlights(st, root, game, opts) {
   if (!root || typeof document === 'undefined') return;
   if (st.game !== game) { st.game = game; st.prev = new Map(); st.prevEls = new Map(); st.zones = null; }
@@ -209,7 +218,9 @@ export function runFlights(st, root, game, opts) {
         const src = ghost && ghost.isConnected ? rectOf(ghost) : p ? p.r : pileRect(st.zones.get(id));
         for (const x of ids) used.add(x);
         if (src && onScreen(src)) {
-          const ms = launch(st, id, cloneOf(el, r), r, src, r, { kind: 'into', delay: delay() }); n++;
+          // opts.intoKind(id, from, to) may ask for 'showinto': shown big first (the other player's card being played)
+          const hold = opts.intoKind && opts.showAt && opts.intoKind(id, st.zones.get(id), zones.get(id)) === 'showinto' ? opts.showAt(r) : null;
+          const ms = launch(st, id, cloneOf(el, r), r, src, r, { kind: hold ? 'showinto' : 'into', hold, delay: delay() }); n++;
           hideUntil(st, el, ms);
         } else if (!st.zones.has(id)) { popIn(el, delay()); n++; }
       }
