@@ -64,7 +64,7 @@ for (let i = 0; i < 4000 && Date.now() - t0 < 300000; i++) {
   // defending: counters from hand sometimes, then done; a blocker sometimes
   if (/Counter/.test(step)) {
     const cs = await page.$$('.op-handslot.playable .op-card');
-    if (cs.length && Math.random() < 0.5) { await rnd(cs).click(); counters++; continue; }
+    if (cs.length && Math.random() < 0.5) { await rnd(cs).click({ position: { x: 8, y: 30 } }); counters++; continue; }
     await page.click('.op-prompt .btn.primary'); continue;
   }
   if (/Block/.test(step)) {
@@ -89,7 +89,7 @@ for (let i = 0; i < 4000 && Date.now() - t0 < 300000; i++) {
   if (endBtn) {
     if (shots < 3 && t >= 4) { await page.screenshot({ path: `${out}/turn-${t}.png` }); shots++; }
     const playable = await page.$$('.op-handslot.playable .op-card');
-    if (playable.length && Math.random() < 0.8) { await rnd(playable).click(); plays++; clicks++; await page.waitForTimeout(30); continue; }
+    if (playable.length && Math.random() < 0.8) { await rnd(playable).click({ position: { x: 8, y: 30 } }); plays++; clicks++; await page.waitForTimeout(30); continue; }
     const give = await page.$('.op-prompt .btn:has-text("Give DON!!")');
     if (give && Math.random() < 0.5) { await give.click(); await page.waitForTimeout(30); const tg = await page.$$('.op-slot.targetable .op-card'); if (tg.length && await safeClick(rnd(tg))) dons++; continue; }
     const can = await page.$$('.op-side.me .op-slot.can .op-card');
