@@ -31,7 +31,7 @@ export class OnePieceAI {
       case 'confirm': return this.confirm(g, pid, req);
       case 'option': return this.option(g, pid, req);
       case 'number': return this.number(g, pid, req);
-      case 'order': return req.options;
+      case 'order': return this.order(g, pid, req);
       case 'blocker': return this.blocker(g, pid, req);
       case 'counter': return this.counter(g, pid, req);
       case 'trigger': return this.trigger(g, pid, req);
@@ -116,6 +116,7 @@ export class OnePieceAI {
     if (c.def.cat === 'E') {
       const ab = g.eventAbility(c, 'main');
       if (!ab) return 0;
+      if (!this.donReturnOk(g, pid, returnedBy(ab))) return 0;
       // [Counter] events are kept for defence; [Main] events when they have a target
       const useful = this.stepsUseful(g, pid, ab.steps, c);
       return useful ? 3 + cost * 0.3 : 0;
@@ -140,17 +141,34 @@ export class OnePieceAI {
     return false;
   }
   abilityGood(g, pid, c, ab) {
+    if (!this.donReturnOk(g, pid, returnedBy(ab))) return false;
     // a cost that trashes cards or Life is worth it only for strong effects
     for (const k of ab.cost || []) {
       if ((k.op === 'trashHand' && g.players[pid].hand.length <= 2) || k.op === 'trashSelf' && this.value(g, c) > 6) return false;
-      if (k.op === 'lifeToHand' && g.players[pid].life.length <= 1) return false;
       if (k.op === 'restDon' && g.players[pid].donActive - k.n < 0) return false;
     }
+    if (!this.lifeCostOk(g, pid, c, ab)) return false;
     // resting a Character to activate: not one that could still attack this turn
     if ((ab.cost || []).some(k => k.op === 'restSelf') && c.cat === 'C' && g.attackTargets(c).length && g.power(c) >= g.power(g.players[g.opp(pid)].leader)) return false;
+    // "Reveal 1 card from the top of your Life cards. If that card is ...": only when we can see it's a hit (face-up)
+    const rv = ab.steps.findIndex(s => s.op === 'reveal' && s.from === 'life');
+    if (rv >= 0) {
+      const top = g.players[pid].life[0], next = ab.steps.slice(rv + 1).find(s => s.cond && s.cond.k === 'that');
+      return !!top && (top.faceUp || top.known) && (!next || g.matches(top, { f: next.cond.f, cats: next.cond.cats }, { pid, src: c, vars: {} }));
+    }
     if (ab.steps.some(s => s.op === 'setActive' && s.sel && s.sel.ref === 'self')) return c.rested;
     if (ab.steps.some(s => s.op === 'giveDon')) return g.players[pid].donRested > 0;
-    return this.stepsUseful(g, pid, ab.steps, c) || ab.steps.some(s => s.op === 'power' && s.n > 0);
+    if (this.stepsUseful(g, pid, ab.steps, c)) return true;
+    // a power boost for this turn: worth it for cards that can still attack (more of them for a DON!! −3 or more)
+    const boost = ab.steps.find(s => s.op === 'power' && typeof s.n === 'number' && s.n > 0);
+    if (boost) {
+      const ctx = { pid, src: c, ab, vars: {} };
+      const who = boost.sel.ref === 'self' ? [c] : boost.sel.ref === 'leader' ? [g.players[pid].leader] : g.candidates(boost.sel, ctx);
+      const attackers = who.filter(x => x.owner === pid && g.attackTargets(x).length && g.players[pid].turns > 1).length;
+      const returned = (ab.cost || []).filter(k => k.op === 'returnDon').reduce((s, k) => s + k.n, 0);
+      return attackers >= (boost.sel.all && returned >= 3 ? 2 : 1);
+    }
+    return false;
   }
   // the attack to make next, and how many more DON!! the attacker wants for it
   bestAttack(g, pid, actions) {
@@ -210,6 +228,11 @@ export class OnePieceAI {
       // "return any number of your Characters": keep the board
       if (hint === 'bounce-own') return [];
       if (hint === 'set-active') return pickN(byVal(opts.filter(c => mine(c) && c.rested)), n);
+      // during a battle, a boost goes to our card in it (the defender for a [Counter], the attacker otherwise)
+      if (g.fight && (hint === 'buff' || hint === 'grant')) {
+        const ours = g.fight.pid === pid ? g.fight.attacker : g.fight.target;
+        if (opts.includes(ours)) return [ours.uid];
+      }
       // our own cards that get something: the ones about to attack
       const own = opts.filter(mine).sort((a, b) => (g.attackTargets(b).length - g.attackTargets(a).length) * 10 + (g.power(b) - g.power(a)) / 1000);
       if (own.length) return pickN(own, n);
@@ -240,20 +263,66 @@ export class OnePieceAI {
     if (hint === 'replace') return true;
     return true;
   }
+  // Life order: the cards our "reveal the top Life card: if it is [X], play it" effects want go on top
+  order(g, pid, req) {
+    if (req.hint !== 'order-life') return req.options;
+    const me = g.players[pid];
+    const wants = [];
+    for (const c of [...g.field(pid), ...me.hand]) for (const ab of g.abilities(c)) {
+      const rv = (ab.steps || []).findIndex(s => s.op === 'reveal' && s.from === 'life');
+      const next = rv >= 0 && ab.steps.slice(rv + 1).find(s => s.cond && s.cond.k === 'that');
+      if (next) wants.push({ f: next.cond.f, cats: next.cond.cats, src: c });
+    }
+    const hit = uid => { const x = g.cardByUid(uid); return wants.some(w => g.matches(x, { f: w.f, cats: w.cats }, { pid, src: w.src, vars: {} })); };
+    return [...req.options.filter(hit), ...req.options.filter(u => !hit(u))];
+  }
   costOk(g, pid, req) {
     const me = g.players[pid], prompt = req.prompt;
     if (/trash \d+ cards? from your hand/i.test(prompt) && me.hand.length <= 2) return false;
-    if (/Life cards to your hand/i.test(prompt) && me.life.length <= 1) return false;
     const card = req.card != null && g.cardByUid(req.card);
     const ab = card && g.abilities(card).find(a => a.idx === req.ability);
-    return !ab || this.worthPaying(g, pid, card, ab);
+    if (!ab) return !(/Life cards to your hand/i.test(prompt) && me.life.length <= 2);
+    if (!this.worthPaying(g, pid, card, ab) || !this.lifeCostOk(g, pid, card, ab)) return false;
+    const decisive = g.fight && ab.steps.some(s => s.op === 'power' && typeof s.n === 'number' && s.n > 0 && this.boostDecides(g, pid, card, s));
+    return this.donReturnOk(g, pid, returnedBy(ab), decisive);
+  }
+  // Life is the clock: taking a Life card into the hand (a card, at least) needs 3 or more Life, or 2 for a strong
+  // effect; trashing one needs 4, or 3 for a strong effect
+  lifeCostOk(g, pid, c, ab) {
+    const life = g.players[pid].life.length;
+    const strong = (ab.steps || []).some(s => ['ko', 'bounce', 'bottom', 'play', 'fieldToLife', 'trashLife'].includes(s.op));
+    for (const k of ab.cost || []) {
+      if (k.op === 'lifeToHand' && life < (strong ? 2 : 3)) return false;
+      if (k.op === 'trashLife' && life < (strong ? 3 : 4)) return false;
+    }
+    return true;
+  }
+  // DON!! −X sets the player back X DON!! cards until the DON!! deck would have run out anyway: fine with plenty on
+  // the field or near the 10 cap, else only for a small decisive effect
+  donReturnOk(g, pid, x, decisive = false) {
+    if (!x) return true;
+    const F = g.donOnField(pid);
+    return F - x >= 6 || F >= 8 || (decisive && x <= 1);
+  }
+  // does +n power on one of our battling cards turn the battle around?
+  boostDecides(g, pid, src, s) {
+    const f = g.fight;
+    const ours = f.pid === pid ? f.attacker : f.target;
+    const to = s.sel.ref === 'self' ? src : s.sel.ref === 'leader' ? g.players[pid].leader : ours;
+    if (to !== ours) return false;
+    const ap = g.power(f.attacker), tp = g.power(f.target);
+    // attacking: from losing (or barely winning against Counters) to winning; defending: from losing to holding
+    return f.pid === pid ? ap < tp + 1000 && ap + s.n >= tp : ap >= tp && tp + s.n > ap;
   }
   // would the effect do anything? (a K.O. with nothing to K.O. only wastes the DON!!)
   worthPaying(g, pid, card, ab) {
     const ctx = { pid, src: card, ab, vars: {}, data: {} };
     const holds = c => { try { return g.test(c, ctx); } catch { return true; } };
     for (const s of ab.steps || []) {
-      if (s.cond && !holds(s.cond)) { if (s.gate) return false; continue; }
+      if (s.cond && !holds(s.cond)) return false;
+      // a power boost during a battle: only if it changes who wins
+      if (s.op === 'power' && typeof s.n === 'number' && s.n > 0 && g.fight) { if (this.boostDecides(g, pid, card, s)) return true; continue; }
+      if (s.op === 'lookOppDeck') continue;
       if (s.sel && !s.sel.ref) { try { if (!g.candidates(s.sel, ctx).length) continue; } catch { /* count it */ } }
       if (s.op === 'play' && s.from !== 'deck' && !g.candidates({ zone: s.from, who: 'you', cats: s.cats || ['C'], f: s.f }, ctx).length) continue;
       if (s.op === 'discard' && s.who === 'opp' && !g.players[g.opp(pid)].hand.length) continue;
@@ -321,7 +390,7 @@ export class OnePieceAI {
     // the cheapest way to get there: character counters (by counter value per card worth) and counter events
     const total = opts.reduce((s, x) => s + (x.o.kind === 'counter' ? x.o.value : this.eventBoost(g, x.c)), 0);
     if (total < need) return null;
-    const cost = x => (x.o.kind === 'counter' ? this.value(g, x.c) * 0.5 : 1 + (x.o.cost || 0) * 0.6);
+    const cost = x => (x.o.kind === 'counter' ? this.value(g, x.c) * 0.5 : 1 + (x.o.cost || 0) * 0.6 + returnedBy(g.eventAbility(x.c, 'counter') || {}) * (this.donReturnOk(g, pid, 2) ? 0.4 : 1.2));
     const gain = x => (x.o.kind === 'counter' ? x.o.value : this.eventBoost(g, x.c));
     const sorted = opts.filter(x => gain(x) > 0).sort((a, b) => cost(a) / gain(a) - cost(b) / gain(b));
     // pick cards until the need is covered
@@ -353,6 +422,9 @@ export class OnePieceAI {
     return cheap === 0;
   }
 }
+
+// how many DON!! cards an ability's cost returns to the DON!! deck (DON!! −X)
+function returnedBy(ab) { return (ab.cost || []).filter(k => k.op === 'returnDon').reduce((s, k) => s + k.n, 0); }
 
 function fallback(req) {
   switch (req.type) {
