@@ -59,7 +59,8 @@ DON!! cards given to a Leader or Character are counted on that card (`card.don`)
 
 Every card is an instance `{ uid, id, def, owner }`: `uid` is unique in the game and stable (the same physical card
 keeps it as it moves); `id` is the card number ('ST01-012'); `def` is its cards.json entry. On the field a card also
-has `rested`, `don` (DON!! given to it) and `playedTurn`; `zone` says where it is ('leader', 'characters', 'stage',
+has `rested`, `don` (DON!! given to it) and `playedTurn`; a Life card has `faceUp`, and `known` when its owner put it
+there from their hand or looked at it (the AI uses this); `zone` says where it is ('leader', 'characters', 'stage',
 'hand', 'deck', 'trash', 'life', or 'limbo' for a [Trigger] card while its effect resolves).
 
 ### Helpers
@@ -136,16 +137,21 @@ The coin-flip winner gets an `option` request with `hint: 'first'` and the value
 
 - `cards`: 'take' (to the hand), 'discard', 'discard-opp', 'discard-any' (any number, maybe none), 'play', 'reveal',
   'topdeck', 'recycle', 'to-life', 'keep-top', and for `from: 'field'` 'ko', 'rest', 'buff', 'debuff', 'cost-up',
-  'cost-down', 'bounce', 'bottom', 'grant', 'give-don', 'set-active', 'select', 'freeze' (stays rested in the next
+  'cost-down', 'bounce', 'bottom', 'grant', 'give-don', 'set-active', 'select', 'redirect' (the new target of the
+  attack), 'cantRest' / 'cantBlock' / 'cantAttack' (a restriction for a while), 'freeze' (stays rested in the next
   Refresh Phase), 'trash-char' (trashed, not K.O.'d), 'bounce-own' (any number of your own Characters to your hand),
   'trash-for-room', 'rest-cost', 'bounce-cost', 'don-unattach'
 - `option`: 'first', 'don-return' (which DON!! card goes back for a DON!! −X), 'life-end' (top or bottom Life card),
-  'life-whose', 'choose-one', 'order-effects' (which of several simultaneous effects resolves first)
-- `number`: 'don-n' (how many DON!! cards), 'don-return-n'
+  'life-whose', 'choose-one', 'order-effects' (which of several simultaneous effects resolves first),
+  'rest-don-or-char' (an opponent's DON!! card or one of their Characters), 'rest-leader-or-don' (a cost)
+- `number`: 'don-n' (how many DON!! cards), 'don-return-n', 'choose-cost' (0-10: "Choose a cost and reveal 1 card
+  from the top of your opponent's deck")
 - `order`: 'order-top', 'order-bottom', 'order-life'
 - `confirm`: 'pay-cost' ("You may ..." costs of effects that activate on their own, including ① and DON!! −X, whose
   printed reminder says "You may"; the request also carries `card` and `ability`, the effect's card uid and index),
-  'may' (with `card` when it is about one card, e.g. "you may play that card"), 'replace' ("instead" effects)
+  'may' (with `card` when it is about one card, e.g. "you may play that card"), 'replace' ("instead" effects),
+  'look' (the player looks at hidden cards, `card` / `cards`, e.g. the top of the opponent's deck: show them to that
+  player only; any answer)
 - 'main', 'block', 'counter', 'trigger', 'mulligan' for those types
 
 ## Events
@@ -178,6 +184,7 @@ The coin-flip winner gets an `option` request with `hint: 'first'` and the value
 | `rest`, `active` | `card` | |
 | `power`, `cost` | `card`, `n?` | a power or cost change |
 | `look`, `reveal` | `pid`, `n` / `card` | |
+| `redirect` | `pid`, `card` | an effect changed the target of the attack (ST36-005) |
 | `battle-end` | | |
 | `end` | `winner` | the game is over |
 

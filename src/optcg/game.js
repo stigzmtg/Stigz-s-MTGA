@@ -45,7 +45,8 @@ export const HANDLED = {
 // changes, so effects on it end, its given DON!! go back to the cost area, and its state is cleared.
 export class OCard {
   constructor(def, owner, uid) { this.uid = uid; this.id = def.id; this.def = def; this.owner = owner; this.inst = 0; this.zone = null; this.faceUp = false; this.reset(); }
-  reset() { this.rested = false; this.don = 0; this.playedTurn = -1; this.used = {}; }
+  // known: its owner has seen this card where it is now (a Life card they put there or looked at)
+  reset() { this.rested = false; this.don = 0; this.playedTurn = -1; this.used = {}; this.known = false; }
   get name() { return this.def.name; }
   get cat() { return this.def.cat; }
 }
@@ -107,7 +108,11 @@ export class OnePieceGame {
   // ------------------------------------------------------------ plumbing
   touch() { this.version++; }
   notify() { this.version++; if (this.onUpdate) this.onUpdate(this); }
-  log(text, opts = {}) { this.logs.push({ text, turn: this.turn, ...opts }); if (this.logs.length > 800) this.logs.splice(0, 100); this.touch(); }
+  log(text, opts = {}) {
+    // a card name ending in a period ("LittleOars Jr.") doesn't get a second one
+    text = text.replace(/([^.])\.\.$/, '$1.');
+    this.logs.push({ text, turn: this.turn, ...opts }); if (this.logs.length > 800) this.logs.splice(0, 100); this.touch();
+  }
   event(kind, data = {}) { this.events.push({ id: this.uid++, kind, at: this.turn, ...data }); if (this.events.length > 300) this.events.splice(0, 60); }
   opp(pid) { return 1 - pid; }
   pl(pid) { return this.players[pid]; }
@@ -1360,6 +1365,7 @@ export class OnePieceGame {
     return got;
   }
   durText(d) { return { battle: 'during this battle', turn: 'during this turn', startOfYourNextTurn: 'until the start of your next turn', endOfOppNextTurn: "until the end of your opponent's next turn", endOfYourNextTurn: 'until the end of your next turn', oppNextRefresh: '' }[d] || ''; }
+  durSuffix(d) { const t = this.durText(d); return t ? ' ' + t : ''; }
 
   async step(s, ctx) {
     const pid = ctx.pid, p = this.players[pid], o = this.players[this.opp(pid)];
@@ -1372,11 +1378,11 @@ export class OnePieceGame {
       }
       case 'power': {
         const n = this.amount(s.n, ctx);
-        const got = await this.select(s.sel, ctx, `${signed(n)} power ${this.durText(s.dur)}: choose`, n >= 0 ? 'buff' : 'debuff');
+        const got = await this.select(s.sel, ctx, `${signed(n)} power${this.durSuffix(s.dur)}: choose`, n >= 0 ? 'buff' : 'debuff');
         for (const c of got) {
           if (s.dur === 'battle' && this.fight) this.fight.boosts.push({ card: c, inst: c.inst, n });
           else this.addEffect({ kind: 'power', card: c, n }, s.dur, pid);
-          this.log(`${c.name} gets ${signed(n)} power ${this.durText(s.dur)}.`, { pid });
+          this.log(`${c.name} gets ${signed(n)} power${this.durSuffix(s.dur)}.`, { pid });
           this.event('power', { card: c.uid, n });
         }
         ctx.vars.affected = got;
@@ -1384,13 +1390,13 @@ export class OnePieceGame {
       }
       case 'basePower': {
         const got = await this.select(s.sel, ctx, `Base power becomes ${s.value}: choose`, s.value ? 'buff' : 'debuff');
-        for (const c of got) { this.addEffect({ kind: 'basePower', card: c, value: s.value }, s.dur, pid); this.log(`${c.name}'s base power becomes ${s.value} ${this.durText(s.dur)}.`, { pid }); this.event('power', { card: c.uid }); }
+        for (const c of got) { this.addEffect({ kind: 'basePower', card: c, value: s.value }, s.dur, pid); this.log(`${c.name}'s base power becomes ${s.value}${this.durSuffix(s.dur)}.`, { pid }); this.event('power', { card: c.uid }); }
         return;
       }
       case 'cost': {
         const n = this.amount(s.n, ctx);
-        const got = await this.select(s.sel, ctx, `${signed(n)} cost ${this.durText(s.dur)}: choose`, n >= 0 ? 'cost-up' : 'cost-down');
-        for (const c of got) { this.addEffect({ kind: 'cost', card: c, n }, s.dur, pid); this.log(`${c.name} gets ${signed(n)} cost ${this.durText(s.dur)}.`, { pid }); this.event('cost', { card: c.uid, n }); }
+        const got = await this.select(s.sel, ctx, `${signed(n)} cost${this.durSuffix(s.dur)}: choose`, n >= 0 ? 'cost-up' : 'cost-down');
+        for (const c of got) { this.addEffect({ kind: 'cost', card: c, n }, s.dur, pid); this.log(`${c.name} gets ${signed(n)} cost${this.durSuffix(s.dur)}.`, { pid }); this.event('cost', { card: c.uid, n }); }
         return;
       }
       case 'ko': {
@@ -1474,8 +1480,8 @@ export class OnePieceGame {
         return;
       }
       case 'grant': {
-        const got = await this.select(s.sel, ctx, `Gains [${s.kw}] ${this.durText(s.dur)}: choose`, 'grant');
-        for (const c of got) { this.addEffect({ kind: 'grant', card: c, kw: s.kw }, s.dur, pid); this.log(`${c.name} gains [${s.kw}] ${this.durText(s.dur)}.`, { pid }); }
+        const got = await this.select(s.sel, ctx, `Gains [${s.kw}]${this.durSuffix(s.dur)}: choose`, 'grant');
+        for (const c of got) { this.addEffect({ kind: 'grant', card: c, kw: s.kw }, s.dur, pid); this.log(`${c.name} gains [${s.kw}]${this.durSuffix(s.dur)}.`, { pid }); }
         return;
       }
       case 'noBlocker': {
@@ -1493,7 +1499,7 @@ export class OnePieceGame {
       case 'restrict': {
         // a restriction or protection for a while: cantAttack, noKO, cantBlock, cantRest, canAttackActive, ...
         const got = await this.select(s.sel, ctx, 'Choose', s.flag);
-        for (const c of got) { this.addEffect({ kind: s.flag, card: c, how: s.how, f: s.f, text: s.text }, s.dur, pid); this.log(`${c.name}: ${s.text || s.flag} ${this.durText(s.dur)}.`, { pid }); }
+        for (const c of got) { this.addEffect({ kind: s.flag, card: c, how: s.how, f: s.f, text: s.text }, s.dur, pid); this.log(`${c.name}: ${s.text || s.flag}${this.durSuffix(s.dur)}.`, { pid }); }
         return;
       }
       case 'playerFlag': { const who = s.who === 'opp' ? this.opp(pid) : pid; this.addEffect({ kind: s.flag, by: pid }, s.dur, who); return; }
@@ -1555,6 +1561,7 @@ export class OnePieceGame {
         for (const c of got) {
           if (s.reveal) { this.event('reveal', { pid, card: c.uid }); this.log(`${p.name} reveals ${c.name}.`, { pid }); }
           this.moveCard(c, 'life', { top: true, faceUp: !!s.faceUp }); this.event('life-add', { pid, card: c.uid });
+          c.known = true;
         }
         if (got.length) this.log(`${p.name} adds ${cards(got.length)} from their ${where} to the top of their Life cards${s.faceUp ? ' face-up' : ''}.`, { pid });
         return;
@@ -1565,6 +1572,7 @@ export class OnePieceGame {
           const top = s.where === 'top' || (await this.chooseOption(pid, [{ value: 'top', label: 'The top of the Life cards' }, { value: 'bottom', label: 'The bottom of the Life cards' }], `Add ${c.name} to the top or bottom of its owner's Life cards?`, 'life-end')) === 'top';
           if (c.owner !== pid && (await this.replaceRemoval(c, 'remove', pid))) continue;
           this.moveCard(c, 'life', { top, faceUp: !!s.faceUp });
+          if (c.owner === pid) c.known = true;
           this.log(`${c.name} is added to the ${top ? 'top' : 'bottom'} of ${this.players[c.owner].name}'s Life cards${s.faceUp ? ' face-up' : ''}.`, { pid });
           this.event('life-add', { pid: c.owner, card: c.uid });
         }
@@ -1793,6 +1801,7 @@ export class OnePieceGame {
       // "Look at all of your Life cards and place them back in your Life area in any order" (ST13-004: "place 1 card at
       // the top of your deck and place the rest back ...")
       let seen = [...q.life];
+      if (whose === pid) for (const c of seen) c.known = true;
       this.log(`${this.players[pid].name} looks at their Life cards.`, { pid });
       this.peeked = (this.peeked || 0) + 1;
       if (s.toDeckTop) {
@@ -1806,6 +1815,7 @@ export class OnePieceGame {
       return;
     }
     const c = q.life[0];
+    if (whose === pid) c.known = true;
     this.log(`${this.players[pid].name} looks at the top card of ${whose === pid ? 'their' : `${q.name}'s`} Life cards.`, { pid });
     this.peeked = (this.peeked || 0) + 1;
     const v = await this.chooseOption(pid, [{ value: 'top', label: `Leave ${c.name} on top` }, { value: 'bottom', label: `Place ${c.name} at the bottom` }], `The top Life card is ${c.name}: leave it on top or place it at the bottom?`, 'life-end');

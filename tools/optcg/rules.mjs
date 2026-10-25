@@ -905,7 +905,7 @@ test('ST10-010 Law: [On Play] DON!! −1: with 7+ cards in the opponent\'s hand,
   for (let i = 0; i < 7; i++) T.hand(1, FILLER);
   T.don(0, 5);
   let req0;
-  T.a.on('discard-opp', req => { req0 = req; return req.options.slice(-2); });
+  T.a.on('pay-cost', () => true); T.a.on('discard-opp', req => { req0 = req; return req.options.slice(-2); });
   await T.play(T.hand(0, 'ST10-010'));
   expect(T.B.hand.length === 5 && T.B.trash.length === 2 && req0.from === 'opp-hand' && req0.min === 2, 'A picked 2 from B\'s hand');
   expect(!T.b.asked.some(r => r.hint === 'discard'), 'B wasn\'t asked');
@@ -1496,7 +1496,7 @@ test('ST32-001 Kin\'emon: rest your <Slash> Leader or 1 DON!!: draw 2, trash 1',
   await T.play(T.hand(0, 'ST32-001'));
   expect(T.A.leader.rested && T.A.hand.length === 1 && T.A.trash.length === 1, 'Leader rested, drew 2, trashed 1');
 });
-test('ST32-002 Oden: "cannot be rested": that Character can\'t attack, block or be rested by effects (decided: attacking and blocking rest it, 7-1-1-1, 10-1-2)', async () => {
+test('ST32-002 Oden: "cannot be rested": that Character can\'t attack, block or be rested by effects (decided: attacking and blocking rest it, 7-1-1-1, 10-1-4-1)', async () => {
   const T = setup();
   const t = T.char(1, 'ST06-007');                // Tsuru, [Blocker]
   T.don(0, 5);
@@ -1530,6 +1530,47 @@ test('ST36-005 Kid: [On Your Opponent\'s Attack] turn a face-up Life card face-d
   const att = T.char(0, FILLER);
   await T.attack(att, T.B.leader);
   expect(T.B.life.length === 2 && !l[0].faceUp && T.B.characters.includes(k), 'Kid (7000) took the attack instead of the Leader');
+});
+
+// ================================================================ the computer player
+test('AI: no DON!! −4 (ST03-001 Crocodile) with only 4 DON!! on the field; with 10 it uses it', async () => {
+  const T = setup({ leaders: ['ST03-001', 'ST01-001'] });
+  T.char(1, 'ST03-003');
+  T.don(0, 4);
+  const acts = T.g.legalActions(0);
+  const a = new OnePieceAI().main(T.g, 0, acts);
+  expect(!(a.t === 'activate' && a.card === T.A.leader.uid), 'keeps the DON!!');
+  T.don(0, 10);
+  const b = new OnePieceAI().main(T.g, 0, T.g.legalActions(0));
+  expect(b.t === 'activate' && b.card === T.A.leader.uid, 'uses it at 10');
+});
+test('AI: a [Counter] Event\'s boost goes to the attacked card', async () => {
+  const T = setup();
+  T.life(1, [FILLER, FILLER]);
+  const other = T.char(1, 'ST04-003');
+  T.hand(1, 'ST03-017'); T.don(1, 2);
+  T.b.on('blocker', () => null);
+  let picked;
+  T.b.on('counter', req => req.options.find(o => o.kind === 'event') || null);
+  const orig = T.b.ai.cards.bind(T.b.ai);
+  T.b.ai.cards = (g, pid, req) => { const v = orig(g, pid, req); if (req.hint === 'buff') picked = v; return v; };
+  await T.attack(T.char(0, FILLER), T.B.leader);
+  expect(picked && picked[0] === T.B.leader.uid && picked[0] !== other.uid, 'the Leader, not Kaido');
+});
+test('AI: pays DON!! −1 for +1000 in a battle only when it changes the result (OP11-062 Katakuri)', async () => {
+  const T = setup({ leaders: ['ST01-001', 'OP11-062'] });
+  T.life(1, [FILLER, FILLER]);
+  T.don(1, 8);
+  T.b.on('blocker', () => null); T.b.on('counter', () => null);
+  const big = T.char(0, 'ST04-003');            // 10000 vs 5000: +1000 doesn't help
+  await T.attack(big, T.B.leader);
+  expect(T.B.donDeck === 2, `no DON!! returned (${T.B.donDeck})`);
+  const T2 = setup({ leaders: ['ST01-001', 'OP11-062'] });
+  T2.life(1, [FILLER, FILLER]);
+  T2.don(1, 8);
+  T2.b.on('blocker', () => null); T2.b.on('counter', () => null);
+  await T2.attack(T2.A.leader, T2.B.leader);     // 5000 vs 5000: +1000 holds
+  expect(T2.B.donDeck === 3 && T2.B.life.length === 2, 'paid, and the Leader held');
 });
 
 // ================================================================ fail-safe
