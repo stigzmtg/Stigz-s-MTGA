@@ -325,7 +325,7 @@ export function Menu({ menu, onClose }) {
     let left = menu.x, top = menu.y;
     if (left + r.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - r.width - 8);
     if (top + r.height > window.innerHeight - 8) top = Math.max(8, window.innerHeight - r.height - 8);
-    setPos({ left, top });
+    setPos({ left: Math.max(8, left), top: Math.max(8, top) });
     const k = e => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);

@@ -1,13 +1,13 @@
 // Play a One Piece battle through the screen like a person: answer the opening questions, play cards, give DON!!,
 // attack, block and Counter when attacked, use Triggers, end turns. Fails on any page error or if the game stops moving.
 // Usage: node tools/optcg/uitest.mjs [out dir] [turns=12] [width=1440] [height=900]   (serve dist/ on :8765 first)
-// DECK=st01 OPP=st02 pick the decks.
+// DECK=st01 OPP=st02 pick the decks. MOBILE=1 plays on a touch screen (taps open menus). REPLAY=1 also checks the replay.
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 const [out = '/tmp/opui', turns = '12', w = '1440', h = '900'] = process.argv.slice(2);
 fs.mkdirSync(out, { recursive: true });
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: +w, height: +h } });
+const page = await browser.newPage({ viewport: { width: +w, height: +h }, ...(process.env.MOBILE ? { isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : {}) });
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|ERR_TUNNEL/.test(m.text())) errors.push(m.text()); });

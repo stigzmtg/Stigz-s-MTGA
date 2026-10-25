@@ -266,6 +266,8 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
   const fx = useFx(game, me, watching);
   const boardRef = useRef(null);
   const donMode = useRef(false);                 // giving DON!! one by one: stays on until you stop or run out
+  const [zoom, setZoom] = useState(null);       // a card shown big (touch screens have no pointing at cards)
+  const touch = useMemo(() => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(hover: none)').matches, []);
 
   // cards glide between hand, field, trash and Life; a played Event is shown big before it goes to the trash
   const flights = useRef(null);
@@ -351,18 +353,30 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
     // your own card in your main phase: what it can do
     const mine = actions.filter(a => (a.t === 'attack' || a.t === 'activate') && a.card === c.uid);
     const don = donActs.find(a => a.target === c.uid);
-    if (!mine.length && !don) return;
+    if (!mine.length && !don) { if (touch) setZoom(c.uid); return; }
     const items = [];
     if (mine.some(a => a.t === 'attack')) items.push({ label: 'Attack…', primary: true, run: () => { donMode.current = false; setMode({ kind: 'attack', card: c.uid }); } });
     const acts = mine.filter(x => x.t === 'activate');
     for (const a of acts) items.push({ label: acts.length === 1 ? 'Use its [Activate: Main]' : `Use: ${shortWords(effectWords(a))}`, title: effectWords(a), run: () => respond(a) });
     if (don) items.push({ label: `Give 1 DON!! (+1000 power)`, run: () => respond(don) });
+    if (touch) items.push({ label: 'Look at the card', run: () => setZoom(c.uid) });
     const r = e && e.currentTarget ? e.currentTarget.getBoundingClientRect() : null;
     setMenu({ x: r ? r.right : 200, y: r ? r.top : 200, title: c.def.name, items });
   };
 
   // a card in your hand was clicked
-  const onHand = c => {
+  const onHand = (c, e) => {
+    if (touch && !watching) {
+      setHover(c.uid);
+      const items = [];
+      const co = counterReq && counterReq.options.find(x => x.card === c.uid);
+      const a = actions.find(x => x.t === 'play' && x.card === c.uid);
+      if (co) items.push({ label: co.kind === 'event' ? `Play it (${co.cost} DON!!)` : `Use as Counter (+${co.value})`, primary: true, run: () => respond(co) });
+      if (a) items.push({ label: c.def.cat === 'E' ? 'Use this Event' : 'Play it', primary: true, run: () => { donMode.current = false; setMode(null); respond(a); } });
+      items.push({ label: 'Look at the card', run: () => setZoom(c.uid) });
+      const r = e && e.currentTarget ? e.currentTarget.getBoundingClientRect() : null;
+      return setMenu({ x: r ? r.left : 100, y: r ? r.top - 120 : 300, title: c.def.name, items });
+    }
     if (counterReq) {
       const o = counterReq.options.find(x => x.card === c.uid);
       if (o) return respond(o);
@@ -539,7 +553,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
               const co = counterCards.get(c.uid);
               return (
                 <div key={c.uid} className={`op-handslot ${playable.has(c.uid) || co ? 'playable' : ''}`}>
-                  <OpCard card={c} fly={c.uid} onClick={() => onHand(c)} onEnter={() => setHover(c.uid)} onLeave={() => setHover(null)} />
+                  <OpCard card={c} fly={c.uid} onClick={e => onHand(c, e)} onEnter={() => setHover(c.uid)} onLeave={() => setHover(null)} />
                   {co ? <span className="ctrv">{co.kind === 'event' ? `Event · ${co.cost} DON!!` : `+${co.value}`}</span> : null}
                 </div>
               );
@@ -557,6 +571,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
       </div>
       {dialog}
       {menu ? <Menu menu={menu} onClose={() => setMenu(null)} /> : null}
+      {zoom != null && game.cardByUid(zoom) ? <Modal narrow label="Card" onClose={() => setZoom(null)} cls="op-zoom"><Preview game={game} uid={zoom} me={me} /><div className="row"><button className="btn primary" onClick={() => setZoom(null)}>Close</button></div></Modal> : null}
       {zone ? <ZoneDialog game={game} p={zone.p} zone={zone.z} onClose={() => setZone(null)} onHover={setHover} /> : null}
       {result && !dismissed ? (
         <>{result === 'You win!' ? <Confetti /> : null}<Modal narrow label="Game over" cls={result === 'You win!' ? 'win' : ''}>
