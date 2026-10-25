@@ -71,8 +71,12 @@ function useFx(game, me, watching) {
       if (e.kind === 'ko') { s.hits.set(e.card, e.id); s.shake = { key: e.id, strength: 1.2 }; later(900, () => s.hits.delete(e.card)); }
       if (e.kind === 'trigger') { const c = game.cardByUid && game.cardByUid(e.card); s.banner = { text: `Trigger! ${c ? c.def.name : ''}`, key: e.id, kind: 'trigger' }; later(1500, () => { if (s.banner && s.banner.key === e.id) s.banner = null; }); }
       if (e.kind === 'turn') { s.banner = { text: e.pid === me && !watching ? 'Your turn' : `${game.players[e.pid].name}'s turn`, key: e.id, kind: 'turn' }; later(1200, () => { if (s.banner && s.banner.key === e.id) s.banner = null; }); }
+      if (e.kind === 'redirect') { const c = game.cardByUid && game.cardByUid(e.card); s.banner = { text: `The attack is redirected${c ? ` to ${c.def.name}` : ''}!`, key: e.id, kind: 'trigger' }; later(1400, () => { if (s.banner && s.banner.key === e.id) s.banner = null; }); }
       if (e.kind === 'coin' || e.kind === 'first') { s.coin = { text: e.kind === 'first' ? `${name(e.pid)} turn first` : e.heads ? 'Heads' : 'Tails', key: e.id }; later(1600, () => { if (s.coin && s.coin.key === e.id) s.coin = null; }); }
     }
+    // cards the other player reveals (and their Life [Trigger]s) are shown for a moment
+    const shown = [...new Set(fresh.filter(e => (e.kind === 'reveal' || e.kind === 'trigger') && e.card != null && (e.pid !== me || watching)).map(e => e.card))].slice(0, 6);
+    if (shown.length) { const key = s.last; s.reveal = { cards: shown, key }; later(1800, () => { if (s.reveal && s.reveal.key === key) s.reveal = null; }); }
   }
   return s;
 }
@@ -407,7 +411,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
   let bar;
   if (game.over) {
     bar = <div className="msg"><div className="step">Game over</div><div className="txt">{result}{result === 'You win!' ? ' ' : '. '}{youText(game.result || '')}</div></div>;
-  } else if (req && req.type === 'confirm') {
+  } else if (req && req.type === 'confirm' && !(req.cards && req.cards.length)) {
     bar = <><div className="msg"><div className="txt">{youText(req.prompt)}</div></div><div className="acts"><button className="btn primary" onClick={() => respond(true)}>Yes</button><button className="btn" onClick={() => respond(false)}>No</button></div></>;
   } else if (req && req.type === 'option' && barOptions(req)) {
     bar = <><div className="msg"><div className="txt">{youText(req.prompt)}</div></div><div className="acts">{req.options.map(o => <button key={String(o.value)} className="btn" onClick={() => respond(o.value)}>{o.label}</button>)}</div></>;
@@ -498,6 +502,17 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
   const dialog = (() => {
     if (!req || game.over) return null;
     if (req.type === 'cards' && req.from !== 'field') return <CardsDialog key={pend.id} game={game} req={req} respond={respond} onHover={setHover} me={me} sleeves={sleeves} />;
+    if (req.type === 'confirm' && req.cards && req.cards.length) {
+      const look = req.hint === 'look';
+      return (
+        <Modal narrow label={look ? 'Look' : 'Choose'}>
+          <h2>{look ? 'Only you can see this' : 'Choose'}</h2>
+          <p className="sub">{youText(req.prompt)}</p>
+          <div className="op-picks">{req.cards.map(id => game.cardByUid(id)).filter(Boolean).map(c => <div key={c.uid} className="op-pick"><OpCard card={c} onEnter={() => setHover(c.uid)} onLeave={() => setHover(null)} /></div>)}</div>
+          <div className="row">{look ? <button className="btn primary" onClick={() => respond(true)}>OK</button> : <><button className="btn" onClick={() => respond(false)}>No</button><button className="btn primary" onClick={() => respond(true)}>Yes</button></>}</div>
+        </Modal>
+      );
+    }
     if (req.type === 'order') return <OrderDialog key={pend.id} game={game} req={req} respond={respond} onHover={setHover} />;
     if (req.type === 'option' && !barOptions(req)) return <Modal label={req.prompt}><h2>Choose</h2><p className="sub">{youText(req.prompt)}</p><div className="optlist">{req.options.map(o => <button key={String(o.value)} className="btn" onClick={() => respond(o.value)}>{youText(o.label)}</button>)}</div></Modal>;
     if (req.type === 'trigger') {
@@ -569,6 +584,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
             {!hand.length ? <span className="empty">{watching ? `${P.name}'s` : 'Your'} hand is empty</span> : null}
           </div>
           {fx.banner ? <div key={fx.banner.key} className={`op-banner ${fx.banner.kind}`}>{fx.banner.text}</div> : null}
+          {fx.reveal ? <div key={fx.reveal.key} className="op-reveal" aria-hidden="true">{fx.reveal.cards.map(uid => { const c = game.cardByUid(uid); return c ? <OpCard key={uid} card={c} /> : null; })}</div> : null}
           <WatcherEmotes list={emotes.watchers} />
           {!replay && !watching ? <Coach kind="op" tips={tips} /> : null}
         </main>
