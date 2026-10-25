@@ -1,4 +1,4 @@
-// The front door: a title under drifting card art, the two games as arched gates with everything each one offers,
+// The front door: a title under drifting card art, the three games as arched gates with everything each one offers,
 // shelves of decks you can jump straight into, a box for joining a friend's room, and what makes the tables play well.
 import { initPkImages, pkImage, subscribePk, pkImagesVersion, preloadPk } from '../ptcg/ui/images.js';
 import { initOpImages, opThumb, subscribeOp, opImagesVersion } from '../optcg/ui/images.js';
@@ -114,7 +114,7 @@ const FEATURES = [
   ['device', 'Plays anywhere', 'Runs in the browser on laptops, Chromebooks, tablets and phones. Nothing to install and nothing to sign up for.'],
 ];
 
-// ---------------------------------------------------------------- the two games
+// ---------------------------------------------------------------- the three games
 function Gate({ game, title, kind, pips, fan, fanLabel, keystone, blurb, facts, points, onPlay }) {
   return (
     <article className={`gate ${game}`} aria-labelledby={`gate-${game}`}>

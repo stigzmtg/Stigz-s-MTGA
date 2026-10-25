@@ -1,6 +1,6 @@
 // Table sounds, made on the fly with Web Audio (nothing to download): card draws, land drops, mana taps, spells,
-// attacks, hits, coin flips, Knock Outs, turn chimes and the end of a game. Both games feed their engine's log
-// (Commander) or events (Pokémon) through useGameSounds; settings.sound / settings.volume control it.
+// attacks, hits, coin flips, Knock Outs, turn chimes and the end of a game. Each game feeds its engine's log
+// (Commander) or events (Pokémon, One Piece) through useGameSounds; settings.sound / settings.volume control it.
 import { loadSettings } from './common.js';
 
 let ctx = null, master = null, noiseBuf = null, unlocked = false;
@@ -95,7 +95,7 @@ export const soundKinds = Object.keys(SOUNDS);
 
 // ---- what each game's happenings sound like
 const MTG_LOG = { land: 'land', mana: 'tap', cast: 'cast', activate: 'ability', attack: 'attack', block: 'block', damage: 'hit', token: 'token', draw: 'draw', attach: 'card', counter: 'token', pump: 'token' };
-const OP_EVENT = { draw: 'draw', play: 'card', don: 'energy', attack: 'attack', block: 'block', counter: 'ability', damage: 'hit', life: 'prize', trigger: 'cast', ko: 'ko', coin: 'coin', first: 'coin', activate: 'ability', event: 'cast', stage: 'card' };
+const OP_EVENT = { draw: 'draw', play: 'card', don: 'energy', give: 'energy', redirect: 'block', attack: 'attack', block: 'block', counter: 'ability', damage: 'hit', life: 'prize', trigger: 'cast', ko: 'ko', coin: 'coin', first: 'coin', activate: 'ability', event: 'cast', stage: 'card' };
 const PK_EVENT = { draw: 'draw', enter: 'card', evolve: 'cast', energy: 'energy', trainer: 'card', ability: 'ability', attack: 'attack', damage: 'hit', heal: 'heal', coin: 'coin', ko: 'ko', prize: 'prize', switch: 'card', condition: 'ability' };
 const seen = new WeakMap();
 

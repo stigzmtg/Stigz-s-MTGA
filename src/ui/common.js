@@ -1,4 +1,4 @@
-// Small pieces both games share: a render store, table settings and storage that never throws.
+// Small pieces the games share: a render store, table settings and storage that never throws.
 export const DEFAULT_SETTINGS = { aiSpeed: 'normal', stopOppEnd: true, stopOppCombat: true, stopOwnCombat: false, stopForOpponentSpells: true, fullControl: false, autoCommander: true, images: true, sound: true, volume: 0.6, sandbox: false };
 export function loadSettings() { try { return { ...DEFAULT_SETTINGS, ...(JSON.parse(localStorage.getItem('pa-settings') || '{}')) }; } catch { return { ...DEFAULT_SETTINGS }; } }
 export function saveSettings(s) { try { localStorage.setItem('pa-settings', JSON.stringify(s)); } catch { /* storage unavailable */ } }

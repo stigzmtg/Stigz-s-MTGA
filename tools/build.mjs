@@ -13,7 +13,6 @@ const support = {};
 for (const [name, text] of Object.entries(cards)) { const issues = analyzeCard(text); if (issues.length) support[name] = issues; }
 fs.writeFileSync('data/support.json', JSON.stringify(support));
 for (const f of ['cards.json', 'tokens.json', 'decks.json', 'support.json', 'images.json']) if (fs.existsSync(path.join('data', f))) fs.copyFileSync(path.join('data', f), path.join(DIST, 'data', f));
-// the Pokémon side's data
 // the Pokémon and One Piece sides' data
 for (const side of ['ptcg', 'optcg']) {
   fs.mkdirSync(path.join(DIST, 'data', side), { recursive: true });
@@ -80,7 +79,7 @@ fs.writeFileSync(path.join(DIST, 'index.html'), `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Play Magic: The Gathering Commander precons and popular Pokémon TCG decks against the computer or with friends, right in your browser.">
+<meta name="description" content="Play Magic: The Gathering Commander precons, popular Pokémon TCG decks and every One Piece Card Game starter deck against the computer or with friends, right in your browser.">
 <meta name="theme-color" content="#0b1a14">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="img/icon-180.png">
@@ -104,7 +103,7 @@ try {
 } catch (e) { console.warn('icons skipped:', e.message); }
 fs.writeFileSync(path.join(DIST, 'manifest.webmanifest'), JSON.stringify({
   name: 'Stigz’s TCG Arena', short_name: 'TCG Arena', id: './', start_url: './', scope: './', display: 'standalone',
-  description: 'Commander precons and top Pokémon TCG decks against the computer or with friends.',
+  description: 'Commander precons, top Pokémon TCG decks and One Piece starter decks against the computer or with friends.',
   background_color: '#0b1913', theme_color: '#0b1a14',
   icons: [
     { src: 'img/icon-192.png', sizes: '192x192', type: 'image/png' },
