@@ -197,7 +197,7 @@ export class OnePieceAI {
     const mine = c => c.owner === pid;
     const byVal = (list, dir = -1) => [...list].sort((a, b) => dir * (this.value(g, a) - this.value(g, b)));
     if (req.from === 'field') {
-      if (['ko', 'rest', 'debuff', 'cost-down', 'bounce', 'bottom', 'to-life', 'select-opp', 'freeze', 'trash-char'].includes(hint) || /opp/.test(hint)) {
+      if (['ko', 'rest', 'debuff', 'cost-down', 'bounce', 'bottom', 'to-life', 'select-opp', 'freeze', 'trash-char', 'cantBlock', 'cantAttack', 'cantAttackChar'].includes(hint) || /opp/.test(hint)) {
         const theirs = byVal(opts.filter(c => !mine(c)));
         // for "rest", only active ones matter; for debuffs, the Characters that fight
         const list = hint === 'rest' ? [...theirs.filter(c => !c.rested), ...theirs.filter(c => c.rested)] : theirs;
@@ -268,6 +268,8 @@ export class OnePieceAI {
       case 'don-return': return (opts.find(o => o.value === 'rested') || opts.find(o => o.value === 'active') || opts[0]).value;
       case 'life-end': return opts[0].value;
       case 'life-whose': return opts[0].value;
+      // rest an opponent's Character (the best one) rather than a DON!! card
+      case 'rest-don-or-char': { const chars = opts.filter(o => typeof o.value === 'number').map(o => g.cardByUid(o.value)).sort((a, b) => this.value(g, b) - this.value(g, a)); return chars.length ? chars[0].uid : (opts.find(o => o.value === 'don') || opts[0]).value; }
       default: return opts[0].value;
     }
   }

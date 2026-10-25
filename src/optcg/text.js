@@ -184,6 +184,8 @@ function parseCost(s, def) {
     else if ((m = /^return (\d+) total of your currently given DON!! cards to your cost area rested/i.exec(t))) cost.push({ op: 'returnGivenDon', n: +m[1] });
     else if ((m = /^add 1 of your ((?:(?!\bto the top of your Life cards\b).)*?) to the top of your Life cards face-up/i.exec(t))) cost.push({ op: 'charToLife', ...ownCards(m[1], def) });
     else if ((m = /^return this (?:Character|card) to the owner's hand/i.exec(t))) cost.push({ op: 'bounceSelf' });
+    // "rest 1 of your DON!! cards and this Character": the verb carries over
+    else if ((m = /^this (?:Character|Stage|card)(?=$|,| and )/i.exec(t)) && cost.length && ['restDon', 'restOwn'].includes(cost[cost.length - 1].op)) cost.push({ op: 'restSelf' });
     else fail(`cost "${t}"`);
     t = t.slice(m[0].length);
   }
@@ -256,6 +258,10 @@ export function parseSel(phrase, def, { zone = 'field' } = {}) {
     s = s.trim();
     if (!s) break;
     if ((m = /^on your field\b/.exec(s))) { if (sel.who === 'any') sel.who = 'you'; }
+    // "your Character [Bonk Punch]"
+    else if ((m = /^\[([^\]]+)\](?=\s|$)/.exec(s))) sel.f.push({ k: 'name', any: [m[1]] });
+    // "with a cost of 3 or 4"
+    else if ((m = /^(?:with|and) a (base )?cost of (\d+) or (\d+)\b/.exec(s))) sel.f.push({ k: 'or', any: [[{ k: m[1] ? 'baseCost' : 'cost', op: '=', n: +m[2] }], [{ k: m[1] ? 'baseCost' : 'cost', op: '=', n: +m[3] }]] });
     else if ((m = /^(?:with|and) a (base )?cost of (\d+) or (less|more)\b/.exec(s))) sel.f.push({ k: m[1] ? 'baseCost' : 'cost', op: m[3] === 'less' ? '<=' : '>=', n: +m[2] });
     else if ((m = /^(?:with|and) a (base )?cost of (\d+) to (\d+)\b/.exec(s))) sel.f.push({ k: 'costRange', lo: +m[2], hi: +m[3] });
     else if ((m = /^(?:with|and) a (base )?cost of (\d+)\b/.exec(s))) sel.f.push({ k: m[1] ? 'baseCost' : 'cost', op: '=', n: +m[2] });
@@ -291,7 +297,7 @@ function target(phrase, def) {
   if (/^this (Character|card|Leader|Stage)$/i.test(p)) return { ref: 'self' };
   if (/^(your Leader|this Leader)$/i.test(p)) return { ref: 'leader' };
   let m;
-  if ((m = /^your (.+?) Leader$/.exec(p))) {
+  if ((m = /^[Yy]our (.+?) Leader$/.exec(p))) {
     const x = parseSel(`up to 1 of your ${m[1]} Leader`, def);
     if (x && !x.rest) return { ref: 'leader', f: x.f };
   }
@@ -356,6 +362,10 @@ export function parseCond(s, def) {
   if ((m = /^your Leader's type includes "([^"]+)"$/.exec(t))) return { k: 'leader', who: 'you', f: [{ k: 'traitHas', any: [m[1]] }] };
   if ((m = /^your Leader is multicolou?red$/.exec(t))) return { k: 'leader', who: 'you', f: [{ k: 'multicolor' }] };
   if ((m = /^there is a (.+)$/.exec(t))) return { k: 'exists', sel: sel(`up to 1 ${m[1]}`, def) };
+  if ((m = /^you do not have (.+)$/.exec(t))) return { k: 'not', c: parseCond(`you have ${m[1]}`, def) };
+  if ((m = /^your Leader has the \{([^}]+)\} type or is \[([^\]]+)\]$/.exec(t))) return { k: 'leader', who: 'you', f: [{ k: 'or', any: [[{ k: 'trait', any: [m[1]] }], [{ k: 'name', any: [m[2]] }]] }] };
+  // "you have 5 Characters with a cost of 5 or more": at least that many
+  if ((m = /^you have (\d+) (Characters? .+)$/.exec(t))) return { k: 'exists', sel: sel(`up to 1 of your ${m[2]}`, def), n: +m[1] };
   // rested cards: Leader, Characters, Stage and the cost area's DON!! cards
   if ((m = /^you have (\d+) or more rested cards$/.exec(t))) return { k: 'cmp', a: { k: 'restedCards', who: 'you' }, op: '>=', b: +m[1] };
   if ((m = /^(you|your opponent) (?:have|has) (an?|\d+ or more) (.+)$/.exec(t))) {
@@ -414,6 +424,8 @@ export function parseEffect(text, def) {
     }
     // "If you do, Y" after an optional cost that is part of the previous clause
     if (/^If you do, /.test(s)) { const st = parseClauses(s.replace(/^If you do, /, ''), def); for (const x of st) x.cond = { k: 'did' }; steps.push(...st); continue; }
+    // ST21-003: "Select ... . If the selected Character attacks during this turn, your opponent cannot activate [Blocker]."
+    if (/^If the selected (?:Leader or Character|Character) attacks during this turn, your opponent cannot activate \[Blocker\]$/.test(s)) { steps.push({ op: 'noBlockerIfAttacks', sel: { ref: 'selected' }, dur: 'turn' }); continue; }
     const st = parseSentence(s, def);
     void then;
     steps.push(...st);
@@ -526,7 +538,8 @@ function parseClause(text, def) {
   // "[On Play] ... this Character gains [Rush]" with no duration: for as long as it stays on the field
   if ((m = /^(this Character|this Leader) gains? \[(Rush|Blocker|Double Attack|Banish|Unblockable|Rush: Character)\]$/i.exec(t))) return [{ op: 'grant', sel: target(m[1], def), kw: m[2], dur: 'game' }];
   // ---- DON!!
-  if ((m = /^[Gg]ive (.+?) up to (\d+) rested DON!! cards?$/.exec(t))) return [{ op: 'giveDon', sel: target(m[1], def), n: +m[2], upTo: true }];
+  if ((m = /^[Gg]ive (.+?) up to (\d+) rested DON!! cards?(?: each)?$/.exec(t))) return [{ op: 'giveDon', sel: target(m[1], def), n: +m[2], upTo: true }];
+  if ((m = /^[Aa]dd up to (\d+) additional DON!! cards? and (set (?:it|them) as active|rest (?:it|them))$/.exec(t))) return [{ op: 'addDon', n: +m[1], rested: /^rest/.test(m[2]) }];
   if ((m = /^[Gg]ive up to (\d+) rested DON!! cards? to (.+)$/.exec(t))) return [{ op: 'giveDon', sel: donTarget(m[2], def), n: +m[1], upTo: true }];
   if ((m = /^[Aa]dd up to (\d+) DON!! cards? from your DON!! deck and (set (?:it|them) as active|rest (?:it|them))$/.exec(t))) return [{ op: 'addDon', n: +m[1], rested: /^rest/.test(m[2]) }];
   if ((m = /^[Aa]dd (\d+) DON!! cards? from your DON!! deck and (set (?:it|them) as active|rest (?:it|them))$/.exec(t))) return [{ op: 'addDon', n: +m[1], rested: /^rest/.test(m[2]) }];
@@ -577,12 +590,20 @@ function parseClause(text, def) {
   if ((m = /^[Yy]our opponent cannot activate \[Blocker\] during this battle$/.exec(t))) return [{ op: 'noBlocker' }];
   if ((m = /^[Yy]our opponent cannot activate a \[Blocker\] Character that has (\d+) or (more|less) power during this battle$/.exec(t))) return [{ op: 'noBlocker', f: [{ k: 'power', op: m[2] === 'more' ? '>=' : '<=', n: +m[1] }] }];
   if ((m = /^[Yy]our opponent cannot activate \[Blocker\] if that (?:Leader or Character|Character) attacks during this turn$/.exec(t))) return [{ op: 'noBlockerIfAttacks', sel: { ref: 'selected' }, dur: 'turn' }];
+  // "Your opponent cannot activate up to 1 [Blocker] Character that has 4000 power or less during this turn"
+  if ((m = /^[Yy]our opponent cannot activate up to (\d+) \[Blocker\] Characters? that ha(?:s|ve) (\d+) power or (less|more) (during this turn|until .+)$/.exec(t))) return [{ op: 'restrict', flag: 'cantBlock', sel: { who: 'opp', n: +m[1], upTo: true, all: false, cats: ['C'], f: [{ k: 'kw', kw: 'Blocker' }, { k: 'power', op: m[3] === 'less' ? '<=' : '>=', n: +m[2] }], zone: 'field' }, dur: dur(m[4]), text: "can't activate [Blocker]" }];
+  if ((m = /^(.+?) cannot activate \[Blocker\] (during this turn|until .+)$/.exec(t)) && !/^[Yy]our opponent /.test(t)) return [{ op: 'restrict', flag: 'cantBlock', sel: target(m[1].replace(/^Up to/, 'up to'), def), dur: dur(m[2]), text: "can't activate [Blocker]" }];
+  if ((m = /^[Yy]our opponent's \[On Play\] effects are negated (during this turn|until .+)$/.exec(t))) return [{ op: 'playerFlag', flag: 'negateOnPlay', who: 'opp', dur: dur(m[1]) }];
   if ((m = /^[Ss]elect (.+)$/.exec(t))) return [{ op: 'select', sel: target(m[1], def) }];
   // ---- Life
   if ((m = /^[Tt]rash up to (\d+) of your opponent's Life cards$/.exec(t))) return [{ op: 'trashLife', who: 'opp', n: +m[1] }];
   if ((m = /^[Tt]rash (?:up to )?(\d+) cards? from the top of your opponent's Life cards$/.exec(t))) return [{ op: 'trashLife', who: 'opp', n: +m[1] }];
   if ((m = /^[Aa]dd (?:up to )?(\d+) cards? from the top of your deck to the top of your Life cards$/.exec(t))) return [{ op: 'deckToLife', n: +m[1] }];
   if ((m = /^[Aa]dd (\d+) cards? from the top of your Life cards to your hand$/.exec(t))) return [{ op: 'lifeToHand', n: +m[1] }];
+  if ((m = /^[Aa]dd (\d+) cards? from the top or bottom of your Life cards to your hand$/.exec(t))) return [{ op: 'lifeToHand', n: +m[1], where: 'topOrBottom' }];
+  if ((m = /^[Pp]lace the revealed card at the (top|bottom) of your deck$/.exec(t))) return [{ op: 'revealedToDeck', bottom: m[1] === 'bottom' }];
+  // ST26-002: "Rest up to 1 of your opponent's DON!! cards or Characters with a cost of 1 or less"
+  if ((m = /^[Rr]est up to 1 of your opponent's DON!! cards or (Characters? .+)$/.exec(t))) { const x = sel(`up to 1 of your opponent's ${m[1]}`, def); return [{ op: 'restDonOrChar', sel: x }]; }
   if ((m = /^[Ll]ook at up to 1 card from the top of your or your opponent's Life cards, and place it at the top or bottom of the Life cards$/.exec(t))) return [{ op: 'lookLife', who: 'either' }];
   if ((m = /^[Ll]ook at up to 1 card from the top of your opponent's Life cards, and place it at the top or bottom of the Life cards$/.exec(t))) return [{ op: 'lookLife', who: 'opp' }];
   if ((m = /^[Aa]dd up to (\d+) cards? from your hand to the top of your Life cards$/.exec(t))) return [{ op: 'handToLife', n: +m[1], upTo: true }];
@@ -653,15 +674,27 @@ function parseNoTiming(s, def, head) {
     if (!self) r.sel = sel(`up to 1 of your ${m[2]}`, def);
     const what = m[5];
     const c = tryCostLike(what, def);
-    if (c) r.cost = c; else r.steps = parseClauses(what, def);
+    if (c) r.cost = c;
+    else {
+      // "you may trash this Character and draw 1 card instead": a cost, then an effect
+      const parts = splitTop(what, ' and ');
+      const c1 = parts.length > 1 && tryCostLike(parts[0], def);
+      if (c1) { r.cost = c1; r.steps = parseClauses(cap(parts.slice(1).join(' and ')), def); }
+      else r.steps = parseClauses(what, def);
+    }
     return { kind: 'replace', replace: r, ...base };
   }
   // "If this Character battles your opponent's Character, ...": at the end of the battle (7-1-5-2)
   if ((m = /^(?:If this Character battles your opponent's Character|At the end of a battle in which this Character battles your opponent's Character), (.+)$/.exec(s))) return { kind: 'auto', timings: ['endOfBattle'], when: { withChar: true }, ...parseCostEffect(cap(m[1]), def, 'auto'), ...base };
-  // "When X, Y": an auto effect with its own timing (8-1-3-1-1)
-  if ((m = /^When (.+?), (.+)$/.exec(s))) {
+  // "When X, Y": an auto effect with its own timing (8-1-3-1-1); also "If a Character is rested by your effect, Y"
+  if ((m = /^(?:When|If) (.+?), (.+)$/.exec(s))) {
     const w = parseWhen(m[1], def);
     if (w) return { kind: 'auto', timings: [w.timing], when: w.when, ...parseCostEffect(cap(m[2]), def, 'auto'), ...base };
+  }
+  // OP09-001: "This effect can be activated when your opponent attacks. ...": the player may use it at that time
+  if ((m = /^This effect can be activated when your opponent attacks\. (.+)$/.exec(s))) {
+    const ce = parseCostEffect(m[1], def, 'auto');
+    return { kind: 'auto', timings: ['onOppAttack'], ...ce, optional: true, costText: ce.costText || 'use this effect', ...base };
   }
   // permanent effects (8-1-3-3), one per sentence ("All of your Characters gain +1 cost. If you have ..., this Leader
   // gains +1000 power." under one [DON!! x1])
@@ -689,6 +722,7 @@ function parseWhen(s, def) {
   if (/^a DON!! card on your field is returned to your DON!! deck$/.test(t)) return { timing: 'donReturned', when: { who: 'you' } };
   if ((m = /^(\d+) or more DON!! cards on your field are returned to your DON!! deck$/.exec(t))) return { timing: 'donReturned', when: { who: 'you', minN: +m[1] } };
   if (/^this Character becomes rested$/.test(t)) return { timing: 'rested', when: { self: true } };
+  if (/^a Character is rested by your effect$/.test(t)) return { timing: 'rested', when: { byEffect: true, byYou: true, sel: { who: 'any', cats: ['C'], f: [] } } };
   // "When this Character battles <Strike> attribute Characters": once the two cards of the battle are settled
   if ((m = /^this Character battles (.+)$/.exec(t))) return { timing: 'battling', when: { battleSel: sel(`up to 1 ${m[1]}`, def) } };
   return null;
@@ -716,13 +750,22 @@ function parseMods(text, def) {
       catch (e) { if (!(e instanceof ParseError)) throw e; }
     }
   }
-  if ((m = /^(.+?) gains? (?:\[(Rush|Blocker|Double Attack|Banish|Unblockable|Rush: Character)\]|([+-]\d+) (power|cost))(?: and (?:\[(Rush|Blocker|Double Attack|Banish|Unblockable)\]|([+-]\d+) (power|cost)))?$/.exec(t))) {
+  // "... for every 4 cards in your trash" scales the numbers
+  let per = null, body = t;
+  if ((m = /^(.+) for every (\d+) cards in your trash$/.exec(t))) { body = m[1]; per = { div: +m[2], of: { k: 'trash', who: 'you' } }; }
+  const scaled = n => (per ? { k: 'per', each: n, of: per.of, div: per.div } : n);
+  if ((m = /^(.+?) gains? (?:\[(Rush|Blocker|Double Attack|Banish|Unblockable|Rush: Character)\]|([+-]\d+) (power|cost))(?: and (?:\[(Rush|Blocker|Double Attack|Banish|Unblockable)\]|([+-]\d+) (power|cost)))?$/.exec(body))) {
     const s1 = who(m[1]);
     const out = [];
-    if (m[2]) out.push({ k: 'grant', sel: s1, kw: m[2] }); else out.push({ k: m[4], sel: s1, n: +m[3] });
-    if (m[5]) out.push({ k: 'grant', sel: s1, kw: m[5] }); else if (m[6]) out.push({ k: m[7], sel: s1, n: +m[6] });
+    if (m[2]) out.push({ k: 'grant', sel: s1, kw: m[2] }); else out.push({ k: m[4], sel: s1, n: scaled(+m[3]) });
+    if (m[5]) out.push({ k: 'grant', sel: s1, kw: m[5] }); else if (m[6]) out.push({ k: m[7], sel: s1, n: scaled(+m[6]) });
+    if (per && !out.some(x => x.n != null)) fail('"for every" without a number');
     return out;
   }
+  if (per) fail(`permanent effect "${t}"`);
+  if ((m = /^(.+?) cannot attack$/.exec(t))) return [{ k: 'cantAttack', sel: who(m[1]) }];
+  // OP09-081: "Your [On Play] effects are negated" (8-2)
+  if (/^Your \[On Play\] effects are negated$/.test(t)) return [{ k: 'negateOnPlay', sel: { ref: 'leader' } }];
   if ((m = /^[Gg]ive (this Leader|this Character) (-?\d+) power$/.exec(t))) return [{ k: 'power', sel: who(m[1]), n: -Math.abs(+m[2]) }];
   if ((m = /^[Gg]ive this card in your hand -(\d+) cost$/.exec(t))) return [{ k: 'cost', sel: { ref: 'self' }, n: -+m[1], hand: true }];
   if ((m = /^(.+?) cannot be K\.O\.'d( in battle| by effects| by your opponent's effects| in battle by Leaders)?$/.exec(t))) {

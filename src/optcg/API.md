@@ -28,7 +28,13 @@ await game.start();      // resolves when the game is over
 Top level: `seed`; `turn` (1, 2, ...; 0 during setup); `current` (whose turn, a pid); `first` (who went first);
 `phase` ('setup' | 'refresh' | 'draw' | 'don' | 'main' | 'end'); `over`; `winner` (pid, or null for a draw);
 `result` (a sentence, e.g. "Gus's Leader took damage with no Life cards left"); `maxTurns`; `events`; `logs`;
-`pendingAsk` (`{ pid, req }` while an agent is being asked).
+`pendingAsk` (`{ pid, req }` while an agent is being asked); `problems` (undefined, or a list of effects the engine
+couldn't resolve).
+
+Fail-safe: a card effect the engine can't carry out (an unknown cost, step or condition, or an error inside an
+effect) never ends the game: it is skipped, logged and added to `problems`, the same way on every peer. Tests set
+`game.throwErrors = true`, which makes it throw instead, so sim, invariants, chaos and rules runs fail on it (nettest
+fails on any `problems`).
 
 `battle` is null outside a battle, else `{ attacker, target, step, blocker }`: uids, and `step` is
 'attack' | 'block' | 'counter' | 'damage'. `target` becomes the blocker after a block.
