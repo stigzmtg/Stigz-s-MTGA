@@ -100,7 +100,7 @@ function EmptySlot({ label }) { return <div className="op-slot empty"><div class
 function DonArea({ p, pick, onPick }) {
   const act = p.donActive || 0, rest = p.donRested || 0;
   return (
-    <div className={`op-cost ${act + rest > 6 ? 'tight' : ''}`} data-pile={`${p.id}:don`} title={`${act} active, ${rest} rested DON!! in the cost area; ${p.donDeck} in the DON!! deck`}>
+    <div className={`op-cost ${act + rest * 1.5 > 6 ? 'tight' : ''}`} data-pile={`${p.id}:don`} title={`${act} active, ${rest} rested DON!! in the cost area; ${p.donDeck} in the DON!! deck`}>
       <span className="label">DON!!</span>
       {Array.from({ length: act }, (_, i) => <span key={'a' + i} className={`op-don ${pick ? 'pick' : ''}`} onClick={pick ? onPick : undefined} role={pick ? 'button' : undefined} aria-label={pick ? 'Give a DON!! card' : undefined} />)}
       {Array.from({ length: rest }, (_, i) => <span key={'r' + i} className="op-don rested" />)}
