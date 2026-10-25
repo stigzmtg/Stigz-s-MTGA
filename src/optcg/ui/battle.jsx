@@ -2,7 +2,7 @@
 // Leader and the DON!! cost area behind them, Life beside the player's card, deck and trash on the right), the bar
 // across the middle (what to do now, and the fight in progress), your hand, and a side panel with the card you point
 // at and the battle log. Cards glide between zones (ui/motion.js); attacks, Counters, Triggers and K.O.s are animated.
-import { opImage, subscribeOp, opImagesVersion, preloadOpCards } from './images.js';
+import { opImage, opThumb, subscribeOp, opImagesVersion, preloadOpCards } from './images.js';
 import { ColorDot, COLOR_HEX } from './colors.jsx';
 import { EffectText } from './lobby.jsx';
 import { Modal, SoundToggle, SizeButton, Confetti, Menu } from '../../ui/dialogs.jsx';
@@ -30,7 +30,7 @@ const barOptions = req => req.options.length <= 4 && req.options.every(o => Stri
 // ---------------------------------------------------------------- cards
 export function OpCard({ card, def, cls = '', onClick, onEnter, onLeave, fly, title }) {
   const d = def || (card && card.def);
-  const img = d && opImage(d.id);
+  const img = d && (opImage(d.id) || opThumb(d.id));
   return (
     <div className={`op-card ${img ? '' : 'drawn'} ${cls}`} data-fly={fly} onClick={onClick} onMouseEnter={onEnter} onMouseLeave={onLeave} title={title}
       role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}
@@ -221,7 +221,7 @@ function Preview({ game, uid, me }) {
   const c = uid != null ? game.cardByUid(uid) : null;
   if (!c) return <div className="preview-empty"><span className="ghostcard" aria-hidden="true" /><span>Point at any card to read it here.</span></div>;
   const d = c.def;
-  const img = opImage(d.id);
+  const img = opImage(d.id) || opThumb(d.id);
   const inPlay = c.rested !== undefined && game.players.some(p => p.leader === c || p.characters.includes(c) || p.stage === c);
   const pw = inPlay && game.power ? game.power(c) : d.power;
   return (
@@ -282,7 +282,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
     runFlights(flights.current, boardRef.current, game, {
       zones: cardZones(game),
       isPublic: z => !(z.endsWith(':deck') || z.endsWith(':life') || (z.endsWith(':hand') && z !== `${mine}:hand`)),
-      look: (id, face) => { const c = game.cardByUid(+id); return face && c ? { img: opImage(c.def.id), name: c.def.name, cls: 'op' } : { back: true, cls: 'op' }; },
+      look: (id, face) => { const c = game.cardByUid(+id); return face && c ? { img: opImage(c.def.id) || opThumb(c.def.id), name: c.def.name, cls: 'op' } : { back: true, cls: 'op' }; },
       kindOf: (id, from, to) => {
         if (!to || !from) return 'move';
         if (from.endsWith(':field') && to.endsWith(':trash')) return 'die';
