@@ -20,7 +20,7 @@ import { uiScale } from '../../ui/common.js';
 
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, useSyncExternalStore } = React;
 // the log and prompts in the second person ("You add a Life card to your hand", not "... to their hand")
-const youText = t => secondPerson(String(t || '')).replace(/DON!!/g, 'DON\u2060\u2060').replace(/(^|[.!?]\s+)(You\b[^.!?]*)/g, (m, pre, sent) => pre + sent.replace(/\btheir\b/g, 'your').replace(/\bthemselves\b/g, 'yourself')).replace(/DON\u2060\u2060/g, 'DON!!');
+const youText = t => secondPerson(String(t || '')).replace(/DON!!/g, 'DON\u2060\u2060').replace(/(^|[.!?]\s+)(You\b[^.!?]*)/g, (m, pre, sent) => pre + sent.replace(/\btheir\b/g, 'your').replace(/\bthemselves\b/g, 'yourself').replace(/\b(and|then) (activate|draw|add|play|place|rest|give|return|reveal|look|put|take|set|trash|shuffle|attack|use|turn|choose)s\b/g, '$1 $2').replace(/\b(and|then) (trash|push)es\b/g, '$1 $2')).replace(/([a-z,] )Your\b/g, '$1your').replace(/DON\u2060\u2060/g, 'DON!!');
 // an [Activate: Main] action's button: short, with the effect's words as the tooltip
 const effectWords = a => String(a.label || '').replace(/^[^:]*?: (?=\[)/, '');
 const shortWords = (t, n = 46) => { const w = t.replace(/\[(Activate: Main|Once Per Turn)\]\s*/g, '').replace(/[{}]/g, '').trim(); return w.length > n ? w.slice(0, n - 1).trimEnd() + '…' : w; };
