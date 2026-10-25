@@ -1822,6 +1822,24 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 .op-chosen-body, .op-list { animation: opmsgin 0.32s ease-out; }
 .op-feature img { animation: opfade 0.22s ease-out; }
 @keyframes opfade { from { opacity: 0.35; } }
+/* an Ultra Deck's Leader picker */
+.op-leaderpick { display: grid; gap: calc(6px * var(--s)); }
+.op-leaderpick .opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(6px * var(--s)); }
+.op-leaderpick button { display: grid; justify-items: center; gap: calc(4px * var(--s)); padding: calc(6px * var(--s)) calc(4px * var(--s)) calc(7px * var(--s)); border-radius: calc(10px * var(--s)); border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); color: var(--ink-dim); font: 700 calc(12px * var(--s))/1.15 var(--font-ui); cursor: pointer; transition: border-color 0.15s, background 0.15s, transform 0.15s; min-width: 0; }
+.op-leaderpick button:hover { border-color: var(--line-strong); color: var(--ink); transform: translateY(-1px); }
+.op-leaderpick button.on { border-color: var(--brass-hi); background: rgba(243, 214, 143, 0.12); color: var(--ink); box-shadow: 0 0 0 1px var(--brass-hi), 0 0 calc(14px * var(--s)) rgba(243, 214, 143, 0.25); }
+.op-leaderpick .pic { width: calc(46px * var(--s)); aspect-ratio: 63 / 88; border-radius: calc(4px * var(--s)); overflow: hidden; background: rgba(0, 0, 0, 0.3); }
+.op-leaderpick .pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.op-leaderpick .nm { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* "Don't ask again" in the end-turn check: a quiet link-style button */
+.op-prompt .btn.link { background: none; border-color: transparent; box-shadow: none; color: var(--ink-dim); text-decoration: underline; text-underline-offset: calc(3px * var(--s)); padding-inline: calc(6px * var(--s)); }
+.op-prompt .btn.link:hover { color: var(--ink); }
+/* keyword help: a keyword you can point at or tap, and its tooltip */
+.kw.has-tip { cursor: help; text-decoration: underline dotted rgba(255, 255, 255, 0.55); text-underline-offset: 2px; }
+.kw.has-tip:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 1px; }
+.kw.cost { padding: 0 calc(3px * var(--s)); border-radius: calc(4px * var(--s)); background: rgba(243, 214, 143, 0.14); color: var(--ink); font-weight: 700; }
+.op-kwtip { position: fixed; z-index: 90; pointer-events: none; display: grid; gap: calc(3px * var(--s)); padding: calc(9px * var(--s)) calc(12px * var(--s)); border-radius: calc(10px * var(--s)); background: #10201a; border: 1px solid var(--brass); box-shadow: 0 calc(10px * var(--s)) calc(30px * var(--s)) rgba(0, 0, 0, 0.6); color: var(--ink-dim); font: 500 calc(13.5px * var(--s))/1.4 var(--font-ui); animation: opmsgin 0.16s ease-out; }
+.op-kwtip b { color: var(--brass-hi); font-weight: 800; font-size: calc(12.5px * var(--s)); letter-spacing: 0.04em; }
 
 /* ================================================================ home: the arena's entrance
    Layout: a slim bar, a title under drifting card art with the arena's numbers, the two games as arched gates
@@ -2132,6 +2150,6 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 <div id="root"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
-<script src="app.js?v=a2151517a8"></script>
+<script src="app.js?v=e40757df0c"></script>
 </body>
 </html>
