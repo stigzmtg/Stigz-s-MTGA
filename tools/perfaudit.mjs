@@ -1,7 +1,7 @@
 // Smoothness audit on a slow machine: the CPU is throttled (default 4x, roughly a school Chromebook) and we record
 // every animation frame and every main-thread task over 50 ms while the home page animates and scrolls, and while
 // each game plays itself at normal speed.
-// Usage: node tools/perfaudit.mjs [cpu slowdown=4] [turns=5]   (serve dist/ on :8765 first)
+// Usage: node tools/perfaudit.mjs [cpu slowdown=4] [turns=5]   (serve dist/ on :8765 first; ONLY=home, pk, op or mtg runs one part)
 import { chromium } from 'playwright';
 const RATE = +(process.argv[2] || 4), TURNS = +(process.argv[3] || 5);
 const BASE = process.env.BASE || 'http://localhost:8765/';
@@ -29,7 +29,7 @@ const stop = async (p, label, extra = '') => {
 async function newPage(opts = {}) {
   const ctx = await browser.newContext({ viewport: opts.viewport || { width: 1366, height: 768 } });
   await ctx.addInitScript(probe);
-  await ctx.addInitScript(([t, speed]) => { window.__pkAutoplay = t; window.__paAutoplay = t; try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: speed })); } catch {} }, [opts.turns || TURNS, opts.speed || 'normal']);
+  await ctx.addInitScript(([t, speed]) => { window.__pkAutoplay = t; window.__paAutoplay = t; window.__opAutoplay = t; try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: speed })); } catch {} }, [opts.turns || TURNS, opts.speed || 'normal']);
   const page = await ctx.newPage();
   const cdp = await ctx.newCDPSession(page);
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: RATE });
@@ -38,9 +38,10 @@ async function newPage(opts = {}) {
 }
 const turnOf = p => p.evaluate(() => +((document.querySelector('.topbar .turninfo b') || {}).textContent || 0));
 
+const ONLY = process.env.ONLY || '';
 console.log(`CPU slowed ${RATE}x\n`);
 // home: the drifting art, then a scroll down the whole page
-{
+if (!ONLY || ONLY === 'home') {
   const p = await newPage();
   await p.goto(BASE); await p.waitForSelector('.deck-tile.pk', { timeout: 60000 }); await p.waitForTimeout(3000);
   await start(p); await p.waitForTimeout(5000); await stop(p, 'home: idle (drifting art)');
@@ -50,7 +51,7 @@ console.log(`CPU slowed ${RATE}x\n`);
   await p.context().close();
 }
 // Pokémon: lobby to a battle the computer plays for you
-{
+if (!ONLY || ONLY === 'pk') {
   const p = await newPage();
   const t0 = Date.now();
   await p.goto(BASE + '#pokemon'); await p.waitForSelector('.pk-lobby', { timeout: 60000 });
@@ -62,8 +63,21 @@ console.log(`CPU slowed ${RATE}x\n`);
   await stop(p, `pokemon battle (${await turnOf(p)} turns)`, ` · ${((Date.now() - t1) / 1000).toFixed(0)}s`);
   await p.context().close();
 }
+// One Piece: lobby to a battle the computer plays for you
+if (!ONLY || ONLY === 'op') {
+  const p = await newPage();
+  const t0 = Date.now();
+  await p.goto(BASE + '#onepiece'); await p.waitForSelector('.op-lobby', { timeout: 60000 });
+  console.log(`one piece lobby ready in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  await start(p);
+  await p.click('button:has-text("Battle!")'); await p.waitForSelector('.op-board');
+  const t1 = Date.now();
+  await p.waitForFunction(t => +((document.querySelector('.topbar .turninfo b') || {}).textContent || 0) >= t || document.querySelector('.dialog[aria-label="Game over"]'), TURNS, { timeout: 300000, polling: 500 }).catch(() => {});
+  await stop(p, `one piece battle (${await turnOf(p)} turns)`, ` · ${((Date.now() - t1) / 1000).toFixed(0)}s`);
+  await p.context().close();
+}
 // Commander: a 4-player game (the heaviest table) the computer plays for you
-{
+if (!ONLY || ONLY === 'mtg') {
   const p = await newPage({ turns: Math.max(3, TURNS - 2) });
   const t0 = Date.now();
   await p.goto(BASE + '#mtg'); await p.waitForSelector('text=Pick a precon', { timeout: 120000 });
