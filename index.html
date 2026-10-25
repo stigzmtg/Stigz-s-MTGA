@@ -1186,7 +1186,7 @@ kbd { font: 600 calc(12px * var(--s))/1 'Alegreya Sans', sans-serif; padding: 2p
 .flyghost { z-index: 46; pointer-events: none; will-change: transform, opacity; transform-origin: 50% 50%; }
 .flyghost .card, .flyghost.pk-card, .flyghost .pk-card, .flycard { box-shadow: 0 calc(14px * var(--s)) calc(30px * var(--s)) rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.5); }
 .flyghost .rise, .flyghost .pk-float, .flyghost .pk-burst { display: none; }
-.flycard { position: relative; border-radius: 6% / 4.5%; overflow: hidden; display: grid; place-items: center; padding: 8%; text-align: center; background: linear-gradient(160deg, #f6eed3, #d9cba0); color: #2a241a; font: 700 calc(12px * var(--s))/1.15 var(--font-card); }
+.flycard { position: relative; border-radius: 6% / 4.5%; overflow: hidden; display: grid; place-items: center; padding: calc(6px * var(--s)); text-align: center; background: linear-gradient(160deg, #f6eed3, #d9cba0); color: #2a241a; font: 700 calc(12px * var(--s))/1.15 var(--font-card); }
 .flycard img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .flycard.back { padding: 0; background: radial-gradient(ellipse 46% 40% at 50% 50%, #4a6fa3 0%, #2e4f80 38%, #3b2a1c 64%, #2b1e14 100%); border: calc(3px * var(--s)) solid #1a120c; }
 .flycard.back.pk { border: 0; background: radial-gradient(circle at 50% 50%, #3f6fd0 0 20%, #1f3f8d 52%, #0f2457 100%); box-shadow: inset 0 0 0 2px #0b1a3f, 0 calc(14px * var(--s)) calc(30px * var(--s)) rgba(0, 0, 0, 0.55); }
@@ -1706,12 +1706,16 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 .op-handslot:hover, .op-handslot:focus-within, .op-handslot.chosen { transform: translateY(calc(var(--op-hand-w) * -0.45)); z-index: 20; }
 /* touch screens: a tapped card would stay lifted over its neighbours (sticky hover and focus); a tap opens its menu instead */
 @media (hover: none) { .op-handslot:hover, .op-handslot:focus-within { transform: none; z-index: auto; } }
-.op-handslot.playable .op-card { animation: pkhandglow 1.6s ease-in-out infinite; }
+/* glows pulse by opacity only (a layer the GPU fades), so a waiting screen doesn't repaint every frame */
+.op-handslot.playable .op-card { box-shadow: 0 0 0 1.5px rgba(243, 214, 143, 0.6), 0 calc(3px * var(--s)) calc(10px * var(--s)) rgba(0, 0, 0, 0.55); }
+.op-handslot.playable .op-card::after, .op-slot.targetable .op-card::after { content: ""; position: absolute; inset: 0; z-index: 2; border-radius: inherit; pointer-events: none; box-shadow: inset 0 0 0 2px var(--brass-hi), inset 0 0 calc(18px * var(--s)) rgba(243, 214, 143, 0.75); opacity: 0; will-change: opacity; animation: opglow 1.6s ease-in-out infinite; }
+.op-slot.targetable .op-card::after { animation-duration: 1.2s; }
+@keyframes opglow { 50% { opacity: 1; } }
 .op-handslot.chosen .op-card { box-shadow: 0 0 0 calc(3px * var(--s)) var(--danger), 0 0 calc(18px * var(--s)) rgba(234, 109, 82, 0.65); }
 .op-handslot .ctrv { position: absolute; left: 0; right: 0; margin-inline: auto; width: max-content; top: calc(-10px * var(--s)); z-index: 2; font: 900 calc(11px * var(--s))/1 var(--font-ui); padding: calc(3px * var(--s)) calc(6px * var(--s)); border-radius: calc(999px * var(--s)); color: #fff; background: #c4402f; box-shadow: 0 2px calc(6px * var(--s)) rgba(0, 0, 0, 0.6); white-space: nowrap; }
 .op-hand .empty { align-self: center; color: var(--ink-faint); }
 /* states shared by cards in play */
-.op-slot.targetable .op-card { box-shadow: 0 0 0 calc(3px * var(--s)) var(--brass-hi), 0 0 calc(18px * var(--s)) rgba(243, 214, 143, 0.75); animation: pkpulse 1.2s ease-in-out infinite; }
+.op-slot.targetable .op-card { box-shadow: 0 0 0 calc(3px * var(--s)) var(--brass-hi), 0 0 calc(18px * var(--s)) rgba(243, 214, 143, 0.75); }
 .op-slot.selected .op-card { box-shadow: 0 0 0 calc(3px * var(--s)) var(--danger), 0 0 calc(18px * var(--s)) rgba(234, 109, 82, 0.7); }
 .op-slot.can .op-card { box-shadow: 0 0 0 2px rgba(243, 214, 143, 0.75), 0 0 calc(12px * var(--s)) rgba(243, 214, 143, 0.45); }
 .op-slot.attacking .op-card { box-shadow: 0 0 0 calc(3px * var(--s)) #ff7a5c, 0 0 calc(22px * var(--s)) rgba(255, 110, 70, 0.8); }
@@ -1781,7 +1785,43 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 .op-num b { min-width: 2ch; text-align: center; font: 800 calc(20px * var(--s))/1 var(--font-ui); }
 .op-trigtext { margin: 0; font-size: calc(14.5px * var(--s)); line-height: 1.45; }
 .op-log .e.mine { color: var(--ink); }
+.op-log .e { animation: oplogin 0.35s ease-out backwards; }
+@keyframes oplogin { from { opacity: 0; transform: translateY(calc(4px * var(--s))); } }
 .op-acts .btn.primary { min-width: calc(120px * var(--s)); }
+
+/* ---------------------------------------------------------------- motion */
+/* the attack in progress: an arrow from the attacker to its target (dashed and gold while you aim) */
+.op-arrow { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 13; pointer-events: none; overflow: visible; transition: opacity 0.2s; }
+.op-arrow .glow { fill: none; stroke: rgba(255, 112, 64, 0.32); stroke-width: 14; stroke-linecap: round; }
+.op-arrow .line { fill: none; stroke: #ff7a4d; stroke-width: 5; stroke-linecap: round; }
+.op-arrow .head { fill: #ff7a4d; stroke: #3a0f05; stroke-width: 1.5; stroke-linejoin: round; }
+.op-arrow.aim .glow { stroke: rgba(243, 214, 143, 0.22); }
+.op-arrow.aim .line { stroke: var(--brass-hi); stroke-width: 4; stroke-dasharray: 10 9; }
+.op-arrow.aim .head { fill: var(--brass-hi); stroke: #3a2a08; }
+/* power changes floating up from a card */
+.op-float { z-index: 47; pointer-events: none; white-space: nowrap; font: 900 calc(24px * var(--s))/1 var(--font-ui); font-variant-numeric: tabular-nums; color: #ffe2a0; text-shadow: 0 2px calc(6px * var(--s)) rgba(0, 0, 0, 0.85), 0 0 calc(16px * var(--s)) rgba(255, 160, 60, 0.75); will-change: transform, opacity; }
+.op-float.down { color: #c6defd; text-shadow: 0 2px calc(6px * var(--s)) rgba(0, 0, 0, 0.85), 0 0 calc(16px * var(--s)) rgba(90, 150, 255, 0.75); }
+/* a DON!! card flying over the table */
+.op-don-ghost { z-index: 47; pointer-events: none; will-change: transform, opacity; opacity: 1; }
+/* a power badge that changes pops */
+.op-pow { animation: oppop 0.42s cubic-bezier(0.3, 1.5, 0.5, 1); }
+@keyframes oppop { 0% { transform: scale(0.6); } 55% { transform: scale(1.25); } 100% { transform: scale(1); } }
+.op-dons { animation: oppop 0.42s cubic-bezier(0.3, 1.5, 0.5, 1); }
+/* the fight panel slides in; the bar's new question eases in */
+.op-fight { animation: opfightin 0.32s cubic-bezier(0.22, 0.8, 0.25, 1); }
+@keyframes opfightin { from { opacity: 0; transform: translateY(calc(6px * var(--s))) scale(0.94); } }
+.op-prompt .msg { animation: opmsgin 0.3s ease-out; }
+.op-prompt .acts .btn { animation: opmsgin 0.3s ease-out backwards; }
+.op-prompt .acts .btn:nth-child(2) { animation-delay: 40ms; } .op-prompt .acts .btn:nth-child(3) { animation-delay: 80ms; }
+@keyframes opmsgin { from { opacity: 0; transform: translateY(calc(5px * var(--s))); } }
+/* whose turn it is: the side's frame glows in and out */
+.op-side { transition: border-color 0.45s ease, box-shadow 0.45s ease; }
+/* DON!! cards turn smoothly when paid or set active */
+.op-don { transition: transform 0.32s cubic-bezier(0.3, 0.8, 0.3, 1), opacity 0.32s, margin 0.32s; }
+/* the lobby: a newly chosen deck's details and a hovered card's picture fade in */
+.op-chosen-body, .op-list { animation: opmsgin 0.32s ease-out; }
+.op-feature img { animation: opfade 0.22s ease-out; }
+@keyframes opfade { from { opacity: 0.35; } }
 
 /* ================================================================ home: the arena's entrance
    Layout: a slim bar, a title under drifting card art with the arena's numbers, the two games as arched gates
@@ -2092,6 +2132,6 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 <div id="root"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
-<script src="app.js?v=575c2f953a"></script>
+<script src="app.js?v=a2151517a8"></script>
 </body>
 </html>
