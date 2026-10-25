@@ -1,9 +1,10 @@
 # Stigz’s TCG Arena
 
-Two card battle simulators in one site:
+Three card battle simulators in one site:
 
 - **Magic: The Gathering Commander** against AI opponents, or with friends, using any of the **194 preconstructed Commander decks** (Commander 2013 through 2026, including Universes Beyond and Secret Lair precons). 1v1 or up to 4-player free-for-all.
 - **Pokémon TCG battles** against a computer opponent or a friend with **54 of the most-played tournament decks** (Dragapult ex, Charizard ex, Gardevoir ex, Raging Bolt ex, Gholdengo ex, Miraidon ex, Mega Absol Box, Chien-Pao Baxcalibur, Roaring Moon ex, Lost Zone Box, Slowking, N's Zoroark ex, Festival Lead, Alakazam Dusknoir, Hydrapple ex, Dhelmise, Mega Lopunny ex, Crustle, Basic Box, Mega Excadrill ex, Mega Lucario ex, Mega Sharpedo ex, Rocket's Honchkrow, Cynthia's Garchomp ex, Mew Box, Marnie's Grimmsnarl ex, Hop's Trevenant, Beedrill ex, Mega Venusaur ex, Yanmega ex, Steven's Metagross ex, Archaludon ex, Hop's Zacian ex, Regidrago VSTAR, Giratina VSTAR, Joltik Box, Froslass Munkidori, Ceruledge ex, Rocket's Mewtwo ex, Flareon ex, Greninja ex, Mega Starmie ex, Ethan's Typhlosion, Bloodmoon Ursaluna, Pidgeot Control, Okidogi, Toxtricity Box, Ho-Oh Armarouge, Terapagos ex, Conkeldurr, Mega Chandelure ex, Mega Greninja ex, Mega Diancie ex, Iron Thorns ex), card for card from Limitless decklists.
+- **One Piece Card Game battles** against a computer opponent or a friend with **all 36 English starter decks** (ST-01 Straw Hat Crew to ST-36 Yellow Eustass"Captain"Kid, including the Ultra Decks and the color-themed decks), each exactly as it comes in the box: a Leader, 50 cards and 10 DON!!.
 
 **Play it:** https://stigzmtg.github.io/Stigz-s-MTGA/ (GitHub Pages; see [Hosting](#hosting) to put it on a non-GitHub address)
 
@@ -13,12 +14,13 @@ Two card battle simulators in one site:
 - **Engine tests**: `node tools/staples.mjs` (the most-played staples) and `node tools/mechanics.mjs` (behavioural tests of keywords and mechanics, harness in `tools/lib/testkit.mjs`).
 - **AI** (`src/ai/ai.js`): heuristic opponents that sequence lands and spells, pick targets, evaluate attacks and blocks, and answer every in-game choice.
 - **UI** (`src/ui/`): React (loaded from cdnjs) on a felt table. Each player has a mat (battlefield rows, command zone, library/graveyard/exile piles, life and status); the table center shows the stack and recent plays; arrows show targets, attacks and blocks. Cards auto-shrink to fit each mat. Hover a card for full text; click to play; right-click any card or your life total for manual tools (move cards, counters, life, tokens) to fix anything the engine doesn't automate.
-- **Online play** (`src/net/`): rooms for friends. Every browser runs the same deterministic game (same seed, same decks); players exchange only their decisions — each one the answer to an engine prompt, numbered in order — through room presence (`lockstep.js`): on the website, through the site's own relay (`worker/index.js`, a Cloudflare Durable Object per room; `relayroom.js` connects by WebSocket, or by HTTP polling where WebSockets are blocked), so rooms work on school and office Wi-Fi; if no relay can be reached, browsers connect directly over WebRTC ([Trystero](https://github.com/dmotz/trystero), `p2proom.js`); inside claude.ai, the artifact's room capability. The host's browser also decides for AI seats and can let the AI take over a player who left. Everyone keeps the full decision log in local storage, so a reload replays the game and rejoins; late spectators catch up from history served by the host. `roomclient.js` handles seats, decks and the host's config (the host keeps a copy, so it can reload and pick its room back up). Commander and Pokémon rooms use the same layer; Pokémon room links look like `#pk-abc123`.
+- **Online play** (`src/net/`): rooms for friends. Every browser runs the same deterministic game (same seed, same decks); players exchange only their decisions — each one the answer to an engine prompt, numbered in order — through room presence (`lockstep.js`): on the website, through the site's own relay (`worker/index.js`, a Cloudflare Durable Object per room; `relayroom.js` connects by WebSocket, or by HTTP polling where WebSockets are blocked), so rooms work on school and office Wi-Fi; if no relay can be reached, browsers connect directly over WebRTC ([Trystero](https://github.com/dmotz/trystero), `p2proom.js`); inside claude.ai, the artifact's room capability. The host's browser also decides for AI seats and can let the AI take over a player who left. Everyone keeps the full decision log in local storage, so a reload replays the game and rejoins; late spectators catch up from history served by the host. `roomclient.js` handles seats, decks and the host's config (the host keeps a copy, so it can reload and pick its room back up). Commander, Pokémon and One Piece rooms use the same layer; Pokémon room links look like `#pk-abc123` and One Piece ones like `#op-abc123`.
 - **Deck builder and AI deck helper** (`src/ui/builder.jsx`, `deckai.js`, `deckhelper.jsx`): build your own Commander decks from the scripted cards. The helper is a chat that runs in the page (no server or account): it reads every card's rules text for the job it does (ramp, card draw, removal, board wipes, counterspells, tutors, protection, recursion) and the plans it belongs to (tokens, +1/+1 counters, graveyard, spells, artifacts, enchantments, lifegain, sacrifice, landfall, attacking, flying, Equipment/Auras, big creatures, creature types), reads the commander the same way, and scores every card in its colors by fit with the plan, the jobs the deck is short on, how many precons play it and its cost. It finds commanders for what you like ("dragons", "golgari graveyard"), builds or finishes a deck (lands and basics included, with undo), reviews it, suggests cards for one job or plan, picks cuts and swaps in cheaper cards.
 - **Avatars** (`src/ui/avatar.jsx`): in friends' rooms everyone is a little animal with a human body (10 animals, outfits, colors, hats, extras, backgrounds), drawn as SVG from a short code that travels in room presence and seats.
 - **Sleeves and deck boxes** (`src/ui/deckstyle.jsx`): each deck can have its own card sleeves (the backs of your cards at the table) and deck box (shown in the lobby and in friends' rooms), drawn as SVG from short codes saved per deck and carried in room presence.
 - **AI pacing** (`src/ui/pacing.js`): computer players think before each play, drop lands and tap them one at a time, and pause before attacks and blocks, at a tempo set by the AI speed setting. Headless games run with no delays.
 - **Pokémon TCG** (`src/ptcg/`): its own rules engine (`game.js`: setup and mulligans, the once-per-turn actions, evolution and Rare Candy, retreat, Weakness and Resistance, special conditions and the Pokémon Checkup, Knock Outs and Prizes including ex and Mega Evolution ex, the win conditions), every card's attacks, Abilities and Trainers (`cards.js`), a computer opponent (`ai.js`) and the battle screen (`ui/`). Card text and pictures from [TCGdex](https://tcgdex.dev), decklists from [Limitless](https://limitlesstcg.com).
+- **One Piece Card Game** (`src/optcg/`): its own rules engine (`game.js`, by the Comprehensive Rules v1.2.1: the coin flip, mulligan and Life setup, Refresh/Draw/DON!!/Main/End phases, DON!! paying costs and given to cards, attacks with the Block and Counter steps, [Trigger]s on Life cards, Rush, Blocker, Double Attack, Banish, rested Characters, the 5-Character limit and the win conditions; no battles on either player's first turn). Card effects are compiled from each card's printed text (`text.js`, with a few overrides in `cards.js`), so every [On Play], [When Attacking], [Activate: Main], [DON!! xN], [Counter] and [Trigger] works; an effect the compiler can't read never stops a game. A computer opponent (`ai.js`), the battle screen (`ui/`) and the engine's interface for the table (`API.md`). Card text from the official English card list, decklists checked against several published lists (see [One Piece data](#one-piece-data)).
 - **Symbols**: mana and card-type symbols from [mana-font](https://github.com/andrewgioia/mana) (MIT) and set symbols from [Keyrune](https://github.com/andrewgioia/keyrune) (font OFL-1.1), subsetted and inlined by `tools/build-symbols.mjs`.
 - **Data** (`data/`): decklists from [taw/magic-preconstructed-decks](https://github.com/taw/magic-preconstructed-decks), card scripts from Forge. `support.json` lists the cards that use a mechanic the engine doesn't implement (one left, Cruel Entertainment, which would need one player to make another's decisions for a turn); such cards show a `!` badge in game.
 
@@ -52,6 +54,7 @@ NODE_USE_ENV_PROXY=1 node tools/optcg/fetch-cards.mjs <cache>    # official card
 node tools/optcg/build-data.mjs <cache> [--diffs]                # → data/optcg/{cards,decks,sources}.json (--diffs: where optcgapi's text differs)
 NODE_USE_ENV_PROXY=1 node tools/optcg/fetch-images.mjs <cache>   # → docs/img/optcg-*.avif (and dist/img/) + data/optcg/images.json
 node tools/optcg/check-data.mjs                                  # every deck is 1 Leader + 50 cards, ≤4 copies, in the Leader's colors, fully defined and pictured
+node tools/optcg/pack-thumbs.mjs                                 # → img/optcg-thumbs.avif: Leaders and featured cards at 240px for the menus (fetch-images.mjs runs it)
 ```
 
 The official card pictures carry a "SAMPLE" watermark, and so do most of TCGplayer's. `fetch-images.mjs` uses a TCGplayer scan when it finds one with no watermark and the same art. Otherwise it uses the official picture. Its choices are kept in `tools/optcg/tcg-ids.json`. Deck blurbs live in `tools/optcg/blurbs.mjs`.
@@ -88,7 +91,7 @@ node tools/mptest.mjs out/ 8     # online play in real browsers: create a room, 
 P2P=1 node tools/mptest.mjs out/ 8   # the same over the website's real peer-to-peer rooms (needs internet)
 ```
 
-Readability and smoothness (both games):
+Readability and smoothness (all games):
 
 ```sh
 node tools/textaudit.mjs out/        # every visible text: size, contrast against what is drawn behind it, blur-prone transforms
@@ -106,6 +109,18 @@ node tools/ptcg/uitest.mjs out/ 14   # click through a battle in headless Chromi
 node tools/ptcg/nettest.mjs 6        # battles with a friend, headless: every peer identical after a reload, a late watcher, an AI takeover (TAKEOVER=1)
 node tools/ptcg/mptest.mjs out/ 8    # the same in real browsers: invite link, seats, battle, reload, watcher, end and restart (P2P=1 for real rooms)
 node tools/ptcg/shot.mjs out/ 6      # screenshots: home, lobby, battle
+```
+
+One Piece side:
+
+```sh
+node tools/optcg/rules.mjs              # rules tests: phases, DON!!, battles, Counters, Triggers, keywords and the tricky cards
+node tools/optcg/coverage.mjs           # every card's text compiles to effects (fails on anything the compiler can't read)
+node tools/optcg/sim.mjs 40             # headless computer-vs-computer games (--deck=st01 --opp=st02, --log)
+node tools/optcg/invariants.mjs 6       # every pairing of decks, checking the game state after every action (--chaos: random clicks, --odd, --busy, --selftest)
+node tools/optcg/nettest.mjs 4          # battles with a friend, headless: peers identical after a reload, a late watcher (CHAOS=1, TAKEOVER=1)
+DECK=st01 OPP=st02 node tools/optcg/uitest.mjs out/ 12   # click through a battle like a person (MOBILE=1 on a touch phone, REPLAY=1 checks the replay, SHOTS=dir screenshots every kind of question)
+node tools/optcg/mptest.mjs out/ 8      # in real browsers: invite link, seats, battle, reload, watcher, end and restart
 ```
 
 ## Hosting
