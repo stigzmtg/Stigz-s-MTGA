@@ -166,6 +166,8 @@
 .op-handslot { position: relative; flex: 0 1 var(--op-hand-w); width: min(var(--op-hand-w), calc((100% - 16px) / var(--n))); min-width: 22px; transition: transform 0.16s ease-out; }
 .op-handslot .op-card { width: var(--op-hand-w); cursor: pointer; }
 .op-handslot:hover, .op-handslot:focus-within, .op-handslot.chosen { transform: translateY(calc(var(--op-hand-w) * -0.45)); z-index: 20; }
+/* touch screens: a tapped card would stay lifted over its neighbours (sticky hover and focus); a tap opens its menu instead */
+@media (hover: none) { .op-handslot:hover, .op-handslot:focus-within { transform: none; z-index: auto; } }
 .op-handslot.playable .op-card { animation: pkhandglow 1.6s ease-in-out infinite; }
 .op-handslot.chosen .op-card { box-shadow: 0 0 0 3px var(--danger), 0 0 18px rgba(234, 109, 82, 0.65); }
 .op-handslot .ctrv { position: absolute; left: 0; right: 0; margin-inline: auto; width: max-content; top: -10px; z-index: 2; font: 900 11px/1 var(--font-ui); padding: 3px 6px; border-radius: 999px; color: #fff; background: #c4402f; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6); white-space: nowrap; }
