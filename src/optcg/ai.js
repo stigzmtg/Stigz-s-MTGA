@@ -197,7 +197,7 @@ export class OnePieceAI {
     const mine = c => c.owner === pid;
     const byVal = (list, dir = -1) => [...list].sort((a, b) => dir * (this.value(g, a) - this.value(g, b)));
     if (req.from === 'field') {
-      if (['ko', 'rest', 'debuff', 'cost-down', 'bounce', 'bottom', 'to-life', 'select-opp'].includes(hint) || /opp/.test(hint)) {
+      if (['ko', 'rest', 'debuff', 'cost-down', 'bounce', 'bottom', 'to-life', 'select-opp', 'freeze', 'trash-char'].includes(hint) || /opp/.test(hint)) {
         const theirs = byVal(opts.filter(c => !mine(c)));
         // for "rest", only active ones matter; for debuffs, the Characters that fight
         const list = hint === 'rest' ? [...theirs.filter(c => !c.rested), ...theirs.filter(c => c.rested)] : theirs;
@@ -207,6 +207,8 @@ export class OnePieceAI {
         return req.min ? pickN(byVal(opts, 1), req.min) : [];
       }
       if (['trash-for-room', 'rest-cost', 'bounce-cost', 'don-unattach'].includes(hint)) return pickN(byVal(opts.filter(mine), 1), req.min || 1);
+      // "return any number of your Characters": keep the board
+      if (hint === 'bounce-own') return [];
       if (hint === 'set-active') return pickN(byVal(opts.filter(c => mine(c) && c.rested)), n);
       // our own cards that get something: the ones about to attack
       const own = opts.filter(mine).sort((a, b) => (g.attackTargets(b).length - g.attackTargets(a).length) * 10 + (g.power(b) - g.power(a)) / 1000);
@@ -215,6 +217,13 @@ export class OnePieceAI {
     }
     // face-down cards from the opponent's hand: no information to go on
     if (req.from === 'opp-hand') return pickN(opts, req.min || 1);
+    // "trash any number of {Music} cards: +1000 power this battle for each": just enough to survive the attack
+    if (hint === 'discard-any') {
+      const b = g.battle;
+      if (!b) return [];
+      const need = g.power(g.cardByUid(b.attacker)) - g.power(g.cardByUid(b.target)) + 1;
+      return need > 0 && need <= opts.length * 1000 ? byVal(opts, 1).slice(0, Math.ceil(need / 1000)).map(c => c.uid) : [];
+    }
     if (hint === 'discard' || hint === 'topdeck' || hint === 'to-life' || hint === 'recycle') return pickN(byVal(opts, 1), req.min || 1);
     if (hint === 'keep-top') return opts.filter(c => isChar(c) && this.value(g, c) > 5).slice(0, req.max).map(c => c.uid);
     if (hint === 'play') {

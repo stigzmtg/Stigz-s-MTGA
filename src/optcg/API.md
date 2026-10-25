@@ -128,16 +128,18 @@ The coin-flip winner gets an `option` request with `hint: 'first'` and the value
 
 ### Hints
 
-- `cards`: 'take' (to the hand), 'discard', 'discard-opp', 'play', 'reveal', 'topdeck', 'recycle', 'to-life', 'keep-top', and for
-  `from: 'field'` 'ko', 'rest', 'buff', 'debuff', 'cost-up', 'cost-down', 'bounce', 'bottom', 'grant', 'give-don',
-  'set-active', 'select', 'trash-for-room', 'rest-cost', 'bounce-cost', 'don-unattach'
+- `cards`: 'take' (to the hand), 'discard', 'discard-opp', 'discard-any' (any number, maybe none), 'play', 'reveal',
+  'topdeck', 'recycle', 'to-life', 'keep-top', and for `from: 'field'` 'ko', 'rest', 'buff', 'debuff', 'cost-up',
+  'cost-down', 'bounce', 'bottom', 'grant', 'give-don', 'set-active', 'select', 'freeze' (stays rested in the next
+  Refresh Phase), 'trash-char' (trashed, not K.O.'d), 'bounce-own' (any number of your own Characters to your hand),
+  'trash-for-room', 'rest-cost', 'bounce-cost', 'don-unattach'
 - `option`: 'first', 'don-return' (which DON!! card goes back for a DON!! −X), 'life-end' (top or bottom Life card),
   'life-whose', 'choose-one', 'order-effects' (which of several simultaneous effects resolves first)
 - `number`: 'don-n' (how many DON!! cards), 'don-return-n'
 - `order`: 'order-top', 'order-bottom', 'order-life'
 - `confirm`: 'pay-cost' ("You may ..." costs of effects that activate on their own, including ① and DON!! −X, whose
   printed reminder says "You may"; the request also carries `card` and `ability`, the effect's card uid and index),
-  'may', 'replace' ("instead" effects)
+  'may' (with `card` when it is about one card, e.g. "you may play that card"), 'replace' ("instead" effects)
 - 'main', 'block', 'counter', 'trigger', 'mulligan' for those types
 
 ## Events
