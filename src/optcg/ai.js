@@ -268,12 +268,25 @@ export class OnePieceAI {
       case 'don-return': return (opts.find(o => o.value === 'rested') || opts.find(o => o.value === 'active') || opts[0]).value;
       case 'life-end': return opts[0].value;
       case 'life-whose': return opts[0].value;
+      // pay with a spare DON!! card, else rest the Leader
+      case 'rest-leader-or-don': return (g.players[pid].donActive >= 2 && opts.find(o => o.value === 'don')) ? 'don' : opts[0].value;
       // rest an opponent's Character (the best one) rather than a DON!! card
       case 'rest-don-or-char': { const chars = opts.filter(o => typeof o.value === 'number').map(o => g.cardByUid(o.value)).sort((a, b) => this.value(g, b) - this.value(g, a)); return chars.length ? chars[0].uid : (opts.find(o => o.value === 'don') || opts[0]).value; }
       default: return opts[0].value;
     }
   }
-  number(g, pid, req) { return req.hint === 'don-return-n' ? req.min : req.max; }
+  number(g, pid, req) {
+    if (req.hint === 'don-return-n') return req.min;
+    // "Choose a cost and reveal the top card of your opponent's deck": the commonest cost among the opponent's cards
+    // the player has seen (their trash and field), else 4
+    if (req.hint === 'choose-cost') {
+      const o = g.players[g.opp(pid)], tally = {};
+      for (const c of [...o.trash, ...o.characters]) { const k = c.def.cost || 0; tally[k] = (tally[k] || 0) + 1; }
+      const best = Object.entries(tally).sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+      return Math.max(req.min, Math.min(req.max, best ? +best[0] : 4));
+    }
+    return req.max;
+  }
   blocker(g, pid, req) {
     const at = g.cardByUid(req.attacker), tg = g.cardByUid(req.target);
     const me = g.players[pid];
