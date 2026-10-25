@@ -108,17 +108,17 @@ function DonArea({ p, pick, onPick }) {
       <span className="label">DON!!</span>
       {Array.from({ length: act }, (_, i) => <span key={'a' + i} className={`op-don ${pick ? 'pick' : ''}`} onClick={pick ? onPick : undefined} role={pick ? 'button' : undefined} aria-label={pick ? 'Give a DON!! card' : undefined} />)}
       {Array.from({ length: rest }, (_, i) => <span key={'r' + i} className="op-don rested" />)}
-      {!act && !rest ? <span className="note">none yet</span> : null}
+      {!act && !rest ? <span className="note">none yet</span> : <span className="cnt"><b>{act}</b> active{rest ? <><br /><b>{rest}</b> rested</> : null}</span>}
     </div>
   );
 }
 
-function Life({ p, sleeve }) {
+function Life({ p, sleeve, setup }) {
   const n = p.life.length;
   return (
-    <div className={`op-life ${n <= 1 ? 'low' : ''}`} data-pile={`${p.id}:life`} title={`${n} Life card${n === 1 ? '' : 's'} left`}>
+    <div className={`op-life ${n <= 1 && !setup ? 'low' : ''}`} data-pile={`${p.id}:life`} title={setup && !n ? 'Life cards are dealt once both hands are kept' : `${n} Life card${n === 1 ? '' : 's'} left`}>
       <div className="stack" style={{ '--n': Math.max(n, 1) }}>{p.life.map((c, i) => <div key={c.uid} style={{ '--i': i, zIndex: 10 - i }}>{c.faceUp ? <OpCard card={c} fly={c.uid} /> : <CardBack sleeve={sleeve} fly={c.uid} />}</div>)}</div>
-      <div className="cap"><b>{n}</b>Life</div>
+      <div className="cap"><b>{setup && !n ? '–' : n}</b>Life</div>
     </div>
   );
 }
@@ -482,13 +482,13 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
     );
     const ld = p.leader ? p.leader.def : null;
     return (
-      <section className={`op-side ${bottom ? 'me' : 'opp'} ${game.current === p.id && !game.over ? 'turn' : ''}`} aria-label={`${!watching && p.id === me ? 'Your' : `${p.name}'s`} side`}
+      <section className={`op-side ${bottom ? 'me' : 'opp'} ${game.current === p.id && !game.over && game.turn ? 'turn' : ''}`} aria-label={`${!watching && p.id === me ? 'Your' : `${p.name}'s`} side`}
         style={ld ? { '--c1': COLOR_HEX[ld.colors[0]], '--c2': COLOR_HEX[ld.colors[1] || ld.colors[0]] } : undefined}>
         <div className="op-plate">
           <EmoteBubble b={emotes.bubbles.get(p.id)} />
-          <div className="who">{avatarOf(p.id) ? <AnimalAvatar code={avatarOf(p.id)} size={34} /> : null}<b title={p.name}>{p.name}</b>{game.current === p.id && !game.over ? <span className="turnmark">turn</span> : null}</div>
+          <div className="who">{avatarOf(p.id) ? <AnimalAvatar code={avatarOf(p.id)} size={34} /> : null}<b title={p.name}>{p.name}</b>{game.current === p.id && !game.over && game.turn ? <span className="turnmark">turn</span> : null}</div>
           {p.deckName && p.deckName !== p.name ? <div className="deck">{p.deckName}</div> : null}
-          <Life p={p} sleeve={sleeves[p.id]} />
+          <Life p={p} sleeve={sleeves[p.id]} setup={!game.turn} />
         </div>
         <div className="op-field">{front}{back}</div>
         <Piles p={p} onOpen={z => setZone({ p, z })} sleeve={sleeves[p.id]} hand={!bottom} />
@@ -554,7 +554,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
       <header className="topbar">
         <button className="brand linklike" onClick={onExit} title="Leave the battle">Stigz’s<span className="brand-rest"> TCG Arena</span></button>
         <span className="chip op-chip">One Piece</span>
-        <span className="turninfo">Turn <b>{game.turn}</b> · <b>{game.players[game.current].name}</b></span>
+        <span className="turninfo">{game.turn ? <>Turn <b>{game.turn}</b> · <b>{game.players[game.current].name}</b></> : <b>Getting ready</b>}</span>
         {online ? <RoomStatus session={session} /> : null}
         {replay ? <ReplayBar ctl={replay} /> : null}
         <span className="spacer" />
