@@ -30,7 +30,7 @@ async function newPlayer(label, deck) {
   }
   await ctx.addInitScript(([t, d]) => {
     window.__opAutoplay = t;
-    try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'fast' })); localStorage.setItem('pa-tips', JSON.stringify({ op: { off: true } })); if (!localStorage.getItem('op-lobby')) localStorage.setItem('op-lobby', JSON.stringify({ mine: d, opp: 'random' })); } catch {}
+    try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'fast' })); localStorage.setItem('pa-tips', JSON.stringify({ op: { off: true } })); if (!localStorage.getItem('op-lobby')) { const [m, l] = d.split('@'); localStorage.setItem('op-lobby', JSON.stringify({ mine: m, opp: 'random', leads: l ? { [m]: l } : {} })); } } catch {}
   }, [TURNS, deck]);
   const page = await ctx.newPage();
   page.label = label;
@@ -82,8 +82,10 @@ async function playUntil(players, target, ms = 240000) {
   return ts;
 }
 
+const guestDeck = (process.env.GUEST_DECK || 'st02').split('@')[0];
+const guestCode = guestDeck.replace(/^st/, 'ST-');
 const host = await newPlayer('host', 'st01');
-const guest = await newPlayer('guest', 'st02');
+const guest = await newPlayer('guest', process.env.GUEST_DECK || 'st02');
 await host.goto(BASE + '#onepiece');
 await host.waitForSelector('.op-decks', { timeout: 60000 });
 await host.click('.modeswitch button:has-text("Play with friends")');
@@ -106,7 +108,7 @@ await guest.click('button:has-text("Join")');
 await guest.waitForSelector('button:has-text("Sit here")', { timeout: 30000 });
 await guest.click('button:has-text("Sit here")');
 await host.waitForSelector('.seat-row:has-text("Gus")', { timeout: 30000 });
-await host.waitForSelector('.seat-row:has-text("ST-02")', { timeout: 30000 });
+await host.waitForSelector(`.seat-row:has-text("${guestCode}")`, { timeout: 30000 });
 await guest.screenshot({ path: `${OUT}/2-guest-room.png` });
 await host.waitForSelector('button:has-text("Start battle"):not([disabled])', { timeout: 30000 });
 await host.click('button:has-text("Start battle")');
@@ -123,7 +125,8 @@ console.log('host view ', JSON.stringify(sa));
 console.log('guest view', JSON.stringify(sb));
 check(JSON.stringify(sa) === JSON.stringify(sb), 'host and guest boards match');
 const deckNames = await host.evaluate(async () => { const r = await fetch('data/optcg/decks.json'); const d = await r.json(); return Object.fromEntries(d.map(x => [x.id, x.name])); });
-check(sa.length === 2 && sa.some(s => s.name === 'Gus' && s.deck === deckNames.st02) && sa.some(s => s.name === 'Hana' && s.deck === deckNames.st01), 'each player brought their own deck');
+check(sa.length === 2 && sa.some(s => s.name === 'Gus' && s.deck === deckNames[guestDeck]) && sa.some(s => s.name === 'Hana' && s.deck === deckNames.st01), 'each player brought their own deck');
+if (process.env.GUEST_LEADER) check(sa.some(s => s.name === 'Gus' && s.leader.startsWith(process.env.GUEST_LEADER)), `the guest leads with ${process.env.GUEST_LEADER} on both screens`);
 
 // the guest reloads with the invite link (its name is remembered: straight back in), a third person watches
 const LATER = TURNS + 4;

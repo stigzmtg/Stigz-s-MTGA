@@ -12,9 +12,10 @@ export function HowToPlayOp({ onClose }) {
         <section><h3>Your turn</h3><p>Your cards stand up, you draw a card (not on the very first turn) and get your DON!!. Then play cards and attack in any order. Up to 5 Characters can be in play. Neither player can attack on their own first turn.</p></section>
         <section><h3>Attacking</h3><p>Rest your Leader or a Character to attack the opponent's Leader or one of their rested Characters. A new Character must wait a turn before it attacks, unless it has [Rush]. If the attacker's power is at least the defender's, the Leader loses a Life card or the Character is K.O.'d.</p></section>
         <section><h3>Defending</h3><p>When you're attacked, you may rest a [Blocker] to take the hit instead. Then you may play Counter cards: trash cards from your hand for the +1000 or +2000 printed on their side, or play [Counter] Events. A Life card with a [Trigger] can be used for free when it's taken.</p></section>
+        <section><h3>Reading cards</h3><p>Point at a keyword in a card's text, like [Blocker] or [On Play], or tap it, to see what it does. The Ultra Decks (ST-10 and ST-13) come with three Leaders: pick the one you want in the lobby.</p></section>
         <section><h3>Playing a friend</h3><p>Pick your deck, choose <b>Play with friends</b>, make a room and send your friend the invite link. They pick their own deck and take the second seat, then you start the battle. Anyone else who opens the link can watch.</p></section>
       </div>
-      <div className="row"><button className="btn ghost" onClick={() => { resetTips('op'); onClose(); }}>Show tips again</button><button className="btn primary" onClick={onClose}>Got it</button></div>
+      <div className="row"><button className="btn ghost" onClick={() => { resetTips('op'); try { localStorage.removeItem('op-end-check'); } catch { /* storage unavailable */ } onClose(); }}>Show tips again</button><button className="btn primary" onClick={onClose}>Got it</button></div>
     </Modal>
   );
 }

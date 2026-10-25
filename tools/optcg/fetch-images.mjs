@@ -196,6 +196,8 @@ console.log(`${ids.length - official.length} clean TCGplayer scans, ${official.l
 // ---- pack: each deck's cards in deck order (Leader first), so a game loads few packs ---------------------------
 const order = [];
 for (const d of decks) for (const id of [d.leader, ...d.cards.map(([id]) => id)]) if (!order.includes(id)) order.push(id);
+// the Ultra Decks' other Leaders go last, so adding them leaves the earlier packs as they were
+for (const d of decks) for (const id of d.leaders || []) if (!order.includes(id)) order.push(id);
 const index = { v: 1, type: 'image/avif', packs: [], cards: {} };
 const outDirs = ['dist/img', 'docs/img'];
 for (const o of outDirs) { fs.mkdirSync(o, { recursive: true }); for (const f of fs.readdirSync(o)) if (/^optcg-\d+\.avif$/.test(f)) fs.rmSync(path.join(o, f)); }

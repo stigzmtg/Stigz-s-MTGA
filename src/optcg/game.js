@@ -1538,6 +1538,13 @@ export class OnePieceGame {
       }
       case 'trashLife': {
         const q = s.who === 'opp' ? o : p;
+        // "Trash all your face-up Life cards" (ST13-002)
+        if (s.all) {
+          const gone = q.life.filter(c => !s.faceUp || c.faceUp);
+          for (const c of gone) { this.moveCard(c, 'trash'); this.event('trash', { pid: q.id, card: c.uid, from: 'life' }); }
+          if (gone.length) this.log(`${q.name} trashes ${gone.map(c => c.name).join(', ')} from their Life.`, { pid });
+          return;
+        }
         const n = Math.min(this.amount(s.n, ctx), q.life.length);
         for (let k = 0; k < n; k++) {
           const c = await this.pickLife(q.id, s.where || 'top', 'Trash which Life card?');

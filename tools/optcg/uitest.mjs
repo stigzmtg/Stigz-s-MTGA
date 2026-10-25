@@ -1,7 +1,7 @@
 // Play a One Piece battle through the screen like a person: answer the opening questions, play cards, give DON!!,
 // attack, block and Counter when attacked, use Triggers, end turns. Fails on any page error or if the game stops moving.
 // Usage: node tools/optcg/uitest.mjs [out dir] [turns=12] [width=1440] [height=900]   (serve dist/ on :8765 first)
-// DECK=st01 OPP=st02 pick the decks. MOBILE=1 plays on a touch screen (taps open menus). REPLAY=1 also checks the replay.
+// DECK=st01 OPP=st02 pick the decks (st13@ST13-001: an Ultra Deck with another of its Leaders). MOBILE=1 plays on a touch screen (taps open menus). REPLAY=1 also checks the replay.
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 const [out = '/tmp/opui', turns = '12', w = '1440', h = '900'] = process.argv.slice(2);
@@ -11,7 +11,7 @@ const page = await browser.newPage({ viewport: { width: +w, height: +h }, ...(pr
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|ERR_TUNNEL/.test(m.text())) errors.push(m.text()); });
-await page.addInitScript(([deck, opp]) => { try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'instant' })); localStorage.setItem('pa-tips', JSON.stringify({ op: { off: true } })); localStorage.setItem('op-lobby', JSON.stringify({ mine: deck, opp })); } catch {} }, [process.env.DECK || 'st01', process.env.OPP || 'random']);
+await page.addInitScript(([deck, opp]) => { try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'instant' })); localStorage.setItem('pa-tips', JSON.stringify({ op: { off: true } })); const [m, l] = deck.split('@'); localStorage.setItem('op-lobby', JSON.stringify({ mine: m, opp, leads: l ? { [m]: l } : {} })); } catch {} }, [process.env.DECK || 'st01', process.env.OPP || 'random']);
 await page.goto('http://localhost:8765/#onepiece');
 await page.waitForSelector('.op-decks');
 await page.click('button:has-text("Battle!")');

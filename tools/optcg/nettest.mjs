@@ -8,13 +8,13 @@ import { OnePieceAI } from '../../src/optcg/ai.js';
 import { Lockstep, LocalSeatAgent, RemoteSeatAgent } from '../../src/net/lockstep.js';
 import { MockHub } from '../lib/mockroom.mjs';
 import { ChaosAgent } from './chaos.mjs';
-import { loadDb, loadDecks } from './lib.mjs';
+import { loadDb, loadPlayableDecks } from './lib.mjs';
 
 const args = process.argv.slice(2);
 const flags = Object.fromEntries(args.filter(a => a.startsWith('--')).map(a => { const [k, v] = a.slice(2).split('='); return [k, v ?? true]; }));
 const [G = 4, SEED = 1] = args.filter(a => !a.startsWith('--')).map(Number);
 const db = loadDb();
-let decks = loadDecks();
+let decks = loadPlayableDecks();
 if (flags.decks) decks = decks.filter(d => flags.decks.split(',').includes(d.id));
 const byId = Object.fromEntries(decks.map(d => [d.id, d]));
 const memStore = () => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, v) }; };

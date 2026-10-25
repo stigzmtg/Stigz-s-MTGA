@@ -1058,6 +1058,18 @@ test('ST13-003 Luffy (Leader): face-up Life cards go to the bottom of the deck i
   await T2.activate(T2.A.leader, 1);
   expect(T2.A.life.length === 2 && T2.A.life.every(c => c.faceUp) && T2.A.life.includes(a) && T2.A.life.includes(s), '2 face-up Life cards');
 });
+test('ST13-002 Ace (Leader): [Activate: Main] look at 5, put a cost-5 Character on top of Life face-up, the rest to the bottom; [End of Your Turn] trash all face-up Life cards', async () => {
+  const T = setup({ leaders: ['ST13-002', 'ST01-001'] });
+  const life = [...T.life(0, [FILLER, FILLER])];
+  const top = T.deckTop(0, [FILLER, 'ST13-008', FILLER, FILLER, FILLER]);
+  T.don(0, 2); await T.give(T.A.leader, 2);
+  T.a.on('life', req => { expect(req.options.length === 1 && req.options[0] === top[1].uid, 'only the cost-5 Character can be picked'); return req.options; });
+  await T.activate(T.A.leader, 0);
+  expect(T.A.life.length === 3 && T.A.life[0] === top[1] && top[1].faceUp && life.every(c => !c.faceUp), 'Sabo is the top Life card, face-up');
+  expect([top[0], top[2], top[3], top[4]].every(c => T.A.deck.slice(-4).includes(c)), 'the other 4 at the bottom of the deck');
+  await T.g.endPhase(0);
+  expect(T.A.life.length === 2 && T.A.trash.includes(top[1]) && life.every(c => T.A.life.includes(c)), 'end of turn: the face-up Life card is trashed, the face-down ones stay');
+});
 test('ST13-004 Newgate: add a deck card to Life, then look at all Life cards: 1 to the top of the deck, the rest back in any order', async () => {
   const T = setup();
   const l = [...T.life(0, ['ST01-012', FILLER])];

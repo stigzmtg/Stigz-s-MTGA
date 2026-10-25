@@ -62,7 +62,16 @@ let prev = '';
 for (const d of decks) {
   const where = `deck ${d.code || d.id}`;
   for (const f of DECK_FIELDS) if (!(f in d)) err(`${where}: missing field ${f}`);
-  for (const f of Object.keys(d)) if (!DECK_FIELDS.includes(f)) err(`${where}: unexpected field ${f}`);
+  for (const f of Object.keys(d)) if (!DECK_FIELDS.includes(f) && f !== 'leaders') err(`${where}: unexpected field ${f}`);
+  // an Ultra Deck's other Leaders: each one a Leader whose colors allow every one of the 50 cards
+  if (d.leaders) {
+    if (!Array.isArray(d.leaders) || d.leaders[0] !== d.leader || new Set(d.leaders).size !== d.leaders.length) err(`${where}: leaders ${JSON.stringify(d.leaders)} must start with the Leader, no repeats`);
+    for (const id of d.leaders.slice(1)) {
+      const L = cards[id];
+      if (!L || L.cat !== 'L') { err(`${where}: other Leader ${id} is not a Leader in cards.json`); continue; }
+      for (const [cid] of d.cards) if (cards[cid] && !cards[cid].colors.every(x => L.colors.includes(x))) err(`${where}: ${cid} is not in ${id}'s colors ${L.colors.join('/')}`);
+    }
+  }
   if (!/^ST-\d{2}$/.test(d.code) || d.id !== d.code.replace('-', '').toLowerCase()) err(`${where}: id ${d.id} / code ${d.code}`);
   if (used.has(d.id)) err(`${where}: duplicate deck id`);
   used.add(d.id);
@@ -101,7 +110,7 @@ for (const d of decks) {
 }
 
 // ---- every card a deck uses is defined, and every card defined is used and pictured ------------------------
-const inDecks = new Set(decks.flatMap(d => [d.leader, ...d.cards.map(([id]) => id)]));
+const inDecks = new Set(decks.flatMap(d => [d.leader, ...(d.leaders || []), ...d.cards.map(([id]) => id)]));
 for (const id of Object.keys(cards)) if (!inDecks.has(id)) err(`card ${id} is in cards.json but in no deck`);
 if (images) {
   for (const id of inDecks) if (!images.cards[id]) err(`card ${id} has no picture in images.json`);

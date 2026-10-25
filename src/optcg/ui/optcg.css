@@ -286,3 +286,21 @@
 .op-chosen-body, .op-list { animation: opmsgin 0.32s ease-out; }
 .op-feature img { animation: opfade 0.22s ease-out; }
 @keyframes opfade { from { opacity: 0.35; } }
+/* an Ultra Deck's Leader picker */
+.op-leaderpick { display: grid; gap: 6px; }
+.op-leaderpick .opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.op-leaderpick button { display: grid; justify-items: center; gap: 4px; padding: 6px 4px 7px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); color: var(--ink-dim); font: 700 12px/1.15 var(--font-ui); cursor: pointer; transition: border-color 0.15s, background 0.15s, transform 0.15s; min-width: 0; }
+.op-leaderpick button:hover { border-color: var(--line-strong); color: var(--ink); transform: translateY(-1px); }
+.op-leaderpick button.on { border-color: var(--brass-hi); background: rgba(243, 214, 143, 0.12); color: var(--ink); box-shadow: 0 0 0 1px var(--brass-hi), 0 0 14px rgba(243, 214, 143, 0.25); }
+.op-leaderpick .pic { width: 46px; aspect-ratio: 63 / 88; border-radius: 4px; overflow: hidden; background: rgba(0, 0, 0, 0.3); }
+.op-leaderpick .pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.op-leaderpick .nm { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* "Don't ask again" in the end-turn check: a quiet link-style button */
+.op-prompt .btn.link { background: none; border-color: transparent; box-shadow: none; color: var(--ink-dim); text-decoration: underline; text-underline-offset: 3px; padding-inline: 6px; }
+.op-prompt .btn.link:hover { color: var(--ink); }
+/* keyword help: a keyword you can point at or tap, and its tooltip */
+.kw.has-tip { cursor: help; text-decoration: underline dotted rgba(255, 255, 255, 0.55); text-underline-offset: 2px; }
+.kw.has-tip:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 1px; }
+.kw.cost { padding: 0 3px; border-radius: 4px; background: rgba(243, 214, 143, 0.14); color: var(--ink); font-weight: 700; }
+.op-kwtip { position: fixed; z-index: 90; pointer-events: none; display: grid; gap: 3px; padding: 9px 12px; border-radius: 10px; background: #10201a; border: 1px solid var(--brass); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6); color: var(--ink-dim); font: 500 13.5px/1.4 var(--font-ui); animation: opmsgin 0.16s ease-out; }
+.op-kwtip b { color: var(--brass-hi); font-weight: 800; font-size: 12.5px; letter-spacing: 0.04em; }

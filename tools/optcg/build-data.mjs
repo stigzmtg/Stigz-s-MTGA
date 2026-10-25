@@ -248,13 +248,15 @@ for (const d of DECKS) {
   decks.push({
     id: d.id, code: d.code, name: limitlessTitle(d), leader, colors: card(leader).colors, cards, released,
     blurb: blurb ? blurb.blurb : '', featured: (blurb && blurb.featured) || leader,
+    // an Ultra Deck's box holds three Leaders, all legal with its 50 cards: the player picks one (ours first)
+    ...(LEADER_CHOICE[d.code] ? { leaders: [leader, ...productLeaders.filter(id => id !== leader).sort()] } : {}),
   });
 }
 decks.sort((a, b) => a.released.localeCompare(b.released) || a.code.localeCompare(b.code));
 
 // every card the decks use, in deck order
 const cards = {};
-for (const d of decks) for (const id of [d.leader, ...d.cards.map(([id]) => id)]) {
+for (const d of decks) for (const id of [d.leader, ...(d.leaders || []), ...d.cards.map(([id]) => id)]) {
   const c = card(id);
   if (!c) { fail(`${d.code}: ${id} has no official card list entry`); continue; }
   cards[id] = c;

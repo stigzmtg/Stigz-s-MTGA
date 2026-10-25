@@ -5,6 +5,8 @@ import { DeckStyleButton, subscribeDeckStyles, deckStylesVersion } from '../../u
 import { opImage, opThumb, subscribeOp, opImagesVersion } from './images.js';
 import { OpFriendsPanel } from './friends.jsx';
 import { OP_COLORS, COLOR_HEX, ColorDot } from './colors.jsx';
+import { deckById, withLeader, baseDeckId } from './decks.js';
+import { EffectText, KwTip } from './glossary.jsx';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -50,22 +52,21 @@ function DeckList({ deck, cards, onHover }) {
   );
 }
 
-// the Leader's printed words, with its keywords picked out
-export function EffectText({ text }) {
-  if (!text) return null;
-  const parts = String(text).split(/(\[[^\]]+\])/);
-  return <>{parts.map((p, i) => /^\[[^\]]+\]$/.test(p) ? <span key={i} className={`kw ${/Trigger/.test(p) ? 'trigger' : /Counter/.test(p) ? 'counter' : /DON!!/.test(p) ? 'don' : ''}`}>{p.slice(1, -1)}</span> : <span key={i}>{p}</span>)}</>;
-}
+// the Leader's printed words, keywords explained on hover or tap (glossary.jsx)
+export { EffectText };
 
 export function OpLobby({ data, online, onStart, onHome, onHelp }) {
   useSyncExternalStore(subscribeOp, opImagesVersion);
   const saved = (() => { try { return JSON.parse(localStorage.getItem('op-lobby') || '{}'); } catch { return {}; } })();
-  const [mine, setMine] = useState(data.decks.some(d => d.id === saved.mine) ? saved.mine : data.decks[0].id);
-  const [opp, setOpp] = useState(saved.opp && (saved.opp === 'random' || data.decks.some(d => d.id === saved.opp)) ? saved.opp : 'random');
+  const [mine, setMine] = useState(data.decks.some(d => d.id === baseDeckId(saved.mine)) ? baseDeckId(saved.mine) : data.decks[0].id);
+  const [opp, setOpp] = useState(saved.opp && (saved.opp === 'random' || deckById(data, saved.opp)) ? saved.opp : 'random');
+  // the Leader picked for each Ultra Deck (decks with more than one Leader in the box)
+  const [leads, setLeads] = useState(() => (saved.leads && typeof saved.leads === 'object' ? saved.leads : {}));
   const [hover, setHover] = useState(null);
   const [q, setQ] = useState('');
   const [color, setColor] = useState('all');
-  const deck = data.decks.find(d => d.id === mine);
+  const base = data.decks.find(d => d.id === mine);
+  const deck = deckById(data, withLeader(base, leads[mine])) || base;
   const lead = data.cards[deck.leader] || {};
   const qq = q.trim().toLowerCase();
   const shown = data.decks.filter(d => (color === 'all' || d.colors.includes(color)) && (!qq || `${d.code} ${d.name}`.toLowerCase().includes(qq) || ((data.cards[d.leader] || {}).name || '').toLowerCase().includes(qq) || d.cards.some(([k]) => ((data.cards[k] || {}).name || '').toLowerCase().includes(qq))));
@@ -73,18 +74,21 @@ export function OpLobby({ data, online, onStart, onHome, onHelp }) {
   // in a room, the deck picked here is the one you bring (with its sleeves and box)
   const styles = useSyncExternalStore(subscribeDeckStyles, deckStylesVersion);
   useEffect(() => {
-    try { localStorage.setItem('op-lobby', JSON.stringify({ mine, opp })); } catch { /* storage unavailable */ }
-    online.onDeck(mine);
-  }, [mine, online.room, styles]);
+    try { localStorage.setItem('op-lobby', JSON.stringify({ mine, opp, leads })); } catch { /* storage unavailable */ }
+    online.onDeck(deck.id);
+  }, [deck.id, online.room, styles]);
   const start = () => {
+    // a random opponent: any other deck, and for an Ultra Deck any of its Leaders
     const pool = data.decks.filter(d => d.id !== mine);
-    const o = opp === 'random' ? pool[Math.floor(Math.random() * pool.length)] : data.decks.find(d => d.id === opp);
+    const pickRandom = () => { const d = pool[Math.floor(Math.random() * pool.length)]; const ls = d.leaders || [d.leader]; return deckById(data, withLeader(d, ls[Math.floor(Math.random() * ls.length)])); };
+    const o = opp === 'random' ? pickRandom() : deckById(data, opp);
     onStart({ mine: deck, opp: o });
   };
   const preview = hover ? opImage(hover) : opImage(deck.leader) || opThumb(deck.leader);
   const hovered = hover ? data.cards[hover] : lead;
   return (
     <div className="app op">
+      <KwTip />
       <header className="topbar">
         <button className="brand linklike" onClick={onHome} title="Choose a game">Stigz’s TCG Arena</button>
         <span className="chip op-chip">One Piece Card Game</span>
@@ -125,7 +129,7 @@ export function OpLobby({ data, online, onStart, onHome, onHelp }) {
                     <label className="label" htmlFor="op-opp">Computer's deck</label>
                     <select id="op-opp" className="input" value={opp} onChange={e => setOpp(e.target.value)}>
                       <option value="random">Random deck</option>
-                      {data.decks.map(d => <option key={d.id} value={d.id}>{d.code} · {d.name}</option>)}
+                      {data.decks.flatMap(d => (d.leaders || [d.leader]).map(l => { const id = withLeader(d, l); return <option key={id} value={id}>{d.code} · {d.name}{d.leaders ? ` (${(data.cards[l] || {}).name})` : ''}</option>; }))}
                     </select>
                   </div>
                   <button className="btn primary big" onClick={start}>Battle!</button>
@@ -135,13 +139,27 @@ export function OpLobby({ data, online, onStart, onHome, onHelp }) {
             )}
             <section className="panel op-chosen" aria-label="Selected deck">
               <div className="panel-head"><h2>{deck.code} · {deck.name}</h2><ColorDot colors={deck.colors} size={16} /></div>
-              <div className="op-chosen-body" key={deck.id}>
+              <div className="op-chosen-body" key={mine}>
                 <div className="op-feature">
                   {preview ? <img key={preview} src={preview} alt={hovered ? hovered.name : deck.name} /> : <div className="op-card big drawn"><b>{hovered ? hovered.name : deck.name}</b></div>}
                 </div>
                 <div className="op-chosen-info">
-                  <DeckStyleButton kind="op" deck={deck} colors={deck.colors} />
+                  <DeckStyleButton kind="op" deck={base} colors={deck.colors} />
                   <p className="blurb">{deck.blurb}</p>
+                  {base.leaders ? (
+                    <div className="op-leaderpick" role="radiogroup" aria-label="Choose the Leader">
+                      <div className="label">This box has {base.leaders.length} Leaders: pick one</div>
+                      <div className="opts">
+                        {base.leaders.map(l => { const c = data.cards[l] || {}; const on = l === deck.leader; const img = opThumb(l) || opImage(l); return (
+                          <button key={l} role="radio" aria-checked={on} className={on ? 'on' : ''} onClick={() => setLeads(x => ({ ...x, [mine]: l }))} onMouseEnter={() => setHover(l)} onMouseLeave={() => setHover(null)} title={`${c.name} · ${(c.colors || []).join('/')} · ${c.life} Life`}>
+                            <span className="pic">{img ? <img src={img} alt="" draggable="false" /> : null}</span>
+                            <span className="nm">{(/[^.\s"]+$/.exec(c.name || '') || [c.name])[0]}</span>
+                            <ColorDot colors={c.colors || []} size={11} />
+                          </button>
+                        ); })}
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="op-leader">
                     <div className="label">Leader · {lead.name}</div>
                     <div className="stats"><span><b>{lead.life}</b> Life</span><span><b>{lead.power}</b> Power</span>{lead.attr && lead.attr.length ? <span>{lead.attr.join(' / ')}</span> : null}</div>
@@ -150,7 +168,7 @@ export function OpLobby({ data, online, onStart, onHome, onHelp }) {
                   <DeckRecord kind="op" id={deck.id} />
                 </div>
               </div>
-              <DeckList key={deck.id} deck={deck} cards={data.cards} onHover={setHover} />
+              <DeckList key={mine} deck={deck} cards={data.cards} onHover={setHover} />
             </section>
           </div>
         </div>

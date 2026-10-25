@@ -576,6 +576,12 @@ function parseClause(text, def) {
     const x = sel(`up to ${m[2]} ${m[3]}`, def, { zone: 'deck' });
     return [{ op: 'look', n: +m[1], pick: { max: +m[2], cats: x.cats, f: x.f, to: 'hand' } }];
   }
+  // ST13-002 Ace: "Look at 5 cards from the top of your deck and add up to 1 Character card with a cost of 5 to the top of
+  // your Life cards face-up"
+  if ((m = /^[Ll]ook at (\d+) cards? from the top of your deck and add up to (\d+) (.+?) to the top of your Life cards( face-up)?$/.exec(t))) {
+    const x = sel(`up to ${m[2]} ${m[3]}`, def, { zone: 'deck' });
+    return [{ op: 'look', n: +m[1], pick: { max: +m[2], cats: x.cats, f: x.f, to: 'life', faceUp: !!m[4] } }];
+  }
   if ((m = /^[Pp]lace the rest at the (bottom|top) of your deck(?: in any order)?$/.exec(t))) return [{ op: 'rest', placeRest: m[1] }];
   if ((m = /^[Tt]rash the rest$/.exec(t))) return [{ op: 'rest', placeRest: 'trash' }];
   if ((m = /^[Pp]lace the rest at the top or bottom of (?:the|your) deck(?: in any order)?$/.exec(t))) return [{ op: 'rest', placeRest: 'topOrBottom' }];
@@ -641,6 +647,7 @@ function parseClause(text, def) {
   if ((m = /^[Ll]ook at all (?:of )?your Life cards; place 1(?: card)? at the top of your deck and place the rest back in your Life area in any order$/.exec(t))) return [{ op: 'lookLife', who: 'you', all: true, toDeckTop: 1 }];
   if ((m = /^[Rr]eveal 1 card from the top of your Life cards$/.exec(t))) return [{ op: 'reveal', from: 'life' }];
   if (/^you cannot add Life cards to your hand using your own effects during this turn$/i.test(t)) return [{ op: 'playerFlag', flag: 'noOwnLifeToHand', who: 'you', dur: 'turn' }];
+  if (/^[Tt]rash all your face-up Life cards$/.test(t)) return [{ op: 'trashLife', all: true, faceUp: true }];
   if ((m = /^[Aa]dd (.+?) to the (top or bottom|top) of the owner's Life cards( face-up)?$/.exec(t))) return [{ op: 'fieldToLife', sel: target(m[1], def), where: m[2] === 'top' ? 'top' : 'topOrBottom', faceUp: !!m[3] }];
   // ---- the card itself from a [Trigger]
   if ((m = /^add this card to your hand$/i.exec(t))) return [{ op: 'selfToHand' }];

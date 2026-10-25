@@ -2,13 +2,13 @@
 // Usage: node tools/optcg/sim.mjs [games=40] [--deck=id] [--opp=id] [--decks=st01,st02] [--seed=N] [--verbose] [--log]
 import { OnePieceGame } from '../../src/optcg/game.js';
 import { OnePieceAI } from '../../src/optcg/ai.js';
-import { loadDb, loadDecks } from './lib.mjs';
+import { loadDb, loadPlayableDecks } from './lib.mjs';
 
 const args = process.argv.slice(2);
 const flags = Object.fromEntries(args.filter(a => a.startsWith('--')).map(a => { const [k, v] = a.slice(2).split('='); return [k, v ?? true]; }));
 const N = +(args.find(a => !a.startsWith('--')) || 40);
 const db = loadDb();
-let decks = loadDecks();
+let decks = loadPlayableDecks();
 if (flags.decks) decks = decks.filter(d => flags.decks.split(',').includes(d.id));
 const seed0 = +(flags.seed || 1);
 

@@ -12,7 +12,7 @@ const decks = JSON.parse(fs.readFileSync('data/optcg/decks.json', 'utf8'));
 const NAME = 'img/optcg-thumbs.avif';
 ix.packs = ix.packs.map(p => p.split('?')[0]).filter(p => p !== NAME);
 const ids = [];
-for (const d of decks) for (const id of [d.leader, d.featured]) if (id && !ids.includes(id) && ix.cards[id]) ids.push(id);
+for (const d of decks) for (const id of [d.leader, d.featured, ...(d.leaders || [])]) if (id && !ids.includes(id) && ix.cards[id]) ids.push(id);
 
 const packs = new Map();
 const full = id => {

@@ -2038,10 +2038,22 @@
     "504458 watermark-like (88)"
    ]
   },
+  "ST10-001": {
+   "product": null,
+   "tried": [
+    "525044 watermark-like (93)"
+   ]
+  },
   "ST10-002": {
    "product": null,
    "tried": [
     "525045 watermark-like (103)"
+   ]
+  },
+  "ST10-003": {
+   "product": null,
+   "tried": [
+    "525046 watermark-like (87)"
    ]
   },
   "ST10-004": {
@@ -2267,6 +2279,18 @@
    "tried": [
     "539155 watermark-like (44)",
     "656159 watermark-like (40)"
+   ]
+  },
+  "ST13-001": {
+   "product": null,
+   "tried": [
+    "543603 watermark-like (69)"
+   ]
+  },
+  "ST13-002": {
+   "product": null,
+   "tried": [
+    "543604 watermark-like (78)"
    ]
   },
   "ST13-003": {

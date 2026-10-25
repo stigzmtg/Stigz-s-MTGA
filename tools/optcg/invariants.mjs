@@ -17,7 +17,7 @@
 import { OnePieceGame } from '../../src/optcg/game.js';
 import { OnePieceAI } from '../../src/optcg/ai.js';
 import { ChaosAgent } from './chaos.mjs';
-import { loadDb, loadDecks } from './lib.mjs';
+import { loadDb, loadPlayableDecks } from './lib.mjs';
 
 const args = process.argv.slice(2);
 const flags = Object.fromEntries(args.filter(a => a.startsWith('--')).map(a => { const [k, v] = a.slice(2).split('='); return [k, v ?? true]; }));
@@ -25,7 +25,7 @@ const PER = +(args.find(a => !a.startsWith('--')) || 6);
 const MAX_REPORTS = +(flags['max-reports'] || 5);
 const REPLAY_EVERY = +(flags.replay || 50);
 const db = loadDb();
-let decks = loadDecks();
+let decks = loadPlayableDecks();
 if (flags.decks) decks = decks.filter(d => flags.decks.split(',').includes(d.id));
 
 class Violation extends Error {}

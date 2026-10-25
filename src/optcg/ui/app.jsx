@@ -6,6 +6,7 @@ import { OpLobby } from './lobby.jsx';
 import { OpBattle } from './battle.jsx';
 import { HowToPlayOp } from './howto.jsx';
 import { initOpImages } from './images.js';
+import { deckById, baseDeckId } from './decks.js';
 import { createStore, loadSettings, fetchJSON, safeStorage } from '../../ui/common.js';
 import { makePace } from '../../ui/pacing.js';
 import { Lockstep, LocalSeatAgent, RemoteSeatAgent } from '../../net/lockstep.js';
@@ -54,10 +55,9 @@ function newReplayBattle(data, rep) {
   const human = new OpHuman(() => store.bump());
   const ctl = new ReplayControl(rep.log.length, () => store.bump());
   const agent = new ReplayAgent(rep.log, ctl, null, opDelay);
-  const byId = Object.fromEntries(data.decks.map(d => [d.id, d]));
   const game = new OnePieceGame({
     db: data.cards, seed: rep.seed, onUpdate: () => store.bump(), maxTurns: rep.maxTurns || 60,
-    players: rep.players.map(p => ({ name: p.name, deck: byId[p.deckId] || data.decks[0], agent, human: p.human })),
+    players: rep.players.map(p => ({ name: p.name, deck: deckById(data, p.deckId) || data.decks[0], agent, human: p.human })),
   });
   game.start().then(() => { ctl.end(); store.bump(); }, e => { console.error(e); store.bump(); });
   return { game, human, store, settings: loadSettings(), cfg: null, me: rep.seat || 0, replay: ctl, replayId: rep.id };
@@ -81,9 +81,8 @@ function newOnlineBattle(data, room, cfg) {
   }
   // the host's computer player stands in for a friend who left, once the host asks it to
   const agents = cfg.seats.map((s, pid) => pid === me ? new LocalSeatAgent(net, inner, null, null) : new RemoteSeatAgent(net, null, isHost ? new OnePieceAI({ pace: makePace(settings) }) : null));
-  const byId = Object.fromEntries(data.decks.map(d => [d.id, d]));
   // player names only appear in text, so each browser can call its own player "You"
-  const players = cfg.seats.map((s, pid) => ({ name: pid === me ? 'You' : s.n || `Player ${pid + 1}`, deck: byId[s.d] || data.decks[0], agent: agents[pid], human: true }));
+  const players = cfg.seats.map((s, pid) => ({ name: pid === me ? 'You' : s.n || `Player ${pid + 1}`, deck: deckById(data, s.d) || data.decks[0], agent: agents[pid], human: true }));
   const game = new OnePieceGame({ db: data.cards, seed: cfg.seed, players, onUpdate: () => store.bump() });
   game.start().then(() => store.bump(), e => { console.error(e); store.bump(); });
   return { game, human, store, settings, cfg, me: me == null ? 0 : me, spectator: me == null, online: { net, code: cfg.code, game: cfg.game } };
@@ -187,7 +186,7 @@ export function OnePieceApp({ onHome }) {
       room.start({ seed: (Math.random() * 2 ** 32) >>> 0, seats });
     },
     onWatch: () => { room.lastAutoStart = room.cfg.game; setSession(newOnlineBattle(data, room, room.cfg)); },
-    onDeck: id => { if (!room) return; room.setDeck(id); const st = savedStyle('op', id); room.setExtra({ sl: st.s, bx: st.b }); },
+    onDeck: id => { if (!room) return; room.setDeck(id); const st = savedStyle('op', baseDeckId(id)); room.setExtra({ sl: st.s, bx: st.b }); },
   };
   const toastEl = toast ? <div className="toast" role="status">{toast}</div> : null;
   if (!session) return <>

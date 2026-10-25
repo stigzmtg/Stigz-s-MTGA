@@ -13,7 +13,8 @@ import { OnePieceAI } from './optcg/ai.js';
 const game = new OnePieceGame({
   db,                    // data/optcg/cards.json (an { id: card } object, or an array)
   seed,                  // any 32-bit number
-  players: [{ name, deck, agent, human }, { name, deck, agent, human }],   // deck: a decks.json entry
+  players: [{ name, deck, agent, human }, { name, deck, agent, human }],   // deck: a decks.json entry (an Ultra Deck
+                                                                           // led by another of its `leaders`: the entry with `leader` swapped)
   onUpdate,              // optional: called whenever the game changes
   maxTurns: 60,          // the game is a draw after this many turns
 });

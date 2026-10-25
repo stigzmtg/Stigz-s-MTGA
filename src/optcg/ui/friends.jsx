@@ -1,6 +1,7 @@
 // One Piece "Play with friends": make or join a room, send the invite link, the friend takes the second seat, each
 // player brings the deck picked on the left, and the host starts the battle. Others in the room watch.
 import { CopyLink } from '../../ui/online.jsx';
+import { deckById, baseDeckId, deckLabel } from './decks.js';
 import { isRoomCode, onClaude } from '../../net/roomclient.js';
 import { ColorDot } from './colors.jsx';
 import { AnimalAvatar, Lineup, Watchers, MyAvatarRow, AvatarButton, myAvatar } from '../../ui/avatar.jsx';
@@ -11,10 +12,10 @@ const { useState } = React;
 // the code from whatever was typed or pasted: "abc123", "op-abc123" or a whole invite link
 export const codeFromInput = v => v.toLowerCase().trim().replace(/^.*#/, '').replace(/^op-/, '').replace(/[^a-z0-9]/g, '').slice(0, 6);
 
-function SeatDeck({ decks, id, bx }) {
-  const d = decks.find(x => x.id === id);
+function SeatDeck({ data, id, bx }) {
+  const d = deckById(data, id);
   if (!d) return <span className="seat-deck muted">Choosing a deck…</span>;
-  return <span className="seat-deck"><DeckBox code={bx || defaultBox(d.id, d.colors)} size={22} /><ColorDot colors={d.colors} size={13} /> {d.code} {d.name}</span>;
+  return <span className="seat-deck"><DeckBox code={bx || defaultBox(baseDeckId(d.id), d.colors)} size={22} /><ColorDot colors={d.colors} size={13} /> {deckLabel(data, d)}</span>;
 }
 
 export function OpFriendsPanel({ data, online, deck }) {
@@ -107,7 +108,7 @@ export function OpFriendsPanel({ data, online, deck }) {
               {s.c ? <AnimalAvatar code={s.a} size={34} /> : <span className="seat-no">{i + 1}</span>}
               <span className="seat-who">
                 {s.c ? <b>{s.n || 'Player'}{s.c === cfg.host ? ' (host)' : ''}{mine ? ' · you' : ''}</b> : <b className="muted">Open seat</b>}
-                {s.c ? <SeatDeck decks={data.decks} id={s.d} bx={s.bx} /> : <span className="seat-deck muted">Waiting for a friend</span>}
+                {s.c ? <SeatDeck data={data} id={s.d} bx={s.bx} /> : <span className="seat-deck muted">Waiting for a friend</span>}
               </span>
               <span className="seat-act">
                 {s.c && !m ? <span className="chip">away</span> : null}

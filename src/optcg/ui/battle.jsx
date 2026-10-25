@@ -4,7 +4,7 @@
 // at and the battle log. Cards glide between zones (ui/motion.js); attacks, Counters, Triggers and K.O.s are animated.
 import { opImage, opThumb, subscribeOp, opImagesVersion, preloadOpCards } from './images.js';
 import { ColorDot, COLOR_HEX } from './colors.jsx';
-import { EffectText } from './lobby.jsx';
+import { EffectText, Kw, KwTip } from './glossary.jsx';
 import { Modal, SoundToggle, SizeButton, Confetti, Menu } from '../../ui/dialogs.jsx';
 import { secondPerson } from '../../ui/table.jsx';
 import { RoomStatus } from '../../ui/online.jsx';
@@ -18,6 +18,7 @@ import { Sleeve, savedStyle } from '../../ui/deckstyle.jsx';
 import { createFlights, runFlights, shake, strike, motionOn } from '../../ui/motion.js';
 import { uiScale } from '../../ui/common.js';
 import { donSlots, createTableMotion, runTableMotion, AttackArrow } from './motion.jsx';
+import { baseDeckId } from './decks.js';
 
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, useSyncExternalStore } = React;
 // the log and prompts in the second person ("You add a Life card to your hand", not "... to their hand")
@@ -255,7 +256,7 @@ function Preview({ game, uid, me }) {
         <p>{d.cat === 'L' ? `Leader · ${d.life} Life` : d.cat === 'C' ? `Character · Cost ${d.cost}` : d.cat === 'E' ? `Event · Cost ${d.cost}` : `Stage · Cost ${d.cost}`}{d.power != null ? ` · ${d.power} power` : ''}{d.counter ? ` · Counter +${d.counter}` : ''}</p>
         {d.traits && d.traits.length ? <p>{d.traits.join(' / ')}{d.attr && d.attr.length ? ` · ${d.attr.join(' / ')}` : ''}</p> : null}
         {d.text ? <p><EffectText text={d.text} /></p> : null}
-        {d.trigger ? <p><span className="kw trigger">Trigger</span> {d.trigger}</p> : null}
+        {d.trigger ? <p><Kw label="Trigger" cls="trigger">Trigger</Kw> {d.trigger}</p> : null}
         {inPlay ? <p className="state">{pw} power now{c.don ? ` · ${c.don} DON!! given` : ''}{c.rested ? ' · rested' : ''}{(game.modsOf ? game.modsOf(c) : []).filter(m => !/^DON!!/.test(m.text)).map(m => ` · ${m.text}`).join('')}</p> : null}
       </div>
     </div>
@@ -303,6 +304,8 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
   const boardRef = useRef(null);
   const donMode = useRef(false);                 // giving DON!! one by one: stays on until you stop or run out
   const [zoom, setZoom] = useState(null);       // a card shown big (touch screens have no pointing at cards)
+  const [checkEnd, setCheckEnd] = useState(null); // "End turn" pressed with attacks or plays left: what's left
+  const [askEnd, setAskEnd] = useState(() => { try { return localStorage.getItem('op-end-check') !== 'off'; } catch { return true; } });
   const touch = useMemo(() => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(hover: none)').matches, []);
 
   // cards glide between hand, field, trash and Life; a played Event is shown big before it goes to the trash
@@ -357,11 +360,11 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
   const avatarOf = pid => (session.online && session.cfg.seats[pid] ? session.cfg.seats[pid].a : null);
   const sleeves = useMemo(() => game.players.map((p, pid) => (session.online
     ? (session.cfg.seats[pid] && session.cfg.seats[pid].sl ? { code: session.cfg.seats[pid].sl, av: session.cfg.seats[pid].a } : null)
-    : pid === session.me ? { code: savedStyle('op', p.deckId).s, av: myAvatar() } : null)), [session]);
-  useEffect(() => { setSel([]); setMenu(null); if (req && req.type === 'number') setNum(req.max); if (!req || req.type !== 'main') setMode(null); }, [pend && pend.id]);
+    : pid === session.me ? { code: savedStyle('op', baseDeckId(p.deckId)).s, av: myAvatar() } : null)), [session]);
+  useEffect(() => { setSel([]); setMenu(null); setCheckEnd(null); if (req && req.type === 'number') setNum(req.max); if (!req || req.type !== 'main') setMode(null); }, [pend && pend.id]);
   useEffect(() => { if (!flash) return; const t = setTimeout(() => setFlash(null), 2400); return () => clearTimeout(t); }, [flash]);
   useEffect(() => {
-    const k = e => { if (e.key === 'Escape') { setMode(null); donMode.current = false; } };
+    const k = e => { if (e.key === 'Escape') { setMode(null); setCheckEnd(null); donMode.current = false; } };
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, []);
@@ -442,6 +445,17 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
     setFlash(why);
   };
 
+  // ending the turn: first a word if cards could still attack or be played (once per Main Phase question)
+  const endTurn = () => { setCheckEnd(null); setMode(null); donMode.current = false; respond(actions.find(a => a.t === 'end') || { t: 'end' }); };
+  const tryEndTurn = () => {
+    const att = new Set(actions.filter(a => a.t === 'attack').map(a => a.card)).size;
+    const plays = new Set(actions.filter(a => a.t === 'play').map(a => a.card)).size;
+    if (!askEnd || (!att && !plays)) return endTurn();
+    const left = [att ? `${att === 1 ? '1 card' : `${att} cards`} can still attack` : '', plays ? `you can still play ${plays === 1 ? '1 card' : `${plays} cards`}${P.donActive ? ` (${P.donActive} DON!! unused)` : ''}` : ''].filter(Boolean);
+    setMode(null); donMode.current = false;
+    setCheckEnd(`${left.join(', and ').replace(/^./, c => c.toUpperCase())}.`);
+  };
+
   // the bar between the two sides: what to do now
   const result = game.over ? (game.winner == null ? 'Draw' : game.winner === me && !watching ? 'You win!' : `${game.players[game.winner].name} wins`) : null;
   const cardName = uid => { const c = uid != null && game.cardByUid(uid); return c ? c.def.name : ''; };
@@ -463,6 +477,15 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
   } else if (counterReq) {
     bar = <><div className="msg"><div className="step">Counter</div><div className="txt">Click cards in your hand to add their Counter power to {cardName(game.battle ? game.battle.blocker || game.battle.target : counterReq.target)}, or play a [Counter] Event.</div></div>
       <div className="acts"><button className="btn primary" onClick={() => respond(null)}>{counterReq.options.length ? 'Done' : 'No Counter'}</button></div></>;
+  } else if (req && req.type === 'main' && myTurn && checkEnd) {
+    bar = <>
+      <div className="msg"><div className="step">End your turn?</div><div className="txt">{checkEnd}</div></div>
+      <div className="acts op-acts">
+        <button className="btn link" onClick={() => { try { localStorage.setItem('op-end-check', 'off'); } catch { /* storage unavailable */ } setAskEnd(false); endTurn(); }}>Don't ask again</button>
+        <button className="btn" onClick={() => setCheckEnd(null)}>Keep playing</button>
+        <button className="btn primary" onClick={endTurn}>End turn</button>
+      </div>
+    </>;
   } else if (req && req.type === 'main' && myTurn) {
     const firstTurn = game.turn <= 2;
     bar = <>
@@ -472,7 +495,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
         {mode || giving ? <button className="btn" onClick={() => { setMode(null); donMode.current = false; }}>Cancel</button> : null}
         {!mode && !giving && donActs.length ? <button className="btn" onClick={() => setMode({ kind: 'don' })}>Give DON!!</button> : null}
         {actions.filter(a => a.t === 'activate' && game.cardByUid(a.card) === P.stage).map(a => <button key={a.card + ':' + a.ability} className="btn" title={effectWords(a)} onMouseEnter={() => setHover(a.card)} onClick={() => respond(a)}>Use {P.stage.def.name}</button>)}
-        <button className="btn primary" onClick={() => { setMode(null); donMode.current = false; respond(actions.find(a => a.t === 'end') || { t: 'end' }); }}>End turn</button>
+        <button className="btn primary" onClick={tryEndTurn}>End turn</button>
       </div>
     </>;
   } else if (req && !watching) {
@@ -562,7 +585,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
           <h2>Trigger!</h2>
           <p className="sub">Your Life card {c ? <b>{c.def.name}</b> : null} has a [Trigger]. Use it now instead of adding the card to your hand?</p>
           {c ? <div className="op-picks"><div className="op-pick on" style={{ width: 150 }}><OpCard card={c} /></div></div> : null}
-          {c && c.def.trigger ? <p className="op-trigtext"><span className="kw trigger">Trigger</span> {c.def.trigger}</p> : null}
+          {c && c.def.trigger ? <p className="op-trigtext"><Kw label="Trigger" cls="trigger">Trigger</Kw> {c.def.trigger}</p> : null}
           <div className="row"><button className="btn" onClick={() => respond(false)}>Add to hand</button><button className="btn primary" onClick={() => respond(true)}>Use the Trigger</button></div>
         </Modal>
       );
@@ -591,6 +614,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
 
   return (
     <div className="app table op">
+      <KwTip />
       <header className="topbar">
         <button className="brand linklike" onClick={onExit} title="Leave the battle">Stigz’s<span className="brand-rest"> TCG Arena</span></button>
         <span className="chip op-chip">One Piece</span>
