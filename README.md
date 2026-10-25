@@ -43,6 +43,19 @@ node tools/ptcg/build-data.mjs <cache>                                          
 NODE_USE_ENV_PROXY=1 node tools/ptcg/fetch-images.mjs <cache>                                        # → dist/img/ptcg-*.avif + data/ptcg/images.json
 ```
 
+### One Piece data
+
+The 36 English starter decks (ST-01 to ST-36), card for card. Card text comes from the official English card list (en.onepiece-cardgame.com), with [optcgapi](https://optcgapi.com) as a cross-check. Each decklist is accepted only when at least two independent published lists give the same 50 cards. The sources are Limitless, Egman Events, Tier One Media, yuyu-tei, LaughTale, TCGplayer and photos of opened decks; `tools/optcg/decklists.mjs` names them and reads them. `data/optcg/sources.json` records what each source said, every card number it got wrong, and the list that was used.
+
+```sh
+NODE_USE_ENV_PROXY=1 node tools/optcg/fetch-cards.mjs <cache>    # official card lists, product pages, optcgapi, every decklist page
+node tools/optcg/build-data.mjs <cache> [--diffs]                # → data/optcg/{cards,decks,sources}.json (--diffs: where optcgapi's text differs)
+NODE_USE_ENV_PROXY=1 node tools/optcg/fetch-images.mjs <cache>   # → docs/img/optcg-*.avif (and dist/img/) + data/optcg/images.json
+node tools/optcg/check-data.mjs                                  # every deck is 1 Leader + 50 cards, ≤4 copies, in the Leader's colors, fully defined and pictured
+```
+
+The official card pictures carry a "SAMPLE" watermark, and so do most of TCGplayer's. `fetch-images.mjs` uses a TCGplayer scan when it finds one with no watermark and the same art. Otherwise it uses the official picture. Its choices are kept in `tools/optcg/tcg-ids.json`. Deck blurbs live in `tools/optcg/blurbs.mjs`.
+
 ### Card images
 
 Card images are downloaded once, shrunk to 480px-wide AVIF and packed into files served next to the page (the claude.ai version can't load images from other sites). Each image is stored once: lobby packs of every deck's commanders, staples in 6+ decks (one printing each, grouped by color identity), packs of printings several decks share, one pack per deck for its own printings, and token packs. A game loads only the packs its decks use. Scryfall identifies each printing and its TCGplayer product; the picture is TCGplayer's product image, with Scryfall's image as the fallback and for back faces. Tokens are matched to Scryfall tokens by name, colors, power/toughness and keywords.

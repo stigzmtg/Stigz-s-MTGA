@@ -37,7 +37,7 @@ function parseOfficial(html, file) {
       name: clean(b.match(/<div class="cardName">([\s\S]*?)<\/div>/)[1]),
       costLabel: (b.match(/<div class="cost"><h3>([^<]*)<\/h3>/) || [])[1] || '',
       cost: field('cost'), power: field('power'), counter: field('counter'), color: field('color'),
-      attr: [...((b.match(/<div class="attribute">([\s\S]*?)<\/div>/) || [])[1] || '').matchAll(/<i>([^<]*)<\/i>/g)].map(x => x[1].trim()).filter(Boolean),
+      attr: [...((b.match(/<div class="attribute">([\s\S]*?)<\/div>/) || [])[1] || '').matchAll(/<i>([^<]*)<\/i>/g)].flatMap(x => x[1].split('/')).map(x => x.trim()).filter(Boolean),
       type: field('feature'), text: field('text'), trigger: field('trigger'), sets: field('getInfo'),
     });
   }
@@ -261,27 +261,36 @@ for (const d of decks) for (const id of [d.leader, ...d.cards.map(([id]) => id)]
 }
 
 // ---- optcgapi cross-check: report every card whose effect, trigger, name or numbers differ --------------------
-// formatting doesn't count: (3) for the circled 3, "Navy" or [Navy] for {Navy}, bullets, spacing, case, "NULL"
+// formatting doesn't count: (3) for the circled 3, "Navy" or [Navy] for {Navy}, "Slash" or (Slash) for <Slash>,
+// bullets, spacing, case, "NULL", and
+// the minus signs optcgapi drops ("give … 2000 power" for "-2000")
 const loose = s => (s == null || s === 'NULL' ? '' : s).replace(/[①-⑩]/g, c => `(${c.charCodeAt(0) - 0x245f})`).replace(/[➀-➉]/g, c => `(${c.charCodeAt(0) - 0x277f})`)
-  .normalize('NFKC').replace(/[−–]/g, '-').replace(/[‘’]/g, "'").replace(/[“”"{}]/g, '').replace(/(^|\n)\s*[-•・]\s*/g, '$1')
-  .replace(/\[([^\]]*)\]/g, '$1').replace(/[\s.,:;]+/g, '').toLowerCase();
+  .normalize('NFKC').replace(/[−–-](?=\d)/g, '').replace(/[‘’]/g, "'").replace(/[“”"{}]/g, '').replace(/(^|\n|\s)[-•・](?=\s)/g, '$1')
+  .replace(/\[([^\]]*)\]/g, '$1').replace(/[\s.,:;<>()]+/g, '').toLowerCase();
 const apiDiffs = [];
 for (const c of Object.values(cards)) {
   const r = apiNormal(c.id);
   if (!r) { apiDiffs.push(`${c.id}: not in optcgapi`); continue; }
   const raw = clean(r.card_text && r.card_text !== 'NULL' ? r.card_text : '').replace(/\s*This card has been officially errata'd\.?/i, '');
-  const at = raw.lastIndexOf('[Trigger]');
+  // optcgapi runs the trigger into the text: the last "[Trigger]" that starts a sentence (not "a card with a [Trigger]")
+  const at = Math.max(-1, ...[...raw.matchAll(/(^|[.)!\n]\s*)\[Trigger\]\s/g)].map(m => m.index + m[1].length));
   const apiText = at >= 0 ? raw.slice(0, at) : raw, apiTrig = at >= 0 ? raw.slice(at + 9).trim() : null;
   const d = [];
   if (loose(apiText) !== loose(c.text)) d.push(`text\n      official: ${c.text || '(none)'}\n      optcgapi: ${apiText.trim() || '(none)'}`);
   if (loose(apiTrig) !== loose(c.trigger)) d.push(`trigger\n      official: ${c.trigger || '(none)'}\n      optcgapi: ${apiTrig || '(none)'}`);
-  const apiName = clean(r.card_name).replace(/(\s*\((\d{3}|Reprint|Parallel|[^)]*(Ver|Pack|Edition|Promo|Collection|Set|Deck)[^)]*)\))+$/i, '');
+  // (optcgapi adds print notes to names: "(001)", "(ST15-002)", " - OP14-015", "(OP10 Release Event)", "[Winner]")
+  const apiName = clean(r.card_name).replace(/\s*\[[^\]]*\]$/, '').replace(/\s+-\s+[A-Z]+\d*-\d{3}$/, '')
+    .replace(/(\s*\((\d{3}|[A-Z]+\d*-\d{3}|Reprint|Parallel|[^)]*(Ver|Pack|Edition|Promo|Collection|Set|Deck|Event|Battle|Regional|Vol)[^)]*)\))+$/i, '');
   if (loose(apiName) !== loose(c.name)) d.push(`name: official "${c.name}", optcgapi "${apiName}"`);
   for (const [k, v] of [['cost', c.cat === 'L' ? null : c.cost], ['power', c.power], ['life', c.life]]) {
     let av = num(r[k === 'cost' ? 'card_cost' : k === 'power' ? 'card_power' : 'life']);
     if (Number.isNaN(av) || (av === null && v === 0)) av = v === 0 ? 0 : null;
     if (av !== v && !(k === 'cost' && av === null)) d.push(`${k}: official ${v}, optcgapi ${av}`);
   }
+  const apiColors = (r.card_color || '').split(/[\s/]+/).filter(Boolean).sort().join('/');
+  if (apiColors !== c.colors.slice().sort().join('/')) d.push(`colors: official ${c.colors.join('/')}, optcgapi ${apiColors}`);
+  const apiCounter = num(r.counter_amount) || null;
+  if (c.cat === 'C' && apiCounter !== c.counter) d.push(`counter: official ${c.counter}, optcgapi ${apiCounter}`);
   if (d.length) apiDiffs.push(`${c.id} ${c.name}: ${d.join('\n    ')}`);
 }
 
