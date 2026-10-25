@@ -1185,6 +1185,205 @@ test('ST12-001 Zoro & Sanji (Leader): [When Attacking] return a cost 2+ Characte
   expect(T.A.hand.includes(back) && !r.rested, 'Kuina returned, Robin active');
 });
 
+// ================================================================ ST-21 to ST-30
+test('Resting: an already rested card isn\'t offered; setting active: an active one isn\'t', async () => {
+  const T = setup();
+  const r = T.char(1, 'ST01-012', { rested: true }), a = T.char(1, FILLER);
+  T.don(0, 2);
+  let opts;
+  T.a.on('rest', req => { opts = req.options; return []; });
+  await T.play(T.hand(0, 'ST02-017'));
+  expect(opts.length === 1 && opts[0] === a.uid, 'only the active Character');
+  void r;
+});
+test('OP07-031 Bartolomeo: [Your Turn] [Once Per Turn] when a Character is rested by your effect, draw 1 and trash 1', async () => {
+  const T = setup();
+  T.char(0, 'OP07-031');
+  const t = T.char(1, 'ST01-006');            // Usopp, cost 2? any cost-2 or less Character
+  T.g.addEffect({ kind: 'cost', card: t, n: -5 }, 'turn', 0);
+  const x = T.hand(0, FILLER);
+  T.a.on('discard', () => [x.uid]);
+  T.don(0, 1);
+  await T.play(T.hand(0, 'EB01-015'));
+  expect(t.rested && T.A.trash.includes(x), 'Apoo rested it: Bartolomeo drew and trashed');
+  const n = T.A.hand.length;
+  const t2 = T.char(1, FILLER); T.g.addEffect({ kind: 'cost', card: t2, n: -5 }, 'turn', 0);
+  T.don(0, 1);
+  await T.play(T.hand(0, 'EB01-015'));
+  expect(t2.rested && T.A.hand.length === n, 'once per turn');
+});
+test('OP09-001 Shanks (Leader): [Once Per Turn] may give -1000 when the opponent attacks', async () => {
+  const T = setup({ leaders: ['ST01-001', 'OP09-001'] });
+  T.life(1, [FILLER]);
+  T.b.on('blocker', () => null); T.b.on('counter', () => null);
+  T.b.on('pay-cost', () => true);
+  const att = T.char(0, FILLER);                   // 5000 vs 5000: -1000 makes it lose
+  T.b.on('debuff', () => [att.uid]);
+  await T.attack(att, T.B.leader);
+  expect(T.B.life.length === 1 && T.g.power(att) === 4000, 'the attack failed');
+  T.g.current = 0;
+  const att2 = T.char(0, FILLER);
+  T.b.asked = [];
+  await T.attack(att2, T.B.leader);
+  expect(T.B.life.length === 0 && !T.b.asked.some(r => r.hint === 'pay-cost'), 'once per turn');
+});
+test('OP09-012 Monster: if your [Bonk Punch] would be K.O.\'d by an effect, trash Monster instead', async () => {
+  const T = setup();
+  const bp = T.char(1, 'OP09-010'), m = T.char(1, 'OP09-012');
+  T.b.on('replace', () => true);
+  await T.g.ko(bp, { by: 'effect', pid: 0 });
+  expect(T.B.characters.includes(bp) && T.B.trash.includes(m), 'Monster trashed instead');
+});
+test('OP09-014 Limejuice: the opponent can\'t activate up to 1 [Blocker] with 4000 power or less this turn', async () => {
+  const T = setup();
+
+
+  const ts = T.char(1, 'ST06-007');                // Tsuru, [Blocker], 2000
+  T.don(0, 3);
+  await T.play(T.hand(0, 'OP09-014'));
+  T.life(1, [FILLER]);
+  T.b.asked = []; T.b.on('counter', () => null);
+  await T.attack(T.A.leader, T.B.leader);
+  expect(!T.b.asked.some(r => r.type === 'blocker' && r.options.includes(ts.uid)), 'Tsuru can\'t block');
+});
+test('OP09-051 Buggy: bottom an opponent\'s Character, then Buggy goes to the bottom too without 5 cost-5+ Characters', async () => {
+  const T = setup();
+  const t = T.char(1, FILLER);
+  T.don(0, 10);
+  const bg = T.hand(0, 'OP09-051');
+  T.a.on('bottom', () => [t.uid]);
+  await T.play(bg);
+  expect(T.B.deck[T.B.deck.length - 1] === t && T.A.deck[T.A.deck.length - 1] === bg, 'both to the bottom');
+  const T2 = setup();
+  for (let i = 0; i < 4; i++) T2.char(0, 'ST03-003');            // 4 cost-5 Crocodiles
+  T2.don(0, 10);
+  const bg2 = T2.hand(0, 'OP09-051');
+  T2.a.on('trash-for-room', req => [req.options[0]]);
+  await T2.play(bg2);
+  expect(T2.A.characters.includes(bg2), 'with Buggy, 5 Characters of cost 5 or more: it stays');
+});
+test('OP09-061 Luffy (Leader): [Your Turn] [Once Per Turn] when 2+ DON!! are returned: 1 active and 1 rested DON!! from the DON!! deck', async () => {
+  const T = setup({ leaders: ['OP09-061', 'ST01-001'] });
+  T.don(0, 5);
+  T.char(1, FILLER);
+  await T.play(T.hand(0, 'OP09-077'));          // Gum-Gum Lightning: [Main] DON!! -2 (cost 2)
+  expect(T.A.donDeck === 5 && T.A.donActive === 4 && T.A.donRested === 1, `returned 2, got 1 active and 1 rested back (${T.A.donDeck}, ${T.A.donActive}, ${T.A.donRested})`);
+});
+test('OP09-081 Teach (Leader): your [On Play] effects are negated; [Activate: Main] negates the opponent\'s until the end of their next turn', async () => {
+  const T = setup({ leaders: ['OP09-081', 'ST01-001'] });
+  T.don(0, 4);
+  const before = T.A.deck.length;
+  await T.play(T.hand(0, 'ST08-009'));         // Makino: [On Play] draw if a cost-0 Character
+  T.g.addEffect({ kind: 'cost', card: T.A.characters[0], n: -5 }, 'turn', 0);
+  await T.play(T.hand(0, 'ST08-009'));
+  expect(T.A.deck.length === before, 'no draw');
+  const x = T.hand(0, FILLER);
+  T.a.on('discard', () => [x.uid]);
+  await T.activate(T.A.leader, 1);
+  T.a.on('main', () => ({ t: 'end' }));
+  await T.nextTurn();
+  T.B.donActive = 5;
+  const t = T.char(0, FILLER);
+  T.b.on('ko', () => [t.uid]);
+  await T.play(T.hand(1, 'ST02-005'));          // Killer: [On Play] K.O. a rested cost 3 or less
+  expect(T.A.characters.includes(t), 'B\'s [On Play] did nothing');
+});
+test('OP09-086 Burgess: +1000 power for every 4 cards in your trash (Blackbeard Leader)', async () => {
+  const T = setup({ leaders: ['OP09-081', 'ST01-001'] });
+  const b = T.char(0, 'OP09-086');
+  for (let i = 0; i < 9; i++) T.trash(0, FILLER);
+  expect(T.g.power(b) === 7000, `5000 + 2 x 1000 (${T.g.power(b)})`);
+});
+test('P-084 Buggy: can\'t attack; with a [Buggy] Leader, no Character with a cost of 3 or 4 can attack', async () => {
+  const T = setup({ leaders: ['OP09-042', 'ST01-001'] });
+  const bg = T.char(0, 'P-084');
+  const c3 = T.char(0, FILLER), c5 = T.char(0, 'ST03-003');
+  T.life(1, [FILLER]);
+  expect(!T.g.canAttack(bg) && !T.g.canAttack(c3) && T.g.canAttack(c5), 'Buggy and the cost-3 can\'t, the cost-5 can');
+});
+test('ST21-003 Sanji: the selected Character can\'t be blocked if it attacks this turn', async () => {
+  const T = setup();
+  const z = T.char(0, 'ST01-012');               // Luffy 6000, Straw Hat Crew
+  T.don(0, 2);
+  T.a.on('select', () => [z.uid]);
+  await T.play(T.hand(0, 'ST21-003'));
+  T.char(1, 'ST06-007'); T.life(1, [FILLER]);
+  T.b.asked = []; T.b.on('counter', () => null);
+  await T.attack(z, T.B.leader);
+  expect(!T.b.asked.some(r => r.type === 'blocker') && T.B.life.length === 0, 'unblockable this turn');
+});
+test('ST22-001 Ace & Newgate (Leader): reveal a Whitebeard card from the hand: draw 1, the revealed card goes on top of the deck', async () => {
+  const T = setup({ leaders: ['ST22-001', 'ST01-001'] });
+  const w = T.hand(0, 'ST22-009');
+  await T.activate(T.A.leader);
+  expect(T.A.deck[0] === w && !T.A.hand.includes(w) && T.A.hand.length === 1, 'Vista on top, a new card in hand');
+});
+test('ST22-015 I Am Whitebeard!!: play Newgate, then may take a Life card: Leader +2000', async () => {
+  const T = setup({ leaders: ['ST22-001', 'ST01-001'] });
+  T.don(0, 8);
+  const n = T.hand(0, 'ST22-003');
+  T.life(0, [FILLER, FILLER]);
+  T.a.on('may', () => true);
+  await T.play(T.hand(0, 'ST22-015'));
+  expect(T.A.characters.includes(n) && T.A.life.length === 1 && T.g.power(T.A.leader) === 7000, 'Newgate played, Leader at 7000');
+});
+test('ST26-002 Chopper: DON!! −2: rest an opponent\'s DON!! card or a cost 1 or less Character', async () => {
+  const T = setup();
+  T.don(0, 5); T.don(1, 3);
+  T.a.on('pay-cost', () => true); T.a.on('rest-don-or-char', () => 'don');
+  await T.play(T.hand(0, 'ST26-002'));
+  expect(T.B.donActive === 2 && T.B.donRested === 1, 'one of B\'s DON!! rested');
+});
+test('ST27-004 Wolf: [Blocker] and +1 cost per 4 cards in the trash (Blackbeard Leader)', async () => {
+  const T = setup({ leaders: ['OP09-081', 'ST01-001'] });
+  const w = T.char(0, 'ST27-004');
+  for (let i = 0; i < 8; i++) T.trash(0, FILLER);
+  expect(T.g.has(w, 'Blocker') && T.g.cost(w) === 6, `Blocker, cost 4 + 2 (${T.g.cost(w)})`);
+});
+test('ST28-002 Izo: your {Land of Wano} Leader gains [Banish] this turn', async () => {
+  const T = setup({ leaders: ['OP06-022', 'ST01-001'] });
+  T.don(0, 2);
+  await T.play(T.hand(0, 'ST28-002'));
+  expect(T.g.has(T.A.leader, 'Banish'), '[Banish]');
+  const T2 = setup();
+  T2.don(0, 2);
+  await T2.play(T2.hand(0, 'ST28-002'));
+  expect(!T2.g.has(T2.A.leader, 'Banish'), 'not for another Leader');
+});
+test('ST30-009 LittleOars Jr.: a 6000-base-power Character removed by the opponent: trash LittleOars and draw 1 instead', async () => {
+  const T = setup();
+  const lo = T.char(1, 'ST30-009'), j = T.char(1, 'ST30-006');      // Jinbe 6000
+  T.b.on('replace', () => true);
+  const before = T.B.hand.length;
+  await T.g.ko(j, { by: 'effect', pid: 0 });
+  expect(T.B.characters.includes(j) && T.B.trash.includes(lo) && T.B.hand.length === before + 1, 'Jinbe stays; LittleOars trashed; drew 1');
+});
+test('ST30-014 Mr.3: rest it: give up to 2 rested DON!! each to up to 2 Characters with 6000 base power', async () => {
+  const T = setup();
+  const m = T.char(0, 'ST30-014'), a = T.char(0, 'ST30-006'), b = T.char(0, 'ST30-007');
+  T.don(0, 0, 4);
+  T.a.on('give-don', () => [a.uid, b.uid]); T.a.on('don-n', req => req.max);
+  await T.activate(m);
+  expect(a.don === 2 && b.don === 2 && T.A.donRested === 0, '2 each');
+});
+
+// ================================================================ fail-safe
+test('Fail-safe: in a game, an effect step, cost or condition the engine can\'t do is skipped and logged, never thrown; tests (throwErrors) throw', async () => {
+  const T = setup();
+  T.g.throwErrors = false;
+  const ctx = { pid: 0, src: T.A.leader, vars: {} };
+  await T.g.runSteps([{ op: 'noSuchStep' }, { op: 'draw', n: 1 }], ctx);
+  expect(T.A.hand.length === 1 && T.g.problems.length === 1, 'the bad step skipped, the next one ran');
+  expect(T.g.costPayable(T.A.leader, { cost: [{ op: 'noSuchCost' }] }) === false, 'an unknown cost can\'t be paid');
+  expect(T.g.test({ k: 'noSuchCondition' }, ctx) === false, 'an unknown condition is false');
+  await T.g.runSteps([{ op: 'draw', n: 1, cond: { k: 'cmp', a: { k: 'noSuchAmount' }, op: '>=', b: 0 } }], ctx);
+  expect(T.A.hand.length === 2, 'an unknown amount counts as 0');
+  T.g.throwErrors = true;
+  let threw = false;
+  try { await T.g.runSteps([{ op: 'noSuchStep' }], ctx); } catch { threw = true; }
+  expect(threw, 'with throwErrors it throws');
+});
+
 // ================================================================
 let pass = 0, fail = 0;
 for (const t of tests) {

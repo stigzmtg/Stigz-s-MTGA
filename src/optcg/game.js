@@ -25,7 +25,7 @@ export const HANDLED = {
   steps: ['select', 'power', 'basePower', 'cost', 'ko', 'rest', 'setActive', 'giveDon', 'donActive', 'restDon', 'addDon', 'draw',
     'discard', 'bounce', 'bottom', 'grant', 'noBlocker', 'noBlockerIfAttacks', 'restrict', 'playerFlag', 'playSelf', 'selfToHand',
     'runEffect', 'look', 'play', 'toHand', 'deckToLife', 'trashLife', 'lifeToHand', 'handToLife', 'fieldToLife', 'lookLife', 'choose',
-    'may', 'reveal', 'delayed', 'custom', 'playThat', 'freeze', 'bounceAny', 'discardAny', 'handToDeck', 'trashField'],
+    'may', 'reveal', 'delayed', 'custom', 'playThat', 'freeze', 'bounceAny', 'discardAny', 'handToDeck', 'trashField', 'revealedToDeck', 'restDonOrChar'],
   costs: ['restDon', 'returnDon', 'returnDonAny', 'restSelf', 'trashSelf', 'trashHand', 'revealHand', 'lifeToHand', 'trashLife',
     'restOwn', 'bounceOwn', 'handToDeck', 'trashToDeck', 'millSelf', 'lifeFaceUp', 'lifeFaceDown', 'charToLife', 'returnGivenDon', 'bounceSelf'],
   conds: ['and', 'or', 'not', 'cmp', 'exists', 'self', 'leader', 'turn', 'did', 'that'],
@@ -35,8 +35,8 @@ export const HANDLED = {
   refs: ['self', 'leader', 'oppLeader', 'selected', 'replaced', 'battleOpp'],
   durations: ['battle', 'turn', 'startOfYourNextTurn', 'endOfYourNextTurn', 'endOfOppNextTurn', 'oppNextRefresh', 'game'],
   // static mods and effect flags something in here reads
-  mods: ['power', 'cost', 'grant', 'noKO', 'canAttackActive', 'cantAttack', 'cantAttackChar', 'cantBlock', 'cantRest', 'faceUpLifeToDeck'],
-  playerFlags: ['noKOAll', 'noOwnLifeToHand'],
+  mods: ['power', 'cost', 'grant', 'noKO', 'canAttackActive', 'cantAttack', 'cantAttackChar', 'cantBlock', 'cantRest', 'faceUpLifeToDeck', 'negateOnPlay'],
+  playerFlags: ['noKOAll', 'noOwnLifeToHand', 'negateOnPlay'],
   zones: ['field', 'hand', 'trash', 'deck', 'life', 'handOrTrash'],
 };
 
@@ -313,7 +313,7 @@ export class OnePieceGame {
       case 'endOfOppNextTurn': return { at: 'end', turn: this.nextTurnOf(this.opp(pid)) };
       case 'oppNextRefresh': return { at: 'refresh', turn: this.nextTurnOf(this.opp(pid)) };
       case 'game': return { never: true };
-      default: throw new Error(`unknown duration ${dur}`);
+      default: this.unhandled(`duration "${dur}"`); return { at: 'end', turn: this.turn };
     }
   }
   addEffect(e, dur, pid) {
@@ -486,7 +486,7 @@ export class OnePieceGame {
       case 'faceUp': return card.zone === 'life' && card.faceUp === f.v;
       case 'or': return f.any.some(g => g.every(h => this.filter(card, h, ctx)));
       case 'not': return !this.filter(card, f.f, ctx);
-      default: throw new Error(`unknown filter ${f.k}`);
+      default: this.unhandled(`filter "${f.k}"`); return false;
     }
   }
   // a number in card text: a constant, or something to count ("the number of your opponent's Life cards")
@@ -507,7 +507,7 @@ export class OnePieceGame {
       case 'per': return n.each * Math.floor(this.amount(n.of, ctx) / (n.div || 1));
       case 'neg': return -this.amount(n.v, ctx);
       case 'var': return (ctx.vars && ctx.vars[n.name]) || 0;
-      default: throw new Error(`unknown amount ${n.k}`);
+      default: this.unhandled(`amount "${n.k}"`); return 0;
     }
   }
 
@@ -527,7 +527,7 @@ export class OnePieceGame {
       case 'did': return !!ctx.vars.did;
       // "If that card is a Character": the card just revealed or chosen
       case 'that': return (ctx.vars.that || []).some(x => this.matches(x, { f: c.f, cats: c.cats }, ctx));
-      default: throw new Error(`unknown condition ${c.k}`);
+      default: this.unhandled(`condition "${c.k}"`); return false;
     }
   }
 
@@ -819,7 +819,7 @@ export class OnePieceGame {
         case 'lifeFaceDown': if (!p.life.some(x => x.faceUp)) return false; break;
         case 'charToLife': if (!this.candidates({ who: 'you', cats: ['C'], f: c.f }, ctx).length) return false; break;
         case 'returnGivenDon': if (this.givenDon(pid) < c.n) return false; break;
-        default: throw new Error(`unknown cost ${c.op}`);
+        default: this.unhandled(`cost "${c.op}"`); return false;
       }
     }
     return p.donActive >= rest;
@@ -939,21 +939,24 @@ export class OnePieceGame {
     this.fire('lifeToHand', { pid, byEffect });
   }
 
-  async activateAbility(card, ab) {
+  activateAbility(card, ab) { return this.guarded(card, () => this.activateAbilityNow(card, ab)); }
+  async activateAbilityNow(card, ab) {
     const ctx = { pid: card.owner, src: card, ab, vars: {} };
     // the player chose to activate it: an optional ("You may") cost isn't asked about again
     if (!(await this.payCost(card, ab, ctx, { ask: false }))) { this.log(`${card.name}'s effect is not activated.`, { pid: card.owner }); return; }
     if (ab.once) card.used[ab.idx] = this.turn;
     await this.runSteps(ab.steps, ctx);
   }
-  async activateEvent(card, ab, { counter = false } = {}) {
+  activateEvent(card, ab, opts = {}) { return this.guarded(card, () => this.activateEventNow(card, ab, opts)); }
+  async activateEventNow(card, ab, { counter = false } = {}) {
     const ctx = { pid: card.owner, src: card, ab, vars: {}, counter };
     // the player chose to activate it: its cost isn't asked about again
     if (!(await this.payCost(card, ab, ctx, { ask: false }))) { this.log(`${card.name}'s effect does nothing.`, { pid: card.owner }); return; }
     await this.runSteps(ab.steps, ctx);
   }
   // an auto effect resolving (or an effect run for a card: [Trigger], "activate this card's [Main] effect")
-  async runAbility(card, ab, data = {}) {
+  runAbility(card, ab, data = {}) { return this.guarded(card, () => this.runAbilityNow(card, ab, data)); }
+  async runAbilityNow(card, ab, data = {}) {
     const ctx = { pid: card.owner, src: card, ab, vars: {}, data };
     if (!(await this.payCost(card, ab, ctx))) return false;
     if (ab.once) card.used[ab.idx] = this.turn;
@@ -967,6 +970,8 @@ export class OnePieceGame {
     const batch = ++this.batch;
     for (const p of this.players) for (const c of this.field(p.id)) for (const ab of this.abilities(c)) {
       if (ab.kind !== 'auto' || !ab.timings.includes(kind)) continue;
+      // OP09-081: "[On Play] effects are negated" (8-2-1-1: they don't activate)
+      if (kind === 'onPlay' && this.onPlayNegated(c.owner)) continue;
       if (!this.autoMatches(c, ab, kind, data)) continue;
       // 8-3-2-3: [DON!! xX] and the other conditions must hold when the timing is met
       if (!this.abilityConditions(c, ab)) continue;
@@ -1026,7 +1031,17 @@ export class OnePieceGame {
       await this.resolveAuto(item);
     }
   }
-  async resolveAuto(item) {
+  // run a card's effect so that a failure in it (a bug, or something the engine can't do) skips the effect instead of
+  // ending the game
+  async guarded(card, fn) {
+    try { return await fn(); } catch (e) {
+      if (e && e.gameOver) throw e;
+      this.unhandled(`${card ? card.name + ': ' : ''}${e && e.message}`, e);
+      return false;
+    }
+  }
+  resolveAuto(item) { return this.guarded(item.card, () => this.resolveAutoNow(item)); }
+  async resolveAutoNow(item) {
     const { card, ab, data } = item;
     // 8-1-3-1-3: a card that left its area doesn't activate (but [On K.O.] resolves from the trash, 10-2-17-1)
     if (item.kind === 'ko') { if (card.inst !== item.inst || card.zone !== 'trash') return; }
@@ -1222,6 +1237,7 @@ export class OnePieceGame {
   triggerAbility(card) { return this.abilities(card).find(a => a.kind === 'trigger') || null; }
   // "you cannot add Life cards to your hand using your own effects during this turn" (costs included, 8-2-1-1)
   ownLifeLocked(pid) { return this.effects.some(e => e.kind === 'noOwnLifeToHand' && e.pid === pid); }
+  onPlayNegated(pid) { return this.flag(this.players[pid].leader, 'negateOnPlay') || this.effects.some(e => e.kind === 'negateOnPlay' && e.pid === pid); }
 
   // ------------------------------------------------------------ K.O. and leaving the field (10-2-1)
   canBeKOd(card, { by, pid, attacker } = {}) {
@@ -1272,11 +1288,24 @@ export class OnePieceGame {
   async runSteps(steps, ctx) {
     for (const s of steps || []) {
       if (this.over) return;
-      // 4-10-1: when an "if" clause can't be resolved, the clauses after it can't be either ("If your Leader is ...,
-      // A. Then, B." does neither); a "then" clause that does nothing doesn't stop the rest (4-10-2)
-      if (s.cond && !this.test(s.cond, ctx)) return;
-      await this.step(s, ctx);
+      try {
+        // 4-10-1: when an "if" clause can't be resolved, the clauses after it can't be either ("If your Leader is ...,
+        // A. Then, B." does neither); a "then" clause that does nothing doesn't stop the rest (4-10-2)
+        if (s.cond && !this.test(s.cond, ctx)) return;
+        await this.step(s, ctx);
+      } catch (e) {
+        // an effect that breaks never takes the game down: the step is skipped (tests set throwErrors to catch it)
+        if (e && e.gameOver) throw e;
+        this.unhandled(`${ctx.src ? ctx.src.name + ': ' : ''}${e && e.message}`, e);
+      }
     }
+  }
+  // something in a card's effect the engine can't do: in a test (throwErrors) it fails loudly; in a game it is logged,
+  // remembered in `problems` and skipped, so the game goes on (the same way on every peer)
+  unhandled(what, err = null) {
+    if (this.throwErrors) throw (err instanceof Error ? err : new Error(`unhandled ${what}`));
+    (this.problems ||= []).push(what);
+    this.log(`(The rules engine couldn't resolve ${what}; it is skipped.)`, { type: 'effect' });
   }
   // choose the cards an effect affects; "up to N" may choose 0 (8-4-4-1)
   async select(sel, ctx, prompt, hint) {
@@ -1335,7 +1364,8 @@ export class OnePieceGame {
         return;
       }
       case 'rest': {
-        const got = await this.select(s.sel, ctx, 'Rest which card?', 'rest');
+        // only active cards can be rested (and only rested ones set as active): an already rested card isn't a choice
+        const got = await this.select(s.sel.ref ? s.sel : { ...s.sel, f: [...(s.sel.f || []), { k: 'active' }] }, ctx, 'Rest which card?', 'rest');
         for (const c of got) {
           if (s.noRefresh) this.addEffect({ kind: 'noRefresh', card: c, text: 'stays rested next Refresh Phase' }, 'oppNextRefresh', pid);
           if (c.rested || this.flag(c, 'cantRest')) continue;
@@ -1347,7 +1377,7 @@ export class OnePieceGame {
         return;
       }
       case 'setActive': {
-        const got = await this.select(s.sel, ctx, 'Set which card as active?', 'set-active');
+        const got = await this.select(s.sel.ref ? s.sel : { ...s.sel, f: [...(s.sel.f || []), { k: 'rested' }] }, ctx, 'Set which card as active?', 'set-active');
         for (const c of got) { if (!c.rested) continue; c.rested = false; this.log(`${c.name} is set as active.`, { pid }); this.event('active', { card: c.uid }); }
         return;
       }
@@ -1571,6 +1601,23 @@ export class OnePieceGame {
         if (got.length) this.log(`${p.name} places ${cards(got.length)} from their hand at the ${s.bottom ? 'bottom' : 'top'} of their deck.`, { pid });
         return;
       }
+      case 'revealedToDeck': {
+        // ST22-001: "place the revealed card at the top of your deck" (the card revealed from the hand as a cost)
+        for (const c of ctx.vars.revealedHand || []) if (c.zone === 'hand' && c.owner === pid) { this.moveCard(c, 'deck', { top: !s.bottom }); this.log(`${p.name} places ${c.name} at the ${s.bottom ? 'bottom' : 'top'} of their deck.`, { pid }); }
+        return;
+      }
+      case 'restDonOrChar': {
+        // ST26-002: "Rest up to 1 of your opponent's DON!! cards or Characters with a cost of 1 or less"
+        const chars = this.candidates(s.sel, ctx).filter(c => !c.rested);
+        const opts = [{ value: 'none', label: 'Rest nothing' }];
+        if (o.donActive) opts.push({ value: 'don', label: "Rest 1 of your opponent's active DON!! cards" });
+        for (const c of chars) opts.push({ value: c.uid, label: `Rest ${c.name}` });
+        if (opts.length === 1) return;
+        const v = await this.chooseOption(pid, opts, "Rest 1 of your opponent's DON!! cards or Characters?", 'rest-don-or-char');
+        if (v === 'don' && o.donActive) { o.donActive--; o.donRested++; this.log(`1 of ${o.name}'s DON!! cards is rested.`, { pid }); this.event('don', { pid: o.id, n: 1, kind: 'rest' }); }
+        else { const c = chars.find(x => x.uid === v); if (c && !c.rested) { c.rested = true; this.log(`${c.name} is rested.`, { pid }); this.event('rest', { card: c.uid }); this.fire('rested', { pid: c.owner, card: c, byEffect: true, by: pid }); } }
+        return;
+      }
       case 'trashField': {
         // "Trash up to 1 of your opponent's Characters ...": leaves the field, but it isn't a K.O.
         const got = await this.select(s.sel, ctx, 'Trash which Character?', 'trash-char');
@@ -1584,7 +1631,7 @@ export class OnePieceGame {
         return;
       }
       case 'custom': return s.fn(this, ctx, s);
-      default: throw new Error(`unknown step ${s.op}`);
+      default: this.unhandled(`effect step "${s.op}"`); return;
     }
   }
   // a fingerprint of the board, for "If you do" (did the optional part change anything?)

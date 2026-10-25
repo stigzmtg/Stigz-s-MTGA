@@ -62,7 +62,10 @@ for (let gi = 0; gi < G; gi++) {
   const res = await Promise.race([Promise.all([host.done, reloaded.done]), timeout]);
   for (let i = 0; i < 200 && !spectator.game.over; i++) await new Promise(r => setTimeout(r, 50));
   const hs = [hash(host.game), hash(reloaded.game), hash(spectator.game)];
-  const same = hs.every(h => h === hs[0]) && res !== 'timeout';
+  // an effect the engine had to skip (it logs it instead of throwing in a real game) is a failure here too
+  const problems = [host.game, reloaded.game, spectator.game].flatMap(g => g.problems || []);
+  if (problems.length) console.log(`  engine problems: ${[...new Set(problems)].join('; ')}`);
+  const same = hs.every(h => h === hs[0]) && res !== 'timeout' && !problems.length;
   if (!same) failures++;
   console.log(`battle ${gi} seed ${seed} ${a} vs ${b}: ${same ? 'all peers identical' : 'MISMATCH'} · ${host.net.log.size} decisions · ${host.game.turn} turns · ${host.game.over ? (host.game.result || 'over') : 'running'} · reload at turn ${at.turn} (decision ${at.seq}) · ${((Date.now() - t0) / 1000).toFixed(1)}s${res === 'timeout' ? ' · TIMEOUT' : ''}${same ? '' : '\n  ' + hs.map(h => h.slice(0, 160)).join('\n  ')}`);
   for (const c of [host, reloaded, spectator, guest]) { c.game.over = true; c.net.close(); c.ch.leave(); }
