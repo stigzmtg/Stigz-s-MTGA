@@ -20,9 +20,9 @@ const turnNow = () => page.evaluate(() => +(document.querySelector('.topbar .tur
 const rnd = a => a[Math.floor(Math.random() * a.length)];
 // a card a person can't click (covered by something) is a bug: report what covers it, with a screenshot
 let covered = 0;
-const safeClick = async el => {
-  try { await el.click({ timeout: 4000 }); return true; } catch (e) {
-    const info = await el.evaluate(n => { const b = n.getBoundingClientRect(); const x = b.left + b.width / 2, y = b.top + b.height / 2; const top = document.elementFromPoint(x, y); const side = n.closest('.op-side'); const sb = side && side.getBoundingClientRect(); return `card ${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.width)}x${Math.round(b.height)} in ${side && side.className} (${sb && `${Math.round(sb.top)}..${Math.round(sb.bottom)}`}) covered by ${top && top.className} ${top && top.closest('.op-mid') ? `mid ${Math.round(top.closest('.op-mid').getBoundingClientRect().top)}..${Math.round(top.closest('.op-mid').getBoundingClientRect().bottom)}` : ''}`; }).catch(() => 'gone');
+const safeClick = async (el, pos) => {
+  try { await el.click({ timeout: 4000, ...(pos ? { position: pos } : {}) }); return true; } catch (e) {
+    const info = await el.evaluate((n, pos) => { const b = n.getBoundingClientRect(); const x = pos ? b.left + pos.x : b.left + b.width / 2, y = pos ? b.top + pos.y : b.top + b.height / 2; const top = document.elementFromPoint(x, y); const side = n.closest('.op-side'); const sb = side && side.getBoundingClientRect(); return `card ${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.width)}x${Math.round(b.height)} in ${side && side.className} (${sb && `${Math.round(sb.top)}..${Math.round(sb.bottom)}`}) covered by ${top && top.className} ${top && top.closest('.op-mid') ? `mid ${Math.round(top.closest('.op-mid').getBoundingClientRect().top)}..${Math.round(top.closest('.op-mid').getBoundingClientRect().bottom)}` : ''} ${top && top.alt ? `(${top.alt}, ${top.closest('.op-handslot') ? 'a hand card' : 'elsewhere'})` : ''} [${document.querySelector('.op-hand') ? [...document.querySelectorAll('.op-handslot')].map(h => { const r = h.getBoundingClientRect(); return `${Math.round(r.left)}/${Math.round(r.top)}${getComputedStyle(h).transform !== 'none' ? 'T' : ''}`; }).join(' ') : ''}]`; }, pos).catch(() => 'gone');
     if (info !== 'gone') { covered++; errors.push('covered: ' + info); await page.screenshot({ path: `${out}/covered-${covered}.png` }); }
     return false;
   }
@@ -64,7 +64,7 @@ for (let i = 0; i < 4000 && Date.now() - t0 < 300000; i++) {
   // defending: counters from hand sometimes, then done; a blocker sometimes
   if (/Counter/.test(step)) {
     const cs = await page.$$('.op-handslot.playable .op-card');
-    if (cs.length && Math.random() < 0.5) { await rnd(cs).click({ position: { x: 8, y: 30 } }); counters++; continue; }
+    if (cs.length && Math.random() < 0.5) { if (await safeClick(rnd(cs), { x: 8, y: 30 })) counters++; continue; }
     await page.click('.op-prompt .btn.primary'); continue;
   }
   if (/Block/.test(step)) {
@@ -89,7 +89,7 @@ for (let i = 0; i < 4000 && Date.now() - t0 < 300000; i++) {
   if (endBtn) {
     if (shots < 3 && t >= 4) { await page.screenshot({ path: `${out}/turn-${t}.png` }); shots++; }
     const playable = await page.$$('.op-handslot.playable .op-card');
-    if (playable.length && Math.random() < 0.8) { await rnd(playable).click({ position: { x: 8, y: 30 } }); plays++; clicks++; await page.waitForTimeout(30); continue; }
+    if (playable.length && Math.random() < 0.8) { if (await safeClick(rnd(playable), { x: 8, y: 30 })) plays++; clicks++; await page.waitForTimeout(30); continue; }
     const give = await page.$('.op-prompt .btn:has-text("Give DON!!")');
     if (give && Math.random() < 0.5) { await give.click(); await page.waitForTimeout(30); const tg = await page.$$('.op-slot.targetable .op-card'); if (tg.length && await safeClick(rnd(tg))) dons++; continue; }
     const can = await page.$$('.op-side.me .op-slot.can .op-card');

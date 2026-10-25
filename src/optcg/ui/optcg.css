@@ -163,7 +163,9 @@
 .op-fight .side.win b { color: #ffd9a0; text-shadow: 0 0 12px rgba(255, 170, 80, 0.7); }
 /* the hand */
 .op-hand { display: flex; justify-content: center; align-items: flex-start; height: calc(var(--op-hand-w) * 1.4 * 0.72 + 8px); padding: 8px 8px 0; min-width: 0; position: relative; z-index: 14; }
-.op-handslot { position: relative; flex: 0 1 var(--op-hand-w); width: min(var(--op-hand-w), calc((100% - 16px) / var(--n))); min-width: 22px; transition: transform 0.16s ease-out; }
+.op-handslot { position: relative; flex: 0 1 var(--op-hand-w); width: min(var(--op-hand-w), calc((100% - 16px - var(--op-hand-w)) / max(var(--n) - 1, 1))); min-width: 18px; transition: transform 0.16s ease-out; }
+/* the last card shows whole, so a full hand never runs past the edge */
+.op-handslot:last-child { flex: none; width: var(--op-hand-w); }
 .op-handslot .op-card { width: var(--op-hand-w); cursor: pointer; }
 .op-handslot:hover, .op-handslot:focus-within, .op-handslot.chosen { transform: translateY(calc(var(--op-hand-w) * -0.45)); z-index: 20; }
 /* touch screens: a tapped card would stay lifted over its neighbours (sticky hover and focus); a tap opens its menu instead */
