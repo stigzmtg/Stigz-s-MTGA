@@ -5,7 +5,7 @@
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "description": "Commander precons and top Pokémon TCG decks against the computer or with friends.",
+  "description": "Commander precons, top Pokémon TCG decks and One Piece starter decks against the computer or with friends.",
   "background_color": "#0b1913",
   "theme_color": "#0b1a14",
   "icons": [
