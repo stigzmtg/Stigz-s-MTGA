@@ -1496,7 +1496,7 @@ test('ST32-001 Kin\'emon: rest your <Slash> Leader or 1 DON!!: draw 2, trash 1',
   await T.play(T.hand(0, 'ST32-001'));
   expect(T.A.leader.rested && T.A.hand.length === 1 && T.A.trash.length === 1, 'Leader rested, drew 2, trashed 1');
 });
-test('ST32-002 Oden: "cannot be rested": that Character can\'t attack, block or be rested by effects (decided: attacking and blocking rest it, 7-1-1-1, 10-1-2)', async () => {
+test('ST32-002 Oden: "cannot be rested": that Character can\'t attack, block or be rested by effects (decided: attacking and blocking rest it, 7-1-1-1, 10-1-4-1)', async () => {
   const T = setup();
   const t = T.char(1, 'ST06-007');                // Tsuru, [Blocker]
   T.don(0, 5);

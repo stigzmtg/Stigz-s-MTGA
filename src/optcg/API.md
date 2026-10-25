@@ -59,7 +59,8 @@ DON!! cards given to a Leader or Character are counted on that card (`card.don`)
 
 Every card is an instance `{ uid, id, def, owner }`: `uid` is unique in the game and stable (the same physical card
 keeps it as it moves); `id` is the card number ('ST01-012'); `def` is its cards.json entry. On the field a card also
-has `rested`, `don` (DON!! given to it) and `playedTurn`; `zone` says where it is ('leader', 'characters', 'stage',
+has `rested`, `don` (DON!! given to it) and `playedTurn`; a Life card has `faceUp`, and `known` when its owner put it
+there from their hand or looked at it (the AI uses this); `zone` says where it is ('leader', 'characters', 'stage',
 'hand', 'deck', 'trash', 'life', or 'limbo' for a [Trigger] card while its effect resolves).
 
 ### Helpers
