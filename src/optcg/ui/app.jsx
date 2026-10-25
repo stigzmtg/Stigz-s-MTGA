@@ -5,7 +5,7 @@ import { OpHuman } from './human.js';
 import { OpLobby } from './lobby.jsx';
 import { OpBattle } from './battle.jsx';
 import { HowToPlayOp } from './howto.jsx';
-import { initOpImages, preloadOp } from './images.js';
+import { initOpImages } from './images.js';
 import { createStore, loadSettings, fetchJSON, safeStorage } from '../../ui/common.js';
 import { makePace } from '../../ui/pacing.js';
 import { Lockstep, LocalSeatAgent, RemoteSeatAgent } from '../../net/lockstep.js';
@@ -113,7 +113,7 @@ export function OnePieceApp({ onHome }) {
         setData({ cards, decks });
       } catch (e) { setError(e.message); }
     })();
-    initOpImages().then(ok => { if (ok) preloadOp(); });
+    initOpImages();
     roomApi().then(a => setApi(a || null));
   }, []);
   useEffect(() => { safeStorage.setItem('op-mode', mode); }, [mode]);

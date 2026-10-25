@@ -223,3 +223,6 @@ const total = sizes.reduce((a, b) => a + b, 0);
 console.log(`${Object.keys(index.cards).length} of ${ids.length} pictures in ${index.packs.length} packs, ${(total / 1048576).toFixed(1)} MB (largest ${(Math.max(...sizes) / 1048576).toFixed(2)} MB)`);
 const clean = decks.filter(d => [d.leader, ...d.cards.map(([id]) => id)].every(id => known[id] && known[id].product)).map(d => d.code);
 console.log(`decks with only clean scans: ${clean.join(', ') || 'none'}`);
+
+// the menus' small pictures
+await import('./pack-thumbs.mjs');

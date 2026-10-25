@@ -1,7 +1,7 @@
 // The front door: a title under drifting card art, the two games as arched gates with everything each one offers,
 // shelves of decks you can jump straight into, a box for joining a friend's room, and what makes the tables play well.
 import { initPkImages, pkImage, subscribePk, pkImagesVersion, preloadPk } from '../ptcg/ui/images.js';
-import { initOpImages, opImage, subscribeOp, opImagesVersion, preloadOp } from '../optcg/ui/images.js';
+import { initOpImages, opThumb, subscribeOp, opImagesVersion } from '../optcg/ui/images.js';
 import { ColorDot, OP_COLORS } from '../optcg/ui/colors.jsx';
 import { initImages, lobbyImages, subscribeImages, imagesVersion } from './images.js';
 import { Pip } from './cardview.jsx';
@@ -34,7 +34,8 @@ const MTG_FEATURED = [
   ['c18-nature-s-vengeance', "Nature's Vengeance", 'Lord Windgrace', 'BRG', 'Commander 2018', 2018, 'A planeswalker commander that brings lands back from the graveyard and turns them into value.'],
 ];
 // One Piece Leaders in the doorway, and drifting through the title
-const OP_FAN = ['ST01-001', 'ST13-003', 'ST21-001', 'ST23-001', 'ST30-001'];
+// Leaders with clean scans (most One Piece card pictures carry Bandai's SAMPLE stamp)
+const OP_FAN = ['ST02-001', 'OP01-060', 'ST01-001', 'ST04-001', 'OP13-004'];
 const OP_COMPASS = <span className="compass" aria-hidden="true" />;
 const PK_TYPES = ['Grass', 'Fire', 'Water', 'Lightning', 'Psychic', 'Fighting', 'Darkness', 'Metal'];
 
@@ -172,7 +173,7 @@ function PkTile({ d, onPick }) {
 }
 
 function OpTile({ d, leader, onPick }) {
-  const img = opImage(d.featured || d.leader);
+  const img = opThumb(d.featured || d.leader);
   return (
     <button className="deck-tile op" onClick={() => onPick(d.id)} aria-label={`${d.code} ${d.name}. Pick this deck`}>
       <span className="dt-art op">{img ? <img src={img} alt="" draggable="false" /> : <span className="dt-ph">{leader ? leader.name : d.name}</span>}<span className="dt-badge">{d.code}</span></span>
@@ -283,7 +284,7 @@ export function Home({ onPick, onJoin }) {
     initPkImages().then(ok => { if (ok) preloadPk(); });
     initImages();
     fetchJSON('data/ptcg/decks.json').then(setPkDecks, () => setPkDecks([]));
-    initOpImages().then(ok => { if (ok) preloadOp(); });
+    initOpImages();
     Promise.all([fetchJSON('data/optcg/decks.json'), fetchJSON('data/optcg/cards.json')]).then(([decks, cards]) => setOp({ decks, cards }), () => setOp({ decks: [], cards: {} }));
   }, []);
   const mtg = id => lobbyImages(id)[0] || null;
@@ -355,7 +356,7 @@ export function Home({ onPick, onJoin }) {
             onPlay={mode => open('pokemon', mode)} />
           <Gate game="op" title="One Piece Card Game" kind="Starter decks" keystone={OP_COMPASS}
             pips={OP_COLORS.map(c => <ColorDot key={c} colors={c} size={17} />)}
-            fan={OP_FAN.map(opImage)} fanLabel="Leaders: Monkey.D.Luffy, Portgas.D.Ace, Gear 5 Luffy, Shanks, Luffy and Ace"
+            fan={OP_FAN.map(opThumb)} fanLabel="Leaders: Eustass Kid, Donquixote Doflamingo, Monkey.D.Luffy, Kaido, Sabo"
             blurb={`All ${opDecks.length || 36} starter decks, each exactly as it comes in the box: a Leader, 50 cards and 10 DON!!. One on one, Life cards on the line.`}
             facts={[[String(opDecks.length || 36), 'starter decks'], ['1v1', 'vs computer or a friend'], [opCards ? opCards.toLocaleString('en-US') : '500+', 'cards coded']]}
             points={['DON!! to power up your Leader and crew', 'Blockers and Counters to defend', 'Life cards with surprise Triggers', 'Every [On Play] and [When Attacking] effect']}

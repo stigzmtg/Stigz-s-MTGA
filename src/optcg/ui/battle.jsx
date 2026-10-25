@@ -2,7 +2,7 @@
 // Leader and the DON!! cost area behind them, Life beside the player's card, deck and trash on the right), the bar
 // across the middle (what to do now, and the fight in progress), your hand, and a side panel with the card you point
 // at and the battle log. Cards glide between zones (ui/motion.js); attacks, Counters, Triggers and K.O.s are animated.
-import { opImage, subscribeOp, opImagesVersion } from './images.js';
+import { opImage, subscribeOp, opImagesVersion, preloadOpCards } from './images.js';
 import { ColorDot, COLOR_HEX } from './colors.jsx';
 import { EffectText } from './lobby.jsx';
 import { Modal, SoundToggle, SizeButton, Confetti, Menu } from '../../ui/dialogs.jsx';
@@ -19,7 +19,8 @@ import { createFlights, runFlights, shake, strike, motionOn } from '../../ui/mot
 import { uiScale } from '../../ui/common.js';
 
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, useSyncExternalStore } = React;
-const youText = t => secondPerson(String(t || ''));
+// the log and prompts in the second person ("You add a Life card to your hand", not "... to their hand")
+const youText = t => secondPerson(String(t || '')).replace(/DON!!/g, 'DON\u2060\u2060').replace(/(^|[.!?]\s+)(You\b[^.!?]*)/g, (m, pre, sent) => pre + sent.replace(/\btheir\b/g, 'your').replace(/\bthemselves\b/g, 'yourself')).replace(/DON\u2060\u2060/g, 'DON!!');
 // an [Activate: Main] action's button: short, with the effect's words as the tooltip
 const effectWords = a => String(a.label || '').replace(/^[^:]*?: (?=\[)/, '');
 const shortWords = (t, n = 46) => { const w = t.replace(/\[(Activate: Main|Once Per Turn)\]\s*/g, '').replace(/[{}]/g, '').trim(); return w.length > n ? w.slice(0, n - 1).trimEnd() + '…' : w; };
@@ -293,6 +294,13 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
       },
     });
   });
+  // this battle's pictures: the packs holding both decks (once the decks are on the table)
+  const preloaded = useRef(false);
+  useEffect(() => {
+    if (preloaded.current) return;
+    const ids = game.players.flatMap(p => [p.leader, ...p.deck, ...p.hand, ...p.life].filter(Boolean).map(c => c.id));
+    if (ids.length) { preloaded.current = true; preloadOpCards(ids); }
+  });
   useEffect(() => { if (fx.shake && motionOn()) shake(boardRef.current, fx.shake.strength); }, [fx.shake && fx.shake.key]);
   // the damage step: the attacker swings at its target
   const strikeKey = game.battle && game.battle.step === 'damage' ? `${game.battle.attacker}:${game.battle.target}:${game.turn}` : null;
@@ -474,7 +482,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
         style={ld ? { '--c1': COLOR_HEX[ld.colors[0]], '--c2': COLOR_HEX[ld.colors[1] || ld.colors[0]] } : undefined}>
         <div className="op-plate">
           <EmoteBubble b={emotes.bubbles.get(p.id)} />
-          <div className="who">{avatarOf(p.id) ? <AnimalAvatar code={avatarOf(p.id)} size={34} /> : null}<b>{p.name}</b>{game.current === p.id && !game.over ? <span className="turnmark">turn</span> : null}</div>
+          <div className="who">{avatarOf(p.id) ? <AnimalAvatar code={avatarOf(p.id)} size={34} /> : null}<b title={p.name}>{p.name}</b>{game.current === p.id && !game.over ? <span className="turnmark">turn</span> : null}</div>
           {p.deckName && p.deckName !== p.name ? <div className="deck">{p.deckName}</div> : null}
           <Life p={p} sleeve={sleeves[p.id]} />
         </div>

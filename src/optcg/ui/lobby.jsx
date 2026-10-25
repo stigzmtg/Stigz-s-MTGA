@@ -2,14 +2,14 @@
 import { DeckRecord } from '../../ui/replaybar.jsx';
 import { SizeButton } from '../../ui/dialogs.jsx';
 import { DeckStyleButton, subscribeDeckStyles, deckStylesVersion } from '../../ui/deckstyle.jsx';
-import { opImage, subscribeOp, opImagesVersion } from './images.js';
+import { opImage, opThumb, subscribeOp, opImagesVersion } from './images.js';
 import { OpFriendsPanel } from './friends.jsx';
 import { OP_COLORS, COLOR_HEX, ColorDot } from './colors.jsx';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
 function DeckTile({ deck, cards, selected, onClick, i = 0 }) {
-  const img = opImage(deck.featured || deck.leader);
+  const img = opThumb(deck.featured || deck.leader);
   const lead = cards[deck.leader] || {};
   return (
     <button className={`op-deck ${selected ? 'sel' : ''}`} onClick={onClick} aria-pressed={selected} style={{ '--i': Math.min(i, 30), '--c1': COLOR_HEX[deck.colors[0]], '--c2': COLOR_HEX[deck.colors[1] || deck.colors[0]] }}>
@@ -81,7 +81,7 @@ export function OpLobby({ data, online, onStart, onHome, onHelp }) {
     const o = opp === 'random' ? pool[Math.floor(Math.random() * pool.length)] : data.decks.find(d => d.id === opp);
     onStart({ mine: deck, opp: o });
   };
-  const preview = hover ? opImage(hover) : opImage(deck.leader);
+  const preview = hover ? opImage(hover) : opImage(deck.leader) || opThumb(deck.leader);
   const hovered = hover ? data.cards[hover] : lead;
   return (
     <div className="app op">
