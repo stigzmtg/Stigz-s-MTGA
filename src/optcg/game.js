@@ -21,17 +21,17 @@ export const HANDLED = {
   timings: ['onPlay', 'whenAttacking', 'onOppAttack', 'onBlock', 'ko', 'endOfYourTurn', 'endOfOppTurn', 'startOfTurn', 'startOfMain',
     'startOfGame', 'endOfBattle', 'battling', 'charKO', 'charPlayed', 'blockerActivated', 'donReturned', 'eventActivated', 'rested',
     'handTrashed', 'lifeToHand'],
-  when: ['self', 'who', 'byEffect', 'byYou', 'byOpp', 'sel', 'minN', 'withChar', 'battleSel'],
+  when: ['self', 'who', 'byEffect', 'byYou', 'byOpp', 'sel', 'minN', 'withChar', 'battleSel', 'srcSel'],
   steps: ['select', 'power', 'basePower', 'cost', 'ko', 'rest', 'setActive', 'giveDon', 'donActive', 'restDon', 'addDon', 'draw',
     'discard', 'bounce', 'bottom', 'grant', 'noBlocker', 'noBlockerIfAttacks', 'restrict', 'playerFlag', 'playSelf', 'selfToHand',
     'runEffect', 'look', 'play', 'toHand', 'deckToLife', 'trashLife', 'lifeToHand', 'handToLife', 'fieldToLife', 'lookLife', 'choose',
-    'may', 'reveal', 'delayed', 'custom', 'playThat', 'freeze', 'bounceAny', 'discardAny', 'handToDeck', 'trashField', 'revealedToDeck', 'restDonOrChar'],
+    'may', 'reveal', 'delayed', 'custom', 'playThat', 'freeze', 'bounceAny', 'discardAny', 'handToDeck', 'trashField', 'revealedToDeck', 'restDonOrChar', 'lookOppDeck', 'chooseCostReveal', 'mill', 'redirect'],
   costs: ['restDon', 'returnDon', 'returnDonAny', 'restSelf', 'trashSelf', 'trashHand', 'revealHand', 'lifeToHand', 'trashLife',
-    'restOwn', 'bounceOwn', 'handToDeck', 'trashToDeck', 'millSelf', 'lifeFaceUp', 'lifeFaceDown', 'charToLife', 'returnGivenDon', 'bounceSelf'],
-  conds: ['and', 'or', 'not', 'cmp', 'exists', 'self', 'leader', 'turn', 'did', 'that'],
+    'restOwn', 'bounceOwn', 'handToDeck', 'trashToDeck', 'millSelf', 'lifeFaceUp', 'lifeFaceDown', 'charToLife', 'returnGivenDon', 'bounceSelf', 'restLeaderOrDon'],
+  conds: ['and', 'or', 'not', 'cmp', 'exists', 'self', 'leader', 'turn', 'did', 'that', 'chosenCost', 'handTrashedThisTurn'],
   filters: ['rested', 'active', 'cost', 'baseCost', 'costRange', 'power', 'basePower', 'trait', 'traitHas', 'name', 'notName', 'notSelf',
-    'color', 'multicolor', 'attr', 'kw', 'hasTrigger', 'vanilla', 'cat', 'playedThisTurn', 'faceUp', 'or', 'not'],
-  amounts: ['life', 'lifeTotal', 'hand', 'trash', 'donField', 'donRested', 'restedCards', 'count', 'per', 'neg', 'var'],
+    'color', 'multicolor', 'attr', 'kw', 'hasTrigger', 'vanilla', 'cat', 'playedThisTurn', 'battledChar', 'faceUp', 'or', 'not'],
+  amounts: ['life', 'lifeTotal', 'hand', 'trash', 'donField', 'donRested', 'restedCards', 'givenDon', 'eventN', 'count', 'per', 'neg', 'var'],
   refs: ['self', 'leader', 'oppLeader', 'selected', 'replaced', 'battleOpp'],
   durations: ['battle', 'turn', 'startOfYourNextTurn', 'endOfYourNextTurn', 'endOfOppNextTurn', 'oppNextRefresh', 'game'],
   // static mods and effect flags something in here reads
@@ -483,6 +483,8 @@ export class OnePieceGame {
       case 'vanilla': return !card.def.text && !card.def.trigger;
       case 'cat': return f.any.includes(card.cat);
       case 'playedThisTurn': return this.onField(card) && card.playedTurn === this.turn;
+      // OP12-020: "If this Leader battles your opponent's Character during this turn"
+      case 'battledChar': return this.onField(card) && card.battledCharTurn === this.turn && card.battledCharInst === card.inst;
       case 'faceUp': return card.zone === 'life' && card.faceUp === f.v;
       case 'or': return f.any.some(g => g.every(h => this.filter(card, h, ctx)));
       case 'not': return !this.filter(card, f.f, ctx);
@@ -503,6 +505,9 @@ export class OnePieceGame {
       case 'donField': return this.donOnField(q.id);
       case 'donRested': return q.donRested;
       case 'restedCards': return q.donRested + this.field(q.id).filter(c => c.rested).length;
+      case 'givenDon': return this.givenDon(q.id);
+      // "draw cards equal to the number of cards trashed": the count from the event that activated the effect
+      case 'eventN': return (ctx.data && ctx.data.n) || 0;
       case 'count': return this.candidates(n.sel, ctx).length;
       case 'per': return n.each * Math.floor(this.amount(n.of, ctx) / (n.div || 1));
       case 'neg': return -this.amount(n.v, ctx);
@@ -527,6 +532,9 @@ export class OnePieceGame {
       case 'did': return !!ctx.vars.did;
       // "If that card is a Character": the card just revealed or chosen
       case 'that': return (ctx.vars.that || []).some(x => this.matches(x, { f: c.f, cats: c.cats }, ctx));
+      // "If the revealed card has the chosen cost"
+      case 'chosenCost': return !!ctx.vars.revealed && ctx.vars.chosenCost != null && this.baseCost(ctx.vars.revealed) === ctx.vars.chosenCost;
+      case 'handTrashedThisTurn': return (c.who === 'opp' ? o : p).handTrashedTurn === this.turn;
       default: this.unhandled(`condition "${c.k}"`); return false;
     }
   }
@@ -703,7 +711,8 @@ export class OnePieceGame {
   attackTargets(a) {
     const pid = a.owner;
     if (!this.onField(a) || a.rested || (a.cat !== 'L' && a.cat !== 'C')) return [];
-    if (this.flag(a, 'cantAttack')) return [];
+    // attacking rests the attacker (7-1-1-1): a card that can't be rested can't attack
+    if (this.flag(a, 'cantAttack') || this.flag(a, 'cantRest')) return [];
     let vsLeader = true;
     if (a.cat === 'C' && a.playedTurn === this.turn) {
       if (this.has(a, 'Rush')) { /* anything */ }
@@ -804,13 +813,14 @@ export class OnePieceGame {
         case 'restDon': rest += c.n; break;
         case 'returnDon': if (this.donOnField(pid) - extraDon < c.n) return false; break;
         case 'returnDonAny': if (this.donOnField(pid) < 1) return false; break;
-        case 'restSelf': if (!this.onField(card) || card.rested) return false; break;
+        case 'restSelf': if (!this.onField(card) || card.rested || this.flag(card, 'cantRest')) return false; break;
+        case 'restLeaderOrDon': if (!this.restableLeader(card, c)) rest += 1; break;
         case 'trashSelf': if (!this.onField(card)) return false; break;
         case 'trashHand': case 'revealHand': if (hand(c).length < c.n) return false; break;
         case 'lifeToHand': if (!p.life.length || this.ownLifeLocked(pid)) return false; break;
         case 'trashLife': if (!p.life.length) return false; break;
         case 'bounceSelf': if (!this.onField(card) || card.cat !== 'C') return false; break;
-        case 'restOwn': if (this.candidates({ who: 'you', cats: c.cats || ['C'], f: [...(c.f || []), { k: 'active' }] }, ctx).filter(x => !c.notSelf || x !== card).length < (c.n || 1)) return false; break;
+        case 'restOwn': if (this.candidates({ who: 'you', cats: c.cats || ['C'], f: [...(c.f || []), { k: 'active' }] }, ctx).filter(x => (!c.notSelf || x !== card) && !this.flag(x, 'cantRest')).length < (c.n || 1)) return false; break;
         case 'bounceOwn': if (this.candidates({ who: 'you', cats: ['C'], f: c.f }, ctx).filter(x => !c.notSelf || x !== card).length < c.n) return false; break;
         case 'handToDeck': if (p.hand.filter(x => x !== card).length < c.n) return false; break;
         case 'trashToDeck': if (p.trash.length < c.n) return false; break;
@@ -841,6 +851,17 @@ export class OnePieceGame {
           break;
         }
         case 'restSelf': card.rested = true; this.event('rest', { card: card.uid }); this.fire('rested', { pid, card, byEffect: true, by: pid }); break;
+        case 'restLeaderOrDon': {
+          // ST32-001: "rest your <Slash> attribute Leader or 1 of your DON!! cards"
+          const L = p.leader, opts = [];
+          if (this.restableLeader(card, c)) opts.push({ value: 'leader', label: `Rest ${L.name}` });
+          if (p.donActive) opts.push({ value: 'don', label: 'Rest 1 of your DON!! cards' });
+          const v = await this.chooseOption(pid, opts, 'Rest your Leader or 1 of your DON!! cards?', 'rest-leader-or-don');
+          if (v === 'leader') { L.rested = true; this.event('rest', { card: L.uid }); this.fire('rested', { pid, card: L, byEffect: true, by: pid }); }
+          else if (v === 'don') this.payDon(pid, 1);
+          else return false;
+          break;
+        }
         case 'trashSelf': this.moveCard(card, 'trash'); this.log(`${p.name} trashes ${card.name}.`, { pid }); this.event('trash', { pid, card: card.uid }); break;
         case 'bounceSelf': this.moveCard(card, 'hand'); this.log(`${card.name} returns to ${p.name}'s hand.`, { pid }); this.event('return', { card: card.uid, to: 'hand' }); break;
         case 'trashHand': case 'revealHand': {
@@ -850,14 +871,14 @@ export class OnePieceGame {
           if (trash) {
             for (const x of got) { this.moveCard(x, 'trash'); this.event('trash', { pid, card: x.uid }); }
             this.log(`${p.name} trashes ${got.map(x => x.name).join(', ')} from their hand.`, { pid });
-            this.fire('handTrashed', { pid, n: got.length, byEffect: true, src: card });
+            this.handTrashed(pid, got.length, card);
           } else { this.log(`${p.name} reveals ${got.map(x => x.name).join(', ')}.`, { pid }); ctx.vars.revealedHand = got; }
           break;
         }
         case 'lifeToHand': { const x = await this.pickLife(pid, c.where, 'Add which Life card to your hand?'); if (x) await this.lifeToHand(pid, x, { byEffect: true }); break; }
         case 'trashLife': { const x = await this.pickLife(pid, c.where, 'Trash which Life card?'); if (x) { this.moveCard(x, 'trash'); this.log(`${p.name} trashes a card from their Life.`, { pid }); this.event('trash', { pid, card: x.uid, from: 'life' }); } break; }
         case 'restOwn': {
-          const opts = this.candidates({ who: 'you', cats: c.cats || ['C'], f: [...(c.f || []), { k: 'active' }] }, ctx).filter(x => !c.notSelf || x !== card);
+          const opts = this.candidates({ who: 'you', cats: c.cats || ['C'], f: [...(c.f || []), { k: 'active' }] }, ctx).filter(x => (!c.notSelf || x !== card) && !this.flag(x, 'cantRest'));
           const got = await this.chooseOnField(pid, opts, { min: c.n || 1, max: c.n || 1, prompt: 'Rest which of your cards?', hint: 'rest-cost' });
           for (const x of got) { x.rested = true; this.event('rest', { card: x.uid }); this.fire('rested', { pid, card: x, byEffect: true, by: pid }); }
           break;
@@ -1003,6 +1024,8 @@ export class OnePieceGame {
     if (w.byOpp && data.by !== this.opp(pid)) return false;
     if (w.sel && !(data.card && this.matches(data.card, w.sel, { pid, src: c, vars: {} }))) return false;
     if (w.minN && (data.n || 0) < w.minN) return false;
+    // "by your {Navy} type card's effect": the card whose effect did it
+    if (w.srcSel && !(data.src && this.matches(data.src, w.srcSel, { pid, src: c, vars: {} }))) return false;
     // "If this Character battles your opponent's Character": the other card in the battle
     if (w.withChar || w.battleSel) {
       const other = data.attacker === c ? data.target : data.attacker;
@@ -1100,6 +1123,8 @@ export class OnePieceGame {
       }
     }
     // "When this Character battles ...": the two cards of the battle are settled once the Block Step is over
+    // OP12-020: remember which Leaders and Characters battle an opponent's Character this turn
+    for (const [x, y] of [[a, f.target], [f.target, a]]) if (y.cat === 'C' && y.owner !== x.owner) { x.battledCharTurn = this.turn; x.battledCharInst = x.inst; }
     this.fire('battling', { pid, cards: f.cards, attacker: a, target: f.target });
     await this.resolvePending();
     if (this.battleBroken()) return this.endBattle();
@@ -1126,7 +1151,7 @@ export class OnePieceGame {
     if (this.has(a, 'Unblockable') || f.noBlockerAll || this.liveEffects('noBlockerWhenAttacking', a).length) return [];
     return this.players[f.dpid].characters.filter(c => c !== f.target && !c.rested && this.has(c, 'Blocker')
       && !f.noBlocker.some(fl => this.matches(c, { f: fl }, { pid: f.pid, src: a, vars: {} }))
-      && !this.flag(c, 'cantBlock'));
+      && !this.flag(c, 'cantBlock') && !this.flag(c, 'cantRest'));      // blocking rests the blocker
   }
   counterOptions(dp) {
     const p = this.players[dp], out = [];
@@ -1237,6 +1262,16 @@ export class OnePieceGame {
   triggerAbility(card) { return this.abilities(card).find(a => a.kind === 'trigger') || null; }
   // "you cannot add Life cards to your hand using your own effects during this turn" (costs included, 8-2-1-1)
   ownLifeLocked(pid) { return this.effects.some(e => e.kind === 'noOwnLifeToHand' && e.pid === pid); }
+  restableLeader(card, c) {
+    const L = this.players[card.owner].leader;
+    return !L.rested && !this.flag(L, 'cantRest') && this.matches(L, { cats: c.cats, f: c.f }, { pid: card.owner, src: card, vars: {} });
+  }
+  // cards were trashed from a player's hand by an effect (costs included): OP12-040's trigger, ST33-004's condition
+  handTrashed(pid, n, src) {
+    if (!n) return;
+    this.players[pid].handTrashedTurn = this.turn;
+    this.fire('handTrashed', { pid, n, byEffect: true, src });
+  }
   onPlayNegated(pid) { return this.flag(this.players[pid].leader, 'negateOnPlay') || this.effects.some(e => e.kind === 'negateOnPlay' && e.pid === pid); }
 
   // ------------------------------------------------------------ K.O. and leaving the field (10-2-1)
@@ -1424,7 +1459,7 @@ export class OnePieceGame {
           : await this.chooseCards(q.id, [...q.hand], { min: n, max: n, prompt: `Trash ${cards(n)} from your hand`, from: 'hand', hint: 'discard' });
         for (const c of got) { this.moveCard(c, 'trash'); this.event('trash', { pid: q.id, card: c.uid, from: 'hand' }); }
         this.log(s.blind ? `${p.name} trashes ${got.map(c => c.name).join(', ')} from ${whose} hand.` : `${q.name} trashes ${got.map(c => c.name).join(', ')} from their hand.`, { pid: q.id });
-        this.fire('handTrashed', { pid: q.id, n: got.length, byEffect: true });
+        this.handTrashed(q.id, got.length, ctx.src);
         return;
       }
       case 'bounce': case 'bottom': {
@@ -1590,7 +1625,7 @@ export class OnePieceGame {
         const opts = this.candidates({ zone: 'hand', who: 'you', cats: s.cats, f: s.f }, ctx);
         const got = await this.chooseCards(pid, opts, { min: 0, max: opts.length, prompt: 'Trash any number of these cards from your hand', from: 'hand', hint: 'discard-any' });
         for (const c of got) { this.moveCard(c, 'trash'); this.event('trash', { pid, card: c.uid, from: 'hand' }); }
-        if (got.length) { this.log(`${p.name} trashes ${got.map(c => c.name).join(', ')} from their hand.`, { pid }); this.fire('handTrashed', { pid, n: got.length, byEffect: true, src: ctx.src }); }
+        if (got.length) { this.log(`${p.name} trashes ${got.map(c => c.name).join(', ')} from their hand.`, { pid }); this.handTrashed(pid, got.length, ctx.src); }
         ctx.vars.trashed = got.length;
         return;
       }
@@ -1599,6 +1634,46 @@ export class OnePieceGame {
         const got = await this.chooseCards(pid, [...p.hand], { min: n, max: n, prompt: `Place ${cards(n)} from your hand at the ${s.bottom ? 'bottom' : 'top'} of your deck`, from: 'hand', hint: 'topdeck' });
         for (const c of got) this.moveCard(c, 'deck', { top: !s.bottom });
         if (got.length) this.log(`${p.name} places ${cards(got.length)} from their hand at the ${s.bottom ? 'bottom' : 'top'} of their deck.`, { pid });
+        return;
+      }
+      case 'lookOppDeck': {
+        // "Look at 1 card from the top of your opponent's deck": it stays where it is (11-3-2, 11-3-3)
+        const seen = o.deck.slice(0, this.amount(s.n, ctx));
+        if (!seen.length) return;
+        this.log(`${p.name} looks at the top card of ${o.name}'s deck.`, { pid });
+        this.event('look', { pid, n: seen.length, whose: o.id });
+        this.peeked = (this.peeked || 0) + 1;
+        // only that player sees it: a confirm (any answer) whose prompt names the card
+        await this.confirm(pid, `The top card of your opponent's deck is ${seen.map(c => c.name).join(', ')}.`, 'look', { card: seen[0].uid, cards: seen.map(c => c.uid) });
+        return;
+      }
+      case 'chooseCostReveal': {
+        // "Choose a cost and reveal 1 card from the top of your opponent's deck"
+        const v = await this.chooseNumber(pid, 0, 10, 'Choose a cost', 'choose-cost');
+        ctx.vars.chosenCost = v;
+        const c = o.deck[0] || null;
+        ctx.vars.revealed = c; ctx.vars.that = c ? [c] : [];
+        this.log(`${p.name} chooses cost ${v}${c ? ` and reveals ${c.name} (cost ${this.baseCost(c)}) from the top of ${o.name}'s deck` : ''}.`, { pid });
+        if (c) this.event('reveal', { pid: o.id, card: c.uid });
+        return;
+      }
+      case 'mill': {
+        const got = p.deck.slice(0, this.amount(s.n, ctx));
+        for (const c of got) this.moveCard(c, 'trash');
+        if (got.length) this.log(`${p.name} trashes ${cards(got.length)} from the top of their deck.`, { pid });
+        return;
+      }
+      case 'redirect': {
+        // ST36-005: "Change the target of the attack to your [Eustass"Captain"Kid] ..."
+        const f = this.fight;
+        if (!f || f.dpid !== pid) return;
+        const opts = this.candidates(s.sel, ctx).filter(c => c !== f.target && c.cat === 'C');
+        const [c] = await this.chooseOnField(pid, opts, { min: opts.length ? 1 : 0, max: 1, prompt: 'Change the target of the attack to which Character?', hint: 'redirect' });
+        if (!c) return;
+        f.target = c; f.tinst = c.inst; f.cards = [f.attacker, c];
+        this.syncBattle();
+        this.log(`The attack now targets ${c.name}.`, { pid });
+        this.event('redirect', { pid, card: c.uid });
         return;
       }
       case 'revealedToDeck': {

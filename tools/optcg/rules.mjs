@@ -1367,6 +1367,171 @@ test('ST30-014 Mr.3: rest it: give up to 2 rested DON!! each to up to 2 Characte
   expect(a.don === 2 && b.don === 2 && T.A.donRested === 0, '2 each');
 });
 
+// ================================================================ ST-31 to ST-36
+test('OP11-062 Katakuri (Leader): DON!! −1: look at the top card of the opponent\'s deck (only this player is told), +1000 this battle', async () => {
+  const T = setup({ leaders: ['OP11-062', 'ST01-001'] });
+  T.quiet(); T.life(1, [FILLER]);
+  T.don(0, 1);
+  const [top] = T.deckTop(1, ['ST01-012']);
+  let seen;
+  T.a.on('pay-cost', () => true); T.a.on('look', req => { seen = req; return true; });
+  await T.attack(T.A.leader, T.B.leader);
+  expect(seen && seen.card === top.uid && /Luffy/.test(seen.prompt) && T.B.deck[0] === top, 'A saw it; it stays on top');
+  expect(T.A.donDeck === 10 && !T.b.asked.some(r => r.hint === 'look'), 'DON!! returned; B not asked');
+});
+test('"Choose a cost and reveal the top card of your opponent\'s deck" (OP11-081): the K.O. happens only on a match', async () => {
+  for (const [guess, hit] of [[3, true], [4, false]]) {
+    const T = setup();
+    const t = T.char(1, FILLER);
+    T.deckTop(1, ['ST01-008']);                     // cost 3
+    T.don(0, 6);
+    T.a.on('choose-cost', () => guess); T.a.on('ko', () => [t.uid]);
+    await T.play(T.hand(0, 'OP11-081'));
+    expect(hit ? T.B.trash.includes(t) : T.B.characters.includes(t), `guess ${guess}: ${hit ? 'K.O.' : 'nothing'}`);
+  }
+});
+test('OP12-020 Zoro (Leader): [DON!! x3] after battling a Character, set active; then it can\'t attack Characters with a base cost of 7 or less', async () => {
+  const T = setup({ leaders: ['OP12-020', 'ST01-001'] });
+  T.quiet();
+  T.don(0, 3); await T.give(T.A.leader, 3);
+  const r = T.char(1, FILLER, { rested: true });
+  const big = T.char(1, 'ST04-003', { rested: true });     // Kaido, cost 9
+  const small = T.char(1, 'ST03-002', { rested: true });   // Weevil, cost 3
+  await T.attack(T.A.leader, r);
+  await T.activate(T.A.leader);
+  expect(!T.A.leader.rested, 'active again');
+  const targets = T.g.attackTargets(T.A.leader).map(c => c.uid);
+  expect(targets.includes(big.uid) && !targets.includes(small.uid) && targets.includes(T.B.leader.uid), 'can attack Kaido and the Leader, not Weevil');
+});
+test('OP12-020 Zoro (Leader): without a battle against a Character this turn, nothing', async () => {
+  const T = setup({ leaders: ['OP12-020', 'ST01-001'] });
+  T.quiet(); T.life(1, [FILLER, FILLER]);
+  T.don(0, 3); await T.give(T.A.leader, 3);
+  await T.attack(T.A.leader, T.B.leader);
+  await T.activate(T.A.leader);
+  expect(T.A.leader.rested, 'stays rested');
+});
+test('OP12-028 Hiyori: "<Slash> attribute card or green Event"', async () => {
+  const T = setup({ leaders: ['OP12-020', 'ST01-001'] });
+  const h = T.char(0, 'OP12-028');
+  T.don(0, 1);
+  const top = T.deckTop(0, ['ST03-002', 'ST02-017', 'ST01-016', FILLER, FILLER]);   // Slash char, green Event, red Event
+  let opts;
+  T.a.on('take', req => { opts = req.options; return []; });
+  await T.activate(h);
+  expect(opts.length === 2 && opts.includes(top[0].uid) && opts.includes(top[1].uid), `Weevil and Straw Sword (${opts.length})`);
+});
+test('OP12-040 Kuzan (Leader): a card trashed from your hand by your {Navy} card\'s effect: draw that many', async () => {
+  const T = setup({ leaders: ['OP12-040', 'ST01-001'] });
+  T.don(0, 5);
+  const a = T.hand(0, FILLER), b = T.hand(0, FILLER);
+  T.a.on('discard', () => [a.uid, b.uid]);
+  await T.play(T.hand(0, 'OP12-046'));          // Zephyr (Navy): [On Play] trash 2 cards from your hand
+  expect(T.A.trash.includes(a) && T.A.trash.includes(b) && T.A.hand.length === 2, `drew 2 (${T.A.hand.length})`);
+  const T2 = setup({ leaders: ['OP12-040', 'ST01-001'] });
+  T2.don(0, 6);
+  const x = T2.hand(0, FILLER);
+  T2.a.on('pay-cost', () => true); T2.a.on('discard', () => [x.uid]);
+  await T2.play(T2.hand(0, 'ST04-005'));         // Queen (not Navy): DON!! −1: draw 2, trash 1
+  expect(T2.A.trash.includes(x) && T2.A.hand.length === 2, `no extra draw (${T2.A.hand.length})`);
+});
+test('OP12-098 Hair Removal Fist: "that card gains an additional +2000" with a cost-8 Revolutionary Army Character', async () => {
+  const T = setup({ leaders: ['ST01-001', 'OP13-004'] });
+  T.char(1, 'ST35-004'); T.g.addEffect({ kind: 'cost', card: T.B.characters[0], n: 1 }, 'turn', 1);   // Koala 7 + 1 + 1 = 9
+  T.life(1, [FILLER]);
+  T.hand(1, 'OP12-098'); T.don(1, 1);
+  T.b.on('blocker', () => null);
+  let n = 0;
+  T.b.on('counter', req => (n++ ? null : req.options.find(o => o.kind === 'event')));
+  T.b.on('buff', () => [T.B.leader.uid]);
+  const att = T.char(0, FILLER); T.don(0, 3); await T.give(att, 3);     // 8000
+  T.b.on('main', () => ({ t: 'end' }));
+  await T.attack(att, T.B.leader);
+  expect(T.B.life.length === 1, 'Leader 4000 + 1000 (Sabo) + 2000 + 2000 = 9000 holds');
+});
+test('OP13-004 Sabo (Leader): −1000 with 4+ Life; [DON!! x1] with a cost-8 Character, the Leader and all Characters +1000', async () => {
+  const T = setup({ leaders: ['OP13-004', 'ST01-001'] });
+  T.life(0, [FILLER, FILLER, FILLER, FILLER]);
+  expect(T.g.power(T.A.leader) === 4000, `4000 (${T.g.power(T.A.leader)})`);
+  const k = T.char(0, 'ST35-004');             // Koala, 7 + 1 = 8
+  const c = T.char(0, FILLER);
+  T.A.leader.don = 1; T.A.donDeck = 9;
+  expect(T.g.power(T.A.leader) === 6000 && T.g.power(c) === 6000 && T.g.power(k) === 7000, `${T.g.power(T.A.leader)}, ${T.g.power(c)}, ${T.g.power(k)}`);
+});
+test('P-088 Law: [Trigger] plays it with a {Supernovas} Leader and 5 or less Life in total', async () => {
+  const T = setup({ leaders: ['ST01-001', 'OP10-099'] });
+  T.quiet(); T.b.on('trigger', () => true);
+  T.life(1, ['P-088', FILLER]); T.life(0, [FILLER, FILLER]);
+  await T.attack(T.char(0, FILLER), T.B.leader);
+  expect(T.B.characters.some(c => c.id === 'P-088'), 'played (1 + 2 Life left)');
+});
+test('ST31-003 Brook and ST31-004 Luffy: "a total of 3 or more given DON!! cards"; -1000 for every {Straw Hat Crew} card on your field', async () => {
+  const T = setup({ leaders: ['ST21-001', 'ST01-001'] });
+  const b = T.char(0, 'ST31-003');
+  T.don(0, 6); await T.give(T.A.leader, 2);
+  T.g.current = 1; T.g.touch();
+  expect(!T.g.has(b, 'Blocker'), '2 given: no');
+  T.g.current = 0; await T.give(b);
+  T.g.current = 1; T.g.touch();
+  expect(T.g.has(b, 'Blocker') && T.g.power(b) === 6000, `3 given: [Blocker] and 3000 + 3000 (${T.g.power(b)})`);
+  T.g.current = 0;
+  const t = T.char(1, 'ST04-003');
+  T.don(0, 7);
+  T.a.on('debuff', () => [t.uid]);
+  const l = T.hand(0, 'ST31-004');
+  await T.play(l);
+  expect(T.g.power(t) === 10000 - 3000 && T.g.has(l, 'Rush'), `Leader, Brook, Luffy: −3000 (${T.g.power(t)}); [Rush]`);
+});
+test('ST31-002 Jinbe: "play up to 1 {Straw Hat Crew} type card with a cost of 1" includes a Stage', async () => {
+  const T = setup();
+  T.don(0, 5);
+  const s = T.hand(0, 'ST31-005');
+  await T.play(T.hand(0, 'ST31-002'));
+  expect(T.A.stage === s, 'Thousand Sunny played');
+});
+test('ST32-001 Kin\'emon: rest your <Slash> Leader or 1 DON!!: draw 2, trash 1', async () => {
+  const T = setup({ leaders: ['OP12-020', 'ST01-001'] });
+  T.don(0, 1);
+  T.a.on('pay-cost', () => true); T.a.on('rest-leader-or-don', () => 'leader');
+  await T.play(T.hand(0, 'ST32-001'));
+  expect(T.A.leader.rested && T.A.hand.length === 1 && T.A.trash.length === 1, 'Leader rested, drew 2, trashed 1');
+});
+test('ST32-002 Oden: "cannot be rested": that Character can\'t attack, block or be rested by effects (decided: attacking and blocking rest it, 7-1-1-1, 10-1-2)', async () => {
+  const T = setup();
+  const t = T.char(1, 'ST06-007');                // Tsuru, [Blocker]
+  T.don(0, 5);
+  T.a.on('cantRest', () => [t.uid]);
+  await T.play(T.hand(0, 'ST32-002'));
+  T.life(1, [FILLER]);
+  T.b.asked = []; T.b.on('counter', () => null);
+  await T.attack(T.A.leader, T.B.leader);
+  expect(!T.b.asked.some(r => r.type === 'blocker'), 'can\'t block');
+  T.don(0, 2);
+  await T.play(T.hand(0, 'ST02-017'));             // Straw Sword: rest up to 1
+  expect(!t.rested, 'can\'t be rested');
+  T.g.current = 1; T.B.turns = 3;
+  expect(!T.g.attackTargets(t).length, 'can\'t attack');
+});
+test('ST33-004 Borsalino: −3 cost in the hand during a turn in which a card was trashed from your hand by an effect', async () => {
+  const T = setup({ leaders: ['OP12-040', 'ST01-001'] });
+  const b = T.hand(0, 'ST33-004');
+  expect(T.g.cost(b) === 6, 'cost 6');
+  T.don(0, 2);
+  const x = T.hand(0, FILLER);
+  T.a.on('pay-cost', () => true); T.a.on('discard', () => [x.uid]);
+  await T.play(T.hand(0, 'ST33-001'));             // Koby: may trash 1: draw 1
+  expect(T.g.cost(b) === 3, `cost 3 (${T.g.cost(b)})`);
+});
+test('ST36-005 Kid: [On Your Opponent\'s Attack] turn a face-up Life card face-down: the attack now targets Kid', async () => {
+  const T = setup({ leaders: ['ST01-001', 'OP10-099'] });
+  const k = T.char(1, 'ST36-005');
+  const l = T.life(1, [FILLER, FILLER]); l[0].faceUp = true;
+  T.b.on('pay-cost', () => true); T.b.on('blocker', () => null); T.b.on('counter', () => null);
+  const att = T.char(0, FILLER);
+  await T.attack(att, T.B.leader);
+  expect(T.B.life.length === 2 && !l[0].faceUp && T.B.characters.includes(k), 'Kid (7000) took the attack instead of the Leader');
+});
+
 // ================================================================ fail-safe
 test('Fail-safe: in a game, an effect step, cost or condition the engine can\'t do is skipped and logged, never thrown; tests (throwErrors) throw', async () => {
   const T = setup();

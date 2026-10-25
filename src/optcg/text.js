@@ -235,6 +235,8 @@ export function parseSel(phrase, def, { zone = 'field' } = {}) {
     else if ((m = /^\[([^\]]+)\] or \{([^}]+)\} type\s+/.exec(s))) sel.f.push({ k: 'or', any: [[{ k: 'name', any: [m[1]] }], [{ k: 'trait', any: [m[2]] }]] });
     else if ((m = /^\{([^}]+)\} type or <([^>]+)> attribute\s+/.exec(s))) sel.f.push({ k: 'or', any: [[{ k: 'trait', any: [m[1]] }], [{ k: 'attr', any: [m[2]] }]] });
     else if ((m = /^\{([^}]+)\} type card or card with a type including "([^"]+)"\s*/.exec(s))) { sel.f.push({ k: 'or', any: [[{ k: 'trait', any: [m[1]] }], [{ k: 'traitHas', any: [m[2]] }]] }); s = 'card ' + s.slice(m[0].length); continue; }
+    // "<Slash> attribute card or green Event"
+    else if ((m = /^<([^>]+)> attribute card or (red|green|blue|purple|black|yellow) (Event|Character|Stage)\b\s*/.exec(s))) { sel.f.push({ k: 'or', any: [[{ k: 'attr', any: [m[1]] }], [{ k: 'color', any: [cap(m[2])] }, { k: 'cat', any: [m[3][0]] }]] }); s = 'card ' + s.slice(m[0].length); continue; }
     else if ((m = /^((?:\{[^}]+\}|"[^"]+")(?:,? (?:or )?(?:\{[^}]+\}|"[^"]+"))*) type\s+/.exec(s))) sel.f.push({ k: 'trait', any: [...m[1].matchAll(/\{([^}]+)\}|"([^"]+)"/g)].map(x => x[1] || x[2]) });
     else if ((m = /^((?:\[[^\]]+\])(?:,? (?:and |or )?(?:\[[^\]]+\]))*)(?:\s+|$)(?=(?:type\s+)?(?:Leader|Character|card|Event|Stage|with|cards|other|$))/.exec(s))) {
       const names = [...m[1].matchAll(/\[([^\]]+)\]/g)].map(x => x[1]);
@@ -339,7 +341,14 @@ export function parseCond(s, def) {
   if (parts.length > 1) {
     // "you have 6 or less cards in your hand and a Character with a cost of 8 or more": the subject carries over
     try { return { k: 'and', all: parts.map((x, i) => parseCond(i && /^an? /.test(x) ? `you have ${x}` : x, def)) }; } catch (e) { if (!(e instanceof ParseError)) throw e; }
+    // "your Leader has the {Supernovas} type and you and your opponent have a total of ...": split where both sides read
+    for (let k = 1; k < parts.length; k++) {
+      try { return { k: 'and', all: [parseCond(parts.slice(0, k).join(' and '), def), parseCond(parts.slice(k).join(' and '), def)] }; } catch (e) { if (!(e instanceof ParseError)) throw e; }
+    }
   }
+  if ((m = /^you have a total of (\d+) or (more|less) given DON!! cards$/.exec(t))) return { k: 'cmp', a: { k: 'givenDon', who: 'you' }, op: cmpWord(m[2]), b: +m[1] };
+  if ((m = /^this (Leader|Character) battles your opponent's Character during this turn$/.exec(t))) return { k: 'self', f: [{ k: 'battledChar' }] };
+  if ((m = /^the revealed card has the chosen cost$/.exec(t))) return { k: 'chosenCost' };
   if ((m = /^you have (\d+) or (more|less) (rested )?Characters$/.exec(t))) return { k: 'cmp', a: count('you', ['C'], m[3] ? [{ k: 'rested' }] : []), op: cmpWord(m[2]), b: +m[1] };
   if ((m = /^you have (\d+) or (more|less) Characters with a (base )?cost of (\d+) or more$/.exec(t))) return { k: 'cmp', a: count('you', ['C'], [{ k: m[3] ? 'baseCost' : 'cost', op: '>=', n: +m[4] }]), op: cmpWord(m[2]), b: +m[1] };
   if ((m = /^you have (\d+) or (more|less) Characters with (\d+) base power$/.exec(t))) return { k: 'cmp', a: count('you', ['C'], [{ k: 'basePower', op: '=', n: +m[3] }]), op: cmpWord(m[2]), b: +m[1] };
@@ -468,6 +477,16 @@ function parseSentence(s, def) {
     }
     fail(`condition in "${t}"`);
   }
+  // ST31-004: "For every {Straw Hat Crew} type card on your field, give up to 1 of your opponent's Characters -1000
+  // power during this turn": the number scales with the count
+  if ((m = /^For every (.+?) on your field, (.+)$/.exec(t))) {
+    const x = sel(`up to 1 of your ${m[1]}`, def);
+    const of = { k: 'count', sel: { who: 'you', cats: x.cats || ['L', 'C', 'S'], f: x.f } };
+    const st = parseClauses(m[2], def);
+    if (st.length !== 1 || typeof st[0].n !== 'number' || st[0].op !== 'power') fail(`"for every" in "${t}"`);
+    st[0].n = { k: 'per', each: st[0].n, of };
+    return st;
+  }
   // "X if you have N or less cards in your hand" (a trailing condition)
   if ((m = /^(.+?) if (you have .+|your opponent has .+)$/.exec(t))) {
     try { const cond = parseCond(m[2], def); const st = parseClauses(m[1], def); for (const x of st) x.cond = cond; return st; } catch (e) { if (!(e instanceof ParseError)) throw e; }
@@ -516,7 +535,7 @@ function parseClause(text, def) {
   // ---- power
   // "+1000 power during this battle for every card trashed / returned Character"
   if ((m = /^(.+?) gains? ([+-]\d+) power (.+?) for every (card trashed|returned Character)$/.exec(t))) return [{ op: 'power', sel: target(m[1], def), n: { k: 'per', each: +m[2], of: { k: 'var', name: m[4] === 'card trashed' ? 'trashed' : 'returned' } }, dur: dur(m[3]) || fail('power with no duration') }];
-  if ((m = /^(.+?) gains? ([+-]\d+) power(?: (.+))?$/.exec(t)) && !/^give /i.test(t)) {
+  if ((m = /^(.+?) gains? (?:an additional )?([+-]\d+) power(?: (.+))?$/.exec(t)) && !/^give /i.test(t)) {
     const d = dur(m[3]);
     if (!d) fail('power with no duration in an effect');
     return [{ op: 'power', sel: target(m[1], def), n: +m[2], dur: d }];
@@ -545,6 +564,7 @@ function parseClause(text, def) {
   if ((m = /^[Aa]dd (\d+) DON!! cards? from your DON!! deck and (set (?:it|them) as active|rest (?:it|them))$/.exec(t))) return [{ op: 'addDon', n: +m[1], rested: /^rest/.test(m[2]) }];
   // ---- cards
   if ((m = /^[Dd]raw (\d+) cards?$/.exec(t))) return [{ op: 'draw', n: +m[1] }];
+  if (/^[Dd]raw cards equal to the number of cards trashed$/.test(t)) return [{ op: 'draw', n: { k: 'eventN' } }];
   if ((m = /^[Tt]rash (\d+) cards? from your hand$/.exec(t))) return [{ op: 'discard', n: +m[1] }];
   if ((m = /^[Yy]our opponent trashes (\d+) cards? from their hand$/.exec(t))) return [{ op: 'discard', who: 'opp', n: +m[1] }];
   // the player of the effect chooses (8-4-4-3), without seeing them (3-4-3)
@@ -583,7 +603,8 @@ function parseClause(text, def) {
   if ((m = /^[Yy]ou may play that card( rested)?$/.exec(t))) return [{ op: 'playThat', rested: !!m[1] }];
   if ((m = /^[Pp]lay up to (\d+) (.+?) from your (hand|trash|deck|hand or trash)( rested)?(?:, then shuffle your deck)?$/.exec(t))) {
     const x = sel(`up to ${m[1]} ${m[2]}`, def, { zone: 'hand' });
-    return [{ op: 'play', from: m[3] === 'hand or trash' ? 'handOrTrash' : m[3], n: +m[1], cats: x.cats || ['C'], f: x.f, rested: !!m[4] }];
+    // "play up to 1 {Straw Hat Crew} type card": a Character or a Stage (Events aren't played onto the field)
+    return [{ op: 'play', from: m[3] === 'hand or trash' ? 'handOrTrash' : m[3], n: +m[1], cats: x.cats || ['C', 'S'], f: x.f, rested: !!m[4] }];
   }
   if ((m = /^[Aa]dd up to (\d+) (.+?) from your trash to your hand$/.exec(t))) { const x = sel(`up to ${m[1]} ${m[2]}`, def, { zone: 'trash' }); return [{ op: 'toHand', sel: { ...x, who: 'you', zone: 'trash' } }]; }
   // ---- blockers
@@ -629,6 +650,18 @@ function parseClause(text, def) {
   if ((m = /^(.+?) cannot attack (until .+|during this turn)$/.exec(t))) return [{ op: 'restrict', flag: 'cantAttack', sel: target(m[1], def), dur: dur(m[2]), text: "can't attack" }];
   // ---- reveal
   if ((m = /^[Rr]eveal 1 card from the top of your deck$/.exec(t))) return [{ op: 'reveal' }];
+  // ---- the opponent's deck
+  if ((m = /^[Ll]ook at (\d+) cards? from the top of your opponent's deck$/.exec(t))) return [{ op: 'lookOppDeck', n: +m[1] }];
+  if (/^[Cc]hoose a cost and reveal 1 card from the top of your opponent's deck$/.test(t)) return [{ op: 'chooseCostReveal' }];
+  if ((m = /^[Tt]rash (\d+) cards? from the top of your deck$/.exec(t))) return [{ op: 'mill', n: +m[1] }];
+  // ---- restrictions for a while
+  if ((m = /^(.+?) cannot be rested (during this turn|until .+)$/.exec(t))) return [{ op: 'restrict', flag: 'cantRest', sel: target(m[1].replace(/^Up to/, 'up to'), def), dur: dur(m[2]), text: "can't be rested" }];
+  if ((m = /^([Tt]his Leader|[Tt]his Character) cannot attack your opponent's (Characters? .+?) (during this turn|until .+)$/.exec(t))) {
+    const x = sel(`up to 1 of your opponent's ${m[2]}`, def);
+    return [{ op: 'restrict', flag: 'cantAttackChar', sel: target(m[1], def), f: x.f, dur: dur(m[3]), text: `can't attack Characters ${m[2].replace(/^Characters? /, '')}` }];
+  }
+  // ---- ST36-005: "Change the target of the attack to your [Eustass"Captain"Kid] with 5000 base power or more"
+  if ((m = /^[Cc]hange the target of the attack to (.+)$/.exec(t))) { const x = sel(`up to 1 of ${m[1].replace(/^your /, 'your ')}`, def); return [{ op: 'redirect', sel: x }]; }
   // ---- "any number of"
   if ((m = /^[Yy]ou may return any number of Characters on your field to the owner's hand$/.exec(t))) return [{ op: 'bounceAny' }];
   if ((m = /^[Yy]ou may trash any number of (.+?) from your hand$/.exec(t))) return [{ op: 'discardAny', ...handCards(m[1].replace(/^(.*?)cards$/, '$1card'), def) }];
@@ -705,6 +738,8 @@ function parseNoTiming(s, def, head) {
 function parseStatic(s, def, base) {
   let m, cond = null, body = s;
   if ((m = /^If (.+?), ((?:this|This|your|Your|all|All|give) .+)$/.exec(s))) { cond = parseCond(m[1], def); body = m[2]; }
+  // ST33-004: "During the turn in which a card in your hand is trashed by an effect, give this card in your hand -3 cost"
+  else if ((m = /^During the turn in which a card in your hand is trashed by an effect, (.+)$/.exec(s))) { cond = { k: 'handTrashedThisTurn', who: 'you' }; body = m[1]; }
   const mods = parseMods(body, def);
   return { kind: 'static', mods, cond, ...base, hand: mods.some(x => x.hand) };
 }
@@ -723,6 +758,8 @@ function parseWhen(s, def) {
   if ((m = /^(\d+) or more DON!! cards on your field are returned to your DON!! deck$/.exec(t))) return { timing: 'donReturned', when: { who: 'you', minN: +m[1] } };
   if (/^this Character becomes rested$/.test(t)) return { timing: 'rested', when: { self: true } };
   if (/^a Character is rested by your effect$/.test(t)) return { timing: 'rested', when: { byEffect: true, byYou: true, sel: { who: 'any', cats: ['C'], f: [] } } };
+  // OP12-040: "a card is trashed from your hand by your {Navy} type card's effect"
+  if ((m = /^a card is trashed from your hand by your (.+?) card's effect$/.exec(t))) { const x = sel(`up to 1 of your ${m[1]} card`, def); return { timing: 'handTrashed', when: { who: 'you', byEffect: true, srcSel: { who: 'you', cats: x.cats, f: x.f } } }; }
   // "When this Character battles <Strike> attribute Characters": once the two cards of the battle are settled
   if ((m = /^this Character battles (.+)$/.exec(t))) return { timing: 'battling', when: { battleSel: sel(`up to 1 ${m[1]}`, def) } };
   return null;
@@ -755,10 +792,13 @@ function parseMods(text, def) {
   if ((m = /^(.+) for every (\d+) cards in your trash$/.exec(t))) { body = m[1]; per = { div: +m[2], of: { k: 'trash', who: 'you' } }; }
   const scaled = n => (per ? { k: 'per', each: n, of: per.of, div: per.div } : n);
   if ((m = /^(.+?) gains? (?:\[(Rush|Blocker|Double Attack|Banish|Unblockable|Rush: Character)\]|([+-]\d+) (power|cost))(?: and (?:\[(Rush|Blocker|Double Attack|Banish|Unblockable)\]|([+-]\d+) (power|cost)))?$/.exec(body))) {
-    const s1 = who(m[1]);
+    // "your Leader and all of your Characters gain +1000 power": one effect for each
+    const subjects = (sm => (sm ? [{ ref: 'leader' }, who(`all of your ${sm[1]}`)] : [who(m[1])]))(/^[Yy]our Leader and all of your (.+)$/.exec(m[1]));
     const out = [];
-    if (m[2]) out.push({ k: 'grant', sel: s1, kw: m[2] }); else out.push({ k: m[4], sel: s1, n: scaled(+m[3]) });
-    if (m[5]) out.push({ k: 'grant', sel: s1, kw: m[5] }); else if (m[6]) out.push({ k: m[7], sel: s1, n: scaled(+m[6]) });
+    for (const s1 of subjects) {
+      if (m[2]) out.push({ k: 'grant', sel: s1, kw: m[2] }); else out.push({ k: m[4], sel: s1, n: scaled(+m[3]) });
+      if (m[5]) out.push({ k: 'grant', sel: s1, kw: m[5] }); else if (m[6]) out.push({ k: m[7], sel: s1, n: scaled(+m[6]) });
+    }
     if (per && !out.some(x => x.n != null)) fail('"for every" without a number');
     return out;
   }
