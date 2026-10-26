@@ -328,13 +328,17 @@ export function computeAll(game) {
   }
   // layer 6: abilities
   for (const c of all) applyOwnMods(game, c, map.get(c.id), 6);
+  for (const c of stackCards) if (c.castGrants && c.castGrants.length) map.get(c.id).keywords.push(...c.castGrants);
   for (const { st, ctx } of active) {
     const p = st.parsed.p;
     if (!(p.AddKeyword || p.RemoveKeyword || p.RemoveAllAbilities || p.AddAbility || p.AddTrigger || p.AddStaticAbility || p.AddHiddenKeyword || p.AddReplacementEffects || p.AddSVar || p.GainsAbilitiesOf)) continue;
+    const toSpells = /Stack/.test(p.AffectedZone || '') && !/Battlefield/.test(p.AffectedZone || '');
     for (const c of affectedCards(game, st, ctx, map)) {
       const ch = map.get(c.id) || lazy(game, c);
       if (p.RemoveAllAbilities) { ch.abilities = []; ch.triggers = []; ch.statics = []; ch.replacements = []; ch.keywords = []; }
-      if (p.AddKeyword) for (const k of p.AddKeyword.split(' & ')) ch.keywords.push(k.replace('ChosenColor', (st.host.chosen && st.host.chosen.colors || ['W']).map(x => ({ W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' })[x]).join('')));
+      // a spell that was cast keeps what it was given as it was cast (castGrants, below), not what's true now
+      const locked = toSpells && c.zone === 'stack' && c.castGrants;
+      if (p.AddKeyword && !locked) for (const k of p.AddKeyword.split(' & ')) ch.keywords.push(k.replace('ChosenColor', (st.host.chosen && st.host.chosen.colors || ['W']).map(x => ({ W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' })[x]).join('')));
       if (p.AddHiddenKeyword) for (const k of p.AddHiddenKeyword.split(' & ')) ch.keywords.push(k);
       if (p.RemoveKeyword) { const rm = p.RemoveKeyword.split(' & '); ch.keywords = ch.keywords.filter(k => !rm.includes(k)); }
       if (p.AddAbility) grantAbilities(ch, p.AddAbility, st.svars, st.host, 'A', 's' + st.host.id + st.key);

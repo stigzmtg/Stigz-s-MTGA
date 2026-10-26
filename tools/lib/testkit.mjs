@@ -37,6 +37,7 @@ export async function setup({ players = 2 } = {}) {
       if (zone === 'battlefield') { await game.moveCard(c, 'battlefield', { controller: pid, silent: true, ...opts }); c.sick = false; }
       else if (zone === 'library') { c.zone = 'library'; game.players[pid].library.unshift(c); }
       else { c.zone = zone; game.players[pid][zone].push(c); }
+      game.touch();
       return c;
     },
     async resolve() {

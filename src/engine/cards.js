@@ -148,6 +148,8 @@ export class Card {
     this.castFrom = null;
     this.castMayPlayHost = null;
     this.castSA = null;
+    this.castGrants = null; // keywords other cards gave it as it was cast (Henzie's blitz), kept while it's a spell
+    this.offspring = 0;
     this.timestamp = newTimestamp(this.game);
     this.regenShields = 0;
     this.goadedBy = [];

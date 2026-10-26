@@ -1,5 +1,5 @@
 // Heuristic AI agent. Answers every engine prompt ("ask") for its player.
-import { SA, getActions, spellOptions, buildSpellSA, targetSpec, targetCandidates, refOf, fromRef, manaSourcesFor, parseCost, activatedAbilities, producedUnits, canAfford, canPayNonMana } from '../engine/abilities.js';
+import { SA, getActions, spellOptions, buildSpellSA, targetSpec, targetCandidates, refOf, fromRef, manaSourcesFor, parseCost, activatedAbilities, producedUnits, canAfford, canPayNonMana, hasFlash } from '../engine/abilities.js';
 import { canBlock, canAttack, combatPower, blockRules, attackTax, canAttackDefender, playerInDirection } from '../engine/combat.js';
 import { matchValid, calc, ctxOf, ctrlOf } from '../engine/filters.js';
 import { parseAbility } from '../engine/forge.js';
@@ -219,7 +219,8 @@ export class AIAgent {
     const opt = spellOptions(game, pid, card).find(o => o.key === a.optionKey);
     if (!opt) return 0;
     const face = card.def.faces[opt.face] || card.def.faces[0];
-    const isInstantSpeed = face.types.includes('Instant') || face.keywords.includes('Flash');
+    // (printed flash, or given: Leyline of Anticipation, Yeva's green creatures)
+    const isInstantSpeed = face.types.includes('Instant') || !!opt.mayFlash || hasFlash(game, card, face);
     const sa = buildSpellSA(game, pid, card, opt);
     let s = 0;
     if (sa.permanent) {
@@ -234,6 +235,8 @@ export class AIAgent {
         const t = face.toughness && /^\d+$/.test(face.toughness) ? +face.toughness : 2;
         s = 3 + p * 1.2 + t * 0.8 + face.keywords.length * 0.6 + face.triggers.length + face.statics.length + face.abilities.filter(x => !/Mana/.test(x)).length * 0.7;
         if (opt.altCost === 'Morph') s = 3;
+        // blitz: a hasty attack and a card, then it's gone (when the full cost is out of reach, or blitz is cheaper)
+        if (opt.altCost === 'Blitz') s = 2 + p + (face.keywords.some(k => /^Blitz/.test(k)) ? 1 : 0);
       } else if (types.includes('Planeswalker')) s = 9 + face.cmc;
       else {
         s = 2.5 + face.cmc * 0.9 + face.statics.length + face.triggers.length;
@@ -634,6 +637,11 @@ export class AIAgent {
       const score = c => (evasive(c) ? 4 : 0) + Math.max(0, combatPower(game, c)) * 0.3 - (game.hasKeyword(c, 'Defender') ? 6 : 0);
       return pick(cards.slice().sort((a, b) => score(b) - score(a)), 1);
     }
+    // conspire: tap two creatures that wouldn't attack anyway
+    if (purpose === 'conspire') {
+      const idle = cards.filter(c => game.step !== 'main1' || game.activePlayer !== pid || c.sick || !canAttack(game, c)).sort((a, b) => v(a) - v(b));
+      return idle.length >= 2 ? [idle[0].id, idle[1].id] : [];
+    }
     if (purpose === 'casualty') { const ok = cards.filter(c => c.token || v(c) <= 4).sort((a, b) => v(a) - v(b)); return ok.length ? [ok[0].id] : []; }
     if (purpose === 'emerge') return pick(cards.slice().sort((a, b) => (game.chars(b).cmc - v(b) * 0.4 + (b.token ? 2 : 0)) - (game.chars(a).cmc - v(a) * 0.4 + (a.token ? 2 : 0))), 1);
     if (purpose === 'blight') {
@@ -798,6 +806,7 @@ export class AIAgent {
     switch (purpose) {
       case 'commanderReturn': return true;
       case 'kicker': return true;
+      case 'offspring': return true;
       case 'castFree': return true;
       case 'replacement': return true;
       case 'myriad': return true;
@@ -859,6 +868,10 @@ export class AIAgent {
       case 'optionalTrigger': case 'optional': case 'optionalSearch': case 'etbOptional': {
         if (!sa) return true;
         const api = sa.api;
+        // an optional loop (Ondu Spiritdancer, an enchantment thanks to Secret Arcade, copying itself): enough is enough
+        if (!this.loops || this.loops.turn !== game.turnNumber) this.loops = { turn: game.turnNumber, n: {} };
+        const lk = `${sa.host && sa.host.def ? sa.host.def.name : ''}:${api}`;
+        if ((this.loops.n[lk] = (this.loops.n[lk] || 0) + 1) > 12) return false;
         if (api === 'MoveCounter' && sa.p.AILogic === 'Graft') {
           // graft: only onto our own creatures, and never if the counter is what keeps the grafter alive
           const dst = sa.trig && sa.trig.Card, src = sa.host;

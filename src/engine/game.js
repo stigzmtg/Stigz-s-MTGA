@@ -150,7 +150,7 @@ export class Game {
     const ch = this._charMap.get(card.id);
     if (ch && (card.zone === 'battlefield' || card.zone === 'stack')) return ch;
     const out = charsOutside(this, card);
-    if (!out._kw) { synthesizeKeywords(this, card, out); out._kw = true; }
+    synthesizeKeywords(this, card, out);
     return out;
   }
   playerChars(pid) {
@@ -1058,7 +1058,7 @@ export class Game {
       counters: { ...card.counters }, tapped: card.tapped, token: card.token, isCommander: card.isCommander,
       remembered: [...card.remembered], imprinted: [...card.imprinted], chosen: { ...card.chosen }, attachedTo: card.attachedTo,
       zone: card.zone, zcc: card.zcc, damage: card.damage, timestamp: card.timestamp, xPaid: card.xPaid, kicked: card.kicked, faceDown: card.faceDown,
-      castFrom: card.castFrom, castMayPlayHost: card.castMayPlayHost, exiledWith: card.exiledWith, face: card.face, faceDef: card.faceDef, goadedBy: [...(card.goadedBy || [])],
+      castFrom: card.castFrom, castMayPlayHost: card.castMayPlayHost, castSA: card.castSA, exiledWith: card.exiledWith, face: card.face, faceDef: card.faceDef, goadedBy: [...(card.goadedBy || [])],
       wasAttacking: this.isAttacking(card), wasBlocking: this.isBlocking(card),
       attachments: this.battlefield.filter(a => a.attachedTo === card.id).map(a => a.id),
       blitzed: card.blitzed, evoked: card.evoked, squad: card.squad, renowned: card.renowned, monstrous: card.monstrous, championed: card.championed,
@@ -1132,7 +1132,10 @@ export class Game {
     const countersRemain = dest !== 'hand' && dest !== 'library' && card.faceDef.statics.some(s => /Mode\$ CountersRemain/.test(s));
     const keepCounters = opts.keepCounters || countersRemain ? { ...card.counters } : null;
     const meldPartner = from === 'battlefield' && card.meldedWith != null ? this.cardById(card.meldedWith) : null;
+    // (a new token made as a copy keeps what it copies, with its exceptions: "except it's 1/1", "it has haste")
+    const keepCopy = from === 'none' ? card.copyOf : null;
     card.reset();
+    if (keepCopy) card.copyOf = keepCopy;
     card.zcc++;
     // (a copy of a card being cast — Wondrous Crucible — is a token on the stack, not gone)
     if (isToken && dest !== 'battlefield' && !(dest === 'stack' && card.isSpellCopy)) {
@@ -1158,7 +1161,7 @@ export class Game {
       if (opts.transformed) { card.face = 1; card.transformed = true; }
       if (opts.face != null) card.face = opts.face;
       if (isRoom(card.def)) card.unlocked = opts.cast ? [opts.face || 0] : [];
-      if (opts.cast) { card.castFrom = opts.cast.from; card.xPaid = opts.cast.x || 0; card.kicked = opts.cast.kicked || 0; card.castSA = opts.cast.sa || null; card.manaSpent = opts.cast.manaSpent || null; card.optionalCosts = opts.cast.optionalCosts || []; card.altCost = opts.cast.altCost || null; card.convokedBy = opts.cast.convokedBy || []; card.squad = opts.cast.squad || 0; card.evoked = card.altCost === 'Evoke'; card.blitzed = card.altCost === 'Blitz'; card.promisedGift = opts.cast.sa && opts.cast.sa.promisedGift != null ? opts.cast.sa.promisedGift : null; }
+      if (opts.cast) { card.castFrom = opts.cast.from; card.xPaid = opts.cast.x || 0; card.kicked = opts.cast.kicked || 0; card.castSA = opts.cast.sa || null; card.manaSpent = opts.cast.manaSpent || null; card.optionalCosts = opts.cast.optionalCosts || []; card.altCost = opts.cast.altCost || null; card.convokedBy = opts.cast.convokedBy || []; card.squad = opts.cast.squad || 0; card.evoked = card.altCost === 'Evoke'; card.blitzed = card.altCost === 'Blitz'; card.promisedGift = opts.cast.sa && opts.cast.sa.promisedGift != null ? opts.cast.sa.promisedGift : null; card.offspring = opts.cast.offspring || 0; if (opts.cast.grants && opts.cast.grants.length) card.temp.push({ keywords: opts.cast.grants, until: 'Permanent' }); }
       if (keepCounters) card.counters = keepCounters;
       if (opts.attachTo != null) card.attachedTo = opts.attachTo;
       this.touch();
@@ -1437,7 +1440,7 @@ export class Game {
       drawn.push(c);
       this.fire('Drawn', { Card: c, Player: p.id, Number: p.cardsDrawnThisTurn });
       if (p.cardsDrawnThisTurn === 1 && !silent && this.turnNumber > 0) {
-        const mk = c.faceDef.keywords.find(k => k.startsWith('Miracle:'));
+        const mk = this.chars(c).keywords.find(k => k.startsWith('Miracle:')); // (printed, or Molecule Man's)
         if (mk) this.pendingMiracle = { card: c, cost: mk.split(':').slice(1).join(':'), pid: p.id };
       }
     }
@@ -1505,7 +1508,7 @@ export class Game {
 
   async discard(card, sa) {
     const p = this.players[card.owner];
-    const madness = card.faceDef.keywords.find(k => k.startsWith('Madness:'));
+    const madness = card.zone === 'hand' ? this.chars(card).keywords.find(k => k.startsWith('Madness:')) : null; // (printed, or Falkenrath Gorger's)
     if (madness) {
       await this.moveCard(card, 'exile', { cause: sa, silent: true });
       this.log(`${p.name} discards ${this.name(card)} (madness).`, { cardId: card.id });

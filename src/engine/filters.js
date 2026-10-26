@@ -419,6 +419,7 @@ function cardProp(game, card, ch, prop, ctx) {
   if ((m = prop.match(/^ExiledWith(Source|Effect)?$/))) return !!host && card.exiledWith === host.id;
   // exiled by an effect of a permanent / spell you controlled (Haldan, Avid Arcanist)
   if (prop === 'ExiledByYou') { const h = card.zone === 'exile' && card.exiledWith != null ? game.cardById(card.exiledWith) : null; return !!h && (h.zone === 'battlefield' ? h.controller : h.owner) === you; }
+  if (prop === 'CastSa Spell.ManaFromTreasure') return !!(card.castSA && card.castSA.manaFromTreasure);
   // "Card.CastSa Spell.MayPlaySource": cast thanks to this source's may-play permission (Jaya's emblem, Edgar)
   if (prop === 'CastSa Spell.MayPlaySource') return card.castMayPlayHost != null && (!host || card.castMayPlayHost === host.id);
   // "Card.TriggeredNewCard", "Card.TriggeredSources": the object(s) the trigger refers to
@@ -998,6 +999,7 @@ function countExpr(game, rest, ctx, depth) {
     case 'CardTypesInGraveyard': return graveyardTypes(game, you);
     case 'OpponentsAttacked': return game.combat ? Math.max(1, new Set(game.combat.attackers.map(a => a.defenderPlayer)).size) : 1;
     case 'SquadCount': return host ? host.squad || 0 : 0;
+    case 'OffspringPaid': return host ? host.offspring || 0 : 0;
     case 'Evoked': return host && (host.evoked || host.altCost === 'Evoke') ? 1 : 0;
     case 'Blitzed': return host && (host.blitzed || host.altCost === 'Blitz') ? 1 : 0;
     case 'EchoDue': return host && !host.echoPaid && host.enteredTurn < game.turnNumber ? 1 : 0;

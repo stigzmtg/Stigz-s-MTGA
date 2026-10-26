@@ -138,7 +138,9 @@ function PromptBar({ game, human, me, mode, ctx, actions, onPass, onEndTurn, spe
     let txt;
     if (top) txt = <>{top.controller === me ? 'Your' : game.players[top.controller].name + '’s'} <b>{top.kind === 'spell' ? game.name(top.card) : 'ability'}</b> is on the stack. Respond, or let it resolve.</>;
     else if (myTurn && game.isMainPhase()) txt = actions.some(a => a.type === 'land') ? 'Play a land, cast spells, or activate abilities.' : 'Cast spells or activate abilities.';
-    else txt = myTurn ? 'You have priority.' : `${active.name}'s turn. You may respond.`;
+    else if (!myTurn && game.combat && game.combat.attackers.some(a => a.defenderPlayer === me) && (game.step === 'declareAttackers' || game.step === 'declareBlockers')) {
+      txt = game.step === 'declareAttackers' ? `${active.name} is attacking you. Before blocks: flash in a blocker or cast an instant, or pass to block.` : 'Blocks are set. Cast a combat trick, or pass to deal damage.';
+    } else txt = myTurn ? 'You have priority.' : `${active.name}'s turn. You may cast instants and spells with flash.`;
     msg = <><div className="step">{myTurn ? 'Your turn' : active.name} · {step}</div><div className="txt">{txt}</div></>;
     const nextLabel = top ? 'Resolve' : myTurn ? (game.step === 'main1' ? 'Go to combat' : game.step === 'main2' ? 'End turn' : 'Continue') : 'Pass';
     acts = <>

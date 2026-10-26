@@ -785,9 +785,10 @@ async function floatManaFor(game, pid, cost, exclude) {
 }
 
 // Additional payment sources for convoke / improvise
-function alternativeSources(game, pid, card, exclude) {
+function alternativeSources(game, pid, card, exclude, face) {
   const out = [];
-  const ch = game.chars(card);
+  // (printed, or given to the spell: Chief Engineer's convoke, Inspiring Statuary's improvise)
+  const ch = card.zone === 'stack' ? game.chars(card) : { keywords: castKeywords(game, pid, card, face || card.faceDef, card.zone) };
   const convoke = game.hasKeywordIn(ch, 'Convoke');
   const improvise = game.hasKeywordIn(ch, 'Improvise');
   if (!convoke && !improvise) return out;
@@ -827,7 +828,7 @@ export async function payManaCost(game, pid, manaCost, { exclude = new Set(), sp
   const p = game.players[pid];
   if (cmc(manaCost) === 0 && !manaCost.x) return true;
   let sources = manaSourcesFor(game, pid, { exclude, spellCard, abilityHost, costHasX }).filter(s => !s.manualOnly);
-  if (spellCard) sources = sources.concat(alternativeSources(game, pid, spellCard, exclude));
+  if (spellCard) sources = sources.concat(alternativeSources(game, pid, spellCard, exclude, sa && spellCard.def.faces[sa.face || 0]));
   const plan = planPayment(manaCost, p.pool, sources, { lifeAvailable: p.life - 1 });
   if (!plan) return false;
   if (dryRun) return true;
@@ -865,6 +866,7 @@ export async function payManaCost(game, pid, manaCost, { exclude = new Set(), sp
       game.fire('Taps', { Card: s.card });
       continue;
     }
+    if (spellCard && sa && game.chars(s.card).subtypes.has('Treasure')) sa.root().manaFromTreasure = true; // (Rain of Riches)
     await produceMana(game, s.card, s.abil, a.colors, pid, s.extraCost ? reserveAt(i) : manaCost);
     tapped.push(s.card);
     // the table can pace a computer player's taps one at a time (never changes the game)
@@ -1092,7 +1094,7 @@ const PERMANENT = ['Artifact', 'Creature', 'Enchantment', 'Land', 'Planeswalker'
 
 function faceIsPermanent(face) { return face.types.some(t => PERMANENT.includes(t)); }
 
-function hasFlash(game, card, face) {
+export function hasFlash(game, card, face) {
   if (face.types.includes('Instant')) return true;
   const ch = game.chars(card);
   if (game.hasKeywordIn(ch, 'Flash') || face.keywords.includes('Flash')) return true;
@@ -1163,10 +1165,10 @@ export function spellOptions(game, pid, card, { anyZone = false } = {}) {
     // flashback / escape / retrace from graveyard
     if (zone === 'graveyard' && card.owner === pid) {
       const f = faces[0];
-      for (const k of f.keywords) {
+      for (const k of castKeywords(game, pid, card, f, 'graveyard')) {
         let m;
-        if ((m = k.match(/^Flashback:?(.*)$/))) { const raw = (m[1] || '').split(':')[0]; pushFace(0, { altCost: 'Flashback', altManaStr: raw || f.manaCostStr, from: 'graveyard', label: `Flashback ${f.name}` }); }
-        if ((m = k.match(/^Escape:(.*)$/))) pushFace(0, { altCost: 'Escape', altManaStr: m[1].split(':')[0], from: 'graveyard', label: `Escape ${f.name}` });
+        if ((m = k.match(/^Flashback:?(.*)$/))) { const raw = (m[1] || '').split(':')[0]; pushFace(0, { altCost: 'Flashback', altManaStr: ownCost(f, raw), from: 'graveyard', label: `Flashback ${f.name}` }); }
+        if ((m = k.match(/^Escape:(.*)$/))) pushFace(0, { altCost: 'Escape', altManaStr: ownCost(f, m[1].split(':')[0]), from: 'graveyard', label: `Escape ${f.name}` });
         if (k === 'Retrace') pushFace(0, { altCost: 'Retrace', from: 'graveyard', extraCostStr: 'Discard<1/Land>', label: `Retrace ${f.name}` });
         if ((m = k.match(/^Jump-start$/))) pushFace(0, { altCost: 'Flashback', from: 'graveyard', extraCostStr: 'Discard<1/Card>', label: `Jump-start ${f.name}` });
         if ((m = k.match(/^Disturb:(.+)$/)) && faces[1]) pushFace(1, { altCost: 'Disturb', altManaStr: m[1].split(':')[0], from: 'graveyard', label: `Disturb ${f.name} (cast ${faces[1].name})` });
@@ -1202,11 +1204,16 @@ export function spellOptions(game, pid, card, { anyZone = false } = {}) {
   // alternative costs from hand
   if (from === 'hand' || from === 'command') {
     const f = faces[0];
-    for (const k of f.keywords) {
+    const seenAlt = new Set();
+    for (const k of castKeywords(game, pid, card, f, from)) {
       let m;
-      if ((m = k.match(/^Evoke:(.*)$/))) pushFace(0, { altCost: 'Evoke', altManaStr: m[1].split(':')[0], label: `Evoke ${f.name}` });
-      if ((m = k.match(/^Dash:(.*)$/))) pushFace(0, { altCost: 'Dash', altManaStr: m[1].split(':')[0], label: `Dash ${f.name}` });
-      if ((m = k.match(/^Blitz:(.*)$/))) pushFace(0, { altCost: 'Blitz', altManaStr: m[1].split(':')[0], label: `Blitz ${f.name}` });
+      // (the same cost twice, printed and granted, is one way to cast it)
+      if (seenAlt.has(k)) continue;
+      seenAlt.add(k);
+      if ((m = k.match(/^Evoke:(.*)$/))) pushFace(0, { altCost: 'Evoke', altManaStr: ownCost(f, m[1].split(':')[0]), label: `Evoke ${f.name}` });
+      if ((m = k.match(/^Dash:(.*)$/))) pushFace(0, { altCost: 'Dash', altManaStr: ownCost(f, m[1].split(':')[0]), label: `Dash ${f.name}` });
+      // "Blitz:CardManaCost:Spell.Creature+cmcGE4": Henzie's, for creature spells with mana value 4 or greater
+      if ((m = k.match(/^Blitz:([^:]*)(?::(.+))?$/)) && (!m[2] || !/^Spell\b/.test(m[2]) || castMatchesSpell(game, card, {}, m[2], { host: card, you: pid }))) pushFace(0, { altCost: 'Blitz', altManaStr: ownCost(f, m[1]), label: `Blitz ${f.name}` });
       if ((m = k.match(/^Overload:(.*)$/))) pushFace(0, { altCost: 'Overload', altManaStr: m[1].split(':')[0], label: `Overload ${f.name}` });
       if ((m = k.match(/^(Morph|Megamorph|Disguise):(.*)$/))) opts.push({ key: 'morph', label: `Cast ${f.name} face down (${m[1]})`, face: 0, permanent: true, faceDown: true, altManaStr: '3', altCost: 'Morph', from, disguise: m[1] === 'Disguise' });
       if ((m = k.match(/^Spectacle:(.*)$/)) && game.opponents(pid).some(o => o.lifeLostThisTurn > 0)) pushFace(0, { altCost: 'Spectacle', altManaStr: m[1], label: `Spectacle ${f.name}` });
@@ -1322,7 +1329,7 @@ function spellCost(game, pid, card, opt, sa) {
     if (p.Type && !/Spell/.test(p.Type) && p.Type !== 'Any') continue;
     if (p.ValidCard && !matchValid(game, ctxCard, p.ValidCard.replace(/CARDNAME/g, 'Card.Self'), { ...s.ctx, host: s.host })) continue;
     if (p.Activator && !matchValid(game, game.players[pid], p.Activator, s.ctx)) continue;
-    if (p.ValidSpell && !matchValid(game, ctxCard, p.ValidSpell, s.ctx)) continue;
+    if (p.ValidSpell && !castMatchesSpell(game, ctxCard, opt, p.ValidSpell, s.ctx)) continue;
     if (p.OnlyFirstSpell === 'True' && game.players[pid].spellsCastThisTurn.length > 0) continue;
     const amt = p.Amount ? calcCtx(game, p.Amount, { ...s.ctx, sa: { ...s.ctx.sa, svars: s.st.svars } }) : 1;
     if (p.Color) { for (let i = 0; i < amt; i++) colorReduce.push(...p.Color.split(' ')); }
@@ -1335,13 +1342,15 @@ function spellCost(game, pid, card, opt, sa) {
     if (p.Activator && !matchValid(game, game.players[pid], p.Activator, s.ctx)) continue;
     raise += p.Amount ? calcCtx(game, p.Amount, s.ctx) : 1;
   }
-  const ch = game.chars(card);
+  // affinity, delve, undaunted: printed or given to it (Pearl-Ear's affinity for Auras, Durnan's undaunted)
+  const ch = { keywords: castKeywords(game, pid, card, face, opt.from) };
   for (const k of ch.keywords) {
     const m = k.match(/^Affinity:([^:]+)/);
     if (m) reduce += game.battlefield.filter(c => c.controller === pid && matchValid(game, c, m[1], { host: card, you: pid })).length;
   }
   if (game.hasKeywordIn(ch, 'Delve')) sa.delve = true;
   if (game.hasKeywordIn(ch, 'Undaunted')) reduce += game.opponents(pid).length;
+  if (opt.reduceBy) reduce += opt.reduceBy; // Aminatou's miracle: "its mana cost reduced by {4}"
   mana = cloneCost(mana);
   mana.generic += raise;
   for (const col of colorReduce) { if (mana.colored[col] > 0) mana.colored[col]--; else if (mana.generic > 0) mana.generic--; }
@@ -1584,6 +1593,17 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
       if (c && pool.includes(c)) sa.casualtySac = c;
     }
   }
+  // conspire: you may tap two untapped creatures you control that share a color with it; when you do, copy it
+  if (kws.includes('Conspire')) {
+    const cols = game.chars(card).colors;
+    const pool = game.battlefield.filter(c => c.controller === pid && c.id !== card.id && !c.tapped && game.chars(c).types.has('Creature') && [...game.chars(c).colors].some(x => cols.has(x)));
+    if (pool.length >= 2) {
+      const ids = await game.ask(pid, { type: 'cards', prompt: `Conspire: you may tap two untapped creatures you control that share a color with ${face.name} to copy it`, cards: pool.map(c => c.id), min: 0, max: 2, purpose: 'conspire', sa, cancellable: true });
+      if (ids == null) throw new Cancelled();
+      const picked = (ids || []).map(id => game.cardById(id)).filter(c => c && pool.includes(c));
+      if (picked.length === 2) sa.conspireTap = picked;
+    }
+  }
   // offering: sacrifice a permanent of the type and pay the difference in mana costs
   if (opt.altCost === 'Offering') {
     const pool = game.battlefield.filter(c => c.controller === pid && matchValid(game, c, opt.offering, { host: card, you: pid }) && canAfford(game, pid, game.chars(c).manaCost ? reduceByCost(mana, game.chars(c).manaCost) : mana, { spellCard: card, exclude: new Set([card.id, c.id]) }));
@@ -1640,10 +1660,16 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
       if (n > 0) { addCost(rc, n); sa.replicated = n; }
     }
   }
-  // kicker / multikicker / optional costs
+  // kicker / multikicker / offspring / optional costs
   const ch = game.chars(card);
-  for (const k of face.keywords) {
+  for (const k of kws) {
     let m;
+    // offspring: pay more and a 1/1 token copy of it is made as it enters (printed, or Zinnia's for creature spells)
+    if ((m = k.match(/^Offspring:(.+)$/)) && affordable(m[1])) {
+      const yes = await game.ask(pid, { type: 'confirm', prompt: `Pay offspring ${costLabel(m[1])} for ${face.name}? (When it enters, you create a 1/1 token copy of it.)`, purpose: 'offspring', sa, cancellable: true, cardId: card.id });
+      if (yes == null) throw new Cancelled();
+      if (yes) { addCost(m[1]); sa.offspring = (sa.offspring || 0) + 1; }
+    }
     if ((m = k.match(/^(Kicker|Multikicker):(.+)$/))) {
       const costs = m[2].split(':').filter(x => x && !/^(Generic|ValidSA)/.test(x));
       for (const kc of costs.slice(0, 2)) {
@@ -1710,11 +1736,11 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
   // strive: costs more for each target beyond the first
   if (strive) { const n = sa.chain().reduce((a, s) => a + (s.targets || []).length, 0); if (n > 1) addCost(strive[1], n - 1); }
   // non-mana cost choices
-  const preEx = [sa.casualtySac, sa.emergeSac, sa.harmonizeTap].filter(Boolean).map(c => c.id);
+  const preEx = [sa.casualtySac, sa.emergeSac, sa.harmonizeTap, ...(sa.conspireTap || [])].filter(Boolean).map(c => c.id);
   const choices = await chooseCostParts(game, sa, extra, { afford: ex => canAfford(game, pid, mana, { spellCard: card, exclude: new Set([card.id, ...preEx, ...ex]) }) });
   if (!choices) return false;
   const exclude = new Set([card.id, ...costExclusions(game, choices)]);
-  for (const c of [sa.casualtySac, sa.emergeSac, sa.harmonizeTap]) if (c) exclude.add(c.id);
+  for (const c of [sa.casualtySac, sa.emergeSac, sa.harmonizeTap, ...(sa.conspireTap || [])]) if (c) exclude.add(c.id);
   // delve: exile cards from graveyard to pay generic
   if (sa.delve && mana.generic > 0) {
     const gy = game.players[pid].graveyard.filter(c => c.id !== card.id);
@@ -1735,6 +1761,7 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
   if (sa.delveCards) for (const c of sa.delveCards) await game.moveCard(c, 'exile');
   await applyCostParts(game, sa, extra, choices);
   if (sa.harmonizeTap && sa.harmonizeTap.zone === 'battlefield') await game.tap(sa.harmonizeTap);
+  if (sa.conspireTap) for (const c of sa.conspireTap) if (c.zone === 'battlefield' && !c.tapped) await game.tap(c);
   // expend: the Nth total mana you spend on spells this turn
   if (sa.manaSpent) {
     const pl = game.players[pid];
@@ -1749,6 +1776,8 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
     if (c === sa.emergeSac) sa.emerged = lki;
     await game.sacrifice(c, sa);
   }
+  // what it has as it becomes cast, now that its costs are paid (Rain of Riches: "that mana from a Treasure was spent to cast")
+  const lockKws = castKeywords(game, pid, card, face, opt.from, sa);
   // move to stack
   const fromZone = card.zone;
   if (opt.from === 'command') game.players[pid].commanderCasts[card.id] = (game.players[pid].commanderCasts[card.id] || 0) + 1;
@@ -1758,6 +1787,11 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
   card.controller = pid;
   card.face = opt.face || 0;
   card.castFrom = fromZone;
+  card.castSA = sa;
+  // what other cards gave it as it was cast stays with the spell ("the first spell you cast each turn has cascade")
+  const own = [...card.faceDef.keywords];
+  card.castGrants = [];
+  for (const k of lockKws) { const j = own.indexOf(k); if (j >= 0) own.splice(j, 1); else card.castGrants.push(k); }
   // cast thanks to a "you may cast ... from your graveyard" permission: whose (Jaya's emblem, Edgar, Serra Paragon)
   card.castMayPlayHost = opt.mayPlay && opt.mayPlay.st ? opt.mayPlay.st.host.id : null;
   if (opt.faceDown) card.faceDown = true;
@@ -1770,34 +1804,72 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
   game.stack.push(item);
   game.touch();
   const tdesc = describeTargets(game, sa);
-  game.log(`${game.players[pid].name} casts ${opt.faceDown ? 'a face-down creature' : face.name}${tdesc ? ' targeting ' + tdesc : ''}.`, { type: 'cast', cardId: card.id, player: pid });
+  // "casts Serra Angel (blitz)": an alternative cost it was cast for, and the extras paid
+  const how = [['Blitz', 'Dash', 'Evoke', 'Flashback', 'Escape', 'Retrace', 'Madness', 'Miracle', 'Overload', 'Emerge', 'Surge', 'Spectacle', 'Prowl', 'Mayhem', 'Harmonize', 'Disturb'].includes(opt.altCost) ? opt.altCost.toLowerCase() : null, sa.offspring ? 'offspring' : null, sa.conspireTap ? 'conspire' : null, sa.casualtySac ? 'casualty' : null].filter(Boolean);
+  game.log(`${game.players[pid].name} casts ${opt.faceDown ? 'a face-down creature' : face.name}${how.length ? ` (${how.join(', ')})` : ''}${tdesc ? ' targeting ' + tdesc : ''}.`, { type: 'cast', cardId: card.id, player: pid });
   const rec = { lki: game.makeLKI(card), controller: pid };
   game.turnState.spellsCast.push(rec);
   game.players[pid].spellsCastThisTurn.push(rec);
   game.fire('SpellCast', { Card: card, Player: pid, IsSpell: true, StackItem: item, CastFrom: fromZone === 'hand' ? 'hand' : fromZone, AltCost: opt.altCost, MayPlay: !!opt.mayPlay, MayPlayHost: card.castMayPlayHost, Targets: sa.chain().flatMap(s => s.targets), SpellAbility: sa });
+  const used = game.effects.filter(e => e.forgetOnCast && matchValid(game, card, e.forgetOnCast, { host: e, you: e.controller }));
+  if (used.length) { game.effects = game.effects.filter(e => !used.includes(e)); game.touch(); }
   // casualty / replicate: "when you cast this spell, copy it ..." (you may choose new targets for the copies)
-  const copies = (sa.casualtySac ? 1 : 0) + (sa.replicated || 0);
+  const copies = (sa.casualtySac ? 1 : 0) + (sa.conspireTap ? 1 : 0) + (sa.replicated || 0);
   if (copies) {
-    const what = [sa.casualtySac ? 'Casualty' : null, sa.replicated ? `Replicate ×${sa.replicated}` : null].filter(Boolean).join(', ');
+    const what = [sa.casualtySac ? 'Casualty' : null, sa.conspireTap ? 'Conspire' : null, sa.replicated ? `Replicate ×${sa.replicated}` : null].filter(Boolean).join(', ');
     game.pendingTriggers.push({ host: card, t: { parsed: { p: { Execute: 'CopyIt', TriggerDescription: `${what} — copy ${face.name}` } }, svars: { CopyIt: `DB$ CopySpellAbility | Defined$ TriggeredSpellAbility | Amount$ ${copies} | MayChooseTarget$ True` }, key: 'castcopy' }, rp: { Card: card, StackItem: item, Player: pid }, controller: pid });
   }
   game.notifyTargets(sa, item);
   return true;
 }
 
-// keywords a spell has as it's cast: its own, plus ones granted to spells on the stack (Hatchery Sliver)
-function castKeywords(game, pid, card, face) {
-  const out = [...face.keywords];
+// keywords a card has as it's cast from `from`: its own and the ones statics give it where it is (Lier's flashback,
+// Ashling's evoke), plus the ones given to spells on the stack, checked as if it already were one (Henzie's blitz,
+// Zinnia's offspring, Anhelo's casualty: "the first instant or sorcery spell you cast each turn")
+export function castKeywords(game, pid, card, face = card.faceDef, from = card.zone, sa = null) {
   game.ensureChars();
+  const fi = card.def.faces.indexOf(face);
+  const ch = game.chars(card); // (looked up where it really is, before the as-if-cast check below)
+  const out = fi < 0 || fi === (card.face || 0) ? [...ch.keywords] : [...face.keywords];
+  const here = card.zone;
+  const grants = [];
   for (const { st, ctx } of game._activeStatics || []) {
     const p = st.parsed.p;
-    if (!p.AddKeyword || !/Stack/.test(p.AffectedZone || '')) continue;
-    if (ctx.you !== pid) continue;
-    const valid = (p.Affected || 'Card').replace(/\+wasCast\b/g, '').replace(/\+YouCtrl\b/g, '+YouOwn');
-    if (!matchValid(game, card, valid, ctx)) continue;
-    out.push(...p.AddKeyword.split(' & '));
+    if (!p.AddKeyword || !p.AffectedZone) continue;
+    const zones = p.AffectedZone.split(',').map(z => zoneMap[z] || z.toLowerCase());
+    if (!zones.includes('stack') || zones.includes(here)) continue; // (a card in hand already has what's given in hand)
+    grants.push({ p, ctx });
   }
+  if (!grants.length) return out;
+  const saved = { zone: card.zone, controller: card.controller, castFrom: card.castFrom, face: card.face, castSA: card.castSA };
+  card.zone = 'stack'; card.controller = pid; card.castFrom = ['adventure', 'foretold', 'plotted'].includes(from) ? 'exile' : from; card.face = Math.max(0, fi);
+  if (sa) card.castSA = sa;
+  try {
+    for (const { p, ctx } of grants) {
+      if (p.Affected && !matchValid(game, card, p.Affected, ctx)) continue;
+      if (p.AffectedDefined && !resolveDefined(game, p.AffectedDefined, ctx).some(x => x && x.id === card.id)) continue;
+      if (!p.Affected && !p.AffectedDefined) continue;
+      out.push(...p.AddKeyword.split(' & '));
+    }
+  } finally { Object.assign(card, saved); }
   return out;
+}
+
+// a keyword's cost: "CardManaCost" / "ManaCost" is the card's own mana cost (Henzie's blitz, Lier's flashback)
+export function ownCost(face, raw) {
+  const own = face.manaCostStr || '0';
+  if (raw == null || raw === '') return own;
+  return String(raw).replace(/\b(Card)?ManaCost\b/g, own);
+}
+
+// a cost modifier's "ValidSpell$", for the spell being cast this way ("blitz costs you pay cost {1} less")
+function castMatchesSpell(game, card, opt, valid, ctx) {
+  return valid.split(',').some(v => {
+    const [type, ...rest] = v.trim().split('.');
+    if (type !== 'Spell' && type !== 'Card') return false;
+    const props = rest.join('.').split('+').filter(Boolean);
+    return props.every(pr => pr === 'Blitz' ? opt.altCost === 'Blitz' : pr === 'isCastFaceDown' ? !!opt.faceDown : pr === 'MayPlaySource' ? !!opt.mayPlay : matchValid(game, card, 'Card.' + pr, ctx));
+  });
 }
 
 // reduce a mana cost by another one ("paying the difference in mana costs"): colored symbols first, rest from generic
@@ -2104,7 +2176,10 @@ export async function resolveStackItem(game, item) {
       return;
     }
     if (sa.permanent) {
-      const opts = { controller: item.controller, cast: { from: item.fromZone, x: sa.x || 0, kicked: sa.kicked || 0, sa, manaSpent: sa.manaSpent, altCost: sa.altCost, squad: sa.squad || 0 }, silent: true, face: sa.face || 0, faceDown: sa.faceDown };
+      // what it was given as a spell that still matters on the battlefield: a blitzed creature's "when this dies,
+      // draw a card", an evoked one's sacrifice, offspring's token copy
+      const kept = (card.castGrants || []).filter(k => (/^Blitz\b/.test(k) && sa.altCost === 'Blitz') || (/^Evoke\b/.test(k) && sa.altCost === 'Evoke') || (/^Offspring\b/.test(k) && sa.offspring));
+      const opts = { controller: item.controller, cast: { from: item.fromZone, x: sa.x || 0, kicked: sa.kicked || 0, sa, manaSpent: sa.manaSpent, altCost: sa.altCost, squad: sa.squad || 0, offspring: sa.offspring || 0, grants: kept }, silent: true, face: sa.face || 0, faceDown: sa.faceDown };
       if (sa.api === 'Attach') {
         const t = sa.targets[0];
         if (!t) { await game.moveCard(card, 'graveyard'); return; }
@@ -2319,7 +2394,10 @@ export function getActions(game, pid) {
 // Offer to cast a card for an alternative cost (madness, miracle). Returns true if cast.
 export async function castAlternative(game, pid, card, costStr, kind, fromExile) {
   const face = card.def.faces[0];
-  const opt = { key: kind.toLowerCase(), label: `${kind} ${face.name}`, face: 0, from: card.zone, altCost: kind, altManaStr: costStr, permanent: faceIsPermanent(face) };
+  // "ManaCost": its mana cost (Falkenrath Gorger's madness); "ManaCost:4": that, less {4} (Aminatou's miracle)
+  const less = /^(?:Card)?ManaCost:(\d+)$/.exec(costStr || '');
+  costStr = ownCost(face, less ? 'ManaCost' : costStr);
+  const opt = { key: kind.toLowerCase(), label: `${kind} ${face.name}`, face: 0, from: card.zone, altCost: kind, altManaStr: costStr, permanent: faceIsPermanent(face), reduceBy: less ? +less[1] : 0 };
   if (opt.permanent && !face.types.includes('Creature') && false) opt.permanent = true;
   let cast = false;
   const sa = buildSpellSA(game, pid, card, opt);

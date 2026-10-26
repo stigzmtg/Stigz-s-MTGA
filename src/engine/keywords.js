@@ -8,7 +8,12 @@ function looksLikeFilter(s) { return !!s && (/\./.test(s) || /^(Creature|Card|Pe
 function defFor(kw, face) {
   const parts = kw.split(':');
   const name = parts[0];
-  const a = parts[1], b = parts[2];
+  let a = parts[1];
+  const b = parts[2];
+  // given by another card: "Encore:CardManaCost" (Wire Surgeons), "Encore:X:XAlternative$ Number$ConvertedManaCost"
+  // (Sliver Gravemother): the card's own mana cost / mana value
+  if (a === 'CardManaCost' || a === 'ManaCost') a = face.manaCostStr || '0';
+  else if (a === 'X' && /XAlternative\$ Number\$ConvertedManaCost/.test(kw)) a = String(face.cmc || 0);
   const A = [], T = [], R = [], S = {};
   const etbSelf = 'Mode$ ChangesZone | Origin$ Any | Destination$ Battlefield | ValidCard$ Card.Self';
   const diesSelf = 'Mode$ ChangesZone | Origin$ Battlefield | Destination$ Graveyard | ValidCard$ Card.Self';
@@ -303,7 +308,7 @@ function defFor(kw, face) {
       break;
     case 'Offspring':
       T.push(`${etbSelf} | CheckSVar$ KWOffN | SVarCompare$ GE1 | Execute$ KWOffspring | TriggerDescription$ Offspring`);
-      S.KWOffN = 'Count$TimesKicked';
+      S.KWOffN = 'Count$OffspringPaid';
       S.KWOffspring = 'DB$ CopyPermanent | Defined$ Self | SetPower$ 1 | SetToughness$ 1';
       break;
     default: return null;
@@ -318,11 +323,18 @@ function costText(c) {
 
 // Hidden keywords Forge stores as plain text keywords; turn some into statics.
 export function synthesizeKeywords(game, card, ch) {
-  if (!card || !ch || ch._synth) return;
+  if (!card || !ch) return;
+  // a card off the battlefield can be looked at (and built) before a static gives it a keyword (Lier's flashback,
+  // Rhet-Tomb Mystic's cycling): keywords added after that get their abilities then
+  const from = Math.min(ch._synthN || 0, ch.keywords.length);
+  if (ch._synth && from === ch.keywords.length) return;
+  const first = !ch._synth;
   ch._synth = true;
   const face = card.faceDef;
-  if (card.faceDown && card.zone === 'battlefield' && (card.disguised || card.cloaked) && !ch.keywords.includes('Ward:2')) ch.keywords.push('Ward:2');
-  for (const kw of ch.keywords) {
+  if (first && card.faceDown && card.zone === 'battlefield' && (card.disguised || card.cloaked) && !ch.keywords.includes('Ward:2')) ch.keywords.push('Ward:2');
+  const fresh = ch.keywords.slice(first ? 0 : from);
+  ch._synthN = ch.keywords.length;
+  for (const kw of fresh) {
     let d = cache.get(kw + '|' + face.name);
     if (d === undefined) { d = defFor(kw, face); cache.set(kw + '|' + face.name, d); }
     if (!d) continue;
@@ -331,6 +343,7 @@ export function synthesizeKeywords(game, card, ch) {
     d.T.forEach((raw, i) => ch.triggers.push({ raw, parsed: parseAbility(raw), svars, src: card, key: `kw:${kw}:T${i}` }));
     d.R.forEach((raw, i) => ch.replacements.push({ raw, parsed: parseAbility(raw), svars, src: card, key: `kw:${kw}:R${i}` }));
   }
+  if (!first) return;
   // class levels: grant abilities of reached levels
   for (const kw of ch.keywords) {
     const m = kw.match(/^Class:(\d+):([^:]+):(.+)$/);

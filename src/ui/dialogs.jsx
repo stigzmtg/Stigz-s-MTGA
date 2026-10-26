@@ -234,7 +234,7 @@ export function SettingsDialog({ settings, onChange, onClose }) {
         <div className="setrow"><span>Interface size<small>Everything bigger or smaller. The game also grows with your window.</small></span><SizeChoice /></div>
         <div className="setrow"><span>Animations<small>Cards flying between zones, hits and celebrations. Reduced keeps simple fades; Off is quickest on slow computers.</small></span><MotionChoice /></div>
         <Toggle k="stopOppEnd" title="Stop at opponents' end steps" note="Only when you have instant-speed plays." />
-        <Toggle k="stopOppCombat" title="Stop after blockers on opponents' attacks" note="Gives you a window for combat tricks." />
+        <Toggle k="stopOppCombat" title="Stop when opponents attack you" note="Before blocks, to flash in a blocker or remove an attacker, and after blocks for combat tricks." />
         <Toggle k="stopOwnCombat" title="Stop at your own combat steps" note="For tricks before attacks and after blocks." />
         <Toggle k="stopForOpponentSpells" title="Let me respond during “End turn”" note="Stops auto-pass when an opponent casts something you can answer." />
         <Toggle k="fullControl" title="Full control" note="Stop at every priority window where you could act." />

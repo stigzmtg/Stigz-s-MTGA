@@ -993,6 +993,8 @@ export const E = {
       duration: durationOf(sa), remembered: [], imprinted: [], chosen: { ...(sa.host.chosen || {}) }, counters: {}, timestamp: game.uid++, temp: [], mods: [],
       hostCard: sa.host, xPaid: sa.root().x || 0, abilityUses: {},
       exileOnMoved: p.ExileOnMoved ? Z(p.ExileOnMoved) : null, forgetOnMoved: p.ForgetOnMoved ? Z(p.ForgetOnMoved) : null,
+      // "the next instant or sorcery spell you cast this turn has storm": it ends once that spell is cast
+      forgetOnCast: p.ForgetOnCast || null,
       description: desc(game, sa),
     };
     const mk = (raw, i, kind) => ({ raw, parsed: parseAbility(raw), svars, src: e, key: `e${e.id}${kind}${i}` });

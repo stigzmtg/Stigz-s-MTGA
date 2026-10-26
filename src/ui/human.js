@@ -101,7 +101,11 @@ export class HumanAgent {
       return true;
     }
     if (game.step === 'end') return !s.stopOppEnd;
-    if (game.step === 'declareBlockers' && game.combat && game.combat.attackers.some(a => a.defenderPlayer === pid)) return !s.stopOppCombat;
+    // attacked: a window before blocks when there's a spell to cast (flash in a blocker, remove an attacker), and one
+    // after blocks (combat tricks)
+    const attacked = game.combat && game.combat.attackers.some(a => a.defenderPlayer === pid);
+    if (attacked && game.step === 'declareAttackers') return !(s.stopOppCombat && actions.some(a => a.type === 'cast'));
+    if (attacked && game.step === 'declareBlockers') return !s.stopOppCombat;
     return true;
   }
 }
