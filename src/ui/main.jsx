@@ -257,12 +257,12 @@ function MtgApp({ onHome }) {
       room.setExtra({ dk: d && !onClaude() ? packDeck(d) : null, sl: st.s, bx: st.b });
     },
   };
-  if (builder) return <DeckBuilder data={all} editId={builder.id}
+  if (builder) return <DeckBuilder data={all} editId={builder.id} fromId={builder.from}
     onHome={onHome}
     onDone={() => { setBuilder(null); setCustomVersion(v => v + 1); }}
     onPlay={deck => { try { const s = JSON.parse(safeStorage.getItem('pa-lobby') || '{}'); safeStorage.setItem('pa-lobby', JSON.stringify({ ...s, mine: deck.id })); } catch { /* storage blocked */ } setBuilder(null); setCustomVersion(v => v + 1); }} />;
   if (!session) return <>
-    <Lobby key={customVersion} data={all} imagesOk={imagesOk} onStart={cfg => setSession(newSession(all, cfg))} online={onlineProps} onHome={onHome} onBuild={id => setBuilder({ id })} />
+    <Lobby key={customVersion} data={all} imagesOk={imagesOk} onStart={cfg => setSession(newSession(all, cfg))} online={onlineProps} onHome={onHome} onBuild={(id, from) => setBuilder({ id, from })} />
     {toast ? <div className="toast" role="status">{toast}</div> : null}
   </>;
   return <GameView key={`${session.game.seed}:${session.online ? session.online.game : ''}`} session={session} support={data.support} imagesOk={imagesOk}

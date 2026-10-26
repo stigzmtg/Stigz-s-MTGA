@@ -11,6 +11,20 @@ const BANNED = new Set(['Mana Crypt', 'Jeweled Lotus', 'Dockside Extortionist', 
 
 // ---- what a card does in a deck
 export const ROLES = { ramp: 'Ramp', draw: 'Card draw', removal: 'Removal', wipe: 'Board wipe', counter: 'Counterspell', tutor: 'Tutor', protect: 'Protection', recursion: 'Recursion' };
+// what each job means, for players new to building decks (the checklist and the card details show these)
+export const ROLE_HELP = {
+  land: 'Lands make your mana. Too few and you get stuck with cards you can’t cast; too many and you run out of things to do. Most Commander decks play 35 to 38.',
+  ramp: 'Ramp gives you extra mana early: mana rocks, creatures that tap for mana, spells that fetch lands. Your big cards come down turns sooner.',
+  draw: 'Card draw keeps your hand full. Games with three opponents run long, and the player who runs out of cards first falls behind.',
+  removal: 'Removal answers one threat: the creature or card that’s about to beat you. Cheap removal is the best kind.',
+  wipe: 'Board wipes clear lots of creatures at once. They’re how you come back when everyone else is ahead on the board.',
+  counter: 'Counterspells stop a spell before it happens. Blue decks often keep one or two ready for the scariest spells.',
+  tutor: 'Tutors find a specific card in your deck, so your best card shows up more often.',
+  protect: 'Protection keeps your commander or key creatures alive through removal.',
+  recursion: 'Recursion brings cards back from your graveyard, so a destroyed card isn’t gone for good.',
+  plan: 'Cards that do what your commander wants. The more you run, the more often your plan actually happens.',
+  creatures: 'Creatures attack, block and win most games. Decks built around spells run fewer.',
+};
 const LANDISH = /^(?:basic |snow )*(?:land|lands|forest|plains|island|swamp|mountain|basic)\b/;
 const ROLE_TESTS = {
   ramp: (t, c) => c.main !== 'Land' && (/\{t\}[^:\n]*: add\b/.test(t) || /search your library for [^.]*\b(?:land|forest|plains|island|swamp|mountain)s?\b[^.]*onto the battlefield/.test(t) || /put (?:a|up to \w+) land cards? from your hand onto the battlefield/.test(t) || /play an additional land/.test(t) || /create (?:a|an|one|two|three|x) (?:tapped )?treasure/.test(t) || /spells you cast cost \{\d\} less/.test(t)),
@@ -112,7 +126,7 @@ export function createDeckHelper(index, decks, support = {}) {
     for (const th of (state.focus && state.focus.themes) || []) weights[th] = (weights[th] || 0) + 3;
     for (const ty of (state.focus && state.focus.tribes) || []) tribes.set(ty, (tribes.get(ty) || 0) + 4);
     // a deck about instants and sorceries wants fewer creatures
-    const creatureTarget = weights.spells >= 3 ? 14 : weights.artifacts >= 3 || weights.enchantments >= 3 ? 20 : 26;
+    const creatureTarget = weights.spells >= 3 ? 14 : [...tribes.values()].some(w => w >= 4) ? 32 : weights.artifacts >= 3 || weights.enchantments >= 3 ? 20 : 26;
     return { weights, tribes, lead, identity: COLORS.filter(x => identity.has(x)), creatureTarget };
   }
 
@@ -138,7 +152,9 @@ export function createDeckHelper(index, decks, support = {}) {
   const landTarget = (p, cnt) => (cnt.avg && cnt.avg < 2.7 ? 35 : cnt.avg > 3.7 ? 38 : 37) - ((cnt.roles.ramp || 0) >= 12 ? 1 : 0);
   const CURVE = [0.02, 0.1, 0.2, 0.22, 0.18, 0.12, 0.08, 0.08];
 
-  const legalFor = (f, p, state) => f.legal && !state.commanders.includes(f.c.name) && f.c.ci.every(x => p.identity.includes(x));
+  // how much of the mana base a color should get from its share of the mana symbols (a floor, so a splash color still shows up)
+const colorWeight = share => 0.25 + share;
+const legalFor = (f, p, state) => f.legal && !state.commanders.includes(f.c.name) && f.c.ci.every(x => p.identity.includes(x));
 
   // how well a card fits, and why (in words)
   function score(f, p, cnt, tg, opts = {}) {
@@ -152,7 +168,7 @@ export function createDeckHelper(index, decks, support = {}) {
       if (!planWhy || add > planWhy[1]) planWhy = [`Fits the ${THEME_NAMES[th]} plan`, add];
     }
     for (const [ty, w] of p.tribes) {
-      if (f.types.includes(ty)) { syn += w * 1.2; if (!planWhy || w * 1.2 > planWhy[1]) planWhy = [`Is a ${ty}`, w * 1.2]; }
+      if (f.types.includes(ty)) { syn += w * 1.2; if (!planWhy || w * 1.2 > planWhy[1]) planWhy = [`Is ${/^[AEIOU]/.test(ty) ? 'an' : 'a'} ${ty}`, w * 1.2]; }
       else if (f.mentions.has(ty)) { syn += w * 0.8; if (!planWhy || w * 0.8 > planWhy[1]) planWhy = [`Works with your ${plural(ty)[0]}`, w * 0.8]; }
     }
     let s = Math.min(syn, 9);
@@ -263,9 +279,10 @@ export function createDeckHelper(index, decks, support = {}) {
     if (lands > 0) {
       const pips = Object.fromEntries(p.identity.map(x => [x, 0]));
       for (const [n, k] of cards) { const f = feats.get(n); if (!f || f.c.main === 'Land') continue; for (const t of f.c.cost) for (const x of p.identity) if (t.includes(x)) pips[x] += k / (t.length > 1 && !/^\d/.test(t) ? 2 : 1); }
-      // basics by share of mana symbols, at least three of each color when there's room
+      // basics by share of mana symbols (every color gets a floor), at least three of each when there's room
       const colors = p.identity.length ? p.identity : ['C'];
-      const w = colors.map(x => Math.sqrt(Math.max(pips[x] || 0, 1))), sw = w.reduce((a, b) => a + b, 0);
+      const allPips = Object.values(pips).reduce((a, b) => a + b, 0) || 1;
+      const w = colors.map(x => colorWeight((pips[x] || 0) / allPips)), sw = w.reduce((a, b) => a + b, 0);
       const n = w.map(v => Math.floor(lands * v / sw));
       const order = colors.map((_, i) => i).sort((a, b) => (lands * w[b] / sw - n[b]) - (lands * w[a] / sw - n[a]));
       for (let k = 0, left = lands - n.reduce((a, b) => a + b, 0); left > 0; k++, left--) n[order[k % order.length]]++;
@@ -340,7 +357,7 @@ export function createDeckHelper(index, decks, support = {}) {
       if (colors && (f.c.ci.some(x => !colors.includes(x)) || (colors.length && !f.c.ci.length))) continue;
       let s = 0; const why = [];
       for (const th of themes) { const k = f.themes.get(th); if (k) { s += k === 'does' ? 2 : 4; why.push(k === 'does' ? `Does ${THEME_NAMES[th]}` : `Rewards ${THEME_NAMES[th]}`); } }
-      for (const ty of tribes) { if (f.mentions.has(ty)) { s += 6; why.push(`Leads ${plural(ty)[0]}`); } else if (f.types.includes(ty)) { s += 2; why.push(`Is a ${ty}`); } }
+      for (const ty of tribes) { if (f.mentions.has(ty)) { s += 6; why.push(`Leads ${plural(ty)[0]}`); } else if (f.types.includes(ty)) { s += 2; why.push(`Is ${/^[AEIOU]/.test(ty) ? 'an' : 'a'} ${ty}`); } }
       if ((themes.length || tribes.length) && !s) continue;
       if (colors && colors.length) { const same = colors.every(x => f.c.ci.includes(x)); s += same ? 2 : 0; if (same) why.push(`${colors.length === 1 ? 'Mono-' : ''}${colors.map(x => COLOR_NAMES[x]).join('-')}`); }
       if (leads.has(f.c.name)) { s += 2.5; why.push('Leads a precon'); }
@@ -352,7 +369,92 @@ export function createDeckHelper(index, decks, support = {}) {
     return out.slice(0, limit);
   }
 
-  return { feats, plan, counts, suggest, build, review, cuts, findCommanders, typeWords, landTarget: state => landTarget(plan(state), counts(state)) };
+  // does a card belong to the commander's main plan (a theme it cares about, or its creature type)?
+  const onPlan = (f, p) => [...f.themes.keys()].some(th => (p.weights[th] || 0) >= 3) || [...p.tribes].some(([ty, w]) => w >= 4 && (f.types.includes(ty) || f.mentions.has(ty)));
+  // the deck's numbers without one of its cards (to judge a card that's already in)
+  const without = (cnt, f) => { const less = { ...cnt, roles: { ...cnt.roles } }; for (const r of f.roles) less.roles[r] = Math.max(0, (less.roles[r] || 0) - 1); return less; };
+
+  // ---- one card, for this deck: its jobs, how it fits, and anything stopping it from going in
+  function info(name, state) {
+    const f = feats.get(name);
+    if (!f) return null;
+    const p = plan(state);
+    const problems = [];
+    const missing = f.c.ci.filter(x => !p.identity.includes(x));
+    if (state.commanders.length && missing.length && !state.commanders.includes(name)) problems.push(`Needs ${missing.map(x => COLOR_NAMES[x]).join(' and ')} mana: outside your commander’s colors`);
+    if (BANNED.has(name)) problems.push('Banned in Commander');
+    if (f.c.main === 'Other') problems.push('Not a card you can put in a deck');
+    if (f.flagged) problems.push('The game can’t fully play this card yet');
+    let fit = null;
+    if (state.commanders.length && !BASICS.has(name) && !state.commanders.includes(name)) {
+      const cnt = counts(state);
+      fit = f.c.main === 'Land' ? landScore(f, p) : score(f, p, state.cards.get(name) ? without(cnt, f) : cnt, targets(p), {});
+    }
+    const plans = [];
+    for (const [th, kind] of f.themes) if (p.weights[th]) plans.push(kind === 'does' ? `Does ${THEME_NAMES[th]}` : `Rewards ${THEME_NAMES[th]}`);
+    for (const [ty] of p.tribes) if (f.types.includes(ty)) plans.push(`Is ${/^[AEIOU]/.test(ty) ? 'an' : 'a'} ${ty}`); else if (f.mentions.has(ty)) plans.push(`Works with ${plural(ty)[0]}`);
+    return { roles: [...f.roles], plans: plans.slice(0, 3), onPlan: onPlan(f, p), why: fit ? fit.why : [], s: fit ? fit.s : null, pop: f.pop, lead: p.lead.has(name), problems, produces: f.produces ? [...f.produces] : null };
+  }
+
+  // ---- every playable card's score for this deck (search results sort by it)
+  function rank(state) {
+    const p = plan(state), cnt = counts(state), tg = targets(p);
+    const out = new Map();
+    for (const f of feats.values()) {
+      if (!f.legal || BASICS.has(f.c.name) || state.commanders.includes(f.c.name)) continue;
+      if (f.c.ci.some(x => !p.identity.includes(x))) continue;
+      const r = f.c.main === 'Land' ? landScore(f, p) : score(f, p, state.cards.get(f.c.name) ? without(cnt, f) : cnt, tg, {});
+      out.set(f.c.name, { s: r.s, why: r.why, plan: f.c.main !== 'Land' && onPlan(f, p) });
+    }
+    return out;
+  }
+  const roleOf = name => { const f = feats.get(name); return f ? [...f.roles] : []; };
+
+  // ---- the deck checklist: each part of a good Commander deck, how many you have, about how many to aim for
+  function recipe(state) {
+    const p = plan(state), cnt = counts(state), tg = targets(p);
+    const lt = landTarget(p, cnt);
+    const rows = [{ id: 'land', label: 'Lands', have: cnt.lands, want: lt, lo: lt - 1, hi: lt + 2, help: ROLE_HELP.land }];
+    for (const r of ['ramp', 'draw', 'removal', 'wipe', 'counter']) if (tg[r]) rows.push({ id: r, label: ROLES[r], have: cnt.roles[r] || 0, want: tg[r], lo: Math.ceil(tg[r] * 0.8), hi: Infinity, help: ROLE_HELP[r] });
+    const tribeNames = [...p.tribes].filter(([, w]) => w >= 4).map(([ty]) => plural(ty)[0]);
+    const planNames = [...tribeNames, ...Object.entries(p.weights).filter(([, w]) => w >= 3).map(([th]) => THEME_NAMES[th])];
+    if (planNames.length) {
+      let on = 0;
+      for (const [n, k] of state.cards) { const f = feats.get(n); if (f && f.c.main !== 'Land' && onPlan(f, p)) on += k; }
+      rows.push({ id: 'plan', label: `Plan: ${planNames.slice(0, 2).join(', ')}`, have: on, want: 15, lo: 15, hi: 99, help: ROLE_HELP.plan });
+    }
+    rows.push({ id: 'creatures', label: 'Creatures', have: cnt.creatures, want: tg.creatures, lo: tg.creatures - 6, hi: tg.creatures + 16, help: ROLE_HELP.creatures });
+    for (const r of rows) r.state = r.have < r.lo ? (r.have < r.want * 0.6 ? 'low' : 'short') : r.have > r.hi ? 'over' : 'good';
+    return { rows, avg: cnt.avg, nonland: cnt.nonland, curve: cnt.curve, planNames };
+  }
+
+  // ---- color balance: each color's share of the mana symbols in your costs, and how many lands make it
+  const BASIC_COLOR = { Plains: 'W', Island: 'U', Swamp: 'B', Mountain: 'R', Forest: 'G' };
+  function manaStats(state) {
+    const p = plan(state);
+    const pips = Object.fromEntries(p.identity.map(x => [x, 0])), sources = Object.fromEntries(p.identity.map(x => [x, 0]));
+    let lands = 0;
+    for (const [n, k] of state.cards) {
+      const f = feats.get(n);
+      if (!f) continue;
+      if (f.c.main === 'Land') {
+        lands += k;
+        const prod = BASIC_COLOR[n] ? new Set([BASIC_COLOR[n]]) : f.produces || new Set();
+        for (const x of p.identity) if (prod.has(x) || prod.has('*') || prod.has('fetch')) sources[x] += k;
+      } else for (const t of f.c.cost) for (const x of p.identity) if (t.includes(x)) pips[x] += k / (t.length > 1 && !/^\d/.test(t) ? 2 : 1);
+    }
+    const allPips = Object.values(pips).reduce((a, b) => a + b, 0);
+    const sw = p.identity.reduce((a, x) => a + (pips[x] ? colorWeight(allPips ? pips[x] / allPips : 0) : 0), 0) || 1;
+    const colors = p.identity.map(x => {
+      const share = allPips ? pips[x] / allPips : 0;
+      // about this many lands should make the color: its weighted share, and at least a dozen for any color you use
+      const want = pips[x] ? Math.min(lands, Math.max(Math.round(lands * colorWeight(share) / sw), Math.min(12, Math.round(lands / 2)))) : 0;
+      return { color: x, name: COLOR_NAMES[x], pips: Math.round(pips[x]), share, sources: sources[x], want, short: lands >= 20 && pips[x] > 0 && sources[x] < want - 2 };
+    });
+    return { colors, lands };
+  }
+
+  return { feats, plan, counts, suggest, build, review, cuts, findCommanders, typeWords, info, rank, roleOf, recipe, manaStats, leadsPrecon: n => leads.has(n), landTarget: state => landTarget(plan(state), counts(state)) };
 }
 
 // ---- reading what someone typed

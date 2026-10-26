@@ -2,7 +2,7 @@
 // "more removal", "what should I cut?") and it answers with commanders, cards and whole builds you can add or undo.
 // The thinking is in deckai.js; this file is the conversation.
 import { parseAsk, ROLES, THEME_NAMES, COLOR_NAMES } from './deckai.js';
-import { Cost } from './builder.jsx';
+import { Cost } from './buildercard.jsx';
 import { BASICS } from './customdecks.js';
 
 const { useState, useEffect, useRef } = React;
@@ -23,7 +23,7 @@ function planWords(H, state) {
   return { p, text: parts.length ? `a ${colors} deck about ${and(parts)}${lean.length ? `, leaning on ${and(lean.slice(0, 2))}` : ''}` : lean.length ? `a ${colors} deck that leans on ${and(lean.slice(0, 3))}` : `a ${colors} good-stuff deck: strong cards that do their job` };
 }
 
-export function DeckHelper({ H, commanders, cards, setCards, onChooseCommander, onHover, byName, hidden }) {
+export function DeckHelper({ H, commanders, cards, setCards, onChooseCommander, onHover, onOpen, byName, hidden }) {
   const [msgs, setMsgs] = useState(() => (commanders.length ? [] : [{ from: 'ai', text: 'Hi! I’m your deck helper. Tell me what you like to play: a creature type (dragons, elves, zombies), a style (tokens, graveyard, big creatures, flying) or colors, and I’ll find you a commander. Then I can build the whole deck, or help you build it card by card.' }]));
   const [text, setText] = useState('');
   const [focus, setFocus] = useState({ themes: [], tribes: [] });
@@ -186,7 +186,7 @@ export function DeckHelper({ H, commanders, cards, setCards, onChooseCommander, 
               {m.notes ? <ul className="hnotes">{m.notes.map((n, k) => <li key={k} className={n.level}><span>{n.text}</span>{n.act ? <button className="btn sm" onClick={n.act[1]}>{n.act[0]}</button> : null}</li>)}</ul> : null}
               {m.commanders ? <div className="hcards">{m.commanders.map(c => (
                 <div key={c.name} className="hcard" onMouseEnter={() => onHover(c.name)} onFocus={() => onHover(c.name)}>
-                  <span className="bname"><b>{c.name}</b><small>{c.why.join(' · ') || (byName.get(c.name) || {}).type}</small></span>
+                  <button type="button" className="bname as-btn" onClick={() => onOpen && onOpen(c.name)}><b>{c.name}</b><small>{c.why.join(' · ') || (byName.get(c.name) || {}).type}</small></button>
                   <Cost cost={(byName.get(c.name) || { cost: [] }).cost} />
                   <button className="btn sm primary" disabled={commanders.includes(c.name)} onClick={() => onChooseCommander(c.name)}>{commanders.includes(c.name) ? 'Chosen' : 'Choose'}</button>
                 </div>
@@ -195,7 +195,7 @@ export function DeckHelper({ H, commanders, cards, setCards, onChooseCommander, 
                 const have = cards.get(c.name) || 0;
                 return (
                   <div key={c.name} className={`hcard ${have && !m.cut ? 'in' : ''}`} onMouseEnter={() => onHover(c.name)} onFocus={() => onHover(c.name)}>
-                    <span className="bname"><b>{c.name}</b>{c.why && c.why.length ? <small>{c.why.join(' · ')}</small> : null}</span>
+                    <button type="button" className="bname as-btn" onClick={() => onOpen && onOpen(c.name)}><b>{c.name}</b>{c.why && c.why.length ? <small>{c.why.join(' · ')}</small> : null}</button>
                     <Cost cost={(byName.get(c.name) || { cost: [] }).cost} />
                     {m.cut
                       ? <button className="btn sm ghost" disabled={!have} onClick={() => cutCard(c.name)}>{have ? 'Cut' : 'Cut ✓'}</button>

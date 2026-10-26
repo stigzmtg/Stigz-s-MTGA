@@ -161,7 +161,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
           </section>
           )}
           <section className="panel" aria-label="Selected deck">
-            <div className="panel-head"><h2>{deck.name}</h2>{deck.custom && onBuild ? <button className="btn sm" onClick={() => onBuild(deck.id)}>Edit this deck</button> : null}</div>
+            <div className="panel-head"><h2>{deck.name}</h2>{onBuild ? (deck.custom ? <button className="btn sm" onClick={() => onBuild(deck.id)}>Edit this deck</button> : <button className="btn sm" onClick={() => onBuild(null, deck.id)} title="Open a copy of this precon in the deck builder to change it">Edit a copy</button>) : null}</div>
             <div className="commander-showcase bigcard" style={{ '--cw': deck.commanders.length > 1 ? 'calc(190px * var(--s))' : 'calc(250px * var(--s))' }}>
               {(() => {
                 const imgs = imagesOk ? (deck.custom ? deck.commanders.map(n => cardImage(n)) : lobbyImages(deck.id)) : [];
