@@ -16,6 +16,7 @@ import { useEmotes, EmoteButton, WatcherEmotes } from './emotes.jsx';
 import { Coach } from './coach.jsx';
 import { savedStyle } from './deckstyle.jsx';
 import { myAvatar } from './avatar.jsx';
+import { roomKeyOf } from './badge.jsx';
 
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, useSyncExternalStore } = React;
 
@@ -297,6 +298,8 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
     game, me, support, emotes: emotes.bubbles,
     // friends' avatars, by seat (online games)
     avatars: session.online ? session.cfg.seats.map(s => (s.k === 'h' && s.c ? s.a : null)) : null,
+    // friends' verified-account badges, by seat (checked where they're shown: ui/badge.jsx)
+    badges: session.online ? session.cfg.seats.map(s => (s.k === 'h' && s.c && s.vb ? { badge: s.vb, cid: s.c, name: s.n, room: roomKeyOf(session.cfg) } : null)) : null,
     sleeves,
     onHover: setHover,
     openZone: (p, z) => setZone({ pid: p, zone: z }),

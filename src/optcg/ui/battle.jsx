@@ -19,6 +19,7 @@ import { createFlights, runFlights, shake, strike, motionOn } from '../../ui/mot
 import { uiScale } from '../../ui/common.js';
 import { donSlots, createTableMotion, runTableMotion, AttackArrow } from './motion.jsx';
 import { baseDeckId } from './decks.js';
+import { VerifiedMark, roomKeyOf } from '../../ui/badge.jsx';
 
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, useSyncExternalStore } = React;
 // the log and prompts in the second person ("You add a Life card to your hand", not "... to their hand")
@@ -549,7 +550,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
         style={ld ? { '--c1': COLOR_HEX[ld.colors[0]], '--c2': COLOR_HEX[ld.colors[1] || ld.colors[0]] } : undefined}>
         <div className="op-plate">
           <EmoteBubble b={emotes.bubbles.get(p.id)} />
-          <div className="who">{avatarOf(p.id) ? <AnimalAvatar code={avatarOf(p.id)} size={34} /> : null}<b title={p.name}>{p.name}</b>{game.current === p.id && !game.over && game.turn ? <span className="turnmark">turn</span> : null}</div>
+          <div className="who">{avatarOf(p.id) ? <AnimalAvatar code={avatarOf(p.id)} size={34} /> : null}<b title={p.name}>{p.name}</b>{session.online && session.cfg.seats[p.id] ? <VerifiedMark badge={session.cfg.seats[p.id].vb} cid={session.cfg.seats[p.id].c} name={session.cfg.seats[p.id].n} room={roomKeyOf(session.cfg)} /> : null}{game.current === p.id && !game.over && game.turn ? <span className="turnmark">turn</span> : null}</div>
           {p.deckName && p.deckName !== p.name ? <div className="deck">{p.deckName}</div> : null}
           <Life p={p} sleeve={sleeves[p.id]} setup={!game.turn} />
         </div>

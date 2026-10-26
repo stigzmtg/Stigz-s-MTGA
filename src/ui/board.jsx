@@ -6,6 +6,7 @@ import { EmoteBubble } from './emotes.jsx';
 import { AnimalAvatar } from './avatar.jsx';
 import { cssPx, uiScale } from './common.js';
 import { shake } from './motion.js';
+import { VerifiedMark } from './badge.jsx';
 
 const { useState, useEffect, useLayoutEffect, useRef } = React;
 
@@ -338,7 +339,7 @@ export function Mat({ game, pid, ctx, side, compact }) {
         <LifeTotal p={p} onClick={isMe ? (e => { e.stopPropagation(); ctx.onPlayerMenu(pid, e); }) : undefined} />
       </span>
       <span className="ident">
-        <span className="pname" title={p.name}><span className="pn">{p.name}</span>{game.activePlayer === pid ? <span className="turnmark" title="Active player">turn</span> : null}</span>
+        <span className="pname" title={p.name}><span className="pn">{p.name}</span>{ctx.badges && ctx.badges[pid] ? <VerifiedMark {...ctx.badges[pid]} /> : null}{game.activePlayer === pid ? <span className="turnmark" title="Active player">turn</span> : null}</span>
         <span className="status"><StatusChips game={game} pid={pid} />{incoming ? <span className="chip danger" title="Attacking this player">⚔ {incoming.n} attacking · {incoming.power} power</span> : null}<span className="pdeck">{p.deckName}</span></span>
       </span>
       {!isMe ? <span className="plate-extras"><OppHand n={p.hand.length} pid={pid} sleeve={ctx.sleeves && ctx.sleeves[pid]} /><Piles game={game} pid={pid} ctx={ctx} compact={compact} /></span> : null}

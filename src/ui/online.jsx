@@ -3,6 +3,8 @@ import { Pip } from './cardview.jsx';
 import { findDeck } from './customdecks.js';
 import { isRoomCode, onClaude } from '../net/roomclient.js';
 import { AnimalAvatar, Lineup, Watchers, MyAvatarRow, AvatarButton, myAvatar } from './avatar.jsx';
+import { VerifiedMark } from './badge.jsx';
+import { currentLogin, subscribeAccount } from './account.js';
 import { DeckBox, defaultBox } from './deckstyle.jsx';
 
 const { useState } = React;
@@ -46,6 +48,9 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
   // an invite link (or a code typed on the home screen) puts the room code in the address
   const [code, setCode] = useState(() => (isRoomCode(location.hash.slice(1)) ? location.hash.slice(1) : ''));
   const [nick, setNick] = useState(room ? room.nick : '');
+  // logged in: you play under your account name, which friends see verified
+  const login = React.useSyncExternalStore(subscribeAccount, currentLogin);
+  const name = login ? login.user.username : nick;
   const [busy, setBusy] = useState(false);
   const [av, setAv] = useState(() => (room && room.extra.av) || myAvatar());
   const changeAv = c => { setAv(c); if (room) room.setAvatar(c); };
@@ -73,17 +78,18 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
             <AvatarButton code={av} onChange={changeAv} />
             <div>
               <label className="label" htmlFor="nick">Your name</label>
-              <input id="nick" className="input" maxLength={24} value={nick} placeholder="Name shown to other players" onChange={e => setNick(e.target.value)} />
+              <input id="nick" className="input" maxLength={24} value={name} readOnly={!!login} placeholder="Name shown to other players" onChange={e => setNick(e.target.value)} />
+              {login ? <span className="nick-note">Your account name: friends see a ✓ next to it.</span> : null}
             </div>
           </div>
           <div className="friends-actions">
-            <button className="btn primary" disabled={busy || !nick.trim()} onClick={() => go(() => onCreate(nick.trim()))}>Create a room</button>
+            <button className="btn primary" disabled={busy || !name.trim()} onClick={() => go(() => onCreate(name.trim()))}>Create a room</button>
           </div>
           <div className="or"><span>or join one</span></div>
           <label className="label" htmlFor="room-code">Room code</label>
           <div className="invite-row">
             <input id="room-code" className="input" maxLength={6} value={code} placeholder="6 letters or digits" onChange={e => setCode(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ''))} />
-            <button className="btn" disabled={busy || !isRoomCode(code) || !nick.trim()} onClick={() => go(() => onJoin(code, nick.trim()))}>Join</button>
+            <button className="btn" disabled={busy || !isRoomCode(code) || !name.trim()} onClick={() => go(() => onJoin(code, name.trim()))}>Join</button>
           </div>
           {err ? <p className="warnline">{err === 'not_permitted' ? 'This page can’t open rooms for you. Ask the owner to share it with you by email from the Share menu.' : 'Couldn’t reach the room. Check your connection and try again.'}</p> : null}
           {onClaude()
@@ -114,7 +120,7 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
         {isHost ? <span className="chip gold">You host</span> : null}
       </div>
       <CopyLink code={room.code} />
-      <Lineup seats={cfg.seats} cid={room.cid} host={cfg.host} />
+      <Lineup seats={cfg.seats} cid={room.cid} host={cfg.host} room={room.key} />
       {isHost && !inGame ? (
         <div className="filters"><span className="label">Seats</span>
           <div className="seg" role="group" aria-label="Number of seats">{[2, 3, 4].map(n => <button key={n} className={cfg.seats.length === n ? 'on' : ''} onClick={() => room.setSeatCount(n)}>{n}</button>)}</div>
@@ -128,7 +134,7 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
             <li key={i} className={`seat-row ${mine ? 'mine' : ''} ${s.k === 'a' ? 'ai' : ''}`}>
               {s.k === 'h' && s.c ? <AnimalAvatar code={s.a} size={34} /> : <span className="seat-no">{i + 1}</span>}
               <span className="seat-who">
-                {s.k === 'a' ? <b>AI player</b> : s.c ? <b>{s.n || 'Player'}{s.c === cfg.host ? ' (host)' : ''}{mine ? ' · you' : ''}</b> : <b className="muted">Open seat</b>}
+                {s.k === 'a' ? <b>AI player</b> : s.c ? <b>{s.n || 'Player'}<VerifiedMark badge={s.vb} room={room.key} cid={s.c} name={s.n} />{s.c === cfg.host ? ' (host)' : ''}{mine ? ' · you' : ''}</b> : <b className="muted">Open seat</b>}
                 {s.k === 'a' ? (isHost && !inGame ? (
                   <select id={`ai-deck-${i}`} className="input sm" value={s.d || 'random'} onChange={e => room.setSeat(i, { d: e.target.value })}>
                     <option value="random">Random precon</option>
@@ -151,7 +157,7 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
           );
         })}
       </ol>
-      <Watchers list={watchers} />
+      <Watchers list={watchers} room={room.key} />
       <MyAvatarRow code={av} onChange={changeAv} />
       <p className="note">Your deck: <b>{deck.name}</b> — pick another from the list.{deck.custom && onClaude() ? ' Custom decks can only be used in rooms on the website, not on claude.ai.' : ''}</p>
       <div className="dlg-actions">

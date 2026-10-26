@@ -5,6 +5,7 @@
 import { findRelay } from '../net/relayroom.js';
 import { safeStorage } from './common.js';
 import { savedLink, saveNow, fetchSave, loadCode, subscribeSave, saveStatus, forgetCode, clearProgress } from './savecode.js';
+import { setBadgeProvider } from '../net/roomclient.js';
 
 const KEY = 'pa-account';
 export const USERNAME = /^[A-Za-z0-9_]{3,20}$/;   // (the server has the full rules: reserved and rude names)
@@ -141,10 +142,17 @@ async function attach(code) {
   if (login) setLogin({ ...login, user: r.user });
 }
 
+// a verified badge for a friends' room (null when logged out or the server can't be reached)
+export async function requestBadge(room, cid) {
+  if (!login) return null;
+  try { return (await call('POST', 'badge', { room, cid })).badge || null; } catch { return null; }
+}
+
 // when the site opens: check the login still holds, bring in the account's progress, and keep the account pointing
 // at this device's save code if that ever changes (a save unused for over a year starts a fresh code)
 export function initAccounts() {
   if (typeof window === 'undefined') return;
+  setBadgeProvider(requestBadge);
   if (login) {
     call('GET', 'me').then(r => {
       setLogin({ ...login, user: r.user });

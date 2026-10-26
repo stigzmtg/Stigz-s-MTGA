@@ -8,9 +8,17 @@
 // password). With an email service set up (RESEND_API_KEY and MAIL_FROM, see README), emails can be confirmed and
 // passwords reset with a code sent by email too. Attempts are rate limited. An account's progress is its save
 // code (worker/index.js SaveSlot): logging in on another device brings it there.
+//
+// Verified badges in friends' rooms: a logged-in player gets a badge signed by this server (ECDSA P-256, a key made
+// here the first time and never sent out) that says "this account, in this room, as this player id, until then".
+// Everyone else's browser checks the signature with the public key (GET /account/badgekey), so a typed name never
+// shows the badge, and a copied badge fails anywhere else (another room, another player id, after it runs out).
 import { DurableObject } from 'cloudflare:workers';
 
 const ROUNDS = 100_000;
+const BADGE_HOURS = 24;
+// what a badge signs (the page checks the same string: src/ui/badge.jsx)
+export const badgeText = (u, room, cid, x) => `tcg-badge-v1|${u}|${room}|${cid}|${x}`;
 const SESSION_DAYS = 180;
 const MAX_SESSIONS = 20;
 const CODE_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -84,6 +92,21 @@ export class Accounts extends DurableObject {
       CREATE TABLE IF NOT EXISTS codes (user TEXT NOT NULL, kind TEXT NOT NULL, hash TEXT NOT NULL, expires INTEGER NOT NULL, tries INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user, kind));
       CREATE TABLE IF NOT EXISTS limits (key TEXT PRIMARY KEY, n INTEGER NOT NULL, until INTEGER NOT NULL);`);
     this.calls = 0;
+  }
+
+  // the badge signing key, made the first time it's needed and kept in this object's storage
+  badgeKey() {
+    if (!this.keyP) this.keyP = (async () => {
+      let k = await this.ctx.storage.get('badgekey');
+      if (!k) {
+        const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+        k = { pub: await crypto.subtle.exportKey('jwk', pair.publicKey), priv: await crypto.subtle.exportKey('jwk', pair.privateKey) };
+        await this.ctx.storage.put('badgekey', k);
+      }
+      const { kty, crv, x, y } = k.pub;
+      return { pub: { kty, crv, x, y }, sign: await crypto.subtle.importKey('jwk', k.priv, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']) };
+    })().catch(e => { this.keyP = null; throw e; });
+    return this.keyP;
   }
 
   one(q, ...args) { return this.sql.exec(q, ...args).toArray()[0] || null; }
@@ -197,6 +220,8 @@ export class Accounts extends DurableObject {
     switch (`${req.method} ${path}`) {
       // what this site's accounts can do (whether codes can be sent by email)
       case 'GET config': return json({ emailOn: this.mailOn() });
+      // the public half of the badge key, for checking badges
+      case 'GET badgekey': return json({ key: (await this.badgeKey()).pub });
       // is a username free? (for the sign-up form, as you type)
       case 'GET name': {
         if (this.limited('name:' + ip, 300, 60e3)) return fail('limited', 429);
@@ -276,6 +301,16 @@ export class Accounts extends DurableObject {
     const u = a.user;
     switch (`${req.method} ${path}`) {
       case 'GET me': return json({ user: this.view(u) });
+      // a verified badge for one room and one player id in it (the name in it is always this account's own)
+      case 'POST badge': {
+        const room = String(body.room || ''), cid = String(body.cid || '');
+        if (!/^(pa|pk|op)-[a-z0-9]{6}$/.test(room) || !/^[A-Za-z0-9_-]{4,40}$/.test(cid)) return fail('bad-request');
+        if (this.limited('badge:' + u.id, 120, 3600e3)) return fail('limited', 429);
+        const x = now + BADGE_HOURS * 3600e3;
+        const key = await this.badgeKey();
+        const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key.sign, enc.encode(badgeText(u.name, room, cid, x)));
+        return json({ badge: { u: u.name, r: room, c: cid, x, s: b64url(new Uint8Array(sig)) } });
+      }
       case 'POST logout': {
         if (body.everywhere) this.run('DELETE FROM sessions WHERE user = ?', u.id);
         else this.run('DELETE FROM sessions WHERE token = ?', a.th);

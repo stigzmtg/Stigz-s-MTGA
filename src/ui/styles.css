@@ -1122,3 +1122,16 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 .ac-logout { display: grid; gap: 10px; padding-top: 4px; }
 .ac-check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; color: var(--ink-dim); cursor: pointer; }
 .ac-check input { margin-top: 3px; accent-color: var(--brass); }
+
+/* ---- verified-account badges (badge.jsx) */
+.vbadge { display: inline-grid; place-items: center; vertical-align: -0.12em; margin-left: 0.3em; width: 1em; height: 1em; flex: none; }
+.vbadge svg { width: 100%; height: 100%; overflow: visible; }
+.vbadge svg path:first-child { fill: #4fa3e8; stroke: #cfe8ff; stroke-width: 0.6; }
+.vbadge svg path:last-child { stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.nick-note { display: block; margin-top: 4px; font-size: 12.5px; color: var(--ink-faint); }
+/* (a long name gives way to its ✓ and "(you)") */
+.lineup-name { display: flex; align-items: center; justify-content: center; gap: 0; min-width: 0; max-width: 100%; }
+.lineup-name .ln { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.lineup-name .vbadge, .lineup-name .ln-you { flex: none; }
+.lineup-name .ln-you { margin-left: 0.3em; }
+.pname .vbadge, .who .vbadge { flex: none; }

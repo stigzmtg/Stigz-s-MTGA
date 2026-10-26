@@ -5,6 +5,8 @@ import { deckById, baseDeckId, deckLabel } from './decks.js';
 import { isRoomCode, onClaude } from '../../net/roomclient.js';
 import { ColorDot } from './colors.jsx';
 import { AnimalAvatar, Lineup, Watchers, MyAvatarRow, AvatarButton, myAvatar } from '../../ui/avatar.jsx';
+import { VerifiedMark } from '../../ui/badge.jsx';
+import { currentLogin, subscribeAccount } from '../../ui/account.js';
 import { DeckBox, defaultBox } from '../../ui/deckstyle.jsx';
 
 const { useState } = React;
@@ -22,6 +24,9 @@ export function OpFriendsPanel({ data, online, deck }) {
   const { api, room, onCreate, onJoin, onLeave, onStart, onWatch, invite } = online;
   const [code, setCode] = useState(invite || '');
   const [nick, setNick] = useState(room ? room.nick : online.nick || '');
+  // logged in: you play under your account name, which friends see verified
+  const login = React.useSyncExternalStore(subscribeAccount, currentLogin);
+  const name = login ? login.user.username : nick;
   const [busy, setBusy] = useState(false);
   const [av, setAv] = useState(() => (room && room.extra.av) || myAvatar());
   const changeAv = c => { setAv(c); if (room) room.setAvatar(c); };
@@ -47,19 +52,20 @@ export function OpFriendsPanel({ data, online, deck }) {
             <AvatarButton code={av} onChange={changeAv} />
             <div>
               <label className="label" htmlFor="nick">Your name</label>
-              <input id="nick" className="input" maxLength={24} value={nick} placeholder="Name shown to the other player" onChange={e => setNick(e.target.value)} />
+              <input id="nick" className="input" maxLength={24} value={name} readOnly={!!login} placeholder="Name shown to the other player" onChange={e => setNick(e.target.value)} />
+              {login ? <span className="nick-note">Your account name: friends see a ✓ next to it.</span> : null}
             </div>
           </div>
           <div className="friends-actions">
-            <button className="btn primary" disabled={busy || !nick.trim()} onClick={() => go(() => onCreate(nick.trim()))}>Create a room</button>
+            <button className="btn primary" disabled={busy || !name.trim()} onClick={() => go(() => onCreate(name.trim()))}>Create a room</button>
           </div>
           <div className="or"><span>or join one</span></div>
           <label className="label" htmlFor="room-code">Room code</label>
           <div className="invite-row">
             <input id="room-code" className="input" value={code} placeholder="6 letters or digits" autoComplete="off" onChange={e => setCode(codeFromInput(e.target.value))} />
-            <button className="btn" disabled={busy || !isRoomCode(code) || !nick.trim()} onClick={() => go(() => onJoin(code, nick.trim()))}>Join</button>
+            <button className="btn" disabled={busy || !isRoomCode(code) || !name.trim()} onClick={() => go(() => onJoin(code, name.trim()))}>Join</button>
           </div>
-          {invite && !nick.trim() ? <p className="note">You were invited to room <b className="code">{invite}</b>. Type your name, then Join.</p> : null}
+          {invite && !name.trim() ? <p className="note">You were invited to room <b className="code">{invite}</b>. Type your name, then Join.</p> : null}
           {err ? <p className="warnline">{err === 'not_permitted' ? 'This page can’t open rooms for you. Ask the owner to share it with you by email from the Share menu.' : 'Couldn’t reach the room. Check your connection and try again.'}</p> : null}
           {onClaude()
             ? <p className="note">You each play in your own browser on claude.ai. Your friend must be signed in and invited to this page from its Share menu (by email; a public link can’t join rooms).</p>
@@ -98,7 +104,7 @@ export function OpFriendsPanel({ data, online, deck }) {
         {inGame ? <span className="chip op-chip">Battle on</span> : null}
       </div>
       <CopyLink code={room.code} kind="op" />
-      <Lineup seats={cfg.seats} cid={room.cid} host={cfg.host} vs />
+      <Lineup seats={cfg.seats} cid={room.cid} host={cfg.host} vs room={room.key} />
       <ol className="seats">
         {cfg.seats.map((s, i) => {
           const m = s.c ? members.get(s.c) : null;
@@ -107,7 +113,7 @@ export function OpFriendsPanel({ data, online, deck }) {
             <li key={i} className={`seat-row ${mine ? 'mine' : ''}`}>
               {s.c ? <AnimalAvatar code={s.a} size={34} /> : <span className="seat-no">{i + 1}</span>}
               <span className="seat-who">
-                {s.c ? <b>{s.n || 'Player'}{s.c === cfg.host ? ' (host)' : ''}{mine ? ' · you' : ''}</b> : <b className="muted">Open seat</b>}
+                {s.c ? <b>{s.n || 'Player'}<VerifiedMark badge={s.vb} room={room.key} cid={s.c} name={s.n} />{s.c === cfg.host ? ' (host)' : ''}{mine ? ' · you' : ''}</b> : <b className="muted">Open seat</b>}
                 {s.c ? <SeatDeck data={data} id={s.d} bx={s.bx} /> : <span className="seat-deck muted">Waiting for a friend</span>}
               </span>
               <span className="seat-act">
@@ -120,7 +126,7 @@ export function OpFriendsPanel({ data, online, deck }) {
           );
         })}
       </ol>
-      <Watchers list={watchers} />
+      <Watchers list={watchers} room={room.key} />
       <MyAvatarRow code={av} onChange={changeAv} />
       {mySeat >= 0 || (!inGame && !isHost) ? <p className="note">Your deck: <b>{deck.name}</b>. Tap another deck to switch{inGame ? ' for the next battle' : ''}.</p> : null}
       <div className="dlg-actions">

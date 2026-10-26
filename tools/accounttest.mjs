@@ -59,6 +59,28 @@ ok(me.user && me.user.username === name && me.user.email === `${tag}.fox@example
 ok((await call('GET', 'me', null, 'x'.repeat(43))).error === 'logged-out', 'a made-up token is refused');
 ok((await call('GET', 'me')).status === 401, 'no token, no account');
 
+// ---- verified badges for friends' rooms
+{
+  const { key } = await call('GET', 'badgekey');
+  ok(key && key.kty === 'EC' && key.crv === 'P-256' && !key.d, 'a public badge key (and only the public half)');
+  const pub = await crypto.subtle.importKey('jwk', key, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+  const text = b => `tcg-badge-v1|${b.u}|${b.r}|${b.c}|${b.x}`;
+  const unb64 = s => Uint8Array.from(Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64'));
+  const good = b => crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, unb64(b.s), new TextEncoder().encode(text(b)));
+  const r = await call('POST', 'badge', { room: 'pa-k7m2qa', cid: 'abc123def456' }, login.token);
+  const b = r.badge;
+  ok(b && b.u === name && b.r === 'pa-k7m2qa' && b.c === 'abc123def456' && b.x > Date.now(), 'a badge for this account, room and player');
+  ok(b && await good(b), 'its signature checks out');
+  ok(b && !(await good({ ...b, u: name + 'x' })), 'another name with that signature fails');
+  ok(b && !(await good({ ...b, r: 'pa-zzzzzz' })), 'another room fails');
+  ok(b && !(await good({ ...b, c: 'someone-else' })), 'another player id fails');
+  ok(b && !(await good({ ...b, x: b.x + 864e5 })), 'a longer time fails');
+  ok((await call('POST', 'badge', { room: 'pa-k7m2qa', cid: 'abc123def456' })).status === 401, 'no badge without logging in');
+  ok((await call('POST', 'badge', { room: 'nope', cid: 'abc123def456' }, login.token)).error === 'bad-request', 'a room code that isn\'t one is refused');
+  const again = (await call('GET', 'badgekey')).key;
+  ok(again && again.x === key.x && again.y === key.y, 'the key stays the same');
+}
+
 // ---- the account's progress
 ok((await call('POST', 'save', { code: 'K7QM4ZP2' }, login.token)).user.saveCode === 'K7QM4ZP2', 'attach a save code');
 ok((await call('POST', 'login', { login: name, password: 'correct horse 1' })).user.saveCode === 'K7QM4ZP2', 'logging in elsewhere gets it');

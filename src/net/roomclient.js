@@ -10,7 +10,15 @@ export const isRoomCode = s => /^[a-z0-9]{6}$/.test(s || '');
 // deck they bring (ui/deckstyle.jsx, four). Read from presence, kept in their seat.
 const isAvatar = v => typeof v === 'string' && /^\d{1,2}(\.\d{1,2}){6}$/.test(v);
 const isStyle = v => typeof v === 'string' && /^\d{1,2}(\.\d{1,2}){3}$/.test(v);
-const lookOf = p => ({ a: isAvatar(p.av) ? p.av : undefined, sl: isStyle(p.sl) ? p.sl : undefined, bx: isStyle(p.bx) ? p.bx : undefined });
+// a verified-account badge (ui/badge.jsx checks its signature before showing it): { u, r, c, x, s }
+export const isBadge = b => !!b && typeof b === 'object' && typeof b.u === 'string' && b.u.length <= 20 && typeof b.r === 'string' && b.r.length <= 12
+  && typeof b.c === 'string' && b.c.length <= 40 && Number.isFinite(b.x) && typeof b.s === 'string' && /^[A-Za-z0-9_-]{80,100}$/.test(b.s);
+const badgeOf = b => (isBadge(b) ? { u: b.u, r: b.r, c: b.c, x: b.x, s: b.s } : undefined);
+const lookOf = p => ({ a: isAvatar(p.av) ? p.av : undefined, sl: isStyle(p.sl) ? p.sl : undefined, bx: isStyle(p.bx) ? p.bx : undefined, vb: badgeOf(p.vb) });
+
+// a logged-in player's badge for a room (set by ui/account.js): (room key, player id) -> Promise<badge | null>
+let badgeProvider = null;
+export function setBadgeProvider(fn) { badgeProvider = fn; }
 
 // running inside the claude.ai page (rooms through its room capability) or as a standalone website
 export const onClaude = () => typeof window !== 'undefined' && !!(window.claude && window.claude.use);
@@ -61,12 +69,18 @@ export class RoomClient {
       return false;
     }
     this.code = code;
+    this.key = (this.kind ? this.kind : 'pa') + '-' + code;   // the room as badges name it
     if (asHost) this.cfg = { code, kind: this.kind, game: 0, seed: 0, host: this.cid, started: false, subs: {}, seats: [{ k: 'h', c: this.cid, n: this.nick, d: this.deck, ...lookOf(this.extra) }, { k: 'h', c: null, n: '', d: null }] };
     // a host coming back to its own room (a reload): pick its config up again, games and seats included
     else { const saved = this.savedCfg(code); if (saved && saved.host === this.cid) this.cfg = saved; }
     this.unsub = this.room.onPeers(() => this.sync());
     await this.announce();
     this.sync();
+    // logged in: a verified badge for this room joins this player's presence
+    if (badgeProvider) {
+      const key = this.key;
+      Promise.resolve(badgeProvider(key, this.cid)).then(vb => { if (vb && this.room && this.key === key) this.setExtra({ vb }); }, () => {});
+    }
     return true;
   }
   create() { return this.enter(newRoomCode(), true); }
@@ -75,7 +89,8 @@ export class RoomClient {
   async leave() {
     if (this.unsub) this.unsub();
     if (this.room) { try { await this.room.leave(); } catch { /* already gone */ } }
-    this.room = null; this.code = null; this.cfg = null; this.want = null;
+    this.room = null; this.code = null; this.key = null; this.cfg = null; this.want = null;
+    if (this.extra.vb) { const { vb, ...rest } = this.extra; this.extra = rest; }
     this.bump();
   }
 
@@ -97,7 +112,7 @@ export class RoomClient {
     for (const p of this.room.peers() || []) {
       const pr = p.presence || {};
       if (pr.pa !== PROTOCOL || pr.code !== this.code || !pr.cid) continue;
-      out.set(pr.cid, { cid: pr.cid, nick: String(pr.nick || 'Player').slice(0, 24), deck: pr.deck || null, want: typeof pr.want === 'number' ? pr.want : null, av: isAvatar(pr.av) ? pr.av : null, look: lookOf(pr), me: pr.cid === this.cid, presence: pr });
+      out.set(pr.cid, { cid: pr.cid, nick: String(pr.nick || 'Player').slice(0, 24), deck: pr.deck || null, want: typeof pr.want === 'number' ? pr.want : null, av: isAvatar(pr.av) ? pr.av : null, vb: badgeOf(pr.vb) || null, look: lookOf(pr), me: pr.cid === this.cid, presence: pr });
     }
     return out;
   }

@@ -3,6 +3,7 @@
 // travels in room presence and seats; each person picks theirs in the friends panel.
 import { safeStorage, progressChanged } from './common.js';
 import { Modal } from './dialogs.jsx';
+import { VerifiedMark } from './badge.jsx';
 
 const { useState, useId } = React;
 
@@ -292,15 +293,15 @@ export function AvatarButton({ code, onChange }) {
 }
 
 // everyone at the table, standing in a row (friends' rooms); AI seats and open seats get a plain card
-export function Lineup({ seats, cid, host, vs = false }) {
+export function Lineup({ seats, cid, host, vs = false, room = null }) {
   const items = [];
   seats.forEach((s, i) => {
     if (vs && i) items.push(<span key={`vs${i}`} className="lineup-vs" aria-hidden="true">VS</span>);
-    const who = s.k === 'a' ? 'AI player' : s.c ? (s.n || 'Player') + (s.c === cid ? ' (you)' : '') : 'Open seat';
+    const who = s.k === 'a' ? 'AI player' : s.c ? (s.n || 'Player') : 'Open seat';
     items.push(
       <figure key={i} className={`lineup-card ${s.c === cid ? 'mine' : ''} ${s.k === 'a' ? 'ai' : s.c ? '' : 'open'}`}>
         {s.k === 'h' && s.c ? <AnimalAvatar code={s.a} size={84} full title={`${s.n || 'Player'}'s avatar`} /> : <div className="lineup-empty" aria-hidden="true">{s.k === 'a' ? <svg viewBox="0 0 24 24" width="38" height="38"><rect x="5" y="7" width="14" height="11" rx="3" fill="none" stroke="currentColor" strokeWidth="1.6" /><circle cx="9.5" cy="12" r="1.5" fill="currentColor" /><circle cx="14.5" cy="12" r="1.5" fill="currentColor" /><path d="M12 7V4M10 21h4M3 12h2M19 12h2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg> : '?'}</div>}
-        <figcaption>{who}{s.c && s.c === host ? <span className="lineup-host">host</span> : null}</figcaption>
+        <figcaption><span className="lineup-name"><span className="ln">{who}</span>{s.k === 'h' && s.c ? <VerifiedMark badge={s.vb} room={room} cid={s.c} name={s.n} /> : null}{s.c && s.c === cid ? <span className="ln-you">(you)</span> : null}</span>{s.c && s.c === host ? <span className="lineup-host">host</span> : null}</figcaption>
       </figure>,
     );
   });
@@ -308,9 +309,9 @@ export function Lineup({ seats, cid, host, vs = false }) {
 }
 
 // people in the room who aren't playing
-export function Watchers({ list }) {
+export function Watchers({ list, room = null }) {
   if (!list.length) return null;
-  return <p className="note watchers">Watching: {list.map(w => <span key={w.cid} className="watcher"><AnimalAvatar code={w.av} size={22} />{w.nick}{w.me ? ' (you)' : ''}</span>)}</p>;
+  return <p className="note watchers">Watching: {list.map(w => <span key={w.cid} className="watcher"><AnimalAvatar code={w.av} size={22} />{w.nick}<VerifiedMark badge={w.vb} room={room} cid={w.cid} name={w.nick} />{w.me ? ' (you)' : ''}</span>)}</p>;
 }
 
 // your own avatar in a friends' panel: shows it, and opens the editor

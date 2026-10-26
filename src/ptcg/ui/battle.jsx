@@ -17,6 +17,7 @@ import { AnimalAvatar, myAvatar } from '../../ui/avatar.jsx';
 import { Sleeve, savedStyle } from '../../ui/deckstyle.jsx';
 import { createFlights, runFlights, shake, motionOn } from '../../ui/motion.js';
 import { uiScale } from '../../ui/common.js';
+import { VerifiedMark, roomKeyOf } from '../../ui/badge.jsx';
 
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, useSyncExternalStore } = React;
 
@@ -396,7 +397,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
       <section className={`pk-side ${bottom ? 'me' : 'opp'} ${game.current === p.id && !game.over ? 'turn' : ''}`} aria-label={`${whose(p)} side`}>
         <div className="pk-plate">
           <EmoteBubble b={emotes.bubbles.get(p.id)} />
-          <div className="who">{avatarOf(p.id) ? <AnimalAvatar code={avatarOf(p.id)} size={36} /> : null}<b>{p.name}</b>{game.current === p.id && !game.over ? <span className="turnmark">turn</span> : null}</div>
+          <div className="who">{avatarOf(p.id) ? <AnimalAvatar code={avatarOf(p.id)} size={36} /> : null}<b>{p.name}</b>{session.online && session.cfg.seats[p.id] ? <VerifiedMark badge={session.cfg.seats[p.id].vb} cid={session.cfg.seats[p.id].c} name={session.cfg.seats[p.id].n} room={roomKeyOf(session.cfg)} /> : null}{game.current === p.id && !game.over ? <span className="turnmark">turn</span> : null}</div>
           {p.deckName && p.deckName !== p.name ? <div className="deck">{p.deckName}</div> : null}
           <Prizes n={p.prizes.length} label={p.name} sleeve={sleeves[p.id]} pid={p.id} ids={p.prizes.map(c => c.id)} />
         </div>
