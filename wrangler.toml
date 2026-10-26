@@ -1,6 +1,6 @@
 # Cloudflare (Workers): the site in docs/ as static files, plus worker/index.js for /relay/* (friends' rooms that
-# work on networks blocking browser-to-browser connections). The site is built and committed with `npm run site`,
-# so nothing needs to be built on Cloudflare. The name must match the Worker's name there.
+# work on networks blocking browser-to-browser connections) and /save/* (save codes). The site is built and
+# committed with `npm run site`, so nothing needs to be built on Cloudflare. The name must match the Worker's name.
 name = "stigz-s-mtga"
 main = "worker/index.js"
 compatibility_date = "2025-09-01"
@@ -9,11 +9,20 @@ compatibility_date = "2025-09-01"
 directory = "./docs"
 binding = "ASSETS"
 
-# one Durable Object per room (SQLite-backed classes are what the free plan offers; the room keeps nothing on disk)
+# one Durable Object per room (SQLite-backed classes are what the free plan offers; the room keeps nothing on disk),
+# and one per save code (SaveSlot: this one does keep data, in its own storage)
 [[durable_objects.bindings]]
 name = "ROOMS"
 class_name = "Room"
 
+[[durable_objects.bindings]]
+name = "SAVES"
+class_name = "SaveSlot"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["SaveSlot"]

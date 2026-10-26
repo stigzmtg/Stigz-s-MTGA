@@ -4,12 +4,12 @@
 // decision log. Playing one back runs a fresh game whose seats all answer from that list (ReplayAgent), paced and
 // paused by a ReplayControl.
 import { packValue, unpackValue } from '../net/lockstep.js';
-import { safeStorage } from './common.js';
+import { safeStorage, progressChanged } from './common.js';
 import { customDeck, packDeck } from './customdecks.js';
 
-const REC_KEY = 'pa-records';
+export const REC_KEY = 'pa-records';
 const REPLAY_KEY = id => `pa-replay-${id}`;
-const KEEP_RECORDS = 300, KEEP_REPLAYS = 8;   // replays per game
+export const KEEP_RECORDS = 300, KEEP_REPLAYS = 8;   // replays per game
 
 export function loadRecords() {
   try { const r = JSON.parse(safeStorage.getItem(REC_KEY) || '[]'); return Array.isArray(r) ? r : []; } catch { return []; }
@@ -82,6 +82,7 @@ export function recordGame(session, kind) {
   const kept = { mtg: 0, pk: 0, op: 0 };
   for (const r of all) if (r.replay && ++kept[r.kind] > KEEP_REPLAYS) { safeStorage.setItem(REPLAY_KEY(r.id), ''); try { localStorage.removeItem(REPLAY_KEY(r.id)); } catch { /* blocked */ } r.replay = false; }
   store(REC_KEY, all.slice(0, KEEP_RECORDS));
+  progressChanged();
   return rec;
 }
 

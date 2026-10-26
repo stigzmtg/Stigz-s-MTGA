@@ -2,7 +2,7 @@
 // precons in data/decks.json ({ id, name, commanders, cards: [[name, n]] }, commanders not in cards) plus
 // custom: true, so the engine, lobby, records and replays treat them alike. Saved on this device; in friends'
 // rooms each player's presence carries their custom deck so everyone builds the same game.
-import { safeStorage } from './common.js';
+import { safeStorage, progressChanged } from './common.js';
 
 const MINE = 'pa-custom-decks';
 const SEEN = 'pa-deck-cache';     // other people's custom decks met in rooms and replays
@@ -17,8 +17,14 @@ export function saveCustomDeck(deck) {
   all.unshift({ ...deck, custom: true, updated: Date.now() });
   safeStorage.setItem(MINE, JSON.stringify(all));
   registerDeck(deck);
+  progressChanged();
 }
-export function deleteCustomDeck(id) { safeStorage.setItem(MINE, JSON.stringify(loadCustomDecks().filter(d => d.id !== id))); }
+// (a deleted deck is remembered, so a save code from another device doesn't bring it back)
+export function deleteCustomDeck(id) {
+  safeStorage.setItem(MINE, JSON.stringify(loadCustomDecks().filter(d => d.id !== id)));
+  safeStorage.setItem('pa-deleted-decks', JSON.stringify([...read('pa-deleted-decks').filter(x => x !== id), id].slice(-300)));
+  progressChanged();
+}
 export const newDeckId = () => 'custom-' + Math.random().toString(36).slice(2, 10);
 
 // every custom deck this browser knows: its own, and others' seen in rooms or replays

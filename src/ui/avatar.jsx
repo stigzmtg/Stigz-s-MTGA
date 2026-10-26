@@ -1,7 +1,7 @@
 // Customizable avatars for friends' games: little animals with human bodies, drawn as SVG (sharp at any size, nothing
 // to download). An avatar is a short code "animal.fur.outfit.color.hat.extra.bg" (indexes into the lists below) that
 // travels in room presence and seats; each person picks theirs in the friends panel.
-import { safeStorage } from './common.js';
+import { safeStorage, progressChanged } from './common.js';
 import { Modal } from './dialogs.jsx';
 
 const { useState, useId } = React;
@@ -50,7 +50,7 @@ export function myAvatar(cid = safeStorage.getItem('pa-cid')) {
   let h = 7; for (const ch of String(cid || 'guest')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return randomAvatar(h);
 }
-export const saveAvatar = code => safeStorage.setItem('pa-avatar', code);
+export const saveAvatar = code => { safeStorage.setItem('pa-avatar', code); progressChanged(); };
 
 // ---- drawing
 export function shade(hex, amt) {

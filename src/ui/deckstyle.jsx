@@ -2,7 +2,7 @@
 // library, Prize cards, and your hand as other players see it); a deck box shows your deck in the lobby and in
 // friends' rooms. Both are short codes ("pattern.color.trim.emblem", "material.color.trim.emblem") drawn as SVG,
 // saved on this device per deck and carried in room presence so friends see them too.
-import { safeStorage } from './common.js';
+import { safeStorage, progressChanged } from './common.js';
 import { Modal } from './dialogs.jsx';
 import { AnimalAvatar, Swatches, Choices, myAvatar, shade } from './avatar.jsx';
 
@@ -58,6 +58,7 @@ export function saveDeckStyle(kind, id, style) {
   const all = readAll();
   all[`${kind}:${id}`] = style;
   safeStorage.setItem(KEY, JSON.stringify(all));
+  progressChanged();
   version++;
   for (const f of subs) f();
 }

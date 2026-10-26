@@ -301,3 +301,14 @@
 }
 .home .navbtn.install { color: var(--ink); border: 1px dashed var(--line-strong); background: rgba(255, 255, 255, 0.04); }
 @media (max-width: 520px) { .home .navbtn.install { display: none; } }
+
+/* save codes: the nav button and the line over your record (the dialog is in styles.css) */
+.home .navbtn.savebtn { color: var(--ink); border: 1px solid var(--line-strong); background: rgba(255, 255, 255, 0.05); }
+.home .navbtn.savebtn.linked::before { content: "✓"; margin-right: 6px; color: var(--good); }
+@media (max-width: 700px) { .home .navbtn.savebtn { display: none; } }
+.home .rec-save { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 16px; padding: 12px 16px; border-radius: 14px; border: 1px dashed var(--line-strong); background: rgba(255, 255, 255, 0.025); }
+.home .rec-save.on { border-style: solid; border-color: rgba(134, 203, 136, 0.35); background: rgba(134, 203, 136, 0.06); }
+.home .rec-save .rs-icon { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; font-weight: 800; color: var(--brass-hi); background: rgba(217, 174, 92, 0.14); }
+.home .rec-save.on .rs-icon { color: var(--good); background: rgba(134, 203, 136, 0.14); }
+.home .rec-save .rs-text { flex: 1 1 260px; min-width: 0; color: var(--ink-dim); font-size: 14.5px; }
+.home .rec-save .rs-text b { color: var(--ink); letter-spacing: 0.08em; }

@@ -7,6 +7,8 @@ export const safeStorage = {
   getItem(k) { try { return localStorage.getItem(k); } catch { return null; } },
   setItem(k, v) { try { localStorage.setItem(k, v); } catch { /* storage full or blocked */ } },
 };
+// something worth keeping changed (a finished game, a deck): a linked save code saves again soon (savecode.js)
+export function progressChanged() { try { window.dispatchEvent(new Event('pa-progress')); } catch { /* not in a browser */ } }
 
 // a version counter the React tree subscribes to; bumps coalesce into one render per frame
 export function createStore() {

@@ -12,6 +12,8 @@ import { safeStorage, fetchJSON } from './common.js';
 import { loadRecords, tally } from './records.js';
 import { subscribeInstall, canInstall, install } from './install.js';
 import { SizeButton } from './dialogs.jsx';
+import { SaveDialog, savedWhen } from './savedialog.jsx';
+import { savedLink, saveStatus, subscribeSave, showCode } from './savecode.js';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -246,11 +248,20 @@ function Summary({ kind, label }) {
   );
 }
 
-function RecordSection({ onWatch }) {
+function RecordSection({ onWatch, onSave }) {
   const recs = loadRecords();
+  const link = savedLink();
+  const st = saveStatus();
   return (
     <section className="home-sec record" aria-labelledby="record">
       <SectionHead id="record" eyebrow="Your games" title="Your record">{recs.length ? 'Every game you finish is kept on this device, and the latest ones come with a replay you can watch move by move.' : 'Finish a game and it shows up here, with a replay you can watch move by move.'}</SectionHead>
+      <div className={`rec-save ${link ? 'on' : ''}`}>
+        <span className="rs-icon" aria-hidden="true">{link ? '✓' : '⇄'}</span>
+        <span className="rs-text">{link
+          ? <>Saving to your code <b>{showCode(link.code)}</b>{st.state === 'saving' ? ' · saving…' : link.at ? ` · saved ${savedWhen(st.at || link.at)}` : ''}</>
+          : <>Playing on more than one device? A save code takes your record, replays, decks and avatar with you.</>}</span>
+        <button className="btn sm" onClick={onSave}>{link ? 'Save code' : 'Get a save code'}</button>
+      </div>
       <div className="rec-grid">
         <Summary kind="mtg" label="Commander" />
         <Summary kind="pk" label="Pokémon" />
@@ -280,6 +291,8 @@ export function Home({ onPick, onJoin }) {
   const [pkDecks, setPkDecks] = useState(null);
   const [op, setOp] = useState(null);
   const installable = useSyncExternalStore(subscribeInstall, canInstall);
+  useSyncExternalStore(subscribeSave, saveStatus);   // (a save code can bring in games from another device)
+  const [saveOpen, setSaveOpen] = useState(false);
   useEffect(() => {
     initPkImages().then(ok => { if (ok) preloadPk(); });
     initImages();
@@ -315,6 +328,7 @@ export function Home({ onPick, onJoin }) {
         </span>
         <span className="spacer" />
         {installable ? <button className="navbtn install" onClick={install} title="Add Stigz’s TCG Arena to your home screen or shelf">Install app</button> : null}
+        <button className={`navbtn savebtn ${savedLink() ? 'linked' : ''}`} onClick={() => setSaveOpen(true)} title="Save your progress to a code and load it on another device">Save code</button>
         <SizeButton cls="navbtn sizebtn" />
         <button className="navbtn mtg" onClick={() => open('mtg')}>Commander</button>
         <button className="navbtn pk" onClick={() => open('pokemon')}>Pokémon</button>
@@ -400,7 +414,7 @@ export function Home({ onPick, onJoin }) {
         </div>
       </section>
 
-      <RecordSection onWatch={r => { try { sessionStorage.setItem('pa-open-replay', r.id); } catch { /* storage blocked */ } onPick(r.kind === 'pk' ? 'pokemon' : r.kind === 'op' ? 'onepiece' : 'mtg'); }} />
+      <RecordSection onSave={() => setSaveOpen(true)} onWatch={r => { try { sessionStorage.setItem('pa-open-replay', r.id); } catch { /* storage blocked */ } onPick(r.kind === 'pk' ? 'pokemon' : r.kind === 'op' ? 'onepiece' : 'mtg'); }} />
 
       <section className="home-sec why" aria-labelledby="why">
         <SectionHead id="why" eyebrow="Built for real games" title="Why it plays well" />
@@ -414,10 +428,12 @@ export function Home({ onPick, onJoin }) {
         </div>
       </section>
 
+      {saveOpen ? <SaveDialog onClose={() => setSaveOpen(false)} /> : null}
+
       <footer className="home-foot">
         <div className="foot-grid">
           <div className="foot-brand"><span className="brandmark"><Crest size={26} />Stigz’s TCG Arena</span><p>A free fan-made arena for playing preconstructed decks by the rules.</p></div>
-          <div><h4>Play</h4><button className="linkbtn" onClick={() => open('mtg')}>Commander</button><button className="linkbtn" onClick={() => open('pokemon')}>Pokémon TCG</button><button className="linkbtn" onClick={() => open('onepiece')}>One Piece Card Game</button><button className="linkbtn" onClick={() => scrollTo('friends')}>Join a room</button></div>
+          <div><h4>Play</h4><button className="linkbtn" onClick={() => open('mtg')}>Commander</button><button className="linkbtn" onClick={() => open('pokemon')}>Pokémon TCG</button><button className="linkbtn" onClick={() => open('onepiece')}>One Piece Card Game</button><button className="linkbtn" onClick={() => scrollTo('friends')}>Join a room</button><button className="linkbtn" onClick={() => setSaveOpen(true)}>Save code</button></div>
           <div><h4>Credits</h4>
             <span>Commander rules from <a href="https://github.com/Card-Forge/forge" target="_blank" rel="noopener">Forge</a> (GPL-3.0)</span>
             <span>Decklists from <a href="https://github.com/taw/magic-preconstructed-decks" target="_blank" rel="noopener">taw</a> and <a href="https://limitlesstcg.com" target="_blank" rel="noopener">Limitless</a></span>

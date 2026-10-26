@@ -22,6 +22,7 @@ import { loadCustomDecks, findDeck, registerDeck, unpackDeck, packDeck, customDe
 import { DeckBuilder } from './builder.jsx';
 import { myAvatar } from './avatar.jsx';
 import { savedStyle } from './deckstyle.jsx';
+import { initSaveCodes } from './savecode.js';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -307,4 +308,5 @@ function Root() {
 initUiScale();
 applyMotion();
 initApp();
+initSaveCodes();
 ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
