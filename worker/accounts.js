@@ -183,7 +183,7 @@ export class Accounts extends DurableObject {
     const code = digits6();
     this.run('INSERT OR REPLACE INTO codes (user, kind, hash, expires, tries) VALUES (?, ?, ?, ?, 0)', u.id, kind, await sha256(`${u.id}:${kind}:${code}`), Date.now() + 20 * 60e3);
     const what = kind === 'verify' ? 'confirm your email for' : 'set a new password on';
-    return this.sendMail(u.email, `Your Stigz's TCG Arena code: ${code}`, `Hi ${u.name},\n\nYour code to ${what} Stigz's TCG Arena is:\n\n    ${code}\n\nIt works for 20 minutes. If you didn't ask for it, you can ignore this email.\n`);
+    return this.sendMail(u.email, `Your Cardforge code: ${code}`, `Hi ${u.name},\n\nYour code to ${what} Cardforge is:\n\n    ${code}\n\nIt works for 20 minutes. If you didn't ask for it, you can ignore this email.\n`);
   }
   async checkCode(u, kind, code) {
     const c = this.one('SELECT * FROM codes WHERE user = ? AND kind = ?', u.id, kind);

@@ -1,4 +1,4 @@
-/* Stigz’s TCG Arena — a felt-table look. Layout: board (opponents / prompt / you) + side rail (preview, stack, log). */
+/* Cardforge — a felt-table look. Layout: board (opponents / prompt / you) + side rail (preview, stack, log). */
 :root {
   --s: 1;   /* size scale, set from the window and the player's choice by ui/uisize.js; tools/build.mjs multiplies pixel sizes by it */
   --felt: #10261c;
@@ -718,7 +718,6 @@ kbd { font: 600 12px/1 'Alegreya Sans', sans-serif; padding: 2px 6px; border-rad
 }
 @media (max-width: 1600px) { .topbar.online .brand { display: none; } .topbar.online .ph { padding: 4px 4px; letter-spacing: 0.04em; } }
 /* in a game on a phone, the corner name shortens to keep the top bar to as few rows as possible */
-@media (max-width: 600px) { .app.table .brand-rest { display: none; } }
 /* the speaker button in game top bars */
 .btn.icon { display: inline-grid; place-items: center; padding: 5px 8px; }
 .btn.icon svg { width: 18px; height: 18px; fill: currentColor; }

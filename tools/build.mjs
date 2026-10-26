@@ -64,7 +64,7 @@ const bodyWith = app => `<div id="root"></div>
 <script src="${reactDom}"></script>
 <script src="${app}"></script>`;
 const body = bodyWith(`app.js?v=${APP_VERSION}`);
-const head = `<title>Stigz’s TCG Arena</title>
+const head = `<title>Cardforge</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -102,7 +102,7 @@ try {
   }
 } catch (e) { console.warn('icons skipped:', e.message); }
 fs.writeFileSync(path.join(DIST, 'manifest.webmanifest'), JSON.stringify({
-  name: 'Stigz’s TCG Arena', short_name: 'TCG Arena', id: './', start_url: './', scope: './', display: 'standalone',
+  name: 'Cardforge', short_name: 'Cardforge', id: './', start_url: './', scope: './', display: 'standalone',
   description: 'Commander precons, top Pokémon TCG decks and One Piece starter decks against the computer or with friends.',
   background_color: '#0b1913', theme_color: '#0b1a14',
   icons: [

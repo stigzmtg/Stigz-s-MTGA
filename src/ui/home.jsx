@@ -327,7 +327,7 @@ export function Home({ onPick, onJoin }) {
   return (
     <div className="app home">
       <nav className="home-nav" aria-label="Main">
-        <button className="brandmark linklike" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}><Crest />Stigz’s TCG Arena</button>
+        <button className="brandmark linklike" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}><Crest />Cardforge</button>
         <span className="links">
           <button onClick={() => scrollTo('games')}>Games</button>
           <button onClick={() => scrollTo('decks')}>Decks</button>
@@ -336,7 +336,7 @@ export function Home({ onPick, onJoin }) {
           <button onClick={() => scrollTo('why')}>Features</button>
         </span>
         <span className="spacer" />
-        {installable ? <button className="navbtn install" onClick={install} title="Add Stigz’s TCG Arena to your home screen or shelf">Install app</button> : null}
+        {installable ? <button className="navbtn install" onClick={install} title="Add Cardforge to your home screen or shelf">Install app</button> : null}
         <button className={`navbtn acctbtn ${login ? 'in' : ''}`} onClick={() => setAcctOpen(login ? 'account' : 'login')} title={login ? 'Your account' : 'Log in or make an account'}>
           {login ? <><AnimalAvatar code={myAvatar()} size={24} /><span className="an">{login.user.username}</span></> : 'Log in'}
         </button>
@@ -353,7 +353,7 @@ export function Home({ onPick, onJoin }) {
         <div className="hero-copy">
           <button className="newpill" onClick={() => scrollTo('games')}><b>New</b>The One Piece Card Game</button>
           <div className="eyebrow">Three card battle simulators</div>
-          <h1 className="title">Stigz’s TCG Arena</h1>
+          <h1 className="title">Cardforge</h1>
           <p className="lede">Bring a ready-made deck, take your seat, and battle the computer or your friends. Every card plays by the rules, right in your browser.</p>
           <dl className="stats">
             <div><dt>Decks ready to play</dt><dd>{(248 + opDecks.length).toLocaleString('en-US')}</dd></div>
@@ -446,7 +446,7 @@ export function Home({ onPick, onJoin }) {
 
       <footer className="home-foot">
         <div className="foot-grid">
-          <div className="foot-brand"><span className="brandmark"><Crest size={26} />Stigz’s TCG Arena</span><p>A free fan-made arena for playing preconstructed decks by the rules.</p></div>
+          <div className="foot-brand"><span className="brandmark"><Crest size={26} />Cardforge</span><p>A free fan-made arena for playing preconstructed decks by the rules.</p></div>
           <div><h4>Play</h4><button className="linkbtn" onClick={() => open('mtg')}>Commander</button><button className="linkbtn" onClick={() => open('pokemon')}>Pokémon TCG</button><button className="linkbtn" onClick={() => open('onepiece')}>One Piece Card Game</button><button className="linkbtn" onClick={() => scrollTo('friends')}>Join a room</button><button className="linkbtn" onClick={() => setAcctOpen(login ? 'account' : 'login')}>{login ? 'Your account' : 'Log in'}</button><button className="linkbtn" onClick={() => setSaveOpen(true)}>Save code</button></div>
           <div><h4>Credits</h4>
             <span>Commander rules from <a href="https://github.com/Card-Forge/forge" target="_blank" rel="noopener">Forge</a> (GPL-3.0)</span>
@@ -454,7 +454,7 @@ export function Home({ onPick, onJoin }) {
             <span>Card data from <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a>, <a href="https://tcgdex.dev" target="_blank" rel="noopener">TCGdex</a> and <a href="https://optcgapi.com" target="_blank" rel="noopener">optcgapi</a></span>
           </div>
         </div>
-        <p className="legal">Unofficial fan project. Magic: The Gathering is a trademark of Wizards of the Coast; Pokémon and the Pokémon TCG are trademarks of Nintendo, Creatures and GAME FREAK; ONE PIECE and the ONE PIECE CARD GAME are trademarks of Eiichiro Oda/Shueisha, Toei Animation and Bandai.</p>
+        <p className="legal">Unofficial fan project, not affiliated with the Forge project (Card-Forge) whose Commander rules it uses. Magic: The Gathering is a trademark of Wizards of the Coast; Pokémon and the Pokémon TCG are trademarks of Nintendo, Creatures and GAME FREAK; ONE PIECE and the ONE PIECE CARD GAME are trademarks of Eiichiro Oda/Shueisha, Toei Animation and Bandai.</p>
       </footer>
     </div>
   );

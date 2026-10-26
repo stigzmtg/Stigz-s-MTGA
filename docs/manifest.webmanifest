@@ -1,6 +1,6 @@
 {
-  "name": "Stigz’s TCG Arena",
-  "short_name": "TCG Arena",
+  "name": "Cardforge",
+  "short_name": "Cardforge",
   "id": "./",
   "start_url": "./",
   "scope": "./",
