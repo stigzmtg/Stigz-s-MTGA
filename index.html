@@ -1331,6 +1331,19 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 .ac-check { display: flex; gap: calc(8px * var(--s)); align-items: flex-start; font-size: calc(14px * var(--s)); color: var(--ink-dim); cursor: pointer; }
 .ac-check input { margin-top: calc(3px * var(--s)); accent-color: var(--brass); }
 
+/* ---- verified-account badges (badge.jsx) */
+.vbadge { display: inline-grid; place-items: center; vertical-align: -0.12em; margin-left: 0.3em; width: 1em; height: 1em; flex: none; }
+.vbadge svg { width: 100%; height: 100%; overflow: visible; }
+.vbadge svg path:first-child { fill: #4fa3e8; stroke: #cfe8ff; stroke-width: 0.6; }
+.vbadge svg path:last-child { stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.nick-note { display: block; margin-top: calc(4px * var(--s)); font-size: calc(12.5px * var(--s)); color: var(--ink-faint); }
+/* (a long name gives way to its ✓ and "(you)") */
+.lineup-name { display: flex; align-items: center; justify-content: center; gap: 0; min-width: 0; max-width: 100%; }
+.lineup-name .ln { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.lineup-name .vbadge, .lineup-name .ln-you { flex: none; }
+.lineup-name .ln-you { margin-left: 0.3em; }
+.pname .vbadge, .who .vbadge { flex: none; }
+
 /* ================================================================ Pokémon: shared */
 .app.pk {
   --pk-grass: #4fae4a; --pk-fire: #e8572c; --pk-water: #2b8fd6; --pk-lightning: #f3c21b; --pk-psychic: #9c5bbd; --pk-fighting: #c0652d;
@@ -2263,6 +2276,6 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 <div id="root"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
-<script src="app.js?v=0cd700a172"></script>
+<script src="app.js?v=4479a76937"></script>
 </body>
 </html>
