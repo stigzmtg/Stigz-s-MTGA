@@ -6,7 +6,8 @@ import { chromium } from 'playwright';
 const OUT = process.argv[2] || '/tmp/saveui';
 const URL = process.argv[3] || 'http://localhost:8787/';
 fs.mkdirSync(OUT, { recursive: true });
-const browser = await chromium.launch();
+const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+const browser = await chromium.launch(/^https:/.test(URL) && proxy ? { proxy: { server: proxy } } : {});
 const errors = [];
 const rec = (id, at, kind, deck) => ({ id, at, kind, mode: 'solo', seat: 0, deck: { id: 'x', name: deck }, opps: [{ name: 'AI', deck: 'Other' }], result: 'win', turns: 9, reason: '', replay: false });
 async function device(name, seed, width = 1280, height = 860) {
