@@ -17,8 +17,9 @@ export function findRelay() {
     try { const r = await fetch(origin + '/relay/health', { signal: ctl.signal, cache: 'no-store' }); return r.ok && (await r.text()).trim() === 'ok'; } catch { return false; } finally { clearTimeout(t); }
   };
   found = (async () => {
-    // only the Cloudflare site (and a local `wrangler dev` on :8787) has a relay at its own address
-    const own = typeof location !== 'undefined' && /^https?:$/.test(location.protocol) && (/\.workers\.dev$/.test(location.hostname) || location.port === '8787') ? location.origin : null;
+    // only the Cloudflare site (lotusgoats.com, its workers.dev address, a local `wrangler dev` on :8787) has a relay
+    // at its own address
+    const own = typeof location !== 'undefined' && /^https?:$/.test(location.protocol) && (/\.workers\.dev$|(^|\.)lotusgoats\.com$/.test(location.hostname) || location.port === '8787') ? location.origin : null;
     if (own && await ok(own)) return own;
     if (own !== 'https://' + RELAY_HOST && await ok('https://' + RELAY_HOST)) return 'https://' + RELAY_HOST;
     return null;

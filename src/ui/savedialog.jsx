@@ -113,7 +113,7 @@ export function SaveDialog({ onClose }) {
           <>
             <p className="sv-what">A save code keeps your record and replays, your own decks, avatar, sleeves and settings{mine.games ? <> (right now: <What s={mine} />)</> : null}. Type it on another device to bring everything there. After that, this device saves to it by itself after every game.</p>
             {online === false
-              ? <p className="sv-note">Save codes need the website itself (stigz-s-mtga.stigzrblx.workers.dev). Here, use a save text instead (below).</p>
+              ? <p className="sv-note">Save codes need the website itself (lotusgoats.com). Here, use a save text instead (below).</p>
               : <button className="btn primary sv-make" onClick={make} disabled={!!busy || online === null}>{busy === 'make' ? 'Making your code…' : 'Make my save code'}</button>}
           </>
         )}

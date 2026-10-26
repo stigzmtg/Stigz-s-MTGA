@@ -64,7 +64,19 @@ const bodyWith = app => `<div id="root"></div>
 <script src="${reactDom}"></script>
 <script src="${app}"></script>`;
 const body = bodyWith(`app.js?v=${APP_VERSION}`);
+// what search engines and link previews show (lotusgoats.com is the home address; the other copies point to it)
+const SITE = 'https://lotusgoats.com/';
+const DESCRIPTION = 'Cardforge on lotusgoats.com: play Magic: The Gathering Commander precons, top Pokémon TCG decks and One Piece Card Game starter decks in your browser, against the computer or with friends. Free, no download.';
 const head = `<title>Cardforge</title>
+<meta name="description" content="${DESCRIPTION}">
+<link rel="canonical" href="${SITE}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Cardforge">
+<meta property="og:title" content="Cardforge: Commander, Pokémon TCG and One Piece battles">
+<meta property="og:description" content="${DESCRIPTION}">
+<meta property="og:url" content="${SITE}">
+<meta property="og:image" content="${SITE}img/icon-512.png">
+<meta name="twitter:card" content="summary">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -79,7 +91,6 @@ fs.writeFileSync(path.join(DIST, 'index.html'), `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Play Magic: The Gathering Commander precons, popular Pokémon TCG decks and every One Piece Card Game starter deck against the computer or with friends, right in your browser.">
 <meta name="theme-color" content="#0b1a14">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="img/icon-180.png">

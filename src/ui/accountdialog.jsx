@@ -309,7 +309,7 @@ export function AccountDialog({ onClose, start = 'login' }) {
       <h2>{shown === 'welcome' && made ? `Welcome, ${made.user.username}!` : TITLES[shown]}</h2>
       {shown === 'login' ? <p className="sub">Your progress follows you to every device you log in on.</p> : null}
       {shown === 'signup' ? <p className="sub">Pick a username nobody else has. Your record, decks and avatar will save to your account.</p> : null}
-      {online === false && !login ? <p className="sv-note">Accounts need the website itself: stigz-s-mtga.stigzrblx.workers.dev. Here you can still use a save code’s save text to move your progress.</p> : null}
+      {online === false && !login ? <p className="sv-note">Accounts need the website itself: lotusgoats.com. Here you can still use a save code’s save text to move your progress.</p> : null}
       {online === false && !login ? null : <>
       {shown === 'login' ? <LogIn go={setView} onDone={done} hold={setHold} /> : null}
       {shown === 'signup' ? <SignUp go={setView} hold={setHold} onMade={m => { setMade(m); reloadAfter.current = m.reload; setView('welcome'); setHold(false); }} /> : null}

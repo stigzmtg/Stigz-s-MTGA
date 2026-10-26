@@ -17,6 +17,13 @@ for (const side of ['ptcg', 'optcg']) for (const f of fs.readdirSync(path.join(D
 for (const f of fs.readdirSync(path.join(DIST, 'img'))) copy(path.join('img', f));
 // serve files as they are (no Jekyll processing on GitHub Pages)
 fs.writeFileSync(path.join(OUT, '.nojekyll'), '');
+// for search engines: everything may be read, and the home address is lotusgoats.com
+fs.writeFileSync(path.join(OUT, 'robots.txt'), 'User-agent: *\nAllow: /\n\nSitemap: https://lotusgoats.com/sitemap.xml\n');
+fs.writeFileSync(path.join(OUT, 'sitemap.xml'), `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://lotusgoats.com/</loc><lastmod>${new Date().toISOString().slice(0, 10)}</lastmod></url>
+</urlset>
+`);
 // caching hints for hosts that read them (Cloudflare, Netlify). The app asks for data and picture packs with a
 // version in the address, but browsers and the CDN still check back for the page, the app and the data every time
 // (a quick "not modified" when nothing changed), so a new deck shows up on the next reload, not an hour later

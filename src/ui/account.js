@@ -29,7 +29,7 @@ export class AccountError extends Error {
 }
 export function accountErrorText(e) {
   switch (e && e.code) {
-    case 'offline': return 'Accounts need the website itself (stigz-s-mtga.stigzrblx.workers.dev). Check your connection and try again.';
+    case 'offline': return 'Accounts need the website itself (lotusgoats.com). Check your connection and try again.';
     case 'name-taken': return 'Someone already has that username. Try another one.';
     case 'email-taken': return 'There’s already an account with that email. Log in instead, or use “Forgot your password?”.';
     case 'bad-name': return 'Usernames are 3 to 20 letters, numbers or _ (no spaces).';
