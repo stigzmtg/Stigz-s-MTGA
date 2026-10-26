@@ -2,7 +2,7 @@
 // data always try the network first, so a new version arrives at once, and fall back to what was saved when the
 // connection drops. Card pictures, React and the fonts come from the cache once they've been seen.
 // tools/build.mjs fills in VERSION; every build gets its own cache for the page and data.
-const VERSION = '16f9a3b499d7';
+const VERSION = '5fedde4c3c9b';
 const SHELL = 'tcg-arena-' + VERSION;
 const IMG = 'tcg-arena-img';      // card picture packs, kept until their index changes
 const LIB = 'tcg-arena-lib';      // React and fonts from their CDNs
@@ -24,7 +24,7 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
   const lib = /(^|\.)cdnjs\.cloudflare\.com$|^fonts\.(googleapis|gstatic)\.com$/.test(url.hostname);
   if (url.origin !== self.location.origin && !lib) return;
-  if (url.pathname.includes('/relay/') || url.pathname.includes('/save/')) return;   // friends' rooms and save codes are live
+  if (/\/(relay|save|account)\//.test(url.pathname)) return;   // friends' rooms, save codes and accounts are live (and private)
   if (lib) return e.respondWith(cacheFirst(LIB, req));
   if (/\/img\/[^/]+\.(avif|png)$/.test(url.pathname)) return e.respondWith(cacheFirst(IMG, req));
   e.respondWith(networkFirst(req, /\/data\/((pt|op)cg\/)?images\.json$/.test(url.pathname)));

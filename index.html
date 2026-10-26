@@ -1284,6 +1284,53 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
   .sv-row .btn { flex: 1 1 100%; justify-content: center; }
 }
 
+/* ---- accounts (accountdialog.jsx) */
+.dialog.acctdlg { width: min(calc(520px * var(--s)), 100%); }
+.acctdlg .row { display: flex; flex-wrap: wrap; align-items: center; gap: calc(8px * var(--s)); }
+.ac-form { display: grid; gap: calc(14px * var(--s)); min-width: 0; }
+.ac-field { display: grid; gap: calc(6px * var(--s)); min-width: 0; border: 0; margin: 0; padding: 0; }
+.ac-label { font-size: calc(12.5px * var(--s)); font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.ac-hint { font-size: calc(13px * var(--s)); color: var(--ink-faint); line-height: 1.4; }
+.ac-field .input { width: 100%; min-width: 0; padding: calc(10px * var(--s)) calc(12px * var(--s)); font-size: calc(16px * var(--s)); }
+.ac-pw { display: flex; gap: calc(6px * var(--s)); min-width: 0; }
+.ac-pw .input { flex: 1; }
+.ac-row { display: flex; gap: calc(8px * var(--s)); flex-wrap: wrap; min-width: 0; }
+.ac-row > .input { flex: 1 1 calc(120px * var(--s)); min-width: 0; }
+.ac-namecheck.good { color: var(--good); font-weight: 700; }
+.ac-namecheck.bad { color: var(--danger); font-weight: 700; }
+.ac-go { justify-self: stretch; justify-content: center; padding-block: calc(11px * var(--s)); font-size: calc(16px * var(--s)); }
+.ac-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: calc(8px * var(--s)) calc(16px * var(--s)); }
+.linkish { background: none; border: 0; padding: 0; color: var(--info); font: inherit; font-size: calc(14px * var(--s)); text-decoration: underline; text-underline-offset: calc(3px * var(--s)); cursor: pointer; }
+.linkish:hover { color: var(--ink); }
+.ac-err { margin: 0; font-size: calc(14px * var(--s)); color: var(--danger); font-weight: 600; }
+.ac-ok { margin: 0; font-size: calc(15px * var(--s)); color: var(--good); line-height: 1.45; }
+.ac-young { margin: 0; font-size: calc(15px * var(--s)); color: var(--ink-dim); line-height: 1.5; }
+.ac-seg { justify-self: start; }
+.ac-mono, .ac-code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: 0.08em; }
+.ac-recovery { display: grid; gap: calc(8px * var(--s)); padding: calc(14px * var(--s)) calc(16px * var(--s)); border-radius: var(--r-lg); border: 1px solid var(--line-strong); background: linear-gradient(180deg, rgba(217, 174, 92, 0.1), rgba(0, 0, 0, 0.16)); }
+.ac-recovery p { margin: 0; }
+.ac-coderow { display: flex; align-items: center; gap: calc(10px * var(--s)); flex-wrap: wrap; }
+.ac-code { font-size: calc(22px * var(--s)); font-weight: 800; color: var(--brass-hi); user-select: all; -webkit-user-select: all; overflow-wrap: anywhere; }
+.ac-account { display: grid; gap: calc(14px * var(--s)); min-width: 0; }
+.ac-who { display: flex; align-items: center; gap: calc(14px * var(--s)); min-width: 0; }
+.ac-who > div { display: grid; gap: 2px; min-width: 0; }
+.ac-username { font: 700 calc(22px * var(--s))/1.2 var(--font-display); color: var(--brass-hi); overflow-wrap: anywhere; }
+.ac-who span { font-size: calc(13.5px * var(--s)); color: var(--ink-faint); }
+.ac-line { display: grid; gap: calc(4px * var(--s)); font-size: calc(14.5px * var(--s)); color: var(--ink-dim); line-height: 1.45; min-width: 0; }
+.ac-email { color: var(--ink); overflow-wrap: anywhere; }
+.ac-chip { justify-self: start; font-size: calc(12px * var(--s)); font-weight: 800; padding: calc(3px * var(--s)) calc(9px * var(--s)); border-radius: calc(999px * var(--s)); border: 1px solid var(--line-strong); color: var(--ink-dim); }
+.ac-chip.good { color: var(--good); border-color: rgba(134, 203, 136, 0.45); }
+.ac-confirm { display: grid; gap: calc(8px * var(--s)); }
+.ac-confirm .input { flex: 0 1 calc(160px * var(--s)); padding: calc(7px * var(--s)) calc(10px * var(--s)); }
+.ac-more { border: 1px solid var(--line); border-radius: var(--r-md); padding: calc(10px * var(--s)) calc(14px * var(--s)); background: rgba(0, 0, 0, 0.16); }
+.ac-more summary { cursor: pointer; font-weight: 700; color: var(--ink); }
+.ac-more.danger summary { color: var(--danger); }
+.ac-morebody { display: grid; gap: calc(12px * var(--s)); margin-top: calc(12px * var(--s)); }
+.ac-morebody > p { margin: 0; }
+.ac-logout { display: grid; gap: calc(10px * var(--s)); padding-top: calc(4px * var(--s)); }
+.ac-check { display: flex; gap: calc(8px * var(--s)); align-items: flex-start; font-size: calc(14px * var(--s)); color: var(--ink-dim); cursor: pointer; }
+.ac-check input { margin-top: calc(3px * var(--s)); accent-color: var(--brass); }
+
 /* ================================================================ Pokémon: shared */
 .app.pk {
   --pk-grass: #4fae4a; --pk-fire: #e8572c; --pk-water: #2b8fd6; --pk-lightning: #f3c21b; --pk-psychic: #9c5bbd; --pk-fighting: #c0652d;
@@ -2117,8 +2164,9 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 @media (max-width: 900px) {
   .home .features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home .friends-grid { grid-template-columns: minmax(0, 1fr); }
-  .home-nav .links { display: none; }
 }
+/* (the section links go first when the top bar runs out of room: the page scrolls to them anyway) */
+@media (max-width: 1320px) { .home-nav .links { display: none; } }
 @media (max-width: 1180px) { .home .gates { grid-template-columns: repeat(2, minmax(0, 1fr)); } .home .gate.op { grid-column: 1 / -1; } .home .gate.op .points { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 900px) { .home .rec-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) {
@@ -2189,19 +2237,32 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 /* save codes: the nav button and the line over your record (the dialog is in styles.css) */
 .home .navbtn.savebtn { color: var(--ink); border: 1px solid var(--line-strong); background: rgba(255, 255, 255, 0.05); }
 .home .navbtn.savebtn.linked::before { content: "✓"; margin-right: calc(6px * var(--s)); color: var(--good); }
-@media (max-width: 700px) { .home .navbtn.savebtn { display: none; } }
+@media (max-width: 1000px) { .home .navbtn.savebtn { display: none; } }
 .home .rec-save { display: flex; align-items: center; gap: calc(12px * var(--s)); flex-wrap: wrap; margin: 0 0 calc(16px * var(--s)); padding: calc(12px * var(--s)) calc(16px * var(--s)); border-radius: calc(14px * var(--s)); border: 1px dashed var(--line-strong); background: rgba(255, 255, 255, 0.025); }
 .home .rec-save.on { border-style: solid; border-color: rgba(134, 203, 136, 0.35); background: rgba(134, 203, 136, 0.06); }
 .home .rec-save .rs-icon { flex: none; width: calc(30px * var(--s)); height: calc(30px * var(--s)); display: grid; place-items: center; border-radius: 50%; font-weight: 800; color: var(--brass-hi); background: rgba(217, 174, 92, 0.14); }
 .home .rec-save.on .rs-icon { color: var(--good); background: rgba(134, 203, 136, 0.14); }
 .home .rec-save .rs-text { flex: 1 1 calc(260px * var(--s)); min-width: 0; color: var(--ink-dim); font-size: calc(14.5px * var(--s)); }
 .home .rec-save .rs-text b { color: var(--ink); letter-spacing: 0.08em; }
+
+/* accounts: the nav button (the dialog is in styles.css) */
+.home .navbtn.acctbtn { display: inline-flex; align-items: center; gap: calc(7px * var(--s)); color: #1c1407; border: 1px solid #f7df9f; background: linear-gradient(180deg, #f2d184, #c9973f); }
+.home .navbtn.acctbtn.in { color: var(--ink); border: 1px solid var(--line-strong); background: rgba(255, 255, 255, 0.06); padding-left: calc(6px * var(--s)); }
+.home .navbtn.acctbtn .an { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 520px) { .home .navbtn.acctbtn .an { display: none; } .home .navbtn.acctbtn.in { padding-right: calc(6px * var(--s)); } }
+/* narrow screens: the three games get their own row under the logo and the account button */
+.home-nav .navbreak { display: none; }
+@media (max-width: 760px) {
+  .home-nav { flex-wrap: wrap; row-gap: calc(8px * var(--s)); }
+  .home-nav .navbreak { display: block; flex-basis: 100%; height: 0; }
+  .home .navbtn.mtg, .home .navbtn.pk, .home .navbtn.op { flex: 1 1 0; min-width: 0; text-align: center; padding-inline: calc(6px * var(--s)); }
+}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
-<script src="app.js?v=8198586eea"></script>
+<script src="app.js?v=0cd700a172"></script>
 </body>
 </html>
