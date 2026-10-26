@@ -132,7 +132,9 @@ await C.fill('#ac-delpw', 'brand new pass 2');
 await C.click('.ac-more.danger .btn.danger');
 await C.waitForSelector('.acctdlg', { state: 'detached', timeout: 15000 });
 ok(!(await stored(C, 'pa-account')), 'account deleted, logged out');
-const free = await C.evaluate(async u => (await (await fetch(`/account/name?u=${u}`)).json()).available, username);
+// (the GitHub Pages copy talks to the Worker's address)
+const API = /\.github\.io$/.test(new globalThis.URL(URL).hostname) ? 'https://stigz-s-mtga.stigzrblx.workers.dev' : new globalThis.URL(URL).origin;
+const free = await C.evaluate(async ([api, u]) => (await (await fetch(`${api}/account/name?u=${u}`)).json()).available, [API, username]);
 ok(free === true, 'the username is free again');
 
 console.log(errors.length ? `errors:\n${errors.join('\n')}` : 'no page errors');
