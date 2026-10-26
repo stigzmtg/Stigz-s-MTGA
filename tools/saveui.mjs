@@ -40,7 +40,7 @@ console.log('nav after link:', await A.page.textContent('.navbtn.savebtn'), '| r
 
 // device B: its own game, then loads A's code
 const B = await device('B', { 'pa-records': JSON.stringify([rec('b1', Date.now() - 7200000, 'pk', 'Gardevoir ex')]), 'pa-uisize': 'large', 'pa-cid': 'device-b' });
-await B.page.click('.rec-save .btn');
+await B.page.click('.rec-save .btn:not(.primary)');
 await B.page.waitForSelector('.savedlg');
 await B.page.fill('#sv-input', code.toLowerCase());
 await B.page.click('.sv-load button[type=submit]');
@@ -70,7 +70,7 @@ console.log('save text length', text.length, text.slice(0, 20));
 await A.page.screenshot({ path: `${OUT}/05-dialog-text.png` });
 // phone
 const P = await device('P', {}, 390, 800);
-await P.page.click('.rec-save .btn');
+await P.page.click('.rec-save .btn:not(.primary)');
 await P.page.waitForSelector('.savedlg');
 await P.page.fill('#sv-input', text);
 await P.page.click('.sv-load button[type=submit]');

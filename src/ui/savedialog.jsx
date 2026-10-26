@@ -7,6 +7,7 @@ import {
   savedLink, saveStatus, subscribeSave, saveNow, fetchSave, loadCode, forgetCode, saveText, readText, loadText,
   summarize, currentSummary, showCode, normCode, isCode, saveErrorText, TEXT_PREFIX,
 } from './savecode.js';
+import { currentLogin } from './account.js';
 
 const { useState, useEffect, useSyncExternalStore } = React;
 
@@ -57,6 +58,7 @@ export function SaveDialog({ onClose }) {
   const [text, setText] = useState(null);
   const [textOpen, setTextOpen] = useState(false);
   const mine = currentSummary();
+  const login = currentLogin();
   useEffect(() => { let live = true; findRelay().then(o => { if (live) { setOnline(!!o); if (!o) setTextOpen(true); } }); return () => { live = false; }; }, []);
 
   const run = async (what, f) => {
@@ -92,6 +94,7 @@ export function SaveDialog({ onClose }) {
       <p className="sub">Take your progress to another computer, tablet or phone. No account or email needed.</p>
 
       <section className="sv-mine" aria-label="This device's save code">
+        {login ? <p className="sv-note">You’re logged in as <b>{login.user.username}</b>, so your progress saves to your account by itself. This code is your account’s save, and works on its own too.</p> : null}
         {link ? (
           <>
             <div className="sv-label">Your save code</div>
@@ -103,7 +106,7 @@ export function SaveDialog({ onClose }) {
             <p className="sv-what">It keeps <What s={mine} />. Type it on another device to bring them there; from then on both devices save to it, and your games and decks from each are kept.</p>
             <div className="row">
               <button className="btn sm" onClick={make} disabled={!!busy || st.state === 'saving'}>Save now</button>
-              <button className="btn sm ghost" onClick={() => { forgetCode(); setFound(null); }} disabled={!!busy} title="This device stops saving to the code; the save itself stays on the server">Stop saving on this device</button>
+              {login ? null : <button className="btn sm ghost" onClick={() => { forgetCode(); setFound(null); }} disabled={!!busy} title="This device stops saving to the code; the save itself stays on the server">Stop saving on this device</button>}
             </div>
           </>
         ) : (

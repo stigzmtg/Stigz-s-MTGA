@@ -19,6 +19,11 @@ class_name = "Room"
 name = "SAVES"
 class_name = "SaveSlot"
 
+# every account in one object (worker/accounts.js), so a username or an email can only be taken once
+[[durable_objects.bindings]]
+name = "ACCOUNTS"
+class_name = "Accounts"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
@@ -26,3 +31,7 @@ new_sqlite_classes = ["Room"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["SaveSlot"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["Accounts"]

@@ -1,16 +1,20 @@
 // The site's own server on Cloudflare. Static files come from docs/ (assets); /relay/<room> relays friends' rooms,
 // so rooms work on networks that block browser-to-browser connections (school Wi-Fi): if the site loads, the relay
-// is reachable on the same address. /save/<code> keeps save codes (see SaveSlot below).
+// is reachable on the same address. /save/<code> keeps save codes (see SaveSlot below), and /account/ accounts
+// (accounts.js).
 //
 // Each room is one Durable Object holding every member's presence (a small JSON object, at most a few KB). Members
 // connect by WebSocket, or by plain HTTP polling where WebSockets are blocked too. A member sends its whole presence
 // whenever it changes; the room forwards it to everyone else. Presence lives in memory only: when the object wakes
 // from hibernation it asks every connected member to send theirs again.
 import { DurableObject } from 'cloudflare:workers';
+import { Accounts, accountRequest } from './accounts.js';
+
+export { Accounts };
 
 const ROOM = /^\/relay\/([a-z]{2}-[a-z0-9]{6})$/;
 const SAVE = /^\/save\/(new|[2-9A-HJ-NP-Z]{8})(\/info)?$/;
-const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' };
+const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' };
 const MAX_PRESENCE = 9000;   // characters of JSON
 const MAX_MEMBERS = 24;
 const POLL_TIMEOUT = 12000;  // a polling member that stops asking is gone after this long
@@ -24,6 +28,7 @@ export default {
       if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
       return env.ROOMS.get(env.ROOMS.idFromName(m[1])).fetch(req);
     }
+    if (/^\/account\/[a-z/]+$/.test(url.pathname)) return accountRequest(req, env);
     const sv = SAVE.exec(url.pathname);
     if (sv) {
       if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
@@ -113,6 +118,12 @@ export class SaveSlot extends DurableObject {
     if (oldN > n) await this.ctx.storage.delete(Array.from({ length: oldN - n }, (_, i) => 'c' + (n + i)));
     await this.ctx.storage.setAlarm(Date.now() + KEEP_FOR);
     return { rev, at: meta.at };
+  }
+
+  // gone at once (its account was deleted)
+  async wipe() {
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
   }
 
   async alarm() { await this.ctx.storage.deleteAll(); }

@@ -1075,3 +1075,50 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
   .sv-row { flex-wrap: wrap; }
   .sv-row .btn { flex: 1 1 100%; justify-content: center; }
 }
+
+/* ---- accounts (accountdialog.jsx) */
+.dialog.acctdlg { width: min(520px, 100%); }
+.acctdlg .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ac-form { display: grid; gap: 14px; min-width: 0; }
+.ac-field { display: grid; gap: 6px; min-width: 0; border: 0; margin: 0; padding: 0; }
+.ac-label { font-size: 12.5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.ac-hint { font-size: 13px; color: var(--ink-faint); line-height: 1.4; }
+.ac-field .input { width: 100%; min-width: 0; padding: 10px 12px; font-size: 16px; }
+.ac-pw { display: flex; gap: 6px; min-width: 0; }
+.ac-pw .input { flex: 1; }
+.ac-row { display: flex; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.ac-row > .input { flex: 1 1 120px; min-width: 0; }
+.ac-namecheck.good { color: var(--good); font-weight: 700; }
+.ac-namecheck.bad { color: var(--danger); font-weight: 700; }
+.ac-go { justify-self: stretch; justify-content: center; padding-block: 11px; font-size: 16px; }
+.ac-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; }
+.linkish { background: none; border: 0; padding: 0; color: var(--info); font: inherit; font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.linkish:hover { color: var(--ink); }
+.ac-err { margin: 0; font-size: 14px; color: var(--danger); font-weight: 600; }
+.ac-ok { margin: 0; font-size: 15px; color: var(--good); line-height: 1.45; }
+.ac-young { margin: 0; font-size: 15px; color: var(--ink-dim); line-height: 1.5; }
+.ac-seg { justify-self: start; }
+.ac-mono, .ac-code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: 0.08em; }
+.ac-recovery { display: grid; gap: 8px; padding: 14px 16px; border-radius: var(--r-lg); border: 1px solid var(--line-strong); background: linear-gradient(180deg, rgba(217, 174, 92, 0.1), rgba(0, 0, 0, 0.16)); }
+.ac-recovery p { margin: 0; }
+.ac-coderow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ac-code { font-size: 22px; font-weight: 800; color: var(--brass-hi); user-select: all; -webkit-user-select: all; overflow-wrap: anywhere; }
+.ac-account { display: grid; gap: 14px; min-width: 0; }
+.ac-who { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.ac-who > div { display: grid; gap: 2px; min-width: 0; }
+.ac-username { font: 700 22px/1.2 var(--font-display); color: var(--brass-hi); overflow-wrap: anywhere; }
+.ac-who span { font-size: 13.5px; color: var(--ink-faint); }
+.ac-line { display: grid; gap: 4px; font-size: 14.5px; color: var(--ink-dim); line-height: 1.45; min-width: 0; }
+.ac-email { color: var(--ink); overflow-wrap: anywhere; }
+.ac-chip { justify-self: start; font-size: 12px; font-weight: 800; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--ink-dim); }
+.ac-chip.good { color: var(--good); border-color: rgba(134, 203, 136, 0.45); }
+.ac-confirm { display: grid; gap: 8px; }
+.ac-confirm .input { flex: 0 1 160px; padding: 7px 10px; }
+.ac-more { border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 14px; background: rgba(0, 0, 0, 0.16); }
+.ac-more summary { cursor: pointer; font-weight: 700; color: var(--ink); }
+.ac-more.danger summary { color: var(--danger); }
+.ac-morebody { display: grid; gap: 12px; margin-top: 12px; }
+.ac-morebody > p { margin: 0; }
+.ac-logout { display: grid; gap: 10px; padding-top: 4px; }
+.ac-check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; color: var(--ink-dim); cursor: pointer; }
+.ac-check input { margin-top: 3px; accent-color: var(--brass); }
