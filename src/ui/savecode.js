@@ -13,7 +13,7 @@ const LINK = 'pa-savecode';                 // { code, rev, at, hash }: this dev
 const OURS = /^(pa|pk|op)-/;
 // what stays with each device: its id in friends' rooms, the rooms it's in, screen size and animations, its link,
 // and its login (account.js)
-const LOCAL = /^pa-(cid|savecode|account|open-replay|home-join|uisize|motion)$|^pa-room(cfg)?-/;
+const LOCAL = /^pa-(cid|savecode|account|device|open-replay|home-join|uisize|motion)$|^pa-room(cfg)?-/;
 const REPLAY = /^pa-replay-(.+)$/;
 const DECKS = 'pa-custom-decks', GONE = 'pa-deleted-decks', SEEN = 'pa-deck-cache';
 const MAX_PACKED = 2_400_000;               // the server takes up to 2,500,000 characters

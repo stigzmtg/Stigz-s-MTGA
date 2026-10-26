@@ -1,13 +1,24 @@
 // Accounts (worker/accounts.js): make one with a username and an email, then log in on any device. This browser
 // keeps the login ('pa-account': a session token and who you are; it's never part of a save). A logged-in device
 // saves its progress to the account's save code (savecode.js), so logging in somewhere new brings your record,
-// replays, decks and avatar there, and your username becomes your name in friends' rooms.
+// replays, decks and avatar there, and your username becomes your name in friends' rooms. With email codes on, making
+// an account takes a code sent to the email, and an account can ask for one whenever a new device logs in: this
+// browser's device id ('pa-device', never part of a save) is how the server knows it's been here before.
 import { findRelay } from '../net/relayroom.js';
 import { safeStorage } from './common.js';
 import { savedLink, saveNow, fetchSave, loadCode, subscribeSave, saveStatus, forgetCode, clearProgress } from './savecode.js';
 import { setBadgeProvider } from '../net/roomclient.js';
 
 const KEY = 'pa-account';
+const DEVICE = 'pa-device';
+function deviceId() {
+  let d = safeStorage.getItem(DEVICE);
+  if (!d || !/^[A-Za-z0-9_-]{16,64}$/.test(d)) {
+    d = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(18)))).replace(/\+/g, '-').replace(/\//g, '_');
+    safeStorage.setItem(DEVICE, d);
+  }
+  return d;
+}
 export const USERNAME = /^[A-Za-z0-9_]{3,20}$/;   // (the server has the full rules: reserved and rude names)
 
 function readLogin() {
@@ -25,13 +36,16 @@ export const currentLogin = () => login;
 export const subscribeAccount = f => { subs.add(f); return () => subs.delete(f); };
 
 export class AccountError extends Error {
-  constructor(code) { super(code); this.code = code; }
+  // (`to`: where a code went, as j•••@example.com)
+  constructor(code, extra = {}) { super(code); this.code = code; this.to = extra.to || null; }
 }
 export function accountErrorText(e) {
   switch (e && e.code) {
     case 'offline': return 'Accounts need the website itself (lotusgoats.com). Check your connection and try again.';
     case 'name-taken': return 'Someone already has that username. Try another one.';
     case 'email-taken': return 'There’s already an account with that email. Log in instead, or use “Forgot your password?”.';
+    case 'same-email': return 'That’s already your email.';
+    case 'not-verified': return 'Confirm your email first, then turn this on.';
     case 'bad-name': return 'Usernames are 3 to 20 letters, numbers or _ (no spaces).';
     case 'reserved-name': return 'That username is reserved. Try another one.';
     case 'rude-name': return 'That username isn’t allowed. Try another one.';
@@ -42,7 +56,8 @@ export function accountErrorText(e) {
     case 'bad-login': return 'That username or email and password don’t match.';
     case 'limited': return 'Too many tries for now. Wait a few minutes and try again.';
     case 'bad-recovery': return 'That recovery code doesn’t match this account.';
-    case 'bad-code': return 'That code is wrong or has run out. Ask for a new one.';
+    case 'bad-code': return 'That code is wrong or has run out. Check the newest email, or ask for a new code.';
+    case 'code-needed': return 'Enter the code from the email.';
     case 'bad-password': return 'That password isn’t right.';
     case 'email-off': return 'Codes by email aren’t set up on this site yet. Use your recovery code.';
     case 'email-failed': return 'The email couldn’t be sent just now. Try again in a minute.';
@@ -66,7 +81,7 @@ async function call(method, path, body, withLogin = true) {
   if (!r.ok) {
     // the session ended (a password change or "log out everywhere" on another device)
     if (j.error === 'logged-out' && withLogin && login) setLogin(null);
-    throw new AccountError(j.error || 'server');
+    throw new AccountError(j.error || 'server', j);
   }
   return j;
 }
@@ -81,25 +96,28 @@ function loggedIn(r) {
   setLogin({ token: r.token, user: r.user });
   safeStorage.setItem('pa-nick', r.user.username);   // your name in friends' rooms
 }
-export async function signUp({ username, email, password }) {
-  const r = await call('POST', 'signup', { username: username.trim(), email: email.trim(), password }, false);
+// step one: the details are checked and, with email codes on, a code goes to the email ({ code: true })
+export const startSignUp = ({ username, email, password }) => call('POST', 'signup/start', { username: username.trim(), email: email.trim(), password }, false);
+export async function signUp({ username, email, password, code }) {
+  const r = await call('POST', 'signup', { username: username.trim(), email: email.trim(), password, code }, false);
   loggedIn(r);
   const reload = await bringProgress(r.user).catch(() => false);
   return { recovery: r.recovery, user: r.user, reload };
 }
-export async function logIn({ login: name, password }) {
-  const r = await call('POST', 'login', { login: name.trim(), password }, false);
+// (an account with login codes on answers a new device with AccountError 'code-needed': log in again with the code)
+export async function logIn({ login: name, password, code }) {
+  const r = await call('POST', 'login', { login: name.trim(), password, code: code || undefined, device: deviceId() }, false);
   loggedIn(r);
   return { reload: await bringProgress(r.user).catch(() => false) };
 }
 export async function recover({ login: name, recovery, password }) {
-  const r = await call('POST', 'recover', { login: name.trim(), recovery, password }, false);
+  const r = await call('POST', 'recover', { login: name.trim(), recovery, password, device: deviceId() }, false);
   loggedIn(r);
   return { recovery: r.recovery, reload: await bringProgress(r.user).catch(() => false) };
 }
 export const sendResetCode = name => call('POST', 'reset/send', { login: name.trim() }, false);
 export async function resetWithCode({ login: name, code, password }) {
-  const r = await call('POST', 'reset', { login: name.trim(), code, password }, false);
+  const r = await call('POST', 'reset', { login: name.trim(), code, password, device: deviceId() }, false);
   loggedIn(r);
   return { reload: await bringProgress(r.user).catch(() => false) };
 }
@@ -108,7 +126,7 @@ export async function logOut({ everywhere = false, removeProgress = false } = {}
   try { await call('POST', 'logout', { everywhere }); } catch (e) { if (e.code !== 'offline' && e.code !== 'logged-out') throw e; }
   setLogin(null);
   forgetCode();
-  if (removeProgress) clearProgress();
+  if (removeProgress) { clearProgress(); try { localStorage.removeItem(DEVICE); } catch { /* storage blocked */ } }
 }
 export const changePassword = (old, password) => call('POST', 'password', { old, password });
 export async function deleteAccount(password) {
@@ -117,10 +135,13 @@ export async function deleteAccount(password) {
   forgetCode();
 }
 export const sendVerifyCode = () => call('POST', 'verify/send', {});
-export async function verifyEmail(code) {
-  const r = await call('POST', 'verify', { code });
-  setLogin({ ...login, user: r.user });
-}
+const updated = r => { if (r.user && login) setLogin({ ...login, user: r.user }); return r; };
+export const verifyEmail = code => call('POST', 'verify', { code }).then(updated);
+// login codes on or off (this device is the first one let in)
+export const setLoginCodes = (on, password) => call('POST', 'twostep', { on, password, device: deviceId() }).then(updated);
+// a new email: a code goes there ({ sent: true }), or without email codes it changes at once ({ user })
+export const sendEmailChange = (password, email) => call('POST', 'email/send', { password, email: email.trim() }).then(updated);
+export const changeEmail = (email, code) => call('POST', 'email', { email: email.trim(), code }).then(updated);
 
 // ---- the account's progress is its save code
 // the account's progress comes to this device and this device's joins it; true if the page should reload

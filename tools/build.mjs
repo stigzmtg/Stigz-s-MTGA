@@ -106,6 +106,7 @@ fs.writeFileSync(path.join(DIST, 'index.html'), `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b1a14">
+<script>/* one address for everyone (saves and logins live per address): www.lotusgoats.com goes to lotusgoats.com */if (location.hostname === 'www.lotusgoats.com') location.replace('https://lotusgoats.com' + location.pathname + location.search + location.hash);</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="img/icon-180.png">
 <link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">

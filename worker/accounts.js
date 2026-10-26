@@ -5,9 +5,15 @@
 // Passwords are kept as PBKDF2-SHA256 hashes (100,000 rounds, the most Workers allow, with a salt per account).
 // A login gets a random session token the browser keeps; only the token's SHA-256 is stored here, so a copy of
 // this database logs nobody in. Every account gets a recovery code when it's made (a spare key for setting a new
-// password). With an email service set up (RESEND_API_KEY and MAIL_FROM, see README), emails can be confirmed and
-// passwords reset with a code sent by email too. Attempts are rate limited. An account's progress is its save
-// code (worker/index.js SaveSlot): logging in on another device brings it there.
+// password). Attempts are rate limited. An account's progress is its save code (worker/index.js SaveSlot): logging
+// in on another device brings it there.
+//
+// Email codes (with RESEND_API_KEY set, see README): 6-digit codes, good for 20 minutes and 5 guesses, kept only as
+// hashes. Making an account needs the code sent to its email, so nobody can take someone else's address; an email
+// that already has an account gets a note saying so instead (the page shows the same thing either way, so it can't
+// be used to find out who plays here). Codes also reset passwords, move an account to a new email, and, for
+// accounts that turn on login codes, let a new device in: a correct password on a browser this account hasn't
+// confirmed before also needs the code from the email.
 //
 // Verified badges in friends' rooms: a logged-in player gets a badge signed by this server (ECDSA P-256, a key made
 // here the first time and never sent out) that says "this account, in this room, as this player id, until then".
@@ -22,6 +28,8 @@ export const badgeText = (u, room, cid, x) => `tcg-badge-v1|${u}|${room}|${cid}|
 const SESSION_DAYS = 180;
 const MAX_SESSIONS = 20;
 const CODE_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+const CODE_MINUTES = 20;
+const DEVICE_DAYS = 180;
 export const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' };
 const json = (v, status = 200) => new Response(JSON.stringify(v), { status, headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 const fail = (error, status = 400, extra = {}) => json({ error, ...extra }, status);
@@ -71,6 +79,42 @@ const randomCode = n => [...crypto.getRandomValues(new Uint8Array(n))].map(b => 
 const newRecovery = () => randomCode(16).replace(/(.{4})(?=.)/g, '$1-');
 const normRecovery = s => String(s || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
 const digits6 = () => String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
+const DEVICE = /^[A-Za-z0-9_-]{16,64}$/;
+
+// ---- the emails: a short letter, as plain text and as a page with the logo
+const SITE = 'https://lotusgoats.com';
+const esc = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+export const masked = email => { const [a, d] = String(email).split('@'); return `${a.slice(0, 1)}•••@${d}`; };
+const PURPOSE = {
+  signup: 'finish making your Lotus Goats account',
+  verify: 'confirm your email for Lotus Goats',
+  reset: 'set a new password on your Lotus Goats account',
+  login: 'log in to your Lotus Goats account on a new device',
+  email: 'move your Lotus Goats account to this email',
+};
+const SAFETY = 'Never give this code to anyone, even a friend in a game room. Lotus Goats will never ask you for it.';
+function letter({ name, lines, code, foot }) {
+  const text = [`Hi ${name},`, '', ...lines.flatMap(l => [l, '']), ...(code ? [`    ${code}`, '', `It works for ${CODE_MINUTES} minutes. ${SAFETY}`, ''] : []), foot, '', `Lotus Goats · ${SITE}`].join('\n');
+  const p = t => `<p style="margin:0 0 14px;font-size:16px;line-height:1.5;color:#2b2f45">${esc(t)}</p>`;
+  const html = `<!doctype html><html><body style="margin:0;padding:0;background:#eef0f7">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef0f7;padding:24px 12px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:Helvetica,Arial,sans-serif">
+<tr><td style="background:#09132b;padding:18px 24px"><img src="${SITE}/img/icon-192.png" width="40" height="40" alt="" style="vertical-align:middle;border-radius:10px"> <span style="vertical-align:middle;font-size:20px;font-weight:bold;color:#f3d488;letter-spacing:1px;padding-left:8px">Lotus Goats</span></td></tr>
+<tr><td style="padding:24px">
+${p(`Hi ${name},`)}${lines.map(p).join('')}
+${code ? `<div style="margin:6px 0 18px;padding:16px;border-radius:10px;background:#f4f0ff;text-align:center;font:bold 34px/1 Menlo,Consolas,monospace;letter-spacing:8px;color:#3a1f8f">${esc(code)}</div>
+<p style="margin:0 0 14px;font-size:14px;line-height:1.5;color:#5b6078">It works for ${CODE_MINUTES} minutes. <b>${esc(SAFETY)}</b></p>` : ''}
+<p style="margin:0;font-size:14px;line-height:1.5;color:#5b6078">${esc(foot)}</p>
+</td></tr>
+<tr><td style="padding:14px 24px;background:#f6f7fb;font-size:12px;color:#8a8fa6"><a href="${SITE}" style="color:#6b4fd8">lotusgoats.com</a> · free card battles in your browser</td></tr>
+</table></td></tr></table></body></html>`;
+  return { text, html };
+}
+const NOTICE = {
+  exists: u => ({ subject: 'You already have a Lotus Goats account', lines: [`Someone (hopefully you) tried to make a new Lotus Goats account with this email, but it already has one: your username is ${u.name}.`, 'To get back in, choose “Log in”, then “Forgot your password?”.'], foot: 'If it wasn’t you, you can ignore this email. Nothing has changed.' }),
+  'email-changed': (u, x) => ({ subject: 'Your Lotus Goats email was changed', lines: [`The email on your Lotus Goats account (${u.name}) was just changed to ${x.to}.`], foot: 'If you didn’t do this, use your recovery code (“Log in”, then “Forgot your password?”) to set a new password, then change the email back.' }),
+  'twostep-off': u => ({ subject: 'Login codes are off on your Lotus Goats account', lines: [`Login codes were just turned off on your Lotus Goats account (${u.name}). New devices can now log in with just the password.`], foot: 'If you didn’t do this, change your password straight away.' }),
+};
 
 // ---- the Worker side: every /account/ request goes to the one Accounts object
 export function accountRequest(req, env) {
@@ -90,7 +134,10 @@ export class Accounts extends DurableObject {
       CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user TEXT NOT NULL, created INTEGER NOT NULL, seen INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user);
       CREATE TABLE IF NOT EXISTS codes (user TEXT NOT NULL, kind TEXT NOT NULL, hash TEXT NOT NULL, expires INTEGER NOT NULL, tries INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user, kind));
-      CREATE TABLE IF NOT EXISTS limits (key TEXT PRIMARY KEY, n INTEGER NOT NULL, until INTEGER NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS limits (key TEXT PRIMARY KEY, n INTEGER NOT NULL, until INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS devices (user TEXT NOT NULL, dev TEXT NOT NULL, seen INTEGER NOT NULL, PRIMARY KEY (user, dev));`);
+    // (added later: accounts made before have login codes off)
+    if (!this.sql.exec('PRAGMA table_info(users)').toArray().some(c => c.name === 'twostep')) this.sql.exec('ALTER TABLE users ADD COLUMN twostep INTEGER NOT NULL DEFAULT 0');
     this.calls = 0;
   }
 
@@ -111,7 +158,7 @@ export class Accounts extends DurableObject {
 
   one(q, ...args) { return this.sql.exec(q, ...args).toArray()[0] || null; }
   run(q, ...args) { this.sql.exec(q, ...args); }
-  mailOn() { return !!(this.env.RESEND_API_KEY && this.env.MAIL_FROM); }
+  mailOn() { return !!this.env.RESEND_API_KEY; }
 
   // at most `max` tries per `ms` for a key (a login name, an address); true when that's used up
   limited(key, max, ms) {
@@ -130,10 +177,11 @@ export class Accounts extends DurableObject {
     this.run('DELETE FROM limits WHERE until < ?', now);
     this.run('DELETE FROM sessions WHERE seen < ?', now - SESSION_DAYS * 864e5);
     this.run('DELETE FROM codes WHERE expires < ?', now);
+    this.run('DELETE FROM devices WHERE seen < ?', now - DEVICE_DAYS * 864e5);
   }
 
   view(u) {
-    return { id: u.id, username: u.name, email: u.email, verified: !!u.verified, saveCode: u.save_code || null, created: u.created, emailOn: this.mailOn() };
+    return { id: u.id, username: u.name, email: u.email, verified: !!u.verified, twostep: !!u.twostep, saveCode: u.save_code || null, created: u.created, emailOn: this.mailOn() };
   }
   async newSession(userId) {
     const token = b64url(crypto.getRandomValues(new Uint8Array(32)));
@@ -163,38 +211,54 @@ export class Accounts extends DurableObject {
     if (!l || l.length > 254) return null;
     return this.one(l.includes('@') ? 'SELECT * FROM users WHERE email_lc = ?' : 'SELECT * FROM users WHERE name_lc = ?', l);
   }
+  // devices that confirmed a login code (only their hashes)
+  async devHash(id) { return typeof id === 'string' && DEVICE.test(id) ? sha256('dev:' + id) : null; }
+  trusted(userId, dev) { return !!dev && !!this.one('SELECT 1 AS x FROM devices WHERE user = ? AND dev = ?', userId, dev); }
+  trust(userId, dev) {
+    if (!dev) return;
+    this.run('INSERT OR REPLACE INTO devices (user, dev, seen) VALUES (?, ?, ?)', userId, dev, Date.now());
+    const old = this.sql.exec('SELECT dev FROM devices WHERE user = ? ORDER BY seen DESC LIMIT -1 OFFSET 20', userId).toArray();
+    for (const d of old) this.run('DELETE FROM devices WHERE user = ? AND dev = ?', userId, d.dev);
+  }
   async setPassword(userId, password) {
     const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
     this.run('UPDATE users SET salt = ?, hash = ?, changed = ? WHERE id = ?', salt, await hashPassword(password, salt), Date.now(), userId);
   }
 
-  async sendMail(to, subject, text) {
+  async sendMail(to, subject, { text, html }) {
     if (!this.mailOn()) return false;
     try {
-      const r = await fetch('https://api.resend.com/emails', {
+      const r = await fetch(this.env.MAIL_API || 'https://api.resend.com/emails', {
         method: 'POST',
         headers: { Authorization: `Bearer ${this.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: this.env.MAIL_FROM, to: [to], subject, text }),
+        body: JSON.stringify({ from: this.env.MAIL_FROM || 'Lotus Goats <codes@lotusgoats.com>', to: [to], subject, text, html }),
       });
       return r.ok;
     } catch { return false; }
   }
-  async mailCode(u, kind) {
+  // a code to `t.email` (t: an account, or { id, name, email } for one being made); `bind` ties it to one more thing
+  // (the new email it moves to, the device it lets in), so it works for nothing else
+  async mailCode(t, kind, bind = '') {
     const code = digits6();
-    this.run('INSERT OR REPLACE INTO codes (user, kind, hash, expires, tries) VALUES (?, ?, ?, ?, 0)', u.id, kind, await sha256(`${u.id}:${kind}:${code}`), Date.now() + 20 * 60e3);
-    const what = kind === 'verify' ? 'confirm your email for' : 'set a new password on';
-    return this.sendMail(u.email, `Your Lotus Goats code: ${code}`, `Hi ${u.name},\n\nYour code to ${what} Lotus Goats is:\n\n    ${code}\n\nIt works for 20 minutes. If you didn't ask for it, you can ignore this email.\n`);
+    this.run('INSERT OR REPLACE INTO codes (user, kind, hash, expires, tries) VALUES (?, ?, ?, ?, 0)', t.id, kind, await sha256(`${t.id}:${kind}:${bind}:${code}`), Date.now() + CODE_MINUTES * 60e3);
+    return this.sendMail(t.email, `Your Lotus Goats code: ${code}`, letter({ name: t.name, code, lines: [`Here’s your code to ${PURPOSE[kind]}:`], foot: 'If you didn’t ask for it, you can ignore this email. Without the code nothing happens.' }));
   }
-  async checkCode(u, kind, code) {
-    const c = this.one('SELECT * FROM codes WHERE user = ? AND kind = ?', u.id, kind);
+  async checkCode(t, kind, code, bind = '') {
+    const c = this.one('SELECT * FROM codes WHERE user = ? AND kind = ?', t.id, kind);
     if (!c || c.expires < Date.now() || c.tries >= 5) return false;
-    if (!same(c.hash, await sha256(`${u.id}:${kind}:${String(code || '').replace(/\D/g, '')}`))) {
-      this.run('UPDATE codes SET tries = tries + 1 WHERE user = ? AND kind = ?', u.id, kind);
+    if (!same(c.hash, await sha256(`${t.id}:${kind}:${bind}:${String(code || '').replace(/\D/g, '')}`))) {
+      this.run('UPDATE codes SET tries = tries + 1 WHERE user = ? AND kind = ?', t.id, kind);
       return false;
     }
-    this.run('DELETE FROM codes WHERE user = ? AND kind = ?', u.id, kind);
+    this.run('DELETE FROM codes WHERE user = ? AND kind = ?', t.id, kind);
     return true;
   }
+  sendNotice(u, kind, extra = {}) {
+    const n = NOTICE[kind](u, extra);
+    return this.sendMail(u.email, n.subject, letter({ name: u.name, lines: n.lines, foot: n.foot }));
+  }
+  passwordOk(u, password) { return hashPassword(String(password || ''), u.salt).then(h => same(h, u.hash)); }
+  fresh(id) { return this.view(this.one('SELECT * FROM users WHERE id = ?', id)); }
 
   async fetch(req) {
     if (++this.calls % 100 === 1) this.tidy();
@@ -230,6 +294,21 @@ export class Accounts extends DurableObject {
         if (problem) return json({ available: false, problem });
         return json({ available: !this.one('SELECT 1 AS x FROM users WHERE name_lc = ?', name.toLowerCase()) });
       }
+      // making an account, step one: the details are checked and, with email codes on, a code goes to the email
+      // (or, when that email already has an account, a note saying so: the answer here is the same either way)
+      case 'POST signup/start': {
+        const { username, email, password } = body;
+        const problem = nameProblem(username) || (!emailOk(email) ? 'bad-email' : null) || passwordProblem(password, username, email);
+        if (problem) return fail(problem);
+        if (this.one('SELECT 1 AS x FROM users WHERE name_lc = ?', username.toLowerCase())) return fail('name-taken', 409);
+        const lc = email.trim().toLowerCase();
+        if (!this.mailOn()) return this.one('SELECT 1 AS x FROM users WHERE email_lc = ?', lc) ? fail('email-taken', 409) : json({ ok: true, code: false });
+        if (this.limited('signupstart:' + ip, 30, 3600e3) || this.limited('mailto:' + lc, 4, 3600e3)) return fail('limited', 429);
+        const owner = this.one('SELECT * FROM users WHERE email_lc = ?', lc);
+        if (owner) { await this.sendNotice(owner, 'exists'); return json({ ok: true, code: true }); }
+        return (await this.mailCode({ id: 'signup:' + lc, name: username, email: email.trim() }, 'signup')) ? json({ ok: true, code: true }) : fail('email-failed', 502);
+      }
+      // step two: the account is made (with email codes on, only with the code from step one)
       case 'POST signup': {
         const { username, email, password } = body;
         const problem = nameProblem(username) || (!emailOk(email) ? 'bad-email' : null) || passwordProblem(password, username, email);
@@ -237,17 +316,20 @@ export class Accounts extends DurableObject {
         // (a school shares one address: enough for a class signing up together, not for a flood)
         if (this.limited('signup:' + ip, 40, 3600e3)) return fail('limited', 429);
         if (this.one('SELECT 1 AS x FROM users WHERE name_lc = ?', username.toLowerCase())) return fail('name-taken', 409);
-        if (this.one('SELECT 1 AS x FROM users WHERE email_lc = ?', email.toLowerCase())) return fail('email-taken', 409);
+        const lc = email.trim().toLowerCase();
+        if (this.mailOn()) {
+          if (!body.code) return fail('code-needed');
+          if (!(await this.checkCode({ id: 'signup:' + lc }, 'signup', body.code))) return fail('bad-code', 401);
+        }
+        if (this.one('SELECT 1 AS x FROM users WHERE email_lc = ?', lc)) return fail('email-taken', 409);
         const id = 'u' + randomCode(12).toLowerCase();
         const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
         const recovery = newRecovery();
         const hash = await hashPassword(password, salt);
         // (the UNIQUE columns settle two people asking for the same name at the same moment: see fetch)
-        this.run('INSERT INTO users (id, name, name_lc, email, email_lc, salt, hash, recovery, verified, save_code, created, changed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)',
-          id, username, username.toLowerCase(), email.trim(), email.trim().toLowerCase(), salt, hash, await sha256(normRecovery(recovery)), now, now);
-        const u = this.one('SELECT * FROM users WHERE id = ?', id);
-        if (this.mailOn()) await this.mailCode(u, 'verify');
-        return json({ token: await this.newSession(id), user: this.view(u), recovery });
+        this.run('INSERT INTO users (id, name, name_lc, email, email_lc, salt, hash, recovery, verified, save_code, created, changed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)',
+          id, username, username.toLowerCase(), email.trim(), lc, salt, hash, await sha256(normRecovery(recovery)), this.mailOn() ? 1 : 0, now, now);
+        return json({ token: await this.newSession(id), user: this.fresh(id), recovery });
       }
       case 'POST login': {
         const login = String(body.login || '').trim().toLowerCase();
@@ -257,6 +339,19 @@ export class Accounts extends DurableObject {
         // (the same work whether or not the account exists, so the answer's timing says nothing)
         const hash = await hashPassword(body.password, u ? u.salt : '00000000000000000000000000000000');
         if (!u || !same(hash, u.hash)) return fail('bad-login', 401);
+        // login codes: a device this account hasn't let in before also needs the code from the email
+        if (u.twostep && this.mailOn()) {
+          const dev = await this.devHash(body.device);
+          if (!this.trusted(u.id, dev)) {
+            if (!body.code) {
+              if (this.limited('loginsend:' + u.id, 6, 3600e3)) return fail('limited', 429);
+              if (!(await this.mailCode(u, 'login', dev || ''))) return fail('email-failed', 502);
+              return fail('code-needed', 401, { to: masked(u.email) });
+            }
+            if (!(await this.checkCode(u, 'login', body.code, dev || ''))) return fail('bad-code', 401, { to: masked(u.email) });
+          }
+          this.trust(u.id, dev);
+        }
         return json({ token: await this.newSession(u.id), user: this.view(u) });
       }
       // a new password with the recovery code (which is used up: a new one comes back)
@@ -271,13 +366,14 @@ export class Accounts extends DurableObject {
         const recovery = newRecovery();
         this.run('UPDATE users SET recovery = ? WHERE id = ?', await sha256(normRecovery(recovery)), u.id);
         this.run('DELETE FROM sessions WHERE user = ?', u.id);
-        return json({ token: await this.newSession(u.id), user: this.view(this.one('SELECT * FROM users WHERE id = ?', u.id)), recovery });
+        if (u.twostep) this.trust(u.id, await this.devHash(body.device));   // (the recovery code is a key of its own)
+        return json({ token: await this.newSession(u.id), user: this.fresh(u.id), recovery });
       }
       // a password-reset code by email (always "sent", so it can't be used to find out who has an account)
       case 'POST reset/send': {
         if (!this.mailOn()) return fail('email-off', 501);
         const login = String(body.login || '').trim().toLowerCase();
-        if (this.limited('resetsend:' + login, 3, 3600e3) || this.limited('resetsendip:' + ip, 20, 3600e3)) return fail('limited', 429);
+        if (this.limited('resetsend:' + login, 4, 3600e3) || this.limited('resetsendip:' + ip, 20, 3600e3)) return fail('limited', 429);
         const u = this.byLogin(login);
         if (u) await this.mailCode(u, 'reset');
         return json({ ok: true });
@@ -292,7 +388,8 @@ export class Accounts extends DurableObject {
         await this.setPassword(u.id, body.password);
         this.run('UPDATE users SET verified = 1 WHERE id = ?', u.id);   // (the code came to that email)
         this.run('DELETE FROM sessions WHERE user = ?', u.id);
-        return json({ token: await this.newSession(u.id), user: this.view(this.one('SELECT * FROM users WHERE id = ?', u.id)) });
+        if (u.twostep) this.trust(u.id, await this.devHash(body.device));
+        return json({ token: await this.newSession(u.id), user: this.fresh(u.id) });
       }
     }
     // everything else needs a login
@@ -321,11 +418,11 @@ export class Accounts extends DurableObject {
         const code = String(body.code || '').toUpperCase();
         if (!/^[2-9A-HJ-NP-Z]{8}$/.test(code)) return fail('bad-code');
         this.run('UPDATE users SET save_code = ? WHERE id = ?', code, u.id);
-        return json({ user: this.view(this.one('SELECT * FROM users WHERE id = ?', u.id)) });
+        return json({ user: this.fresh(u.id) });
       }
       case 'POST password': {
         if (this.limited('password:' + u.id, 10, 3600e3)) return fail('limited', 429);
-        if (!same(await hashPassword(String(body.old || ''), u.salt), u.hash)) return fail('bad-password', 401);
+        if (!(await this.passwordOk(u, body.old))) return fail('bad-password', 401);
         const problem = passwordProblem(body.password, u.name, u.email);
         if (problem) return fail(problem);
         await this.setPassword(u.id, body.password);
@@ -343,16 +440,58 @@ export class Accounts extends DurableObject {
         if (this.limited('verify:' + u.id, 10, 3600e3)) return fail('limited', 429);
         if (!(await this.checkCode(u, 'verify', body.code))) return fail('bad-code', 401);
         this.run('UPDATE users SET verified = 1 WHERE id = ?', u.id);
-        return json({ user: this.view(this.one('SELECT * FROM users WHERE id = ?', u.id)) });
+        return json({ user: this.fresh(u.id) });
+      }
+      // login codes on or off (the password either way; on needs a confirmed email, and this device is the first
+      // one it lets in; off tells the email, in case it wasn't you)
+      case 'POST twostep': {
+        if (this.limited('twostep:' + u.id, 10, 3600e3)) return fail('limited', 429);
+        if (!(await this.passwordOk(u, body.password))) return fail('bad-password', 401);
+        this.run('DELETE FROM devices WHERE user = ?', u.id);
+        if (body.on) {
+          if (!this.mailOn()) return fail('email-off', 501);
+          if (!u.verified) return fail('not-verified');
+          this.run('UPDATE users SET twostep = 1 WHERE id = ?', u.id);
+          this.trust(u.id, await this.devHash(body.device));
+        } else {
+          this.run('UPDATE users SET twostep = 0 WHERE id = ?', u.id);
+          if (u.twostep && this.mailOn()) await this.sendNotice(u, 'twostep-off');
+        }
+        return json({ user: this.fresh(u.id) });
+      }
+      // a new email: the password, then the code sent to the new address (without email codes, straight away and
+      // unconfirmed). The old address hears about it.
+      case 'POST email/send': {
+        if (this.limited('emailsend:' + u.id, 6, 3600e3)) return fail('limited', 429);
+        if (!(await this.passwordOk(u, body.password))) return fail('bad-password', 401);
+        const email = String(body.email || '').trim(), lc = email.toLowerCase();
+        if (!emailOk(email)) return fail('bad-email');
+        if (lc === u.email_lc) return fail('same-email');
+        if (this.one('SELECT 1 AS x FROM users WHERE email_lc = ?', lc)) return fail('email-taken', 409);
+        if (!this.mailOn()) {
+          this.run('UPDATE users SET email = ?, email_lc = ?, verified = 0, twostep = 0 WHERE id = ?', email, lc, u.id);
+          return json({ user: this.fresh(u.id) });
+        }
+        if (this.limited('mailto:' + lc, 4, 3600e3)) return fail('limited', 429);
+        return (await this.mailCode({ ...u, email }, 'email', lc)) ? json({ ok: true, sent: true }) : fail('email-failed', 502);
+      }
+      case 'POST email': {
+        if (this.limited('email:' + u.id, 10, 3600e3)) return fail('limited', 429);
+        const email = String(body.email || '').trim(), lc = email.toLowerCase();
+        if (!emailOk(email) || !(await this.checkCode(u, 'email', body.code, lc))) return fail('bad-code', 401);
+        this.run('UPDATE users SET email = ?, email_lc = ?, verified = 1 WHERE id = ?', email, lc, u.id);
+        if (u.verified) await this.sendNotice(u, 'email-changed', { to: masked(email) });
+        return json({ user: this.fresh(u.id) });
       }
       // gone for good: the account, its sessions and codes, and the progress saved for it online (the username and
       // email become free again; progress already on devices stays there)
       case 'POST delete': {
         if (this.limited('delete:' + u.id, 10, 3600e3)) return fail('limited', 429);
-        if (!same(await hashPassword(String(body.password || ''), u.salt), u.hash)) return fail('bad-password', 401);
+        if (!(await this.passwordOk(u, body.password))) return fail('bad-password', 401);
         if (u.save_code && this.env.SAVES) { try { await this.env.SAVES.get(this.env.SAVES.idFromName(u.save_code)).wipe(); } catch { /* it expires anyway */ } }
         this.run('DELETE FROM sessions WHERE user = ?', u.id);
         this.run('DELETE FROM codes WHERE user = ?', u.id);
+        this.run('DELETE FROM devices WHERE user = ?', u.id);
         this.run('DELETE FROM users WHERE id = ?', u.id);
         return json({ ok: true });
       }

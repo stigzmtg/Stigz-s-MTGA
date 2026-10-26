@@ -1098,6 +1098,11 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 .ac-ok { margin: 0; font-size: 15px; color: var(--good); line-height: 1.45; }
 .ac-young { margin: 0; font-size: 15px; color: var(--ink-dim); line-height: 1.5; }
 .ac-seg { justify-self: start; }
+.ac-sent { margin: 0; font-size: 15px; color: var(--ink-dim); line-height: 1.5; overflow-wrap: anywhere; }
+.ac-sent b { color: var(--ink); }
+.ac-field .input.ac-otp { font-size: 26px; font-weight: 800; letter-spacing: 0.45em; text-align: center; padding-block: 8px; color: var(--brass-hi); }
+.ac-row > .ac-pw { flex: 1 1 200px; }
+.ac-line > .ac-row { align-items: center; }
 .ac-mono, .ac-code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: 0.08em; }
 .ac-recovery { display: grid; gap: 8px; padding: 14px 16px; border-radius: var(--r-lg); border: 1px solid var(--line-strong); background: linear-gradient(180deg, rgba(217, 174, 92, 0.1), rgba(0, 0, 0, 0.16)); }
 .ac-recovery p { margin: 0; }
