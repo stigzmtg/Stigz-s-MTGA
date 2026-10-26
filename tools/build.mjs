@@ -51,11 +51,23 @@ await build({
 });
 const APP_VERSION = hashOf(fs.readFileSync(path.join(DIST, 'app.js')));
 
+// the Lotus Goats logo. The page's own marks (top bars, home page) carry small copies inline, so they also show on
+// the claude.ai page; the website also gets app icons, a favicon and a link-preview picture made from it
+const LOGO = 'src/ui/brand/lotus-goats.webp';
+const NAVY = '#09132b';   // the logo's background, at its corners
+let sharp = null;
+try { sharp = (await import('sharp')).default; } catch (e) { console.warn('sharp missing: icons skipped, full-size logo inlined:', e.message); }
+// the goat and lotus without the empty sky around them (the logo is 1254px square)
+const mark = () => sharp(LOGO).extract({ left: 107, top: 95, width: 1040, height: 1040 });
+const dataUri = async size => `data:image/webp;base64,${(sharp ? await mark().resize(size, size).webp({ quality: 82 }).toBuffer() : fs.readFileSync(LOGO)).toString('base64')}`;
+const LOGO_MARK = await dataUri(96), LOGO_HERO = await dataUri(320);
+
 // bigger screens get a bigger table: every pixel size of 3px or more in our stylesheets is multiplied by --s, which
 // styles.css raises at wide, tall windows (1 on laptops). Media and container query conditions and url(...) contents stay as they are.
 // (a negative size keeps its sign inside the calc: -16px -> calc(-16px * var(--s)), not the invalid -calc(16px * …))
 const scalePx = css => css.replace(/(@(?:media|container)[^{]*\{)|(url\([^)]*\))|(-?\d*\.?\d+)px\b/g, (m, media, url, num) => (media || url || Math.abs(parseFloat(num)) < 3 ? m : `calc(${num}px * var(--s))`));
-const css = fs.readFileSync('src/ui/generated/symbols.css', 'utf8') + '\n' + scalePx(fs.readFileSync('src/ui/styles.css', 'utf8') + '\n' + fs.readFileSync('src/ptcg/ui/ptcg.css', 'utf8') + '\n' + fs.readFileSync('src/optcg/ui/optcg.css', 'utf8') + '\n' + fs.readFileSync('src/ui/home.css', 'utf8'));
+const css = (fs.readFileSync('src/ui/generated/symbols.css', 'utf8') + '\n' + scalePx(fs.readFileSync('src/ui/styles.css', 'utf8') + '\n' + fs.readFileSync('src/ptcg/ui/ptcg.css', 'utf8') + '\n' + fs.readFileSync('src/optcg/ui/optcg.css', 'utf8') + '\n' + fs.readFileSync('src/ui/home.css', 'utf8')))
+  .replace('__LOGO_MARK__', LOGO_MARK).replace('__LOGO_HERO__', LOGO_HERO);
 const fonts = 'https://fonts.googleapis.com/css2?family=Alegreya+Sans+SC:wght@500;700;800&family=Alegreya+Sans:wght@400;600;700;800&family=Alegreya:ital,wght@0,400;0,500;1,400&family=Cinzel:wght@600;700&display=swap';
 const react = 'https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js';
 const reactDom = 'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js';
@@ -66,17 +78,20 @@ const bodyWith = app => `<div id="root"></div>
 const body = bodyWith(`app.js?v=${APP_VERSION}`);
 // what search engines and link previews show (lotusgoats.com is the home address; the other copies point to it)
 const SITE = 'https://lotusgoats.com/';
-const DESCRIPTION = 'Cardforge on lotusgoats.com: play Magic: The Gathering Commander precons, top Pokémon TCG decks and One Piece Card Game starter decks in your browser, against the computer or with friends. Free, no download.';
-const head = `<title>Cardforge</title>
+const DESCRIPTION = 'Lotus Goats: play Magic: The Gathering Commander precons, top Pokémon TCG decks and One Piece Card Game starter decks in your browser, against the computer or with friends. Free, no download.';
+const head = `<title>Lotus Goats</title>
 <meta name="description" content="${DESCRIPTION}">
 <link rel="canonical" href="${SITE}">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Cardforge">
-<meta property="og:title" content="Cardforge: Commander, Pokémon TCG and One Piece battles">
+<meta property="og:site_name" content="Lotus Goats">
+<meta property="og:title" content="Lotus Goats: Commander, Pokémon TCG and One Piece battles">
 <meta property="og:description" content="${DESCRIPTION}">
 <meta property="og:url" content="${SITE}">
-<meta property="og:image" content="${SITE}img/icon-512.png">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="${SITE}img/share.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Lotus Goats logo: a white goat above a glowing pink lotus">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -85,7 +100,6 @@ const head = `<title>Cardforge</title>
 // artifact page: content only (the host adds the document skeleton)
 fs.writeFileSync(path.join(DIST, 'artifact.html'), `${head}\n${bodyWith('app.js')}\n`);
 // standalone site
-const icon = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="14" y="6" width="36" height="52" rx="5" fill="#0f2a1f" stroke="#e3bf6b" stroke-width="4"/><circle cx="32" cy="32" r="9" fill="#e3bf6b"/></svg>')}`;
 fs.writeFileSync(path.join(DIST, 'index.html'), `<!doctype html>
 <html lang="en">
 <head>
@@ -94,7 +108,8 @@ fs.writeFileSync(path.join(DIST, 'index.html'), `<!doctype html>
 <meta name="theme-color" content="#0b1a14">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="img/icon-180.png">
-<link rel="icon" href="${icon}">
+<link rel="icon" href="favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png">
 ${head}
 </head>
 <body>
@@ -103,19 +118,33 @@ ${body}
 </html>
 `);
 // installable app: icons, manifest and the service worker (the website only; the claude.ai page can't use them)
-const crest = (x, y, scale) => `<g transform="translate(${x} ${y}) scale(${scale}) translate(-20 -20)"><rect x="9" y="7" width="17" height="24" rx="2.5" transform="rotate(-14 17 19)" fill="#1d4bb0" stroke="#ffd23f" stroke-width="1.6"/><rect x="14" y="8" width="17" height="24" rx="2.5" transform="rotate(10 22 20)" fill="#2e1f0d" stroke="#f3d488" stroke-width="1.6"/><path d="M22.6 14.5l2.4 4.4-2.4 4.4-2.4-4.4z" fill="#f3d488" transform="rotate(10 22 20)"/></g>`;
-const iconSvg = (rounded, scale) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><radialGradient id="g" cx="50%" cy="38%" r="72%"><stop offset="0" stop-color="#21503a"/><stop offset="1" stop-color="#0a1812"/></radialGradient></defs><rect width="512" height="512" rx="${rounded ? 112 : 0}" fill="url(#g)"/>${crest(256, 262, scale)}</svg>`;
-try {
-  const sharp = (await import('sharp')).default;
+if (sharp) {
   fs.mkdirSync(path.join(DIST, 'img'), { recursive: true });
-  for (const [file, size, rounded, scale] of [['icon-192.png', 192, true, 10], ['icon-512.png', 512, true, 10], ['icon-maskable-512.png', 512, false, 7.6], ['icon-180.png', 180, false, 9]]) {
-    await sharp(Buffer.from(iconSvg(rounded, scale))).resize(size, size).png().toFile(path.join(DIST, 'img', file));
-  }
-} catch (e) { console.warn('icons skipped:', e.message); }
+  const rounded = (size, r) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="${size}" height="${size}" rx="${r}"/></svg>`);
+  const png = img => img.png({ palette: true, quality: 95, effort: 10 });   // a quarter the size, no visible difference
+  const roundIcon = (img, size) => png(img.resize(size, size).composite([{ input: rounded(size, Math.round(size * 0.22)), blend: 'dest-in' }]));
+  await roundIcon(sharp(LOGO), 192).toFile(path.join(DIST, 'img', 'icon-192.png'));
+  await roundIcon(sharp(LOGO), 512).toFile(path.join(DIST, 'img', 'icon-512.png'));
+  // iPhones round the corners themselves
+  await png(sharp(LOGO).resize(180, 180)).toFile(path.join(DIST, 'img', 'icon-180.png'));
+  // Android crops maskable icons to as little as the middle 80%: the logo a little smaller, its sky mirrored outwards
+  await png(sharp(await sharp(LOGO).resize(472, 472).toBuffer()).extend({ top: 20, bottom: 20, left: 20, right: 20, extendWith: 'mirror' })).toFile(path.join(DIST, 'img', 'icon-maskable-512.png'));
+  // favicon.ico holding 16, 32 and 48px pictures (48px is what search results show)
+  const pngs = [];
+  for (const size of [16, 32, 48]) pngs.push([size, await roundIcon(mark(), size).toBuffer()]);
+  const head = Buffer.alloc(6 + 16 * pngs.length);
+  head.writeUInt16LE(1, 2); head.writeUInt16LE(pngs.length, 4);
+  let at = head.length;
+  pngs.forEach(([size, png], i) => { const e = 6 + 16 * i; head[e] = size; head[e + 1] = size; head.writeUInt16LE(1, e + 4); head.writeUInt16LE(32, e + 6); head.writeUInt32LE(png.length, e + 8); head.writeUInt32LE(at, e + 12); at += png.length; });
+  fs.writeFileSync(path.join(DIST, 'favicon.ico'), Buffer.concat([head, ...pngs.map(p => p[1])]));
+  // link previews (1200x630): the logo on a blurred, darkened stretch of itself
+  const backdrop = await sharp(LOGO).resize(1200, 630, { fit: 'cover' }).blur(40).modulate({ brightness: 0.6 }).toBuffer();
+  await sharp(backdrop).composite([{ input: await sharp(LOGO).resize(630, 630).toBuffer(), left: 285, top: 0 }]).jpeg({ quality: 86 }).toFile(path.join(DIST, 'img', 'share.jpg'));
+}
 fs.writeFileSync(path.join(DIST, 'manifest.webmanifest'), JSON.stringify({
-  name: 'Cardforge', short_name: 'Cardforge', id: './', start_url: './', scope: './', display: 'standalone',
+  name: 'Lotus Goats', short_name: 'Lotus Goats', id: './', start_url: './', scope: './', display: 'standalone',
   description: 'Commander precons, top Pokémon TCG decks and One Piece starter decks against the computer or with friends.',
-  background_color: '#0b1913', theme_color: '#0b1a14',
+  background_color: NAVY, theme_color: '#0b1a14',
   icons: [
     { src: 'img/icon-192.png', sizes: '192x192', type: 'image/png' },
     { src: 'img/icon-512.png', sizes: '512x512', type: 'image/png' },

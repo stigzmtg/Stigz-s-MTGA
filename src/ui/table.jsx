@@ -422,7 +422,7 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
   return (
     <div className="app table">
       <header className={`topbar ${session.online ? 'online' : ''}`}>
-        <span className="brand">Cardforge</span>
+        <span className="brand">Lotus Goats</span>
         <span className="turninfo">Turn <b>{game.turnNumber}</b> · <b>{game.players[game.activePlayer].name}</b></span>
         <PhaseTracker game={game} />
         <RoomStatus session={session} />

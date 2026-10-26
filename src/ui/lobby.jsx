@@ -100,7 +100,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
 
   return (
     <div className="app">
-      <header className="topbar">{onHome ? <button className="brand linklike" onClick={onHome} title="Choose a game">Cardforge<small>Commander</small></button> : <span className="brand">Cardforge<small>Commander vs AI</small></span>}<span className="spacer" /><span className="chip">{decks.length} preconstructed decks</span>{onHome ? <button className="btn sm" onClick={onHome}>Switch game</button> : null}<SizeButton /><button className="btn sm" onClick={() => setHelp(true)}>How to play</button></header>
+      <header className="topbar">{onHome ? <button className="brand linklike" onClick={onHome} title="Choose a game">Lotus Goats<small>Commander</small></button> : <span className="brand">Lotus Goats<small>Commander vs AI</small></span>}<span className="spacer" /><span className="chip">{decks.length} preconstructed decks</span>{onHome ? <button className="btn sm" onClick={onHome}>Switch game</button> : null}<SizeButton /><button className="btn sm" onClick={() => setHelp(true)}>How to play</button></header>
       {help ? <HelpDialog onClose={() => setHelp(false)} /> : null}
       <div className="lobby">
         <div className="intro" data-eyebrow="Magic: The Gathering · Commander">

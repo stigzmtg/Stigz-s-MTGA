@@ -144,7 +144,7 @@ export function DeckBuilder({ data, editId, onDone, onPlay, onHome }) {
   return (
     <div className="app builder">
       <header className="topbar">
-        <button className="brand linklike" onClick={onHome} title="Choose a game">Cardforge<small>Commander</small></button>
+        <button className="brand linklike" onClick={onHome} title="Choose a game">Lotus Goats<small>Commander</small></button>
         <span className="chip gold">Deck builder</span>
         <span className="spacer" />
         <button className="btn sm" onClick={() => setImporting(true)}>Import list</button>

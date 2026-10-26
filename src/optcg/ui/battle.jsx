@@ -617,7 +617,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
     <div className="app table op">
       <KwTip />
       <header className="topbar">
-        <button className="brand linklike" onClick={onExit} title="Leave the battle">Cardforge</button>
+        <button className="brand linklike" onClick={onExit} title="Leave the battle">Lotus Goats</button>
         <span className="chip op-chip">One Piece</span>
         <span className="turninfo">{game.turn ? <>Turn <b>{game.turn}</b> · <b>{game.players[game.current].name}</b></> : <b>Getting ready</b>}</span>
         {online ? <RoomStatus session={session} /> : null}

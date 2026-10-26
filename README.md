@@ -1,4 +1,4 @@
-# Cardforge
+# Lotus Goats
 
 Three card battle simulators in one site:
 
@@ -143,7 +143,7 @@ node tools/optcg/mptest.mjs out/ 8      # in real browsers: invite link, seats, 
 
 The Cloudflare Worker also runs the room relay and save codes (`worker/index.js`, see `wrangler.toml`; save codes only work on a host with the Worker, and the GitHub Pages copy uses the Worker's address for both); test it locally with `npx wrangler dev --assets dist --port 8787` and `RELAY=1 BASE=http://localhost:8787/ node tools/ptcg/mptest.mjs` (`RELAY=poll` treats WebSockets as blocked). If Cloudflare sets it up as a Worker instead (an address like `stigz-s-mtga.<account>.workers.dev`), `wrangler.toml` tells it to serve `docs/`; its `name` must match the Worker's name. The live copy is at https://lotusgoats.com (a custom domain on the Worker: the domain's DNS is on Cloudflare, attached under the Worker's **Settings → Domains & Routes**), and still at https://stigz-s-mtga.stigzrblx.workers.dev.
 
-**Email codes for accounts (optional).** Accounts work without email: forgotten passwords use the recovery code. To also confirm emails and send password-reset codes, make a free account at [resend.com](https://resend.com), add a domain you own there (it needs a domain to send from), create an API key, then in the Cloudflare dashboard open the Worker, **Settings → Variables and Secrets**, and add a secret `RESEND_API_KEY` (the key) and a variable `MAIL_FROM` (for example `Cardforge <codes@yourdomain.com>`). The site notices by itself.
+**Email codes for accounts (optional).** Accounts work without email: forgotten passwords use the recovery code. To also confirm emails and send password-reset codes, make a free account at [resend.com](https://resend.com), add a domain you own there (it needs a domain to send from), create an API key, then in the Cloudflare dashboard open the Worker, **Settings → Variables and Secrets**, and add a secret `RESEND_API_KEY` (the key) and a variable `MAIL_FROM` (for example `Lotus Goats <codes@lotusgoats.com>`). The site notices by itself.
 
 **Netlify** (address like `precon-arena.netlify.app`)
 1. Sign in at app.netlify.com, then **Add new site → Import an existing project → GitHub**, and pick this repository.
@@ -151,4 +151,4 @@ The Cloudflare Worker also runs the room relay and save codes (`worker/index.js`
 
 Online play works the same on any host (browsers connect peer to peer). A custom domain on either host is the least likely to be caught by school filters.
 
-Unofficial fan project, not affiliated with the Forge project (Card-Forge), Wizards of the Coast, Nintendo, Creatures or GAME FREAK. Magic: The Gathering is a trademark of Wizards of the Coast; Pokémon and the Pokémon TCG are trademarks of Nintendo, Creatures and GAME FREAK. Forge card scripts are GPL-3.0.
+Unofficial fan project, not affiliated with Wizards of the Coast, Nintendo, Creatures or GAME FREAK. Magic: The Gathering is a trademark of Wizards of the Coast; Pokémon and the Pokémon TCG are trademarks of Nintendo, Creatures and GAME FREAK. Forge card scripts are GPL-3.0.

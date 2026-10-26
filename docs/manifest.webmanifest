@@ -1,12 +1,12 @@
 {
-  "name": "Cardforge",
-  "short_name": "Cardforge",
+  "name": "Lotus Goats",
+  "short_name": "Lotus Goats",
   "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "description": "Commander precons, top Pokémon TCG decks and One Piece starter decks against the computer or with friends.",
-  "background_color": "#0b1913",
+  "background_color": "#09132b",
   "theme_color": "#0b1a14",
   "icons": [
     {

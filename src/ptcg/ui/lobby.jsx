@@ -99,7 +99,7 @@ export function PkLobby({ data, online, onStart, onHome, onHelp }) {
   return (
     <div className="app pk">
       <header className="topbar">
-        <button className="brand linklike" onClick={onHome} title="Choose a game">Cardforge</button>
+        <button className="brand linklike" onClick={onHome} title="Choose a game">Lotus Goats</button>
         <span className="chip pk-chip">Pokémon TCG</span>
         <span className="spacer" />
         <button className="btn sm" onClick={onHome}>Switch game</button>

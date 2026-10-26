@@ -1,4 +1,4 @@
-/* Cardforge — a felt-table look. Layout: board (opponents / prompt / you) + side rail (preview, stack, log). */
+/* Lotus Goats — a felt-table look. Layout: board (opponents / prompt / you) + side rail (preview, stack, log). */
 :root {
   --s: 1;   /* size scale, set from the window and the player's choice by ui/uisize.js; tools/build.mjs multiplies pixel sizes by it */
   --felt: #10261c;
@@ -131,9 +131,10 @@ kbd.key { display: inline-grid; place-items: center; min-width: 1.9em; padding: 
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30;
 }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 31; background: #050d0a; }
-/* the arena's crest beside its name */
+/* the Lotus Goats logo beside the name (tools/build.mjs fills in the pictures) */
+:root { --logo: url("__LOGO_MARK__"); --logo-hero: url("__LOGO_HERO__"); }
 .brand { display: inline-flex; align-items: center; gap: 9px; font: 700 19px/1 var(--font-display); letter-spacing: 0.07em; color: var(--brass-hi); white-space: nowrap; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
-.brand::before { content: ""; flex: none; width: 22px; height: 22px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect x='9' y='7' width='17' height='24' rx='2.5' transform='rotate(-14 17 19)' fill='%231d4bb0' stroke='%23ffd23f' stroke-width='1.6'/%3E%3Crect x='14' y='8' width='17' height='24' rx='2.5' transform='rotate(10 22 20)' fill='%232e1f0d' stroke='%23f3d488' stroke-width='1.6'/%3E%3Cpath d='M22.6 14.5l2.4 4.4-2.4 4.4-2.4-4.4z' fill='%23f3d488' transform='rotate(10 22 20)'/%3E%3C/svg%3E") center / contain no-repeat; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); }
+.brand::before { content: ""; flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--logo) center / cover no-repeat; box-shadow: 0 0 0 1px rgba(227, 191, 107, 0.55), 0 1px 4px rgba(0, 0, 0, 0.6); }
 .brand small { font: 700 11.5px/1 var(--font-ui); letter-spacing: 0.18em; color: var(--ink-faint); margin-left: 4px; text-transform: uppercase; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--line); }
 .topbar .spacer { flex: 1; }
 

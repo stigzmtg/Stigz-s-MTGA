@@ -153,7 +153,7 @@ function newOnlineSession(data, room, cfg) {
 function Loading({ progress, error }) {
   return (
     <div className="app">
-      <header className="topbar"><span className="brand">Cardforge<small>Commander vs AI</small></span></header>
+      <header className="topbar"><span className="brand">Lotus Goats<small>Commander vs AI</small></span></header>
       <div className="loading">
         {error ? <><h2>Couldn't load the card data</h2><p>{error}</p></> : <>
           <div className="label">Shuffling {progress < 1 ? 'card data' : 'decks'}</div>

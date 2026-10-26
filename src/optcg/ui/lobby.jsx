@@ -90,7 +90,7 @@ export function OpLobby({ data, online, onStart, onHome, onHelp }) {
     <div className="app op">
       <KwTip />
       <header className="topbar">
-        <button className="brand linklike" onClick={onHome} title="Choose a game">Cardforge</button>
+        <button className="brand linklike" onClick={onHome} title="Choose a game">Lotus Goats</button>
         <span className="chip op-chip">One Piece Card Game</span>
         <span className="spacer" />
         <button className="btn sm" onClick={onHome}>Switch game</button>

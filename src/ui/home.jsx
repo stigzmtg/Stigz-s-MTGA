@@ -45,15 +45,9 @@ const OP_COMPASS = <span className="compass" aria-hidden="true" />;
 const PK_TYPES = ['Grass', 'Fire', 'Water', 'Lightning', 'Psychic', 'Fighting', 'Darkness', 'Metal'];
 
 // ---------------------------------------------------------------- small pieces
-// the arena's mark: two cards fanned, one per game
-function Crest({ size = 30 }) {
-  return (
-    <svg className="crest" width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
-      <rect x="9" y="7" width="17" height="24" rx="2.5" transform="rotate(-14 17 19)" fill="#1d4bb0" stroke="#ffd23f" strokeWidth="1.6" />
-      <rect x="14" y="8" width="17" height="24" rx="2.5" transform="rotate(10 22 20)" fill="#2e1f0d" stroke="#f3d488" strokeWidth="1.6" />
-      <path d="M22.6 14.5l2.4 4.4-2.4 4.4-2.4-4.4z" fill="#f3d488" transform="rotate(10 22 20)" />
-    </svg>
-  );
+// the Lotus Goats logo (its picture comes from the stylesheet)
+function Logo({ size = 30 }) {
+  return <span className="logo" style={{ width: size, height: size }} aria-hidden="true" />;
 }
 
 function Ornament() {
@@ -327,7 +321,7 @@ export function Home({ onPick, onJoin }) {
   return (
     <div className="app home">
       <nav className="home-nav" aria-label="Main">
-        <button className="brandmark linklike" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}><Crest />Cardforge</button>
+        <button className="brandmark linklike" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}><Logo />Lotus Goats</button>
         <span className="links">
           <button onClick={() => scrollTo('games')}>Games</button>
           <button onClick={() => scrollTo('decks')}>Decks</button>
@@ -336,7 +330,7 @@ export function Home({ onPick, onJoin }) {
           <button onClick={() => scrollTo('why')}>Features</button>
         </span>
         <span className="spacer" />
-        {installable ? <button className="navbtn install" onClick={install} title="Add Cardforge to your home screen or shelf">Install app</button> : null}
+        {installable ? <button className="navbtn install" onClick={install} title="Add Lotus Goats to your home screen or shelf">Install app</button> : null}
         <button className={`navbtn acctbtn ${login ? 'in' : ''}`} onClick={() => setAcctOpen(login ? 'account' : 'login')} title={login ? 'Your account' : 'Log in or make an account'}>
           {login ? <><AnimalAvatar code={myAvatar()} size={24} /><span className="an">{login.user.username}</span></> : 'Log in'}
         </button>
@@ -352,8 +346,9 @@ export function Home({ onPick, onJoin }) {
         <Drift rows={[a, b]} />
         <div className="hero-copy">
           <button className="newpill" onClick={() => scrollTo('games')}><b>New</b>The One Piece Card Game</button>
+          <span className="hero-logo" aria-hidden="true" />
           <div className="eyebrow">Three card battle simulators</div>
-          <h1 className="title">Cardforge</h1>
+          <h1 className="title">Lotus Goats</h1>
           <p className="lede">Bring a ready-made deck, take your seat, and battle the computer or your friends. Every card plays by the rules, right in your browser.</p>
           <dl className="stats">
             <div><dt>Decks ready to play</dt><dd>{(248 + opDecks.length).toLocaleString('en-US')}</dd></div>
@@ -446,7 +441,7 @@ export function Home({ onPick, onJoin }) {
 
       <footer className="home-foot">
         <div className="foot-grid">
-          <div className="foot-brand"><span className="brandmark"><Crest size={26} />Cardforge</span><p>A free fan-made arena for playing preconstructed decks by the rules.</p></div>
+          <div className="foot-brand"><span className="brandmark"><Logo size={28} />Lotus Goats</span><p>A free fan-made arena for playing preconstructed decks by the rules.</p></div>
           <div><h4>Play</h4><button className="linkbtn" onClick={() => open('mtg')}>Commander</button><button className="linkbtn" onClick={() => open('pokemon')}>Pokémon TCG</button><button className="linkbtn" onClick={() => open('onepiece')}>One Piece Card Game</button><button className="linkbtn" onClick={() => scrollTo('friends')}>Join a room</button><button className="linkbtn" onClick={() => setAcctOpen(login ? 'account' : 'login')}>{login ? 'Your account' : 'Log in'}</button><button className="linkbtn" onClick={() => setSaveOpen(true)}>Save code</button></div>
           <div><h4>Credits</h4>
             <span>Commander rules from <a href="https://github.com/Card-Forge/forge" target="_blank" rel="noopener">Forge</a> (GPL-3.0)</span>
@@ -454,7 +449,7 @@ export function Home({ onPick, onJoin }) {
             <span>Card data from <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a>, <a href="https://tcgdex.dev" target="_blank" rel="noopener">TCGdex</a> and <a href="https://optcgapi.com" target="_blank" rel="noopener">optcgapi</a></span>
           </div>
         </div>
-        <p className="legal">Unofficial fan project, not affiliated with the Forge project (Card-Forge) whose Commander rules it uses. Magic: The Gathering is a trademark of Wizards of the Coast; Pokémon and the Pokémon TCG are trademarks of Nintendo, Creatures and GAME FREAK; ONE PIECE and the ONE PIECE CARD GAME are trademarks of Eiichiro Oda/Shueisha, Toei Animation and Bandai.</p>
+        <p className="legal">Unofficial fan project. Magic: The Gathering is a trademark of Wizards of the Coast; Pokémon and the Pokémon TCG are trademarks of Nintendo, Creatures and GAME FREAK; ONE PIECE and the ONE PIECE CARD GAME are trademarks of Eiichiro Oda/Shueisha, Toei Animation and Bandai.</p>
       </footer>
     </div>
   );
