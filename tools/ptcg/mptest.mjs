@@ -1,7 +1,8 @@
 // Pokémon battles with a friend, in real browsers: the host makes a room, the guest opens the invite link and takes
 // the second seat, the host starts, and both play (a computer player makes their choices for the first turns). Both
-// boards must match. Then the guest reloads mid-battle, a third person watches, the host ends the battle and starts
-// another one.
+// boards must match. The host brings a deck of their own (built in the deck builder): the guest and the watcher only
+// get it through the room, and must play the very same cards. Then the guest reloads mid-battle, a third person
+// watches, the host ends the battle and starts another one.
 // Usage: node tools/ptcg/mptest.mjs [out dir] [turns=8]   (serve dist/ on :8765 first; P2P=1 uses real peer-to-peer rooms)
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -19,7 +20,10 @@ const pages = [];
 const errors = [];
 let failed = false;
 const check = (ok, msg) => { console.log((ok ? 'ok   ' : 'FAIL ') + msg); if (!ok) failed = true; };
-async function newPlayer(label, deck) {
+// the host's own deck: the Charizard ex list with one Fire Energy swapped for a Water Energy
+const tournament = JSON.parse(fs.readFileSync('data/ptcg/decks.json', 'utf8'));
+const OWN = { id: 'pkc-mptest01', name: "Hana's Charizard", cards: tournament.find(d => d.id === 'charizard').cards.map(([k, n]) => [k, k === 'Fire Energy' ? n - 1 : k === 'Water Energy' ? n + 1 : n]), updated: 1 };
+async function newPlayer(label, deck, own = null) {
   const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 } });
   await ctx.addInitScript(([p2p, relay]) => { if (p2p) window.__paTransport = 'p2p'; if (relay) window.__paTransport = 'relay'; if (relay === 'poll') window.__paRelayPoll = true; }, [P2P, RELAY]);
   if (!P2P && !RELAY) {
@@ -28,10 +32,14 @@ async function newPlayer(label, deck) {
     });
     await ctx.addInitScript(mock);
   }
-  await ctx.addInitScript(([t, d]) => {
+  await ctx.addInitScript(([t, d, o]) => {
     window.__pkAutoplay = t;
-    try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'fast' })); if (!localStorage.getItem('pk-lobby')) localStorage.setItem('pk-lobby', JSON.stringify({ mine: d, opp: 'random' })); } catch {}
-  }, [TURNS, deck]);
+    try {
+      localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'fast' }));
+      if (o && !localStorage.getItem('pk-custom-decks')) localStorage.setItem('pk-custom-decks', JSON.stringify([o]));
+      if (!localStorage.getItem('pk-lobby')) localStorage.setItem('pk-lobby', JSON.stringify({ mine: o ? o.id : d, opp: 'random' }));
+    } catch {}
+  }, [TURNS, deck, own]);
   const page = await ctx.newPage();
   page.label = label;
   page.on('pageerror', e => errors.push(`${label}: ${e.message}`));
@@ -81,7 +89,7 @@ async function playUntil(players, target, ms = 240000) {
   return ts;
 }
 
-const host = await newPlayer('host', 'charizard');
+const host = await newPlayer('host', 'charizard', OWN);
 const guest = await newPlayer('guest', 'dragapult');
 await host.goto(BASE + '#pokemon');
 await host.waitForSelector('text=Pick a deck, start a battle', { timeout: 60000 });
@@ -106,6 +114,11 @@ await guest.waitForSelector('button:has-text("Sit here")', { timeout: 30000 });
 await guest.click('button:has-text("Sit here")');
 await host.waitForSelector('.seat-row:has-text("Gus")', { timeout: 30000 });
 await host.waitForSelector('.seat-row:has-text("Dragapult")', { timeout: 30000 });
+// the host's own deck reaches the guest through the room
+const arrived = await guest.waitForSelector(`.seat-row:has-text("${OWN.name}")`, { timeout: 30000 }).then(() => true, () => false);
+check(arrived, 'the host’s own deck reaches the guest');
+const got = await guest.evaluate(id => (JSON.parse(localStorage.getItem('pk-deck-cache') || '[]').find(d => d.id === id) || {}).cards, OWN.id);
+check(JSON.stringify(got) === JSON.stringify(OWN.cards), 'the guest holds exactly the host’s 60 cards, in order');
 await guest.screenshot({ path: `${OUT}/2-guest-room.png` });
 await host.waitForSelector('button:has-text("Start battle"):not([disabled])', { timeout: 30000 });
 await host.click('button:has-text("Start battle")');
@@ -121,7 +134,7 @@ console.log('turns', ts.join(', '));
 console.log('host view ', JSON.stringify(sa));
 console.log('guest view', JSON.stringify(sb));
 check(JSON.stringify(sa) === JSON.stringify(sb), 'host and guest boards match');
-check(sa.length === 2 && sa.some(s => s.name === 'Gus' && /Dragapult/.test(s.deck)) && sa.some(s => s.name === 'Hana' && /Charizard/.test(s.deck)), 'each player brought their own deck');
+check(sa.length === 2 && sa.some(s => s.name === 'Gus' && /Dragapult/.test(s.deck)) && sa.some(s => s.name === 'Hana' && s.deck === OWN.name), 'each player brought their own deck (the host’s own one too)');
 
 // the guest reloads with the invite link (its name is remembered: straight back in), a third person watches
 const LATER = TURNS + 4;
