@@ -1,5 +1,6 @@
 // Static analysis of a Forge card script: which features the engine does not implement.
 import { parseCardScript, parseAbility } from './forge.js';
+import { paramIssues } from './mech-params.js';
 import { SUPPORTED_APIS } from './effects.js';
 import { SUPPORTED_TRIGGER_MODES } from './triggers.js';
 import { SUPPORTED_KEYWORDS } from './keywords.js';
@@ -52,5 +53,6 @@ export function analyzeCard(text) {
     for (const r of [...f.R, ...Object.values(f.svars).filter(v => /^Event\$/.test(v))]) { const p = parseAbility(r); if (!REPLACEMENT_EVENTS.has(p.p.Event)) issues.add(p.p.Event + ' replacement'); }
     for (const x of combatSupportIssues(f)) issues.add(x);
   }
+  for (const i of paramIssues(faces)) issues.add(i); // card-script parameters left out on purpose (mech-params.js)
   return [...issues].map(x => x.replace(/([a-z])([A-Z])/g, '$1 $2'));
 }

@@ -304,6 +304,7 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'ChosenColor': return !!host && !!host.chosen && (host.chosen.colors || []).some(c => ch.colors.has(c));
     case 'ChosenType': return !!host && !!host.chosen && !!host.chosen.type && hasType(game, ch, host.chosen.type, card);
     case 'ChosenCard': case 'ChosenCardStrict': return !!host && !!host.chosen && (host.chosen.cards || []).includes(card.id);
+    case 'nonChosenCard': return !(host && host.chosen && (host.chosen.cards || []).includes(card.id)); // ("sacrifice the rest": not a type)
     case 'Defending': return !!(game.combat && game.combat.attackers.some(a => a.defenderCard === card.id));
     case 'Historic': return hasType(game, ch, 'Historic', card);
     case 'Modified': return Object.values(card.counters || {}).some(n => n > 0) || game.attachmentsOf(card).some(a => game.chars(a).subtypes.has('Equipment') || (game.chars(a).subtypes.has('Aura') && a.controller === ctrl));
@@ -1191,6 +1192,13 @@ export function evalExpr(game, expr, ctx, depth) {
       else n = ts.reduce((a, t) => a + cardStat(game, t, rest, ctx), 0);
       break;
     }
+    // every target of the spell or ability, over its sub-abilities (Fireball, Hinata: "for each target")
+    case 'TargetedObjects': case 'TargetedObjectsDistinct': {
+      let ts = sa && sa.root ? sa.root().chain().flatMap(s => s.targets || []) : [];
+      if (head === 'TargetedObjectsDistinct') ts = [...new Set(ts)];
+      n = rest === 'Amount' ? ts.length : rest.startsWith('Valid ') ? ts.filter(t => matchValid(game, t, rest.slice(6), ctx)).length : 0;
+      break;
+    }
     case 'TargetedPlayer': {
       const ts = sa ? findTargets(sa).filter(isPlayer) : [];
       const p = ts[0];
@@ -1320,7 +1328,12 @@ function countExpr(game, rest, ctx, depth) {
     case 'TotalCommanderCastFromCommandZone': return Object.values(you.commanderCasts).reduce((a, b) => a + b, 0);
     case 'YourTurns': return game.turnState.turnsTaken ? game.turnState.turnsTaken[youId] || 0 : 0;
     case 'Domain': { const types = new Set(); for (const c of game.battlefield) if (c.controller === youId) for (const t of game.chars(c).subtypes) if (BASIC_LAND_TYPES[t]) types.add(t); return types.size; }
-    case 'RememberedSize': case 'RememberedNumber': return (host && host.remembered || []).length;
+    case 'RememberedNumber': { // numbers remembered (Mana Drain, Creeping Bloodsucker): their sum; else as RememberedSize
+      const nums = host && host.paNumbers && host.paNumbers.zcc === host.zcc ? host.paNumbers.list : null;
+      if (nums && nums.length) return nums.reduce((a, b) => a + b, 0);
+      return (host && host.remembered || []).length;
+    }
+    case 'RememberedSize': return (host && host.remembered || []).length;
     case 'ImprintedSize': return (host && host.imprinted || []).length;
     case 'CardNumColors': return host ? charsOf(game, host).colors.size : 0;
     case 'NumColorsCommander': case 'CommanderColors': return you.colorIdentity.length;
@@ -1557,6 +1570,9 @@ export function checkPresence(game, p, ctx) {
     const v = calcCtx(game, p.CheckSecondSVar, ctx);
     if (!compareSpec(game, v, p.SecondSVarCompare || 'GE1', ctx)) return false;
   }
+  if (p.CheckThirdSVar && !compareSpec(game, calcCtx(game, p.CheckThirdSVar, ctx), p.ThirdSVarCompare || 'GE1', ctx)) return false;
+  // "as long as the top card of your library is black" (Vampire Nocturnus, Conspicuous Snoop)
+  if (p.TopCardOfLibraryIs) { const top = game.players[ctx.you] && game.players[ctx.you].library[0]; if (!top || !matchValid(game, top, p.TopCardOfLibraryIs, ctx)) return false; }
   if (p.PlayerTurn === 'True' && game.activePlayer !== ctx.you) return false;
   // "If it's neither day nor night" (DayTime$ Neither | Day | Night); "EnduringStory$ False" (Storied)
   if (p.DayTime && (game.dayNight || 'Neither') !== p.DayTime) return false;

@@ -1,5 +1,6 @@
 // Spell abilities: construction, costs, targeting, casting, activation, mana payment and resolution.
 import { parseAbility } from './forge.js';
+import { bindEngine, charmModeAllowed, noteCharmModes, paramCostStatic, paramSpellCost, paramAbilityCost, paramCostAfterTargets, otherOptionalCosts, mayPlayUsed, noteMayPlayUse, mayPlayOptions, paramTargetFilter, replaceProducedUnits } from './mech-params.js';
 import { parseMana, emptyCost, addCosts, cmc, isManaToken, planPayment, payFromPool, manaColorsFromProduced, costString, poolTotal, cloneCost } from './mana.js';
 import { matchValid, resolveDefined, calcCtx, checkConditions, checkPresence, ctxOf, findTargets, zoneMap, ctrlOf } from './filters.js';
 import { COLORS } from './util.js';
@@ -50,6 +51,7 @@ export class SA {
 export function makeSA(game, raw, svars, host, controller, opts = {}) {
   return new SA(game, { raw, parsed: parseAbility(raw), svars, src: host, key: opts.key || 'x' }, host, controller, opts);
 }
+bindEngine({ SA, makeSA, resolveChain, parseCost, canPayNonMana, Cancelled, runEffect }); // mech-params.js can't import this module
 
 // ---------------------------------------------------------------- refs (for UI / agents)
 export function refOf(o) {
@@ -470,7 +472,8 @@ function costExclusions(game, choices) {
 }
 
 // "you may spend mana as though it were mana of any color to pay the activation costs of CARDNAME's abilities"
-function manaConverted(game, card, mana) {
+function manaConverted(game, card, mana, sa = null) {
+  if (sa && mana) mana = paramAbilityCost(game, sa, mana); // Type$ Ability cost statics, ManaConvert (mech-params.js)
   if (!card || !card.isCard || card.zone !== 'battlefield' || !mana) return mana;
   if (!game.chars(card).statics.some(s => s.parsed.p.Mode === 'ManaConvert' && /Card\.Self/.test(s.parsed.p.ValidCard || 'Card.Self') && /Activated/.test(s.parsed.p.ValidSA || 'Activated'))) return mana;
   const m = cloneCost(mana);
@@ -612,7 +615,7 @@ export function producedUnits(game, card, abil, noReflect = false) {
     if (units.length === 1) units = Array.from({ length: Math.max(0, n) }, () => units[0]);
     else { const base = units; units = []; for (let i = 0; i < n; i++) units.push(...base); }
   }
-  return units;
+  return replaceProducedUnits(game, card, units); // Contamination, Damping Sphere (mech-params.js)
 }
 
 // can mana from `host` be spent here? RestrictValid says what it can pay for: spells ("Spell.Creature",
@@ -1046,7 +1049,7 @@ export function targetCandidates(game, sa, spec) {
       if (card && (valid === 'Card' || matchValid(game, card, valid, { ...ctx, stackController: item.controller }))) out.push(item);
       else if (!card) out.push(item);
     }
-    return out;
+    return paramTargetFilter(game, sa, out); // "that targets you or a creature you control" (mech-params.js)
   }
   const hasPlayers = /(^|,)(Player|Opponent|You)/.test(spec.valid);
   for (const z of spec.zone) {
@@ -1057,7 +1060,7 @@ export function targetCandidates(game, sa, spec) {
     }
   }
   if (hasPlayers) for (const pl of game.livingPlayers()) if (matchValid(game, pl, spec.valid, ctx) && canBeTargetedBy(game, pl, sa)) out.push(pl);
-  return out;
+  return paramTargetFilter(game, sa, out); // "target creature that player controls" (mech-params.js)
 }
 
 export async function chooseTargetsForSA(game, root, { optional = false, aiHint = null } = {}) {
@@ -1184,6 +1187,8 @@ export function mayPlayFrom(game, pid, card) {
   for (const { st, ctx } of game._activeStatics || []) {
     const p = st.parsed.p;
     if (!p.MayPlay) continue;
+    if (p.MayPlayDontGrantZonePermissions === 'True') continue; // changes how, not where (As Foretold, Aluren): mech-params.js
+    if (p.MayPlayLimit && mayPlayUsed(game, st) >= +p.MayPlayLimit) continue; // each turn, per static (mech-params.js)
     const zones = (p.AffectedZone || 'Battlefield').split(',').map(z => zoneMap[z] || z.toLowerCase());
     if (!zones.includes(card.zone)) continue;
     const who = ctx.you;
@@ -1326,7 +1331,7 @@ export function spellOptions(game, pid, card, { anyZone = false } = {}) {
   if (mayPlay && mayPlay.without) for (const o of opts) o.withoutMana = true;
   if (mayPlay && mayPlay.altMana != null && !mayPlay.without) for (const o of opts) if (o.altManaStr == null && !o.withoutMana) o.altManaStr = mayPlay.altMana;
   for (const o of opts) if (mayPlay) o.mayPlay = mayPlay;
-  return opts;
+  return mayPlayOptions(game, pid, card, opts, mayPlay); // alternative costs and flash from may-play statics (mech-params.js)
 }
 
 // prowl: you dealt combat damage to a player this turn with a creature that shares a creature type with the card
@@ -1415,6 +1420,7 @@ function spellCost(game, pid, card, opt, sa) {
   const colorReduce = [];
   for (const s of game.activeStatics('ReduceCost')) {
     const p = s.p;
+    if (paramCostStatic(s, 'reduce')) continue; // handled in mech-params.js
     if (p.Type && !/Spell/.test(p.Type) && p.Type !== 'Any') continue;
     if (p.ValidCard && !matchValid(game, ctxCard, p.ValidCard.replace(/CARDNAME/g, 'Card.Self'), { ...s.ctx, host: s.host })) continue;
     if (p.Activator && !matchValid(game, game.players[pid], p.Activator, s.ctx)) continue;
@@ -1426,6 +1432,7 @@ function spellCost(game, pid, card, opt, sa) {
   }
   for (const s of game.activeStatics('RaiseCost')) {
     const p = s.p;
+    if (paramCostStatic(s, 'raise')) continue; // handled in mech-params.js
     if (p.Type && !/Spell/.test(p.Type)) continue;
     if (p.ValidCard && !matchValid(game, ctxCard, p.ValidCard, s.ctx)) continue;
     if (p.Activator && !matchValid(game, game.players[pid], p.Activator, s.ctx)) continue;
@@ -1458,6 +1465,7 @@ function spellCost(game, pid, card, opt, sa) {
     if (opt.mayPlay.ignoreType) { mana.generic += mana.hybrid.length; mana.hybrid = []; }
     else mana.hybrid = mana.hybrid.map(h => [...new Set([...h, ...ANY])]);
   }
+  mana = paramSpellCost(game, pid, card, opt, sa, mana); // target-dependent and Relative cost statics, ManaConvert
   return { mana, extra };
 }
 
@@ -1605,7 +1613,7 @@ export async function playLand(game, pid, card, action) {
   if (!opt) return false;
   const p = game.players[pid];
   p.landsPlayed++;
-  if (opt.mayPlay && opt.mayPlay.st) opt.mayPlay.st.host.mayPlayUses = (opt.mayPlay.st.host.mayPlayUses || 0) + 1;
+  if (opt.mayPlay && opt.mayPlay.st) noteMayPlayUse(game, opt.mayPlay.st);
   game.log(`${p.name} plays ${card.def.faces[opt.face].name}.`, { type: 'land', cardId: card.id });
   await game.moveCard(card, 'battlefield', { controller: pid, face: opt.face, silent: true });
   game.fire('LandPlayed', { Card: card, Player: pid, MayPlay: !!opt.mayPlay, MayPlayHost: opt.mayPlay && opt.mayPlay.st ? opt.mayPlay.st.host.id : null });
@@ -1628,6 +1636,7 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
   }
   if (!opt) return false;
   if (free) opt = { ...opt, withoutMana: true };
+  if (effectSA && effectSA.p && effectSA.p.ManaConversion) opt = { ...opt, manaConversion: effectSA.p.ManaConversion }; // "spend mana as though any type"
   if (!fromEffect && !timingOk(game, pid, card, opt)) return false;
   const sa = buildSpellSA(game, pid, card, opt);
   sa.castFrom = opt.from;
@@ -1873,6 +1882,8 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
   // targets
   const ok = await chooseTargetsForSA(game, sa);
   if (!ok) return false;
+  ({ mana, extra } = await paramCostAfterTargets(game, 'spell', pid, card, opt, sa, mana, extra)); // costs that depend on targets (mech-params.js)
+  ({ mana, extra } = await otherOptionalCosts(game, pid, card, sa, mana, extra)); // the Defilers' "you may pay 2 life
   // strive: costs more for each target beyond the first
   if (strive) { const n = sa.chain().reduce((a, s) => a + (s.targets || []).length, 0); if (n > 1) addCost(strive[1], n - 1); }
   // non-mana cost choices
@@ -1923,7 +1934,7 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
   // move to stack
   const fromZone = card.zone;
   if (opt.from === 'command') game.players[pid].commanderCasts[card.id] = (game.players[pid].commanderCasts[card.id] || 0) + 1;
-  if (opt.mayPlay && opt.mayPlay.st) opt.mayPlay.st.host.mayPlayUses = (opt.mayPlay.st.host.mayPlayUses || 0) + 1;
+  if (opt.mayPlay && opt.mayPlay.st) noteMayPlayUse(game, opt.mayPlay.st);
   await game.moveCard(card, 'stack', { silent: true, noReplace: true });
   card.zone = 'stack';
   card.controller = pid;
@@ -2127,6 +2138,7 @@ export async function chooseModes(game, sa, { mana = null, card = null, cancella
     return { label, value: n, ...(mc ? { cost: mc.mana } : {}) };
   }).filter(o => sa.svars[o.value]);
   const usable = options.filter(o => {
+    if (!charmModeAllowed(game, sa, o.value)) return false; // "choose one that hasn't been chosen this turn"
     const m = makeSA(game, sa.svars[o.value], sa.svars, sa.host, sa.controller, { parent: sa });
     if (!targetsPossible(game, m)) return false;
     if (o.cost && mana && !canAfford(game, sa.controller, addCosts(mana.x ? { ...mana, x: 0 } : mana, o.cost), { spellCard: card, exclude: card ? new Set([card.id]) : new Set() })) return false;
@@ -2176,6 +2188,7 @@ export async function chooseModes(game, sa, { mana = null, card = null, cancella
     const m = new SA(game, { raw: sa.svars[n], parsed: parseAbility(sa.svars[n]), svars: sa.svars, src: sa.abil.src, key: sa.key + '#' + n }, sa.host, sa.controller, { parent: sa, trig: sa.trig });
     return m;
   });
+  noteCharmModes(game, sa, ans);
   return true;
 }
 
@@ -2233,8 +2246,9 @@ export function canActivate(game, pid, card, abil, { ignoreTiming = false } = {}
   const sa = new SA(game, abil, card, pid);
   const cost = parseCost(p.Cost);
   if (!canPayNonMana(game, sa, cost)) return false;
+  if (!cost.hasMana && cmc(manaConverted(game, card, cost.mana, sa)) > 0) cost.hasMana = true; // a cost raised by a static
   if (cost.hasMana) {
-    const m = manaConverted(game, card, cost.mana.x ? { ...cost.mana, x: 0 } : cost.mana);
+    const m = manaConverted(game, card, cost.mana.x ? { ...cost.mana, x: 0 } : cost.mana, sa);
     const exclude = new Set(cost.tap ? [card.id] : []);
     for (const part of cost.parts) if (part.type === 'Sac' && (part.valid === 'CARDNAME' || part.valid === 'Card.Self')) exclude.add(card.id);
     for (const id of costPartExclusions(game, sa, cost.parts)) exclude.add(id);
@@ -2268,6 +2282,7 @@ export async function activateAbility(game, pid, card, abilityKey, action = {}) 
   sa.isActivated = true;
   if (sa.api === 'Charm') { const ok = await chooseModes(game, sa, { cancellable: true }); if (!ok) throw new Cancelled(); }
   const cost = parseCost(p.Cost);
+  cost.mana = paramAbilityCost(game, sa, cost.mana); if (cmc(cost.mana) > 0) cost.hasMana = true; // cost statics for abilities (mech-params.js)
   let mana = manaConverted(game, card, cost.mana);
   const payOpts = { abilityHost: card, costHasX: !!cost.mana.x, waterbend: cost.mana.waterbend };
   if (mana.x || /\bX\b/.test(p.Cost || '') && cost.parts.some(pt => pt.amount === 'X')) {
@@ -2298,6 +2313,7 @@ export async function activateAbility(game, pid, card, abilityKey, action = {}) 
   if (sa.x && !canPayNonMana(game, sa, cost)) return false;
   const ok = await chooseTargetsForSA(game, sa);
   if (!ok) return false;
+  { const adj = await paramCostAfterTargets(game, 'ability', pid, card, null, sa, mana, cost); mana = adj.mana; cost.parts = adj.extra.parts; if (cmc(mana) > 0) cost.hasMana = true; }
   const choices = await chooseCostParts(game, sa, cost, { afford: cost.hasMana ? ex => canAfford(game, pid, mana, { exclude: new Set([...(cost.tap ? [card.id] : []), ...ex]), ...payOpts }) : null });
   if (!choices) return false;
   const exclude = new Set(cost.tap ? [card.id] : []);

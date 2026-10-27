@@ -143,8 +143,9 @@ test('Firebending: attacking adds {R}s that last until end of combat (and it cou
   expect(T.A.pool.R === 4, `four red mana from firebending 4 (${T.A.pool.R})`);
   g.step = 'combatDamage'; g.emptyPools();
   expect(T.A.pool.R === 4, `kept through combat (${T.A.pool.R})`);
+  // (Ozai's own replacement: "If you would lose unspent mana, that mana becomes red instead.")
   g.step = 'main2'; g.emptyPools();
-  expect(T.A.pool.R === 0, 'gone after combat');
+  expect(T.A.pool.R === 4, `after combat Ozai keeps it, as red (${T.A.pool.R})`);
   expect(T.A.bends && T.A.bends.kinds.includes('Firebend'), 'counts as firebending');
 });
 test('Avatar Aang: draws when you bend, and transforms once you did all four this turn', async T => {

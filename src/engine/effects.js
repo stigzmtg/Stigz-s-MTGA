@@ -1,5 +1,6 @@
 // Implementations of Forge ability APIs ("DB$ Draw", "SP$ Destroy", ...).
 import { parseAbility } from './forge.js';
+import { PARAMS_EFFECTS, beforeEffect, afterEffect, discardUnlessType } from './mech-params.js';
 import { matchValid, resolveDefined, calc, calcCtx, ctxOf, findTargets, liveOrLki, ctrlOf, zoneMap, compareSpec, isPlayer } from './filters.js';
 import { SA, makeSA, resolveChain, chooseTargetsForSA, castSpell, castableOptions, spellOptions, refOf, fromRef, canAfford, payManaCost, parseCost, chooseModes, targetSpec, targetCandidates, producedUnits, buildSpellSA, humanValid, canPayNonMana, payCostParts, rollDice, costLabel as costLabelOf } from './abilities.js';
 import { normalizeCounter, counterName } from './game.js';
@@ -203,6 +204,7 @@ export const E = {
     const who = playersOf(objs(game, sa, 'You'));
     const mode = sa.p.Mode || 'TgtChoose';
     for (const p of who) {
+      if (sa.p.UnlessType && await discardUnlessType(game, sa, p)) continue; // "unless you discard an artifact card" (mech-params.js)
       const valid = sa.p.DiscardValid || 'Card';
       const pool = p.hand.filter(c => matchValid(game, c, valid, ctxOf(game, sa)));
       let n = sa.p.NumCards === 'All' ? pool.length : num(game, sa, 'NumCards', 1);
@@ -2633,6 +2635,7 @@ Object.assign(E, CASTING_EFFECTS);
 Object.assign(E, NEWSETS_EFFECTS);
 Object.assign(E, COMBAT_EFFECTS);
 Object.assign(E, CLASSIC_EFFECTS);
+Object.assign(E, PARAMS_EFFECTS);
 export const SUPPORTED_APIS = new Set(Object.keys(E).concat(['Charm']));
 
 export async function runEffect(game, sa) {
@@ -2641,7 +2644,9 @@ export async function runEffect(game, sa) {
     if (sa.api) game.log(`Not automated: ${desc(game, sa)} [${sa.api}]`, { type: 'unsupported', cardId: sa.host && sa.host.id });
     return;
   }
+  sa = await beforeEffect(game, sa); // card-script params settled before it runs (mech-params.js)
   await f(game, sa);
+  await afterEffect(game, sa);
   const p = sa.p;
   if (p.RememberObjects && !['Effect', 'DelayedTrigger', 'ImmediateTrigger', 'Token'].includes(sa.api)) remember(sa, resolveDefined(game, p.RememberObjects, ctxOf(game, sa)));
   if (p.RememberTargets === 'True') remember(sa, findTargets(sa));

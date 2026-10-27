@@ -1,5 +1,6 @@
 // Core game state and flow: zones, turns, priority, the stack, state-based actions and triggers.
 import { Card, Player, newTimestamp } from './cards.js';
+import { untapPrevented as paramUntapPrevented, untapLocked, noteTurnEnd, noteTargeted, applyStaticEffect, poolBeforeEmptying, settleEmptiedPool, damageRedirect, dealRedirected, triggerController, replacementPhaseOk } from './mech-params.js';
 import { RNG, COLORS, BASIC_LAND_TYPES, NAME_TO_COLOR, sleep, compare } from './util.js';
 import { computeAll, charsOutside, isRoom } from './chars.js';
 import { matchValid, resolveDefined, calcCtx, checkPresence, ctrlOf, zoneMap, findTargets } from './filters.js';
@@ -341,6 +342,7 @@ export class Game {
       else if (this.dayNight === 'Night' && cast >= 2) this.setDayNight('Day');
     }
     this.lastActive = ap;
+    noteTurnEnd(this);
     this.turnState = this.freshTurnState();
     this.turnState.turnsTaken[ap] = (this.turnState.turnsTaken[ap] || 0) + 1;
     for (const pl of this.players) { pl.landsPlayed = 0; pl.lifeGainedThisTurn = 0; pl.lifeLostThisTurn = 0; pl.cardsDrawnThisTurn = 0; pl.spellsCastThisTurn = []; pl.manaExpended = 0; pl.handAtTurnStart = pl.hand.length; }
@@ -537,6 +539,7 @@ export class Game {
   // mana empties between steps, except what "you don't lose unspent mana" keeps; Omnath turns lost mana colorless
   emptyPools() {
     for (const pl of this.players) {
+      const emptied = poolBeforeEmptying(this, pl); // sets aside mana kept "as steps and phases end" (mech-params.js)
       const keep = {};
       for (const s of this.activeStatics('UnspentMana')) {
         if (!matchValid(this, pl, s.p.ValidPlayer || 'You', s.ctx)) continue;
@@ -550,6 +553,7 @@ export class Game {
       else if (lost > 0 && manaBurns(this, pl.id)) this.loseLife(pl, lost, null); // (mech-classic: mana burn, Yurlok)
       keepCombatMana(this, pl, np);
       pl.pool = np;
+      settleEmptiedPool(this, pl, lost, emptied); // the color lost mana becomes, set-aside mana back (mech-params.js)
     }
     this.touch();
   }
@@ -698,7 +702,7 @@ export class Game {
       const lk = `${host.id}:${t.key}`;
       const lc = (this.turnState.loopCounts[lk] = (this.turnState.loopCounts[lk] || 0) + 1);
       if (lc > 80) { if (lc === 81) this.log(`Stopped a possible infinite loop from ${this.name(host)}.`, { type: 'info' }); continue; }
-      this.pendingTriggers.push({ host, t, rp: { ...rp }, controller, delayed: t.delayed });
+      this.pendingTriggers.push({ host, t, rp: { ...rp }, controller: triggerController(this, p, host, rp, controller), delayed: t.delayed });
       // Panharmonicon-style doubling
       if (mode === 'ChangesZone' && rp.Destination === 'Battlefield') {
         for (const s of this.activeStatics('Panharmonicon')) {
@@ -884,6 +888,7 @@ export class Game {
     if (pt.delayed) { sa.delayRemembered = pt.delayed.remembered || []; }
     if (t.delayed && t.delayed.remembered) sa.delayRemembered = t.delayed.remembered;
     if ((pt.delayed || t.delayed) && (pt.delayed || t.delayed).spawner) sa.spawner = (pt.delayed || t.delayed).spawner;
+    if ((pt.delayed || t.delayed) && (pt.delayed || t.delayed).triggerRememberAmount != null) sa.triggerRememberAmount = (pt.delayed || t.delayed).triggerRememberAmount; // RememberNumber (mech-params.js)
     sa.description = this.describeTrigger(host, p, sa);
     if (p.Static === 'True') {
       await this.resolveSAChain(sa);
@@ -902,9 +907,9 @@ export class Game {
   notifyTargets(sa, item) {
     for (let s = sa; s; s = s.sub) {
       for (const t of s.targets || []) {
-        if (t.isCard || t.isPlayer) this.fire('BecomesTarget', { Target: t, Source: sa.host, SourceSA: item, StackItem: item, Player: item.controller });
+        if (t.isCard || t.isPlayer) { this.fire('BecomesTarget', { Target: t, Source: sa.host, SourceSA: item, StackItem: item, Player: item.controller }); noteTargeted(this, t, item.controller); }
       }
-      for (const m of s.modes || []) for (const t of m.targets || []) this.fire('BecomesTarget', { Target: t, Source: sa.host, SourceSA: item, StackItem: item, Player: item.controller });
+      for (const m of s.modes || []) for (const t of m.targets || []) { this.fire('BecomesTarget', { Target: t, Source: sa.host, SourceSA: item, StackItem: item, Player: item.controller }); noteTargeted(this, t, item.controller); }
     }
   }
 
@@ -1200,6 +1205,7 @@ export class Game {
       if (opts.cast) { card.castFrom = opts.cast.from; card.xPaid = opts.cast.x || 0; card.kicked = opts.cast.kicked || 0; card.castSA = opts.cast.sa || null; card.manaSpent = opts.cast.manaSpent || null; card.optionalCosts = opts.cast.optionalCosts || []; card.altCost = opts.cast.altCost || null; card.convokedBy = opts.cast.convokedBy || []; card.squad = opts.cast.squad || 0; card.evoked = card.altCost === 'Evoke'; card.blitzed = card.altCost === 'Blitz'; card.promisedGift = opts.cast.sa && opts.cast.sa.promisedGift != null ? opts.cast.sa.promisedGift : null; card.offspring = opts.cast.offspring || 0; if (opts.cast.grants && opts.cast.grants.length) card.temp.push({ keywords: opts.cast.grants, until: 'Permanent' }); }
       if (keepCounters) card.counters = keepCounters;
       if (opts.attachTo != null) card.attachedTo = opts.attachTo;
+      if (opts.cause && opts.cause.p && opts.cause.p.StaticEffect) await applyStaticEffect(this, card, opts.cause); // "it's an enchantment" (mech-params.js)
       this.touch();
       await this.applyETB(card, opts);
       if (this.chars(card).types.has('Land')) this.turnState.landsEntered[card.controller] = (this.turnState.landsEntered[card.controller] || 0) + 1;
@@ -1496,6 +1502,7 @@ export class Game {
         if (p.ValidPlayer && !(rp.Affected && matchValid(this, rp.Affected, p.ValidPlayer, ctx))) continue;
         if (p.ValidCard && !(rp.Card && matchValid(this, rp.Card, p.ValidCard, ctx))) continue;
         if (p.NotFirstCardInDrawStep === 'True' && rp.TurnDraw) continue; // Notion Thief leaves the draw-step draw alone
+        if (!replacementPhaseOk(this, p)) continue; // "during your draw step" (mech-params.js)
         if (!checkPresence(this, p, ctx)) continue;
         if (rp._applied && rp._applied.has(h.id + r.key)) continue;
         if (this.activeRepl.has(h.id + r.key)) continue;
@@ -1652,6 +1659,7 @@ export class Game {
   }
   async untap(card) {
     if (!card.tapped) return false;
+    if (await paramUntapPrevented(this, card, this.step === 'untap' ? this.activePlayer : null)) return false; // doesn't untap / can't become untapped (mech-params.js)
     // stun counters: "if it would become untapped, instead remove a stun counter from it"
     if ((card.counters.STUN || 0) > 0) {
       const r = await this.removeCounters(card, 'STUN', 1);
@@ -1667,13 +1675,9 @@ export class Game {
     return true;
   }
 
-  untapPrevented(c) {
-    for (const r of this.chars(c).replacements) {
-      const p = r.parsed.p;
-      if (p.Event === 'Untap' && p.Layer === 'CantHappen' && checkPresence(this, p, { host: c, you: c.controller, svars: r.svars })) return true;
-    }
-    return false;
-  }
+  // "doesn't untap during its controller's untap step" from any permanent or effect, for whatever its ValidCard names
+  // (mech-params.js); untap() also applies the ones that do something else instead (Freyalise's Winds)
+  untapPrevented(c) { return untapLocked(this, c, this.activePlayer); }
 
   lifeLocked(p) { return this.activeStatics('CantChangeLife').some(s => matchValid(this, p, s.p.ValidPlayer || 'You', s.ctx)); }
 
@@ -1738,8 +1742,9 @@ export class Game {
       }
       this.shields = this.shields.filter(sh => sh.amount > 0 && sh.turn === this.turnNumber);
     }
-    let rp = { Affected: target, Source: source, DamageSource: source, DamageAmount: amount, IsCombat: !!opts.combat };
+    let rp = { Affected: target, Source: source, DamageSource: source, DamageAmount: amount, IsCombat: !!opts.combat, _applied: opts.redirectApplied };
     const prevented = await this.applyDamageReplacements(rp);
+    { const red = await dealRedirected(this, source, rp, opts); if (red != null) return red; } // dealt to another object instead (mech-params.js)
     if (prevented === null) { if (rp.prevented) this.notePrevented(source, target, amount, !!opts.combat); return 0; }
     if (rp.preventedAmount > 0) this.notePrevented(source, target, rp.preventedAmount, !!opts.combat);
     amount = rp.DamageAmount;
@@ -1852,6 +1857,9 @@ export class Game {
         const raw = p.ReplaceWith && r.svars[p.ReplaceWith];
         if (!raw) continue;
         const parsed = parseAbility(raw);
+        const red = damageRedirect(this, h, r, p, parsed, ctx, rp); // Pariah, Harm's Way (mech-params.js)
+        if (red === 'skip') continue;
+        if (red === 'redirect') return rp;
         if (parsed.api === 'ReplaceDamage' || parsed.api === 'ReplaceEffect') {
           if (p.PreventionEffect === 'True' && this.activeStatics('CantPreventDamage').length) continue;
           const v = calcCtx(this, parsed.p.Amount || parsed.p.VarValue, ctx);

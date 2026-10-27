@@ -1,5 +1,6 @@
 // Mode-specific trigger matching against event run-params.
 import { matchValid, ctrlOf, resolveDefined, matchCastSA } from './filters.js';
+import { triggerParamsOk } from './mech-params.js';
 import { normalizeCounter } from './game.js';
 import { UNSETS_TRIGGER_MODES, unsetsTriggerMatches } from './mech-unsets-rules.js';
 import { triggerExt } from './ext.js';
@@ -33,6 +34,7 @@ for (const m of ['AttackerBlockedOnce', 'BlockersDeclared', 'ExcessDamage', 'Exc
 for (const m of CLASSIC_TRIGGER_MODES) SUPPORTED_TRIGGER_MODES.add(m);
 
 export function triggerMatches(game, p, host, rp, ctx) {
+  if (!triggerParamsOk(game, p, host, rp, ctx)) return false;
   const mode = rp.Mode;
   switch (mode) {
     case 'ChangesZone': {
@@ -188,7 +190,8 @@ export function triggerMatches(game, p, host, rp, ctx) {
       return !p.ValidPlayer || vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx);
     case 'BecomesTarget': case 'BecomesTargetOnce': {
       if (!vc(game, rp.Target, p.ValidTarget, ctx)) return false;
-      if (p.ValidSource && !vc(game, rp.Source, p.ValidSource, ctx)) return false;
+      // (the source is the spell or ability on the stack: "SpellAbility.OppCtrl" — Thunderbreak Regent, Willbreaker, valiant)
+      if (p.ValidSource && !vc(game, rp.Source, p.ValidSource, ctx) && !(rp.SourceSA && vc(game, rp.SourceSA, p.ValidSource, ctx))) return false;
       if (p.SourceType === 'Spell' && !(rp.StackItem && rp.StackItem.kind === 'spell')) return false;
       return true;
     }

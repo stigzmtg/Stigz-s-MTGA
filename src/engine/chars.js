@@ -1,5 +1,6 @@
 // Characteristic computation ("layers"): base face -> copy -> types -> colors -> abilities -> P/T.
 import { abilityList } from './cards.js';
+import { paramAbilitiesLayer, paramFinalLayer } from './mech-params.js';
 import { parseAbility } from './forge.js';
 import { cmc } from './mana.js';
 import { BASIC_LAND_TYPES, NAME_TO_COLOR, COLORS } from './util.js';
@@ -352,7 +353,7 @@ export function computeAll(game) {
       if (p.AddReplacementEffects) grantAbilities(ch, p.AddReplacementEffects, st.svars, st.host, 'R', 's' + st.host.id + st.key);
       if (p.AddSVar) for (const n of p.AddSVar.split(' & ')) if (st.svars[n]) ch.svars = { ...ch.svars, [n]: st.svars[n] };
       // "CARDNAME has all activated abilities of all lands on the battlefield"
-      if (p.GainsAbilitiesOf) {
+      if (p.GainsAbilitiesOf && !p.GainsAbilitiesOfZones) {
         const types = p.GainsAbilitiesOf.split(',').map(x => x.trim());
         for (const x of bf) {
           if (x.id === c.id || x.phasedOut) continue;
@@ -394,6 +395,9 @@ export function computeAll(game) {
   }
   // layer 7a/7b: base & set P/T
   for (const c of all) { const ch = map.get(c.id); applyOwnMods(game, c, ch, 7); }
+  // card-script params (mech-params.js): abilities gained from other cards, Blood Sun, can't-have keywords, names
+  paramAbilitiesLayer(game, active, map, (st, ctx) => affectedCards(game, st, ctx, map), c => map.get(c.id) || lazy(game, c));
+  paramFinalLayer(game, active, map, (st, ctx) => affectedCards(game, st, ctx, map), c => map.get(c.id) || lazy(game, c));
   for (const { st, ctx } of active) {
     const p = st.parsed.p;
     if (!(p.SetPower || p.SetToughness)) continue;

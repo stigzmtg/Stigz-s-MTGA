@@ -243,8 +243,13 @@ export class AIAgent {
   scoreCast(game, pid, a, ctx) {
     const card = game.cardById(a.cardId);
     if (!card) return 0;
-    const opt = spellOptions(game, pid, card).find(o => o.key === a.optionKey);
+    const all = spellOptions(game, pid, card);
+    const opt = all.find(o => o.key === a.optionKey);
     if (!opt) return 0;
+    // a cost in life (Bolas's Citadel) only with life to spare; a free way to cast it (Omniscience, Aluren) over paying
+    const lifeCost = /PayLife<(\d+)>/.exec(opt.altManaStr || '');
+    if (lifeCost && game.players[pid].life - +lifeCost[1] < 8) return 0;
+    if (!opt.withoutMana && all.some(o => o.withoutMana && o.face === opt.face && !o.land && o.key !== opt.key)) return 0;
     const face = card.def.faces[opt.face] || card.def.faces[0];
     // (printed flash, or given: Leyline of Anticipation, Yeva's green creatures)
     const isInstantSpeed = face.types.includes('Instant') || !!opt.mayFlash || hasFlash(game, card, face);
@@ -659,6 +664,18 @@ export class AIAgent {
       return pick(cards.slice().sort((a, b) => score(b) - score(a)), 1);
     }
     if (purpose === 'pair') return pick(cards.slice().sort((a, b) => v(b) - v(a)), 1);
+    // "discard two cards unless you discard an artifact card": the one card when it's worth no more than the others
+    if (purpose === 'discardUnless') {
+      const one = cards.slice().sort((a, b) => v(a) - v(b))[0];
+      const others = p.hand.filter(c => c !== one).map(v).sort((a, b) => a - b).slice(0, req.n || 2).reduce((a, b) => a + b, 0);
+      return v(one) <= others + 1 ? [one.id] : [];
+    }
+    // two piles (Fact or Fiction): the other player picks one, so even them out by value
+    if (purpose === 'separatePiles') {
+      const piles = [[], []], sum = [0, 0];
+      for (const c of cards.slice().sort((a, b) => v(b) - v(a))) { const i = sum[0] <= sum[1] ? 0 : 1; piles[i].push(c.id); sum[i] += Math.max(0.5, v(c)); }
+      return piles[0];
+    }
     if (purpose === 'pile') {
       // spread value evenly over the piles: one of them is lost at random
       const left = (req.piles || 3) - (req.pile || 1) + 1;
@@ -733,6 +750,19 @@ export class AIAgent {
   option(game, pid, req) {
     const opts = req.options || [];
     if (!opts.length) return null;
+    // two piles: the more valuable one when the chosen pile is kept, else the less valuable one
+    if (req.purpose === 'choosePile' && req.piles) {
+      const worth = ids => ids.reduce((a, id) => a + Math.max(0.5, this.value(game.cardById(id))), 0);
+      const [a, b] = req.piles.map(worth);
+      return (req.good === false ? a <= b : a >= b) ? opts[0].value : opts[1].value;
+    }
+    // where a card goes: ours to the battlefield, else the hand, else the top of the library; someone else's the other way
+    if (req.purpose === 'altDestination' && req.dests) {
+      const rank = d => ({ battlefield: 5, hand: 4, top: 3, library: 2, graveyard: 1, exile: 0, bottom: 0 })[d] ?? 1;
+      const mine = !(req.cards || []).some(id => { const c = game.cardById(id); return c && c.owner !== pid; });
+      const better = rank(req.dests[1]) > rank(req.dests[0]);
+      return better === mine ? opts[1].value : opts[0].value;
+    }
     if (req.purpose === 'chooseType') {
       const counts = {};
       for (const c of game.allCards()) if (c.owner === pid) { const ch = game.chars(c); if (ch.types.has('Creature')) for (const t of ch.subtypes) counts[t] = (counts[t] || 0) + 1; }
