@@ -12,7 +12,7 @@ import { tapPowerValue } from './filters.js';
 import { cantCrew, crewedBy, crewPowers, crewPick } from './mech-combat.js';
 import { payLifeReplaced, mustTargetCands, mustTargetFix, noteActivation, activationsUsed, spellResolved } from './mech-classic.js';
 import { cantPlayLand, cantAttach, cantPayLife, lifeForMana, ignoresHexproof, activationLimit } from './mech-classic-rules.js';
-import { bindLast, lastActivatorOk, lastCantTarget, lastAltOptionExtras, lastAltCostOptions, lastAnnounceOk, lastAnnounce, lastSourceUnits, lastSpellText, lastSpellView } from './mech-last.js';
+import { bindLast, lastActivatorOk, lastCantTarget, lastAltOptionExtras, lastAltCostOptions, lastAnnounceOk, lastAnnounce, lastSourceUnits, lastSpellText, lastSpellView, lastNoManaAbilities } from './mech-last.js';
 
 export class Cancelled extends Error { constructor() { super('cancelled'); this.cancelled = true; } }
 
@@ -560,6 +560,7 @@ async function applyCostParts(game, sa, cost, choices) {
 
 // ---------------------------------------------------------------- mana sources & payment
 export function manaAbilitiesOf(game, card) {
+  if (lastNoManaAbilities(game, card)) return []; // "its activated abilities can't be activated" (mech-last.js)
   return game.chars(card).abilities.filter(a => (a.parsed.api === 'Mana' || a.parsed.api === 'ManaReflected') && a.parsed.kind === 'AB');
 }
 

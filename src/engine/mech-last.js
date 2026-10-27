@@ -154,7 +154,7 @@ async function Vote(game, sa) {
     opts = resolveDefined(game, p.VotePlayer === 'Other' ? 'Player' : p.VotePlayer, ctx).filter(o => o && o.isPlayer && !o.lost);
   }
   if (!kind || !opts.length) return;
-  const what = p.VoteMessage || (kind === 'choice' ? opts.map(n => choiceLabel(game, sa, n)).join(' or ') : kind === 'card' ? 'a card' : 'a player');
+  const what = p.VoteMessage || `for ${kind === 'choice' ? opts.map(n => choiceLabel(game, sa, n)).join(' or ') : kind === 'card' ? 'a card' : 'a player'}`;
   const ctl = voteController(game);
   const secret = p.Secretly === 'True';
   const votes = {}; // player id -> the keys they voted for (the Vote trigger's "voted for a choice you voted for")
@@ -167,13 +167,16 @@ async function Vote(game, sa) {
     let n = 1 + playerStaticTotal(game, pl.id, 'AdditionalVote');
     const optional = playerStaticTotal(game, pl.id, 'AdditionalOptionalVote');
     if (optional > 0) {
-      const k = await game.ask(pl.id, { type: 'number', prompt: `${game.name(host)}: you may vote ${optional > 1 ? 'up to ' + optional + ' additional times' : 'an additional time'}. How many more votes?`, min: 0, max: optional, purpose: 'extraVotes', sa });
+      // (one more: yes or no; several: how many)
+      const k = optional === 1
+        ? ((await game.ask(pl.id, { type: 'confirm', prompt: `${game.name(host)}: vote an additional time?`, purpose: 'extraVotes', sa })) ? 1 : 0)
+        : await game.ask(pl.id, { type: 'number', prompt: `${game.name(host)}: you may vote up to ${optional} additional times. How many more votes?`, min: 0, max: optional, purpose: 'extraVotes', sa });
       n += Math.max(0, Math.min(optional, +k || 0));
     }
     const voter = ctl != null && !game.players[ctl].lost ? ctl : pl.id;
     for (let i = 0; i < n; i++) {
-      const tag = `${voter !== pl.id ? `for ${pl.name}, ` : ''}${n > 1 ? `vote ${i + 1} of ${n}, ` : ''}`;
-      const base = { prompt: `${game.name(host)} — ${tag}vote for ${what}`, sa, purpose: 'vote', forPlayer: pl.id, voteKind: kind };
+      // "Capital Punishment: vote (1 of 2) for Death or Taxes", "Council's Judgment: B's vote for a nonland permanent ..."
+      const base = { prompt: `${game.name(host)}: ${voter !== pl.id ? `${pl.name}'s vote` : 'vote'}${n > 1 ? ` (${i + 1} of ${n})` : ''} ${what}`, sa, purpose: 'vote', forPlayer: pl.id, voteKind: kind };
       let v = null;
       if (kind === 'choice') {
         const ans = await game.ask(voter, { ...base, type: 'option', options: mine.map(n2 => ({ label: choiceLabel(game, sa, n2), value: n2 })) });
@@ -318,7 +321,7 @@ export async function lastAnnounce(game, pid, card, opt, sa, extra) {
   const xs = announceValues(game, sa, extra);
   if (!xs.length) return false;
   const name = card.def.faces[opt.face || 0].name;
-  const x = xs.length === 1 ? xs[0] : await game.ask(pid, { type: 'option', prompt: `${name}: announce X (the rest of its alternative cost is paid with X)`, options: xs.map(v => ({ label: `X = ${v}`, value: v })), purpose: 'announceX', sa, cardId: card.id, cancellable: true });
+  const x = xs.length === 1 ? xs[0] : await game.ask(pid, { type: 'option', prompt: `${name}: announce X for its alternative cost`, options: xs.map(v => ({ label: `X = ${v}`, value: v })), purpose: 'announceX', sa, cardId: card.id, cancellable: true });
   if (x == null) throw new AB.Cancelled();
   sa.x = xs.includes(x) ? x : xs[xs.length - 1];
   return true;
@@ -651,6 +654,21 @@ export function lastCantTarget(game, s, obj, sa, you) {
   return true;
 }
 
+// ================================================================ mana abilities that can't be activated
+// "Enchanted creature ... its activated abilities can't be activated" (Lost in Thought, Volrath's Curse, Arrest): mana
+// abilities too, unless the static leaves them out (Pithing Needle: ValidSA$ Activated.!ManaAbility) or only stops
+// other kinds (loyalty, cycling, ...)
+export function lastNoManaAbilities(game, card) {
+  if (!card || card.zone !== 'battlefield') return false;
+  return game.activeStatics('CantBeActivated').some(s => {
+    const v = s.p.ValidSA;
+    if (v && v !== 'Activated' && v !== 'Activated.hasTapCost') return false;
+    if (s.p.AffectedZone && !s.p.AffectedZone.split(',').map(Z).includes('battlefield')) return false;
+    if (s.p.Activator && !matchValid(game, game.players[card.controller], s.p.Activator, s.ctx)) return false;
+    return matchValid(game, card, s.p.ValidCard || 'Card', s.ctx);
+  });
+}
+
 // ================================================================ lethal damage by power
 // Zilortha: "Lethal damage dealt to creatures you control is determined by their power rather than their toughness"
 export function lastLethalLayer(game, active, map, affected) {
@@ -668,7 +686,7 @@ export const LAST_EFFECTS = { InternalIgnoreEffect, Vote, VillainousChoice };
 // ================================================================ the computer's choices
 // ai.js choose: votes, extra votes, the announced X
 export function aiLast(ai, game, pid, req) {
-  if (req.purpose === 'extraVotes') return req.max;
+  if (req.purpose === 'extraVotes') return req.type === 'confirm' ? true : req.max;
   if (req.purpose === 'announceX') return aiAnnounce(ai, game, pid, req);
   if (req.purpose !== 'vote' || !req.sa) return undefined;
   const sa = req.sa;

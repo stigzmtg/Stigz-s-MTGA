@@ -3,7 +3,7 @@
 // Panharmonicon for every trigger mode, snow mana of any color, text-changing effects, Wall of Shadows and Zilortha.
 // Usage: node tools/mech-last.mjs [name-filter]
 import { setup, expect, run, db } from './lib/testkit.mjs';
-import { castSpell, refOf, activatedAbilities, castableOptions, canActivate, targetCandidates, targetSpec, getActions, makeSA, resolveChain } from '../src/engine/abilities.js';
+import { castSpell, refOf, activatedAbilities, castableOptions, canActivate, targetCandidates, targetSpec, getActions, makeSA, resolveChain, manaAbilitiesOf } from '../src/engine/abilities.js';
 import * as combat from '../src/engine/combat.js';
 import { analyzeCard } from '../src/engine/support.js';
 
@@ -80,11 +80,13 @@ test('Volrath\'s Curse: its controller sacrifices a permanent and the creature c
   const elf = await T.put(0, 'Llanowar Elves');
   const curse = await T.put(1, "Volrath's Curse", 'battlefield', { attachTo: elf.id });
   expect(!combat.canBlockAny(T.game, elf) && !combat.canAttack(T.game, elf), 'can\'t attack or block');
+  expect(!manaAbilitiesOf(T.game, elf).length, 'nor tap for mana (a mana ability is an activated ability)');
   const tok = await T.put(0, 'Plains');
   T.a.on('costSac', req => [tok.id]);
   await T.activate(curse, 0, a => a.parsed.api === 'InternalIgnoreEffect');
   expect(tok.zone === 'graveyard', 'sacrificed the land');
   expect(combat.canBlockAny(T.game, elf) && combat.canAttack(T.game, elf), 'can attack and block again');
+  expect(manaAbilitiesOf(T.game, elf).length === 1, 'and tap for mana');
 });
 test('AI: pays Leonin Arbiter\'s {2} before a search, never for nothing', async T => {
   const arb = await T.put(1, 'Leonin Arbiter');
@@ -201,7 +203,7 @@ test('Security Rhox: {R}{G} instead, only with mana from Treasures', async T => 
 
 // ------------------------------------------------------------ votes
 test('Tivit: each player votes; Tivit\'s controller may vote an additional time; one Clue or Treasure per vote', async T => {
-  T.a.on('extraVotes', req => req.max).on('vote', () => 'DBBribery');
+  T.a.on('extraVotes', req => { expect(req.type === 'confirm', 'one more vote: yes or no'); return true; }).on('vote', () => 'DBBribery');
   T.b.on('vote', () => 'DBEvidence');
   await T.cast('Tivit, Seller of Secrets');
   const toks = T.tokens(0);
@@ -213,7 +215,7 @@ test('Brago\'s Representative and Ballot Broker: an additional vote, an optional
   await T.put(1, 'Ballot Broker');
   let asked = 0;
   T.a.on('vote', () => 'DBVoteDeath');
-  T.b.on('extraVotes', req => { asked++; return 1; }).on('vote', () => 'DBVoteTaxes');
+  T.b.on('extraVotes', req => { asked++; return true; }).on('vote', () => 'DBVoteTaxes');
   for (let i = 0; i < 3; i++) await T.put(1, 'Grizzly Bears');
   for (let i = 0; i < 3; i++) await T.put(1, 'Island', 'hand');
   await T.cast('Capital Punishment');
@@ -239,7 +241,7 @@ test('The Valeyard: opponents face a villainous choice twice; it votes an additi
   await T.cast('Sycorax Commander');
   expect(n === 2, `B chose twice (${n})`);
   expect(T.logged(/chooses/), 'the choices were logged');
-  T.a.on('extraVotes', req => req.max);
+  T.a.on('extraVotes', () => true);
   let votes = 0;
   T.a.on('vote', () => { votes++; return 'DBVoteTaxes'; });
   await T.cast('Capital Punishment');
