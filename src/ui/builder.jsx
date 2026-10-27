@@ -9,7 +9,7 @@ import { buildIndex, BASICS, deckProblems, canPair, loadCustomDecks, saveCustomD
 import { Modal } from './dialogs.jsx';
 import { onClaude } from '../net/roomclient.js';
 import { createDeckGuide } from './deckguide.js';
-import { parseDeckText, countCards, deckToText } from './decktext.js';
+import { parseDeckText, countCards, deckToText, packDeckLink } from './decktext.js';
 import { loadAllCards, subscribeAllCards, allCardsVersion, allCardsLoaded, allCardsProgress, cardMeta, fullPoolHere } from './allcards.js';
 import { CardSheet, HoverCard, useHoverPreview, CardTile } from './buildercard.jsx';
 import { CardSearch, CommanderPicker, PreconPicker } from './builderfind.jsx';
@@ -159,7 +159,7 @@ function StartPanel({ onPick, onPrecon, onImport, commanders, waiting }) {
   );
 }
 
-export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
+export function DeckBuilder({ data, editId, fromId, shared, onDone, onPlay, onHome }) {
   useSyncExternalStore(subscribeImages, imagesVersion);
   // the whole card pool loads as the builder opens (the precons' cards are there at once)
   useSyncExternalStore(subscribeAllCards, allCardsVersion);
@@ -226,7 +226,7 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
   const [groupBy, setGroupBy] = useState('type');
   const [sheet, setSheet] = useState(null);
   const [req, setReq] = useState(null);
-  const [importing, setImporting] = useState(null);   // null, or { text, mode } to open the paste dialog with
+  const [importing, setImporting] = useState(() => (shared ? { text: shared, mode: 'replace' } : null));   // null, or { text, mode } to open the paste dialog with
   const [precons, setPrecons] = useState(false);
   const [toast, setToast] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -283,6 +283,15 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
     for (let i = 0, left2 = need - n.reduce((a, b) => a + b, 0); left2 > 0; i++, left2--) n[i % n.length]++;
     setCards(m => { const next = new Map(m); colors.forEach((x, i) => { const land = x === 'C' ? 'Wastes' : BASIC_FOR[x]; if (n[i]) next.set(land, (next.get(land) || 0) + n[i]); }); return next; });
     flash(`Added ${need} basic land${need === 1 ? '' : 's'}.`);
+  };
+  // a link to this deck: whoever opens it gets a copy to keep (the website's address, also from the claude.ai page)
+  const shareLink = async () => {
+    try {
+      const code = await packDeckLink({ name: deck.name, commanders, cards: list });
+      const base = onClaude() ? 'https://lotusgoats.com/' : location.origin + location.pathname;
+      await navigator.clipboard.writeText(`${base}#deck-${code}`);
+      flash('Link copied: whoever opens it gets a copy of this deck.');
+    } catch { flash('Copying isn’t allowed here.'); }
   };
   const copyList = () => {
     const text = deckToText({ commanders, cards: list });
@@ -402,6 +411,7 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
                 <div className="b-acts">
                   {start.saved || savedAt ? (confirmDelete ? <button className="btn sm danger" onClick={() => { dirty.current = false; deleteCustomDeck(id); onDone(); }}>Delete for good?</button> : <button className="btn sm ghost" onClick={() => setConfirmDelete(true)}>Delete</button>) : null}
                   <button className="btn sm" onClick={copyList} disabled={!list.length}>Copy list</button>
+                  <button className="btn sm" onClick={shareLink} disabled={!commanders.length} title="Copy a link that gives anyone a copy of this deck">Share link</button>
                   <button className="btn primary" onClick={() => onPlay(saveNow())} disabled={!ready} title={ready ? 'Play a game with this deck' : 'Finish the deck first'}>Play this deck</button>
                 </div>
               </div>

@@ -194,3 +194,27 @@ export const countCards = cards => [...cards.values()].reduce((a, b) => a + b, 0
 export function deckToText(deck) {
   return ['Commander', ...deck.commanders.map(n => `1 ${n}`), '', 'Deck', ...deck.cards.map(([n, k]) => `${k} ${n}`)].join('\n');
 }
+
+// ---- a deck in a link (lotusgoats.com/#deck-…): its name and list as JSON, deflated where the platform can, in
+// URL-safe base64 ("z…" compressed, "j…" plain). Opening the link shows the deck in the paste dialog to keep.
+const b64 = bytes => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const unb64 = str => { const s = atob(str.replace(/-/g, '+').replace(/_/g, '/')); const out = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i); return out; };
+const through = async (bytes, stream) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+export async function packDeckLink(deck) {
+  const bytes = new TextEncoder().encode(JSON.stringify({ n: deck.name || '', c: deck.commanders, l: deck.cards }));
+  if (typeof CompressionStream === 'function') { try { return 'z' + b64(await through(bytes, new CompressionStream('deflate-raw'))); } catch { /* plain instead */ } }
+  return 'j' + b64(bytes);
+}
+// -> { name, commanders, cards } or null when it isn't a deck link
+export async function unpackDeckLink(str) {
+  const s = String(str || '').trim();
+  if (!/^[zj][A-Za-z0-9_-]+$/.test(s)) return null;
+  try {
+    let bytes = unb64(s.slice(1));
+    if (s[0] === 'z') bytes = await through(bytes, new DecompressionStream('deflate-raw'));
+    const v = JSON.parse(new TextDecoder().decode(bytes));
+    if (!v || !Array.isArray(v.c) || !Array.isArray(v.l)) return null;
+    const cards = v.l.filter(x => Array.isArray(x) && typeof x[0] === 'string' && x[1] > 0).map(([n, k]) => [n.slice(0, 200), Math.min(99, k | 0)]);
+    return { name: String(v.n || '').slice(0, 60), commanders: v.c.filter(n => typeof n === 'string').slice(0, 2), cards: cards.slice(0, 200) };
+  } catch { return null; }
+}

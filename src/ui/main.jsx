@@ -21,6 +21,7 @@ import { applyMotion } from './motion.js';
 import { loadCustomDecks, findDeck, registerDeck, unpackDeck, packDeck, customDeck } from './customdecks.js';
 import { DeckBuilder } from './builder.jsx';
 import { prepareDecks } from './allcards.js';
+import { unpackDeckLink, deckToText } from './decktext.js';
 import { myAvatar } from './avatar.jsx';
 import { savedStyle } from './deckstyle.jsx';
 import { initSaveCodes } from './savecode.js';
@@ -246,6 +247,23 @@ function MtgApp({ onHome }) {
     if (cur && (cur.game !== cfg.game || !cfg.started) && !session.game.over) { endSession(session); setSession(null); setToast('The host ended the game.'); }
   }, [all, room, cfg && cfg.game, cfg && cfg.started, decksKnown]);
 
+  // a shared deck (#deck-…): opens in the builder's paste dialog, to keep as one of your decks
+  useEffect(() => {
+    if (!data) return;
+    const open = () => {
+      if (!/^#deck-/.test(location.hash)) return;
+      const code = location.hash.slice(6);
+      try { history.replaceState(null, '', '#mtg'); } catch { /* sandboxed frame */ }
+      unpackDeckLink(code).then(d => {
+        if (!d) { setToast('That deck link is broken: ask for a new one.'); return; }
+        setBuilder({ id: null, shared: `About\nName ${d.name}\n\n${deckToText(d)}`, at: Date.now() });
+      });
+    };
+    open();
+    window.addEventListener('hashchange', open);
+    return () => window.removeEventListener('hashchange', open);
+  }, [data]);
+
   // a replay picked on the home screen
   useEffect(() => {
     if (!data) return;
@@ -269,7 +287,7 @@ function MtgApp({ onHome }) {
       room.setExtra({ dk: d && !onClaude() ? packDeck(d) : null, sl: st.s, bx: st.b });
     },
   };
-  if (builder) return <DeckBuilder data={all} editId={builder.id} fromId={builder.from}
+  if (builder) return <DeckBuilder key={builder.at || 0} data={all} editId={builder.id} fromId={builder.from} shared={builder.shared}
     onHome={onHome}
     onDone={() => { setBuilder(null); setCustomVersion(v => v + 1); }}
     onPlay={deck => { try { const s = JSON.parse(safeStorage.getItem('pa-lobby') || '{}'); safeStorage.setItem('pa-lobby', JSON.stringify({ ...s, mine: deck.id })); } catch { /* storage blocked */ } setBuilder(null); setCustomVersion(v => v + 1); }} />;
@@ -291,7 +309,7 @@ function MtgApp({ onHome }) {
 // Pokémon, #op-abc123 for One Piece), else the home screen
 function gameFromHash() {
   const h = location.hash.slice(1);
-  if (isRoomCode(h) || h === 'mtg') return 'mtg';
+  if (isRoomCode(h) || h === 'mtg' || /^deck-/.test(h)) return 'mtg';
   if (h === 'pokemon' || pkRoomFromHash()) return 'pokemon';
   if (h === 'onepiece' || opRoomFromHash()) return 'onepiece';
   return null;

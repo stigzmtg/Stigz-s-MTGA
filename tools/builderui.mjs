@@ -16,6 +16,7 @@ let pass = 0, fail = 0;
 const ok = (c, msg) => { if (c) pass++; else { fail++; console.log('FAIL', msg); } };
 async function page(name, width, height) {
   const ctx = await browser.newContext({ viewport: { width, height } });
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(BASE).origin }).catch(() => {});
   await ctx.addInitScript(() => { try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'fast' })); } catch { /* blocked */ } });
   const p = await ctx.newPage();
   p.on('pageerror', e => errors.push(`${name}: ${e.message}`));
@@ -173,6 +174,18 @@ ok(await total(P) === 100, 'a precon copy has all 100 cards');
 ok(/\(my version\)/.test(await P.inputValue('.deckname')), 'named as your version');
 await P.waitForTimeout(800);
 await P.screenshot({ path: `${OUT}/13-precon-copy.png` });
+// share it: the link gives a copy of the deck to whoever opens it
+await P.click('.b-acts button:has-text("Share link")');
+await P.waitForSelector('.toast:has-text("Link copied")');
+const link = await P.evaluate(() => navigator.clipboard.readText());
+ok(/#deck-[zj][A-Za-z0-9_-]+$/.test(link) && link.length < 2500, `a share link (${link.length} characters)`);
+const S = await page('shared', 1440, 900);
+await S.goto(link.replace(/^https?:\/\/[^/]+\//, BASE));
+await S.waitForSelector('.imp-out .imp-sum', { timeout: 60000 });
+ok(/^100 cards read/.test((await S.textContent('.imp-out')).trim()), 'opening the link shows the deck, ready to keep');
+await S.click('.dialog .dlg-actions .btn.primary');
+await S.waitForSelector('.b-deck');
+ok(await total(S) === 100 && /\(my version\)/.test(await S.inputValue('.deckname')), 'and keeps it with its name');
 
 // ---- a pasted list to start a deck: printings, foil marks and categories, a typo, a card the game doesn't have
 const typoable = n => n.length > 12 && !/[^a-z ,']/i.test(n) && n[5] !== n[6] && !/[ ,']/.test(n[5] + n[6]);
