@@ -1,6 +1,6 @@
 // Implementations of Forge ability APIs ("DB$ Draw", "SP$ Destroy", ...).
 import { parseAbility } from './forge.js';
-import { PARAMS_EFFECTS, beforeEffect, afterEffect } from './mech-params.js';
+import { PARAMS_EFFECTS, beforeEffect, afterEffect, discardUnlessType } from './mech-params.js';
 import { matchValid, resolveDefined, calc, calcCtx, ctxOf, findTargets, liveOrLki, ctrlOf, zoneMap, compareSpec, isPlayer } from './filters.js';
 import { SA, makeSA, resolveChain, chooseTargetsForSA, castSpell, castableOptions, spellOptions, refOf, fromRef, canAfford, payManaCost, parseCost, chooseModes, targetSpec, targetCandidates, producedUnits, buildSpellSA, humanValid, canPayNonMana, payCostParts, rollDice, costLabel as costLabelOf } from './abilities.js';
 import { normalizeCounter, counterName } from './game.js';
@@ -197,6 +197,7 @@ export const E = {
     const who = playersOf(objs(game, sa, 'You'));
     const mode = sa.p.Mode || 'TgtChoose';
     for (const p of who) {
+      if (sa.p.UnlessType && await discardUnlessType(game, sa, p)) continue; // "unless you discard an artifact card" (mech-params.js)
       const valid = sa.p.DiscardValid || 'Card';
       const pool = p.hand.filter(c => matchValid(game, c, valid, ctxOf(game, sa)));
       let n = sa.p.NumCards === 'All' ? pool.length : num(game, sa, 'NumCards', 1);

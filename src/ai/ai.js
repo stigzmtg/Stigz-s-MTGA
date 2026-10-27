@@ -626,6 +626,12 @@ export class AIAgent {
       return pick(cards.slice().sort((a, b) => score(b) - score(a)), 1);
     }
     if (purpose === 'pair') return pick(cards.slice().sort((a, b) => v(b) - v(a)), 1);
+    // "discard two cards unless you discard an artifact card": the one card when it's worth no more than the others
+    if (purpose === 'discardUnless') {
+      const one = cards.slice().sort((a, b) => v(a) - v(b))[0];
+      const others = p.hand.filter(c => c !== one).map(v).sort((a, b) => a - b).slice(0, req.n || 2).reduce((a, b) => a + b, 0);
+      return v(one) <= others + 1 ? [one.id] : [];
+    }
     // two piles (Fact or Fiction): the other player picks one, so even them out by value
     if (purpose === 'separatePiles') {
       const piles = [[], []], sum = [0, 0];

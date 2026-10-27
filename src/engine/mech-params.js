@@ -411,6 +411,37 @@ function pileIsGood(sa, name) {
   return true;
 }
 
+// "Then discard two cards unless you discard an artifact card" (Thirst for Knowledge, Compulsive Research, Wrench
+// Mind, Tezzeret, Bandit's Talent): UnlessType$ on Discard. Called for each player in effects.js Discard; a player
+// with a card of that type may discard just that one. True when they did (Discard then skips them).
+export async function discardUnlessType(game, sa, p) {
+  if ((sa.p.Mode || 'TgtChoose') !== 'TgtChoose') return false;
+  const ctx = ctxOf(game, sa);
+  const fits = p.hand.filter(c => matchValid(game, c, sa.p.UnlessType, ctx));
+  if (!fits.length) return false;
+  const n = sa.p.NumCards && /^\d+$/.test(sa.p.NumCards) ? +sa.p.NumCards : +calcCtx(game, sa.p.NumCards || '1', ctx) || 1;
+  if (p.hand.length <= 1 && n >= 1) return false; // the same card either way
+  const words = typeWords(sa.p.UnlessType);
+  const ids = await game.ask(p.id, { type: 'cards', prompt: `Discard one ${words} instead of ${n} cards? (choose none to discard ${n})`, cards: fits.map(c => c.id), min: 0, max: 1, sa, purpose: 'discardUnless', n });
+  const c = (ids || []).map(id => game.cardById(id)).find(x => x && fits.includes(x));
+  if (!c) return false;
+  await game.discard(c, sa);
+  if (sa.p.RememberDiscarded === 'True' && sa.host) { sa.host.remembered = sa.host.remembered || []; sa.host.remembered.push(c); }
+  sa.root().paid.Discarded = (sa.root().paid.Discarded || []).concat([c]);
+  return true;
+}
+// "Land.Basic" -> "basic Land card", "Card.nonLand" -> "nonland card", "Creature.withFlying,Instant" -> "Creature with
+// flying or Instant card"
+function typeWords(spec) {
+  const words = String(spec).split(',').map(alt => {
+    const [t, ...qs] = alt.trim().split('.');
+    const pre = [], post = [];
+    for (const q of qs) (/^with/.test(q) ? post.push('with ' + q.slice(4).toLowerCase()) : pre.push(q.toLowerCase()));
+    return [...pre, t === 'Card' ? 'card' : t, ...post].join(' ');
+  }).join(' or ');
+  return /card$/.test(words) ? words : `${words} card`;
+}
+
 // ---------------------------------------------------------------- modes (abilities.js chooseModes)
 // ChoiceRestriction$ ThisTurn / ThisGame: "choose one that hasn't been chosen this turn" (Monument to Endurance, Gala
 // Greeters, Galadriel), "... that hasn't been chosen" (Silent Hallcreeper): per object and ability

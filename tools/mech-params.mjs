@@ -714,6 +714,31 @@ test('LoseMana replacements: under Omnath, Locus of All unspent mana becomes bla
 });
 
 // ------------------------------------------------------------ misc
+test('Discard UnlessType: Thirst for Knowledge discards one artifact card, or two cards; Wrench Mind on a target player', async T => {
+  const g = T.game;
+  const ring = await T.put(0, 'Sol Ring', 'hand');
+  let req = null;
+  T.a.on('discardUnless', r => { req = r; return [ring.id]; });
+  const hand = T.A.hand.length;
+  await T.cast('Thirst for Knowledge');
+  expect(req && req.cards.length === 1 && /artifact card/i.test(req.prompt), `asked for an artifact card (${req && req.prompt})`);
+  expect(ring.zone === 'graveyard' && T.A.hand.length === hand + 3 - 1, `discarded just Sol Ring (${ring.zone}, ${T.A.hand.length - hand})`);
+  // no: two cards
+  const ring2 = await T.put(0, 'Sol Ring', 'hand');
+  T.a.on('discardUnless', () => []);
+  T.a.on('discard', r => r.cards.filter(id => id !== ring2.id).slice(0, 2));
+  const h2 = T.A.hand.length;
+  await T.cast('Thirst for Knowledge');
+  expect(ring2.zone === 'hand' && T.A.hand.length === h2 + 3 - 2, `discarded two others (${T.A.hand.length - h2})`);
+  // Wrench Mind: the target player chooses; without an artifact card they discard two
+  for (let i = 0; i < 3; i++) await T.put(1, 'Forest', 'hand');
+  const mox = await T.put(1, 'Mox Opal', 'hand');
+  T.a.on('targets', () => ['p1']);
+  T.b.on('discardUnless', () => [mox.id]);
+  const hb = T.B.hand.length;
+  await T.cast('Wrench Mind');
+  expect(mox.zone === 'graveyard' && T.B.hand.length === hb - 1, `the opponent discarded only Mox Opal (${T.B.hand.length - hb})`);
+});
 test('RollDice ResultSVar: Bucknard\'s Everfull Purse makes as many Treasures as the roll', async T => {
   const g = T.game;
   const purse = await T.put(0, "Bucknard's Everfull Purse");
