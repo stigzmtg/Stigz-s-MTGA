@@ -99,7 +99,7 @@ export function classicCardProp(game, card, ch, prop, ctx) {
     // dealt damage by the source this turn (Bone Shaman)
     case 'DamagedBy': return !!host && game.turnState.damageLog.some(e => e.card === card.id && e.source === host.id);
     case 'setARN': return ARABIAN_NIGHTS.has(ch.name || card.def.name);
-    case 'NamedCard': return !!host && !!host.chosen && !!host.chosen.name && host.chosen.name === ch.name;
+    case 'NamedCard': return !!host && !!host.chosen && !!ch.name && (host.chosen.name === ch.name || (host.chosen.names || []).includes(ch.name));
     case 'IsSuspected': return !!card.suspected;
     // (a phased-out permanent's "phasedOut..." properties were already turned into the plain ones by phasedOutProps)
     default: return false;

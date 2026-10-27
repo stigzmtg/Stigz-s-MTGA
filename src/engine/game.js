@@ -256,7 +256,7 @@ export class Game {
     const via = deciderFor(this, pid);
     const agent = this.agents[via];
     req.player = pid;
-    if (via !== pid) req.decider = via;
+    if (via !== pid) { req.decider = via; if (req.prompt) req.prompt = `For ${this.players[pid].name}: ${req.prompt}`; }
     this.pendingAsk = { pid, req };
     this.notify();
     let ans;

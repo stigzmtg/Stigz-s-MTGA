@@ -241,18 +241,20 @@ async function play(game, entry, applyOps, type) {
 }
 
 // your own seat: the UI decides (or the log, while replaying after a reload)
+// (a decision for a player whose turn another controls, req.decider, is that controller's seat's: Mindslaver)
 export class LocalSeatAgent {
   constructor(net, inner, applyOps, takeOps) { this.net = net; this.inner = inner; this.applyOps = applyOps; this.takeOps = takeOps; }
   async ask(game, pid, req) {
     const seq = this.net.nextSeq();
+    const seat = req.decider ?? pid;
     const logged = this.net.log.get(seq);
     if (logged) return play(game, logged, this.applyOps, req.type);
-    if (this.net.producerOf(pid, seq) !== this.net.cid) { // the host took over this seat
-      for (;;) { const e = await this.net.wait(seq, pid); if (e) return play(game, e, this.applyOps, req.type); }
+    if (this.net.producerOf(seat, seq) !== this.net.cid) { // the host took over this seat
+      for (;;) { const e = await this.net.wait(seq, seat); if (e) return play(game, e, this.applyOps, req.type); }
     }
     const v = await this.inner.ask(game, pid, req);
     const ops = this.takeOps ? this.takeOps() : null; // already applied here when clicked
-    this.net.publish(seq, pid, v, ops, req.type);
+    this.net.publish(seq, seat, v, ops, req.type);
     return unpackValue(packValue(v, req.type), req.type);
   }
 }
@@ -262,11 +264,12 @@ export class RemoteSeatAgent {
   constructor(net, applyOps, ai) { this.net = net; this.applyOps = applyOps; this.ai = ai; }
   async ask(game, pid, req) {
     const seq = this.net.nextSeq();
+    const seat = req.decider ?? pid;
     const logged = this.net.log.get(seq);
     if (logged) return play(game, logged, this.applyOps, req.type);
     for (;;) {
-      if (this.ai && this.net.producerOf(pid, seq) === this.net.cid) return decideWithAI(this.net, this.ai, game, pid, req, seq);
-      const entry = await this.net.wait(seq, pid);
+      if (this.ai && this.net.producerOf(seat, seq) === this.net.cid) return decideWithAI(this.net, this.ai, game, pid, req, seq);
+      const entry = await this.net.wait(seq, seat);
       if (entry) return play(game, entry, this.applyOps, req.type);
     }
   }
@@ -288,6 +291,6 @@ async function decideWithAI(net, ai, game, pid, req, seq) {
   const uid = game.uid, nextId = game.nextId;
   const v = await ai.ask(game, pid, req);
   game.uid = uid; game.nextId = nextId;
-  net.publish(seq, pid, v, null, req.type);
+  net.publish(seq, req.decider ?? pid, v, null, req.type);
   return unpackValue(packValue(v, req.type), req.type);
 }

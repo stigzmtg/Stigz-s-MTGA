@@ -378,7 +378,7 @@ export function Mat({ game, pid, ctx, side, compact }) {
 // cards you can play from elsewhere sit after your hand with where they are (table.jsx: elsewhere)
 const FROM_LABEL = { graveyard: 'Graveyard', exile: 'Exile', library: 'Top of library' };
 
-export function Hand({ game, pid, ctx }) {
+export function Hand({ game, pid, ctx, whose = null }) {
   const p = game.players[pid];
   const box = useRef(null);
   const [w, setW] = useState(800);
@@ -401,10 +401,11 @@ export function Hand({ game, pid, ctx }) {
   const joins = n - 1 - (extra.length && p.hand.length ? 1 : 0);
   const overlap = joins > 0 && n * cw + joins * gap > room ? Math.floor(Math.max(-cw * 0.72, (room - n * cw) / joins)) : gap;
   return (
-    <div className="hand" ref={box} aria-label="Your hand" style={{ '--gap': `${overlap}px`, '--lift': `${Math.round(cw * 0.5)}px`, '--grow': `${Math.round(cw * 1.3)}px`, '--shift': `${-Math.round(cw * 0.15)}px` }}>
+    <div className={`hand ${whose ? 'controlled' : ''}`} ref={box} aria-label={whose ? `${whose}'s hand` : 'Your hand'} style={{ '--gap': `${overlap}px`, '--lift': `${Math.round(cw * 0.5)}px`, '--grow': `${Math.round(cw * 1.3)}px`, '--shift': `${-Math.round(cw * 0.15)}px` }}>
       {p.hand.map(c => <div key={c.id} className="handslot"><CardSlot card={c} ctx={ctx} size="hand" /></div>)}
       {extra.map(({ card, from }, i) => <div key={card.id} className={`handslot elsewhere ${i === 0 ? 'first' : ''}`} title={FROM_LABEL[from]}><span className="from">{FROM_LABEL[from]}</span><CardSlot card={card} ctx={ctx} size="hand" /></div>)}
-      {!n ? <span className="empty">Your hand is empty</span> : null}
+      {whose ? <span className="whose">{whose}'s hand</span> : null}
+      {!n ? <span className="empty">{whose ? `${whose}'s` : 'Your'} hand is empty</span> : null}
     </div>
   );
 }

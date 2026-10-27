@@ -574,6 +574,135 @@ test('Pay Echo trigger: Shah of Naar Isle lets each opponent draw up to three', 
   expect(s.zone === 'battlefield' && T.B.hand.length === h + 3, `echo paid, B drew three (${T.B.hand.length - h})`);
 });
 
+// ------------------------------------------------------------ more cards
+test('Game Drawn / wins: Celestial Convergence — the highest life total wins, a tie is a draw', async T => {
+  const c = await T.put(0, 'Celestial Convergence');
+  c.counters.OMEN = 1; T.B.life = 30;
+  try { await upkeep(T); } catch (e) { if (!/game over/.test(e.message)) throw e; }
+  expect(T.game.over && T.game.winner === 0, `A wins with the highest life (${T.game.winner})`);
+  const U = await setup();
+  const c2 = await U.put(0, 'Celestial Convergence');
+  c2.counters.OMEN = 1;
+  try { await upkeep(U); } catch (e) { if (!/game over/.test(e.message)) throw e; }
+  expect(U.game.over && U.game.winner == null, 'tied: a draw');
+});
+test('Bid Life: Mages\' Contest — you and the spell\'s controller bid; if you win, counter it', async T => {
+  T.game.priority = 1;
+  const bolt = await T.cast('Lightning Bolt', 1, { resolve: false });
+  T.b.on('bidLife', req => req.bid < 3);
+  T.b.on('bidRaise', () => 1);
+  T.a.on('bidLife', req => req.bid < 4);
+  T.a.on('bidRaise', () => 1);
+  T.a.on('targets', req => req.cands.filter(r => r[0] === 's').slice(0, 1));
+  T.game.priority = 0;
+  await T.cast("Mages' Contest", 0);
+  expect(bolt.zone === 'graveyard' && T.A.life === 36, `A won at 4 and countered the Bolt (${bolt.zone}, ${T.A.life})`);
+});
+test('Activations: power-up once; Wonder Man allows a second', async T => {
+  const d = await T.put(0, 'Aerial Doombot');
+  const pu = a => a.parsed.p.PowerUp;
+  await T.activate(d, 0, pu);
+  expect(d.counters.P1P1 === 3, 'powered up');
+  T.mana(0);
+  const abil = activatedAbilities(T.game, 0, d).find(pu);
+  T.game.turnState = T.game.freshTurnState(); d.abilityUses = {}; T.game.touch();
+  expect(!canActivate(T.game, 0, d, abil, { ignoreTiming: true }), 'only once, even on a later turn');
+  await T.put(0, 'Wonder Man, Hollywood Hero');
+  expect(canActivate(T.game, 0, d, abil, { ignoreTiming: true }), 'Wonder Man: one more time');
+});
+test('Pay Cumulative Upkeep trigger: Hibernation\'s End searches for a creature with mana value equal to its age', async T => {
+  const h = await T.put(0, "Hibernation's End");
+  const elf = await T.put(0, 'Llanowar Elves', 'library');
+  T.a.on('optionalTrigger', () => true);
+  T.mana(0);
+  await upkeep(T);
+  expect(h.counters.AGE === 1 && elf.zone === 'battlefield', `paid: searched for a mana value 1 creature (${elf.zone})`);
+});
+test('Phasing: Taniwha phases out your lands at your upkeep; they come back at your untap step', async T => {
+  await T.put(0, 'Taniwha');
+  const f = await T.put(0, 'Forest');
+  await upkeep(T);
+  expect(f.phasedOut, 'the land phased out');
+  expect(!getActions(T.game, 0).some(a => a.cardId === f.id), 'no mana from it');
+  await untapStep(T);
+  expect(!f.phasedOut, 'phased back in');
+});
+test('Can\'t play lands / can\'t cast: Null Chamber names a card for you and one for an opponent', async T => {
+  const nc = await T.put(1, 'Null Chamber');
+  nc.chosen = { name: 'Forest', names: ['Forest', 'Lightning Bolt'] }; T.game.touch();
+  const f = await T.put(0, 'Forest', 'hand');
+  const bolt = await T.put(0, 'Lightning Bolt', 'hand');
+  T.mana(0);
+  const acts = getActions(T.game, 0);
+  expect(!acts.some(a => a.cardId === f.id) && !acts.some(a => a.cardId === bolt.id), 'neither named card can be played');
+});
+test('Can\'t regenerate: Bone Shaman — creatures it damaged this turn', async T => {
+  const s = await T.put(0, 'Bone Shaman');
+  await T.activate(s, 0, a => a.parsed.api === 'Animate');
+  const w = await T.put(1, 'Drudge Skeletons');
+  T.mana(1); await T.activate(w, 1);
+  await T.game.dealDamage(s, w, 1, {});
+  await T.game.destroy(w, null);
+  expect(w.zone === 'graveyard', 'the shield didn\'t work');
+});
+test('Reorder Zone: Fossil Find returns a random card and you reorder your graveyard', async T => {
+  for (const n of ['Island', 'Forest', 'Swamp']) await T.put(0, n, 'graveyard');
+  T.a.on('reorder', req => req.cards.slice().reverse());
+  const before = T.A.graveyard.map(c => c.id);
+  await T.cast('Fossil Find');
+  expect(T.A.hand.some(c => before.includes(c.id)), 'a card came back');
+  expect(T.logged(/reorders their graveyard\./), 'reordered');
+});
+test('Cultural Exchange AI: gives its worst creatures for better ones', async T => {
+  const mine = await T.put(0, 'Llanowar Elves'), theirs = await T.put(1, 'Serra Angel');
+  T.a.on('targets', () => ['p0', 'p1']);
+  delete T.a.h.exchangeChoice;
+  await T.cast('Cultural Exchange');
+  expect(mine.controller === 1 && theirs.controller === 0, 'swapped the Elves for the Angel');
+});
+
+// ------------------------------------------------------------ Mindslaver online: every peer plays the same game
+test('Control Player online: decisions for a controlled player come from the controller\'s seat, and peers stay identical', async () => {
+  const fs = await import('node:fs');
+  const { CardDB } = await import('../src/engine/cards.js');
+  const { Game } = await import('../src/engine/game.js');
+  const { AIAgent } = await import('../src/ai/ai.js');
+  const { Lockstep, LocalSeatAgent, RemoteSeatAgent, HostAIAgent } = await import('../src/net/lockstep.js');
+  const { MockHub } = await import('./lib/mockroom.mjs');
+  const cdb = new CardDB(JSON.parse(fs.readFileSync('data/cards.json', 'utf8')), JSON.parse(fs.readFileSync('data/tokens.json', 'utf8')));
+  const decks = JSON.parse(fs.readFileSync('data/decks.json', 'utf8'));
+  const hash = g => { const parts = [g.turnNumber, g.winner, g.uid, g.nextId]; for (const p of g.players) parts.push(p.life, ...['hand', 'library', 'graveyard', 'exile'].map(z => p[z].map(c => c.id).join(','))); for (const c of g.battlefield) parts.push(`${c.id}:${c.tapped}:${c.controller}`); return parts.join('|'); };
+  const hub = new MockHub({ latency: 5 });
+  const cfg = { code: 'mind01', game: 1, seed: 4242, host: 'H', seats: [{ k: 'h', c: 'H', n: 'Hana', d: decks[3].id }, { k: 'h', c: 'G', n: 'Gus', d: decks[5].id }, { k: 'a', c: null, n: 'Bot', d: decks[8].id }], subs: {} };
+  const byId = Object.fromEntries(decks.map(d => [d.id, d]));
+  const decided = [];
+  const client = (cid, seat) => {
+    const ch = hub.connect();
+    const net = new Lockstep({ channel: ch, cid, nick: cid, cfg, seat, storage: null });
+    const agents = cfg.seats.map((s, pid) => {
+      if (pid === seat) return new LocalSeatAgent(net, { ask: (g, p, req) => { if (req.decider != null) decided.push([cid, p, req.decider]); return new AIAgent().ask(g, p, req); } });
+      if (s.k === 'a' && cid === 'H') return new HostAIAgent(net, new AIAgent());
+      return new RemoteSeatAgent(net, null, cid === 'H' ? new AIAgent() : null);
+    });
+    const game = new Game({ db: cdb, seed: cfg.seed, maxTurns: 7, players: cfg.seats.map((s, pid) => ({ name: s.n, deck: byId[s.d], agent: agents[pid], human: s.k === 'h' })) });
+    // Hana controls Gus's first turn, Gus controls the Bot's, the Bot controls Hana's
+    game.controlPlans = [{ target: 1, by: 0, combat: false, fromTurn: 0, fromStep: 'untap', fromCombats: 0, ts: 1 }, { target: 2, by: 1, combat: false, fromTurn: 0, fromStep: 'untap', fromCombats: 0, ts: 2 }, { target: 0, by: 2, combat: false, fromTurn: 0, fromStep: 'untap', fromCombats: 0, ts: 3 }];
+    return { ch, net, game, done: game.start() };
+  };
+  const peers = [client('H', 0), client('G', 1), client('S', null)];
+  const res = await Promise.race([Promise.all(peers.slice(0, 2).map(p => p.done)), new Promise(r => setTimeout(() => r('timeout'), 120000))]);
+  for (let i = 0; i < 200 && !peers[2].game.over; i++) await new Promise(r => setTimeout(r, 50));
+  for (const p of peers) { p.game.over = true; p.net.close(); p.ch.leave(); }
+  expect(res !== 'timeout', 'the game finished');
+  const hs = peers.map(p => hash(p.game));
+  expect(hs.every(h => h === hs[0]), 'all peers identical');
+  expect(decided.some(([cid, p, by]) => cid === 'H' && p === 1 && by === 0), 'Hana\'s seat decided for Gus');
+  expect(decided.some(([cid, p, by]) => cid === 'G' && p === 2 && by === 1), 'Gus\'s seat decided for the Bot');
+  expect(peers[0].game.logs.some(l => /Bot controls Hana this turn/.test(l.text)), 'the host\'s AI controlled Hana\'s turn');
+  const log = [...peers[0].net.log.values()];
+  expect(log.every(e => e[1] >= 0 && e[1] <= 2), 'decisions recorded per seat');
+});
+
 // ------------------------------------------------------------ support report and deck rules
 test('Support report: the classic mechanics are no longer flagged', async T => {
   for (const n of ['Thief of Hope', 'Arcbound Ravager', 'Blastoderm', 'Absolver Thrull', 'Seize the Soul', 'Mist Intruder', "Teferi's Imp", 'Mindslaver', 'Karn Liberated', 'Divine Intervention', 'Fossil Find', 'Incinerate', 'Aggressive Mining', "Konda's Banner", 'Immerwolf', 'Tamiyo, Collector of Tales', 'Guardian Beast', 'Airtight Alibi', 'Jared Carthalion, True Heir', 'Keen-Eared Sentry', "Karn's Sylex", 'Ashiok, Wicked Manipulator', 'Clergy of the Holy Nimbus', 'Mana Short', 'Yurlok of Scorch Thrash', 'Illicit Auction', 'Cultural Exchange', 'Arcanum Wings', 'Edgar, King of Figaro', 'Birgi, God of Storytelling', 'Drain Power', 'Kaya, Bane of the Dead', 'Autumn Willow', 'Standard Bearer', 'Balduvian Fallen', 'Shah of Naar Isle', 'Sanctum Lurker', 'Arcane Savant', 'Relentless Rats', 'Seven Dwarves', 'World at War', 'Meditate']) {

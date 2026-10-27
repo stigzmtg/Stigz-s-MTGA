@@ -25,7 +25,7 @@ export class HumanAgent {
 
   ask(game, pid, req) {
     this.game = game;
-    this.pid = pid;
+    this.pid = req.decider ?? pid;
     const auto = this.autoAnswer(game, pid, req);
     if (auto !== undefined) {
       // let opponents' spells sit on the stack for a moment so you can see them (and what they target)

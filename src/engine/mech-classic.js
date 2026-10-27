@@ -154,7 +154,7 @@ export function turnBegun(game) {
   const ap = game.activePlayer;
   for (const pl of game.controlPlans || []) {
     if (pl.target === ap && !pl.combat && !game.players[pl.by].lost && firstTurnSince(game, pl) && deciderFor(game, ap) === pl.by) {
-      game.log(`${game.players[pl.by].name} controls ${game.players[ap].name} this turn: they make all of ${game.players[ap].name}'s decisions.`, { type: 'turn' });
+      game.log(`${game.players[pl.by].name} controls ${game.players[ap].name} this turn: ${game.players[pl.by].name} makes all the decisions.`, { type: 'turn' });
       break;
     }
   }
@@ -297,6 +297,25 @@ export function activationsUsed(game, card, abil) {
   const p = abil.parsed.p;
   if (p.Boast) return card.abilityUses[abil.key] || 0;
   return card.onceUses && card.onceUses.zcc === card.zcc ? (card.onceUses.n[abil.key] || 0) : 0;
+}
+
+// ================================================================ the computer's choices for these effects (ai.js)
+// undefined when it's not one of ours
+export function aiCards(game, pid, req, value) {
+  if (req.purpose === 'phaseChoice') return []; // (phasing your own things out for no reason helps nobody)
+  if (req.purpose !== 'exchangeChoice') return undefined;
+  // Cultural Exchange: give away your worst creatures for their best, while each trade is a gain
+  const cards = req.cards.map(id => game.cardById(id)).filter(Boolean);
+  if (!cards.length) return [];
+  const side = cards[0].controller;
+  const pls = playersOf((req.sa && req.sa.targets) || []).map(p => p.id);
+  const other = pls.find(x => x !== side);
+  if (side !== pid && other !== pid) return cards.slice(0, req.min).map(c => c.id);
+  const mine = (side === pid ? cards : game.battlefield.filter(c => c.controller === pid && game.chars(c).types.has('Creature'))).slice().sort((a, b) => value(a) - value(b));
+  const theirs = (side === pid ? game.battlefield.filter(c => c.controller === other && game.chars(c).types.has('Creature')) : cards).slice().sort((a, b) => value(b) - value(a));
+  let k = req.min;
+  if (!k) { k = 0; while (k < Math.min(mine.length, theirs.length, req.max) && value(theirs[k]) > value(mine[k]) + 0.5) k++; }
+  return (side === pid ? mine : theirs).slice(0, k).map(c => c.id);
 }
 
 // ================================================================ effects

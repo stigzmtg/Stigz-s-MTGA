@@ -5,6 +5,7 @@ import { matchValid, calc, ctxOf, ctrlOf } from '../engine/filters.js';
 import { parseAbility } from '../engine/forge.js';
 import { sleep, COLORS, BASIC_LAND_TYPES } from '../engine/util.js';
 import { addCosts } from '../engine/mana.js';
+import { aiCards } from '../engine/mech-classic.js';
 
 const HARMFUL = new Set(['Destroy', 'DestroyAll', 'DealDamage', 'DamageAll', 'Counter', 'Sacrifice', 'SacrificeAll', 'Discard', 'LoseLife', 'Mill', 'GainControl', 'Tap', 'TapAll', 'Goad', 'Fight', 'Phases', 'ExchangeControl', 'RemoveCounter']);
 const BENEFICIAL = new Set(['Pump', 'PumpAll', 'PutCounter', 'PutCounterAll', 'GainLife', 'Draw', 'Untap', 'UntapAll', 'Attach', 'Regenerate', 'Animate', 'Token', 'CopyPermanent', 'Clone', 'Investigate', 'Scry', 'Surveil', 'Proliferate', 'Dig', 'BecomeMonarch', 'Explore', 'Connive', 'Amass', 'MultiplyCounter', 'Mana']);
@@ -570,6 +571,7 @@ export class AIAgent {
     const v = c => this.value(c);
     const pick = (sorted, n) => sorted.slice(0, n).map(c => c.id);
     const purpose = req.purpose || '';
+    { const r = aiCards(game, pid, req, v); if (r !== undefined) return r; } // (mech-classic: phasing, Cultural Exchange)
     if (purpose === 'crew') {
       const sorted = cards.slice().sort((a, b) => v(a) - v(b));
       const out = []; let pw = 0;

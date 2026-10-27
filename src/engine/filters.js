@@ -1237,6 +1237,7 @@ function playerProperty(game, p, prop, ctx) {
   }
   if (prop === 'DamageThisTurn' || prop === 'DamageDoneThisTurn') return game.turnState.damagedPlayers[p.id] || 0;
   if (prop === 'OppsAtLifeTotal') return 0;
+  if (prop === 'TiedForHighestLife') return p.life === Math.max(...game.livingPlayers().map(q => q.life)) ? 1 : 0; // (mech-classic: Celestial Convergence)
   return 0;
 }
 

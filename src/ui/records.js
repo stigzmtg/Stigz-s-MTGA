@@ -35,7 +35,8 @@ export class Recorder {
         const v = await inner.ask(game, pid, req);
         const packed = packValue(v, req.type);
         const ops = this.ops.length ? this.ops.splice(0) : null;
-        this.log[i] = ops ? [i, pid, packed, ops] : [i, pid, packed];
+        const seat = req.decider ?? pid; // (Mindslaver: the seat that made the decision)
+        this.log[i] = ops ? [i, seat, packed, ops] : [i, seat, packed];
         // the game sees exactly what a replay will hand it
         return unpackValue(packed, req.type);
       },
@@ -134,7 +135,7 @@ export class ReplayAgent {
   async ask(game, pid, req) {
     const e = this.log[this.ctl.pos];
     // the recording ends here (a game left early), or no longer matches: stop quietly
-    if (!e || e[1] !== pid) { this.ctl.end(); return new Promise(() => {}); }
+    if (!e || e[1] !== (req.decider ?? pid)) { this.ctl.end(); return new Promise(() => {}); }
     this.ctl.pos++;
     await this.ctl.gate(this.delayOf(req, e[2]));
     if (e[3] && this.applyOps) for (const op of e[3]) await this.applyOps(game, op);

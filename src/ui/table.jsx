@@ -17,6 +17,7 @@ import { Coach } from './coach.jsx';
 import { savedStyle } from './deckstyle.jsx';
 import { myAvatar } from './avatar.jsx';
 import { roomKeyOf } from './badge.jsx';
+import { controlledBy } from '../engine/mech-classic.js';
 
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, useSyncExternalStore } = React;
 
@@ -123,6 +124,8 @@ function Preview({ game, cardId, support, images, me = 0 }) {
 
 function PromptBar({ game, human, me, mode, ctx, actions, onPass, onEndTurn, spectator }) {
   const pending = human.pending;
+  // (me is the player you're acting for: another player whose turn you control, or yourself)
+  const ctl = !spectator && human.pid != null && me !== human.pid ? game.players[me] : null;
   const step = STEP_NAMES[game.step] || game.step;
   const active = game.players[game.activePlayer];
   const myTurn = !spectator && game.activePlayer === me;
@@ -133,7 +136,7 @@ function PromptBar({ game, human, me, mode, ctx, actions, onPass, onEndTurn, spe
     const top = game.stack[game.stack.length - 1];
     const who = top && (top.controller === me ? 'Your' : `${game.players[top.controller].name}’s`);
     const what = top && (top.kind === 'spell' ? game.name(top.card) : `${top.source ? game.name(top.source) : ''} ability`.trim());
-    msg = <><div className="step">{myTurn ? 'Your turn' : active.name} · {step}</div><div className="txt thinking">{top ? <>{who} <b>{what}</b> is about to resolve</> : pr && pr.id !== me ? `${pr.name} is thinking` : 'Resolving'}</div></>;
+    msg = <><div className="step">{myTurn ? (ctl ? `${ctl.name}'s turn` : 'Your turn') : active.name} · {step}</div><div className="txt thinking">{top ? <>{who} <b>{what}</b> is about to resolve</> : pr && pr.id !== me ? `${pr.name} is thinking` : 'Resolving'}</div></>;
   } else if (mode === 'priority') {
     const top = game.stack[game.stack.length - 1];
     let txt;
@@ -142,7 +145,7 @@ function PromptBar({ game, human, me, mode, ctx, actions, onPass, onEndTurn, spe
     else if (!myTurn && game.combat && game.combat.attackers.some(a => a.defenderPlayer === me) && (game.step === 'declareAttackers' || game.step === 'declareBlockers')) {
       txt = game.step === 'declareAttackers' ? `${active.name} is attacking you. Before blocks: flash in a blocker or cast an instant, or pass to block.` : 'Blocks are set. Cast a combat trick, or pass to deal damage.';
     } else txt = myTurn ? 'You have priority.' : `${active.name}'s turn. You may cast instants and spells with flash.`;
-    msg = <><div className="step">{myTurn ? 'Your turn' : active.name} · {step}</div><div className="txt">{txt}</div></>;
+    msg = <><div className="step">{myTurn ? (ctl ? `${ctl.name}'s turn` : 'Your turn') : active.name} · {step}</div><div className="txt">{txt}</div></>;
     const nextLabel = top ? 'Resolve' : myTurn ? (game.step === 'main1' ? 'Go to combat' : game.step === 'main2' ? 'End turn' : 'Continue') : 'Pass';
     acts = <>
       <button className="btn primary" onClick={onPass}>{nextLabel}</button>
@@ -180,7 +183,7 @@ function PromptBar({ game, human, me, mode, ctx, actions, onPass, onEndTurn, spe
   }
   return (
     <div className={`prompt ${!pending ? 'waiting' : ''}`} role="region" aria-label="Game prompt">
-      <div className="msg">{msg}</div>
+      <div className="msg">{ctl ? <div className="ctl">You control {ctl.name} this turn: you make their decisions.</div> : null}{msg}</div>
       <div className="acts">{acts}</div>
     </div>
   );
@@ -273,7 +276,10 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
     return () => window.removeEventListener('keydown', k);
   }, []);
 
-  const actions = useMemo(() => (req && req.type === 'priority' ? getActions(game, me) : []), [pid, session.store.get()]);
+  // the player you act for: yourself, or one whose turn you control (Mindslaver), with their hand shown to you
+  const ctlTurn = session.spectator || session.replay ? null : controlledBy(game, me);
+  const actor = req ? (req.player != null && req.player !== me && req.decider === me ? req.player : me) : (ctlTurn ?? me);
+  const actions = useMemo(() => (req && req.type === 'priority' ? getActions(game, actor) : []), [pid, session.store.get()]);
   const playable = useMemo(() => {
     const m = new Map();
     for (const a of actions) { if (!m.has(a.cardId)) m.set(a.cardId, []); m.get(a.cardId).push(a); }
@@ -284,14 +290,14 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
   // card" from exile, the top of your library with Courser or Bolas's Citadel), and a top card you may look at: they
   // sit after your hand, marked with where they are
   const elsewhere = useMemo(() => {
-    const p = game.players[me];
+    const p = game.players[actor];
     if (!p || session.spectator) return [];
     const out = [], seen = new Set();
     const add = (c, from) => { if (c && !seen.has(c.id)) { seen.add(c.id); out.push({ card: c, from }); } };
-    for (const a of actions) { const c = game.cardById(a.cardId); if (c && c.owner === me && ['graveyard', 'exile', 'library'].includes(c.zone)) add(c, c.zone); else if (c && c.zone === 'exile') add(c, 'exile'); }
-    for (const c of [...p.exile, ...game.players.filter(q => q.id !== me).flatMap(q => q.exile)]) if (mayPlayFrom(game, me, c)) add(c, 'exile');
+    for (const a of actions) { const c = game.cardById(a.cardId); if (c && c.owner === actor && ['graveyard', 'exile', 'library'].includes(c.zone)) add(c, c.zone); else if (c && c.zone === 'exile') add(c, 'exile'); }
+    for (const c of [...p.exile, ...game.players.filter(q => q.id !== actor).flatMap(q => q.exile)]) if (mayPlayFrom(game, actor, c)) add(c, 'exile');
     const top = p.library[0];
-    if (top && (mayPlayFrom(game, me, top) || canSeeTopOfLibrary(game, me))) add(top, 'library');
+    if (top && (mayPlayFrom(game, actor, top) || canSeeTopOfLibrary(game, actor))) add(top, 'library');
     return out;
   }, [pid, session.store.get(), actions]);
 
@@ -407,8 +413,8 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
     }
     if (mode === 'priority') {
       const acts = playable.get(card.id) || [];
-      const isMine = (card.zone === 'battlefield' ? card.controller : card.owner) === me;
-      const manaAbils = card.zone === 'battlefield' && card.controller === me ? manaSourcesFor(game, me).filter(s => s.card === card) : [];
+      const isMine = (card.zone === 'battlefield' ? card.controller : card.owner) === actor;
+      const manaAbils = card.zone === 'battlefield' && card.controller === actor ? manaSourcesFor(game, actor).filter(s => s.card === card) : [];
       if (acts.length === 1 && (acts[0].type === 'land' || acts[0].type === 'cast') && !manaAbils.length) { respondAction(acts[0]); return; }
       const items = [];
       for (const a of acts) items.push({ label: a.type === 'land' ? a.label : a.type === 'cast' ? a.label : a.label, primary: true, run: () => respondAction(a) });
@@ -424,12 +430,12 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
         else items.push({ label: `${verb} for ${s.units.map(u => `{${u[0]}}`).join('')}`, run: () => respondAction({ type: 'mana', cardId: card.id, abilityKey: s.abil.key }) });
       }
       // mana that can only pay for some things (a Powerstone: artifact spells and abilities) is spent for you then
-      if (card.zone === 'battlefield' && card.controller === me && !card.tapped && !manaAbils.length && manaAbilitiesOf(game, card).some(a => a.parsed.p.RestrictValid)) {
+      if (card.zone === 'battlefield' && card.controller === actor && !card.tapped && !manaAbils.length && manaAbilitiesOf(game, card).some(a => a.parsed.p.RestrictValid)) {
         items.push({ note: `${game.name(card)}'s mana can only pay for certain things, so it's spent for you when you pay for one of them.` });
       }
       if (items.length) { items.push({ label: 'Inspect card', run: () => setInspect(card.id) }); if (isMine && tools) items.push('-', ...cardMenuItems(game, card, me, use)); setMenu({ x: e ? e.clientX : 200, y: e ? e.clientY : 200, title: game.name(card), items }); return; }
       // a card of yours that can't be played now: say why (mana, timing, a land already played, no targets)
-      if (isMine && (card.zone === 'hand' || card.zone === 'command')) { const why = whyCantPlay(game, me, card); if (why) setToast(why); }
+      if (isMine && (card.zone === 'hand' || card.zone === 'command')) { const why = whyCantPlay(game, actor, card); if (why) setToast(why); }
       else if (elsewhere.some(x => x.card === card)) setToast(`${game.name(card)} can't be played right now${card.zone === 'library' ? ': you may only look at it' : ''}.`);
     }
     if (touch) setInspect(card.id);
@@ -445,7 +451,7 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
 
   const onPass = () => human.respond({ type: 'pass' });
   const onEndTurn = () => {
-    if (game.activePlayer === me) human.passUntilTurn = game.turnNumber;
+    if (game.activePlayer === actor) human.passUntilTurn = game.turnNumber;
     else human.passUntilMine = true;
     human.respond({ type: 'pass' });
   };
@@ -501,10 +507,10 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
               <StackView game={game} ctx={ctx} me={me} />
               <RecentPlays game={game} items={recent} ctx={ctx} />
             </div>
-            <PromptBar game={game} human={human} me={me} mode={mode} ctx={ctx} actions={actions} onPass={onPass} onEndTurn={onEndTurn} spectator={session.spectator} />
+            <PromptBar game={game} human={human} me={actor} mode={mode} ctx={ctx} actions={actions} onPass={onPass} onEndTurn={onEndTurn} spectator={session.spectator} />
           </div>
           <Mat game={game} pid={me} ctx={ctx} side="bottom" />
-          {session.spectator ? <div className="hand watching"><span className="empty">You're watching. Hands stay hidden.</span></div> : <Hand game={game} pid={me} ctx={ctx} />}
+          {session.spectator ? <div className="hand watching"><span className="empty">You're watching. Hands stay hidden.</span></div> : <Hand game={game} pid={actor} ctx={ctx} whose={actor !== me ? game.players[actor].name : null} />}
           <ArrowLayer game={game} ctx={ctx} boardRef={boardRef} />
           <TurnBanner game={game} me={self} />
         </main>
