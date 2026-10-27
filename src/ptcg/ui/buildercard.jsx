@@ -77,11 +77,11 @@ export function CardFacts({ def }) {
 export function CardSheet({ cardKey, ix, have, featured, problem, onClose, onOpen, onAdd, onRemove, onFeature }) {
   const db = ix.db, def = db[cardKey];
   if (!def) return null;
-  // (a reprint of it in the deck is the same card)
+  // (a reprint of it is the same card: in the deck, and in the tournament decks)
   const twins = ix.twins.get(cardKey) || [cardKey];
   const n = twins.reduce((a, k) => a + (have.get(k) || 0), 0);
   const inDeck = twins.find(k => have.get(k)) || cardKey;
-  const plays = ix.plays.get(cardKey) || 0;
+  const plays = twins.reduce((a, k) => a + (ix.plays.get(k) || 0), 0);
   // its evolution line, and other cards with its name that do something else
   const from = def.from ? Object.values(db).find(x => x.cat === 'P' && x.name === def.from) : null;
   const into = def.cat === 'P' ? [...new Map(Object.values(db).filter(x => x.cat === 'P' && x.from === def.name).map(x => [x.name, x])).values()] : [];
