@@ -4,6 +4,8 @@ import { parseMana, emptyCost, addCosts, cmc, isManaToken, planPayment, payFromP
 import { matchValid, resolveDefined, calcCtx, checkConditions, checkPresence, ctxOf, findTargets, zoneMap, ctrlOf } from './filters.js';
 import { COLORS } from './util.js';
 import { runEffect } from './effects.js';
+import { tapPowerValue } from './filters.js';
+import { cantCrew, crewedBy, crewPowers, crewPick } from './mech-combat.js';
 
 export class Cancelled extends Error { constructor() { super('cancelled'); this.cancelled = true; } }
 
@@ -220,7 +222,7 @@ export function canPayNonMana(game, sa, cost, exclude = new Set()) {
       case 'Exert': case 'Unattach': break;
       case 'Crew': {
         const need = n;
-        const total = game.battlefield.filter(c => c.controller === pid && !c.tapped && c.id !== host.id && game.chars(c).types.has('Creature')).reduce((a, c) => a + Math.max(0, game.chars(c).power), 0);
+        const total = game.battlefield.filter(c => c.controller === pid && !c.tapped && c.id !== host.id && game.chars(c).types.has('Creature') && !cantCrew(game, c)).reduce((a, c) => a + tapPowerValue(game, c, sa), 0);
         if (total < need) return false;
         break;
       }
@@ -228,7 +230,8 @@ export function canPayNonMana(game, sa, cost, exclude = new Set()) {
         const cands = costCandidates(game, sa, part).filter(c => !exclude.has(c.id));
         if (/withTotalPowerGE(\d+)/.test(part.valid || '')) {
           const need = +RegExp.$1;
-          if (cands.reduce((a, c) => a + game.chars(c).power, 0) < need) return false;
+          const pool = costCandidates(game, sa, { ...part, valid: part.valid.replace(/\+?withTotalPowerGE\d+/, '') }).filter(c => !exclude.has(c.id));
+          if (pool.reduce((a, c) => a + tapPowerValue(game, c, sa), 0) < need) return false;
         } else if (cands.length < (part.amount === 'Any' ? 0 : n)) return false;
         break;
       }
@@ -305,10 +308,10 @@ async function chooseCostParts(game, sa, cost, { afford = null } = {}) {
           cands = costCandidates(game, sa, { ...part, valid: part.valid.replace(/\+?withTotalPowerGE\d+/, '') }).filter(c => !used.has(c.id));
           let chosen = null;
           for (let tries = 0; tries < 3 && !chosen; tries++) {
-            const ids = await game.ask(pid, { type: 'cards', prompt: `${tries ? `Those creatures' total power is less than ${need}. ` : ''}Tap creatures with total power ${need} or more`, cards: cands.map(c => c.id), min: 1, max: cands.length, purpose: 'crew', need, sa, cancellable: true });
+            const ids = await game.ask(pid, { type: 'cards', prompt: `${tries ? `Those creatures' total power is less than ${need}. ` : ''}Tap creatures with total power ${need} or more`, cards: cands.map(c => c.id), min: 1, max: cands.length, purpose: 'crew', need, sa, cancellable: true, powers: crewPowers(game, cands, sa), aiSuggest: crewPick(game, cands, need, sa) });
             if (!ids) throw new Cancelled();
             const cs = ids.map(id => game.cardById(id)).filter(Boolean);
-            if (cs.reduce((a, c) => a + Math.max(0, game.chars(c).power), 0) >= need) chosen = cs;
+            if (cs.reduce((a, c) => a + tapPowerValue(game, c, sa), 0) >= need) chosen = cs;
           }
           if (!chosen) throw new Cancelled();
           choices.push({ part, cards: chosen });
@@ -359,14 +362,14 @@ async function chooseCostParts(game, sa, cost, { afford = null } = {}) {
       }
       case 'Crew': {
         const need = n0;
-        const cands = game.battlefield.filter(c => c.controller === pid && !c.tapped && c.id !== sa.host.id && game.chars(c).types.has('Creature'));
+        const cands = game.battlefield.filter(c => c.controller === pid && !c.tapped && c.id !== sa.host.id && game.chars(c).types.has('Creature') && !cantCrew(game, c));
         // the tapped creatures' total power must reach the crew number
         let chosen = null;
         for (let tries = 0; tries < 3 && !chosen; tries++) {
-          const ids = await game.ask(pid, { type: 'cards', prompt: tries ? `Those creatures' total power is less than ${need}. Crew ${need}: tap creatures with total power ${need} or more` : `Crew ${need}: tap creatures with total power ${need} or more`, cards: cands.map(c => c.id), min: 1, max: cands.length, purpose: 'crew', need, sa, cancellable: true });
+          const ids = await game.ask(pid, { type: 'cards', prompt: tries ? `Those creatures' total power is less than ${need}. Crew ${need}: tap creatures with total power ${need} or more` : `Crew ${need}: tap creatures with total power ${need} or more`, cards: cands.map(c => c.id), min: 1, max: cands.length, purpose: 'crew', need, sa, cancellable: true, powers: crewPowers(game, cands, sa), aiSuggest: crewPick(game, cands, need, sa) });
           if (!ids) throw new Cancelled();
           const cs = ids.map(id => game.cardById(id)).filter(Boolean);
-          if (cs.reduce((a, c) => a + Math.max(0, game.chars(c).power), 0) >= need) chosen = cs;
+          if (cs.reduce((a, c) => a + tapPowerValue(game, c, sa), 0) >= need) chosen = cs;
         }
         if (!chosen) throw new Cancelled();
         choices.push({ part, cards: chosen });
@@ -499,7 +502,7 @@ async function applyCostParts(game, sa, cost, choices) {
       case 'PutCardToLibFromBattlefield': for (const c of ch.cards) await game.moveCard(c, 'library', { cause: sa, pos: part.libPos === '-1' ? 'bottom' : 'top' }); break;
       case 'RevealChosen': if (host.chosen && host.chosen.player != null) { host.chosenRevealed = true; game.log(`${p.name} reveals the chosen player: ${game.players[host.chosen.player].name}.`); } break;
       case 'Return': for (const c of ch.cards) await game.moveCard(c, 'hand', { cause: sa }); break;
-      case 'tapXType': case 'Crew': for (const c of ch.cards) { paid.Tapped.push(c); await game.tap(c); } if (part.type === 'Crew') game.fire('BecomesCrewed', { Card: host, Crew: ch.cards }); break;
+      case 'tapXType': case 'Crew': for (const c of ch.cards) { paid.Tapped.push(c); await game.tap(c); } if (part.type === 'Crew') game.fire('BecomesCrewed', { Card: host, Crew: ch.cards }); crewedBy(game, sa, part, ch.cards); break;
       case 'untapYType': for (const c of ch.cards) await game.untap(c); break;
       case 'Reveal': for (const c of ch.cards) paid.Revealed.push(c); game.log(`${p.name} reveals ${ch.cards.map(c => game.name(c)).join(', ')}.`); break;
       case 'SubCounter': {

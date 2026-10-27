@@ -236,9 +236,23 @@ function defFor(kw, face) {
       T.push('Mode$ AttackerBlockedByCreature | ValidCard$ Card.Self | ValidBlocker$ Creature.withoutFlanking | Execute$ KWFlanking | TriggerDescription$ Flanking (the blocking creature gets -1/-1 until end of turn)');
       S.KWFlanking = 'DB$ Pump | Defined$ TriggeredBlocker | NumAtt$ -1 | NumDef$ -1 | IsCurse$ True';
       break;
+    // combat (mech-combat.js): rampage counts the blockers as the trigger resolves; provoke; saddle
+    case 'Rampage':
+      T.push(`Mode$ AttackerBlocked | ValidCard$ Card.Self | ValidBlocker$ Creature | TriggerZones$ Battlefield | Execute$ KWRampage | TriggerDescription$ Rampage ${a} (it gets +${a}/+${a} for each creature blocking it beyond the first)`);
+      S.KWRampage = 'DB$ Pump | Defined$ Self | NumAtt$ +KWRampageX | NumDef$ +KWRampageX';
+      S.KWRampageX = `Count$Valid Creature.blockingTriggeredAttacker/Minus.1/Times.${a || 1}/LimitMin.0`;
+      break;
+    case 'Provoke':
+      T.push('Mode$ Attacks | ValidCard$ Card.Self | OptionalDecider$ You | Execute$ KWProvoke | TriggerDescription$ Provoke (you may have target creature defending player controls untap and block it if able)');
+      S.KWProvoke = 'DB$ MustBlock | ValidTgts$ Creature.DefenderCtrl | TgtPrompt$ Select target creature defending player controls | SubAbility$ KWProvokeUntap';
+      S.KWProvokeUntap = 'DB$ Untap | Defined$ Targeted';
+      break;
+    case 'Saddle':
+      A.push(`AB$ AlterAttribute | Cost$ tapXType<Any/Creature.Other+withTotalPowerGE${a}> | Attributes$ Saddle | Defined$ Self | SorcerySpeed$ True | Saddle$ True | SpellDescription$ Saddle ${a} (tap any number of other creatures you control with total power ${a} or more: it becomes saddled until end of turn; saddle only as a sorcery)`);
+      break;
     case 'Station':
       A.push(`AB$ PutCounter | Cost$ tapXType<1/Creature.Other/another untapped creature you control> | Defined$ Self | CounterType$ CHARGE | CounterNum$ KWStationX | SorcerySpeed$ True | Station$ True | SpellDescription$ Station (tap another creature you control: put charge counters equal to its power on CARDNAME)`);
-      S.KWStationX = 'Tapped$CardPower';
+      S.KWStationX = 'Tapped$TapPowerValue';
       break;
     case 'Vanishing':
       T.push('Mode$ Phase | Phase$ Upkeep | ValidPlayer$ You | TriggerZones$ Battlefield | IsPresent$ Card.Self+counters_GE1_TIME | Execute$ KWVanishRemove | TriggerDescription$ Vanishing — remove a time counter from CARDNAME');
@@ -380,3 +394,5 @@ export function keywordInfo(kw) { return defFor(kw, { svars: {} }); }
 export const SUPPORTED_KEYWORDS = new Set(['Flying', 'Equip', 'Trample', 'ETBReplacement', 'Enchant', 'Cycling', 'Vigilance', 'Flash', 'Haste', 'etbCounter', 'Deathtouch', 'Lifelink', 'Menace', 'First Strike', 'Flashback', 'Reach', 'TypeCycling', 'Indestructible', 'Changeling', 'Crew', 'Chapter', 'Defender', 'Kicker', 'Convoke', 'Ward', 'Double Strike', 'Cascade', 'Partner', 'Partner with', 'Evoke', 'Devoid', 'Multikicker', 'Unearth', 'Hexproof', 'Myriad', 'Ravenous', 'Landwalk', 'Fear', 'Intimidate', 'Shroud', 'Annihilator', 'Prowess', 'Persist', 'Undying', 'Exalted', 'Extort', 'Evolve', 'Living Weapon', 'Job select', 'Fabricate', 'Riot', 'Mentor', 'Training', 'Battle cry', 'Melee', 'Bushido', 'Afflict', 'Storm', 'Demonstrate', 'Backup', 'Squad', 'Blitz', 'Dash', 'Echo', 'Hideaway', 'Devour', 'Exploit', 'Dethrone', 'Renown', 'Toxic', 'Infect', 'Wither', 'Affinity', 'Delve', 'Improvise', 'Escape', 'Retrace', 'Overload', 'Split second', 'Umbra armor', 'Totem armor', 'Morph', 'Megamorph', 'Disguise', 'Encore', 'Embalm', 'Eternalize', 'Outlast', 'Scavenge', 'Transmute', 'Ninjutsu', 'CommanderNinjutsu', 'Decayed', 'Offspring', 'Afterlife', 'Squad', 'Protection', 'Shadow', 'Horsemanship', 'Skulk', 'Jump-start', 'Discover', 'Rebound', 'Choose a Background', 'Friends forever', 'Doctor\'s companion', 'Ascend', 'Reconfigure', 'Level up', 'Foretell', 'Suspend', 'Class', 'Madness', 'Miracle', 'Aftermath', 'Undaunted', 'Spectacle', 'Surge', 'Bargain', 'Mutate', 'Bestow', 'Strive', 'Escalate', 'Fuse',
   'Graft', 'Flanking', 'Sunburst', 'Mayhem', 'All creatures able to block CARDNAME do so.', 'Gift', 'Casualty', 'Replicate', 'AlternateAdditionalCost', 'Emerge', 'Prowl', 'Entwine', 'MayFlashCost', 'Tiered', 'Spree', 'Dredge', 'Cipher', 'Cloak', 'Station', 'Vanishing', 'For Mirrodin', 'Reinforce', 'Plot', 'Gravestorm', 'Champion', 'Cumulative upkeep', 'Bloodthirst', 'Read ahead', 'Harmonize', 'Offering', 'Buyback', 'You may choose not to untap CARDNAME during your untap step.', 'Soulbond', 'Daybound', 'Nightbound', 'Awaken', 'Space sculptor', 'As an additional cost to cast creature spells, you may pay any amount of mana. If you do, that creature enters with that many additional +1/+1 counters on it.', 'Enlist', 'Fortify', 'Disturb', 'Companion', 'MayEffectFromOpeningHand', 'Unleash', 'Compleated', 'Impending', 'Mobilize', 'Start your engines', 'MayFlashSac',
   'Prevent all combat damage that would be dealt to and dealt by CARDNAME.', 'Prevent all combat damage that would be dealt to CARDNAME.', 'Prevent all damage that would be dealt to CARDNAME.', 'Prevent all combat damage that would be dealt by CARDNAME.', 'Prevent all damage that would be dealt to and dealt by CARDNAME.']);
+// combat (mech-combat.js): banding, rampage, provoke, saddle, blocking requirements and damage assignment
+for (const k of ['Banding', 'Bands with other', 'Rampage', 'Provoke', 'Saddle', 'MustBeBlockedByAll', "You may assign CARDNAME's combat damage divided as you choose among defending player and/or any number of creatures they control.", 'If CARDNAME is unblocked, you may have it assign its combat damage to a creature defending player controls.']) SUPPORTED_KEYWORDS.add(k);

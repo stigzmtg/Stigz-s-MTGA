@@ -4,6 +4,7 @@ import { parseAbility } from './forge.js';
 import { refOf, fromRef, payManaCost, canAfford } from './abilities.js';
 import { parseMana } from './mana.js';
 import { BASIC_LAND_TYPES } from './util.js';
+import * as M from './mech-combat.js';
 
 function kw(game, c, k) { return game.hasKeyword(c, k); }
 function hidden(game, c, text) { return game.chars(c).keywords.some(k => k === text || k === 'HIDDEN ' + text); }
@@ -13,7 +14,7 @@ export function canAttack(game, c, { ignoreTapped = false } = {}) {
   const ch = game.chars(c);
   if (!ch.types.has('Creature')) return false;
   if (c.tapped && !ignoreTapped) return false;
-  if (c.sick && !kw(game, c, 'Haste')) return false;
+  if (c.sick && !kw(game, c, 'Haste') && !M.attacksAsThoughHaste(game, c)) return false;
   if (kw(game, c, 'Defender') && !game.activeStatics('CanAttackDefender').some(s => matchValid(game, c, s.p.ValidCard || 'Card.Self', s.ctx))) return false;
   if (hidden(game, c, "CARDNAME can't attack.") || hidden(game, c, "CARDNAME can't attack or block.")) return false;
   for (const s of game.activeStatics('CantAttack')) {
@@ -33,6 +34,8 @@ export function playerInDirection(game, pid, dir) {
 
 // Restrictions for attacking a specific defender (player or planeswalker)
 export function canAttackDefender(game, c, defPid, defCard) {
+  // "can attack your opponents as though it had haste" (Frenzied Saddlebrute): only some players
+  if (c.sick && !kw(game, c, 'Haste') && !M.attacksAsThoughHaste(game, c, defCard || game.players[defPid])) return false;
   // "can attack players who attacked you during their last turn as though it didn't have defender"
   if (kw(game, c, 'Defender')) {
     const sts = game.activeStatics('CanAttackDefender').filter(s => matchValid(game, c, s.p.ValidCard || 'Card.Self', s.ctx));
@@ -139,6 +142,8 @@ export async function declareAttackers(game) {
     if (!d) d = defenders.find(x => !x.card && canAttackDefender(game, c, x.player, null)) || defenders.find(x => !x.card);
     if (d && canAttackDefender(game, c, d.player, null)) { used.add(c.id); decl.push({ c, d, forced: true }); }
   }
+  // "if a creature you control attacks, this creature also attacks if able"
+  M.applyAttackRequirements(game, cands, decl, defenders);
   // "each opponent must attack with at least one creature each combat if able"
   if (!decl.length && game.activeStatics('PlayerMustAttack').some(s => matchValid(game, game.players[ap], s.p.ValidPlayer || 'Opponent', s.ctx))) {
     for (const c of cands) {
@@ -156,6 +161,8 @@ export async function declareAttackers(game) {
     for (let i = decl.length - 1; i >= 0; i--) if (drop.includes(decl[i])) decl.splice(i, 1);
     game.log(`${game.name(s.host)}: no more than ${max} creature${max === 1 ? '' : 's'} can attack${s.p.ValidDefender ? ' ' + (s.p.ValidDefender === 'Card.Self' ? game.name(s.host) : game.players[s.ctx.you].name) : ''} (${drop.map(x => game.name(x.c)).join(', ')} won't attack).`);
   }
+  // "can't attack alone", "can only attack alone", "... unless at least two other creatures attack"
+  M.attackAloneRules(game, decl);
   // attack taxes (Propaganda-style)
   let tax = 0;
   for (const { c, d } of decl) tax += attackTax(game, c, d.player);
@@ -169,11 +176,13 @@ export async function declareAttackers(game) {
   if (!decl.length) return;
   for (const { c, d } of decl) {
     game.combat.attackers.push({ card: c.id, defenderPlayer: d.player, defenderCard: d.card || null, blockers: [], blocked: false });
-    if (!kw(game, c, 'Vigilance')) { c.tapped = true; }
+    if (!kw(game, c, 'Vigilance') && !M.attacksWithoutTapping(game, c)) { c.tapped = true; }
   }
   game.touch();
   const names = decl.map(({ c, d }) => `${game.name(c)} → ${d.card ? game.name(game.cardById(d.card)) : game.players[d.player].name}`);
   game.log(`${game.players[ap].name} attacks: ${names.join(', ')}`, { type: 'attack' });
+  // banding: attacking creatures in bands, blocked as a group
+  await M.declareBands(game, ap);
   game.turnState.attackedWith = decl.map(x => x.c.id);
   // "attacked this combat" holds even after it's removed from combat; "attacked during its controller's last turn",
   // "attacked a battle this turn"
@@ -206,6 +215,7 @@ export async function declareAttackers(game) {
     if (pw) c.temp.push({ power: pw, until: 'EOT' });
     game.touch();
     game.log(`${game.name(c)} enlists ${game.name(e)} (+${pw}/+0).`);
+    game.fire('Enlisted', { Card: c, Enlisted: e });
   }
   // optional attack costs: "you may exert CARDNAME as it attacks. When you do, ..."
   for (const { c } of decl) {
@@ -227,7 +237,7 @@ export async function declareAttackers(game) {
   }
   const n = decl.length;
   for (const { c, d } of decl) {
-    if (!kw(game, c, 'Vigilance')) game.fire('Taps', { Card: c, Attacker: true });
+    if (c.tapped && !kw(game, c, 'Vigilance')) game.fire('Taps', { Card: c, Attacker: true });
     game.fire('Attacks', { Attacker: c, Card: c, DefendingPlayer: d.player, DefenderCard: d.card ? game.cardById(d.card) : null, Defender: d.card ? game.cardById(d.card) : game.players[d.player], AttackerCount: n, AttackingPlayer: ap });
   }
   const defPids = [...new Set(decl.map(x => x.d.player))];
@@ -236,7 +246,7 @@ export async function declareAttackers(game) {
 }
 
 export function canBlockAny(game, b) {
-  if (b.zone !== 'battlefield' || b.tapped || b.phasedOut) return false;
+  if (b.zone !== 'battlefield' || b.phasedOut || (b.tapped && !M.blocksWhileTapped(game, b))) return false;
   if (!game.chars(b).types.has('Creature')) return false;
   if (hidden(game, b, "CARDNAME can't block.") || hidden(game, b, "CARDNAME can't attack or block.") || hidden(game, b, "CARDNAME can't block creatures.")) return false;
   if (b.suspected) return false;
@@ -251,9 +261,10 @@ function blockCheck(game, b, a) {
   if (!canBlockAny(game, b)) return ['cant'];
   const ach = game.chars(a), bch = game.chars(b);
   const has = (ch, k) => game.hasKeywordIn(ch, k);
-  if (has(ach, 'Flying') && !has(bch, 'Flying') && !has(bch, 'Reach')) return ['flying'];
+  if (has(ach, 'Flying') && !has(bch, 'Flying') && !has(bch, 'Reach') && !M.blocksAsThoughReach(game, b, a)) return ['flying'];
   if (has(bch, "CARDNAME can block only creatures with flying.") && !has(ach, 'Flying')) return ['onlyFlyers'];
-  if (has(ach, 'Shadow') !== has(bch, 'Shadow')) return [has(ach, 'Shadow') ? 'shadow' : 'blockerShadow'];
+  if (has(ach, 'Shadow') && !has(bch, 'Shadow') && !M.blocksAsThoughShadow(game, b, a)) return ['shadow'];
+  if (!has(ach, 'Shadow') && has(bch, 'Shadow')) return ['blockerShadow'];
   if (has(ach, 'Horsemanship') && !has(bch, 'Horsemanship')) return ['horsemanship'];
   if (has(ach, 'Fear') && !bch.types.has('Artifact') && !bch.colors.has('B')) return ['fear'];
   if (has(ach, 'Intimidate') && !bch.types.has('Artifact') && ![...ach.colors].some(c => bch.colors.has(c))) return ['intimidate'];
@@ -263,7 +274,7 @@ function blockCheck(game, b, a) {
   const defPid = b.controller;
   for (const k of ach.keywords) {
     let m = k.match(/^Landwalk:(\w+)/) || k.match(/^(\w+)walk$/);
-    if (m) {
+    if (m && !M.ignoresLandwalk(game, b, a, k)) {
       const t = m[1];
       if (game.battlefield.some(l => l.controller === defPid && game.chars(l).types.has('Land') && (game.chars(l).subtypes.has(t) || (t === 'Nonbasic' && !game.chars(l).supertypes.has('Basic')) || (t === 'Legendary' && game.chars(l).supertypes.has('Legendary'))))) return ['landwalk', t];
     }
@@ -328,14 +339,18 @@ export async function declareBlockers(game) {
     const atks = combat.attackers.filter(x => x.defenderPlayer === dp).map(x => game.cardById(x.card)).filter(Boolean);
     const cands = game.battlefield.filter(c => c.controller === dp && canBlockAny(game, c));
     if (!cands.length || !atks.length) continue;
-    const ans = await game.ask(dp, { type: 'blockers', attackers: atks.map(c => c.id), candidates: cands.map(c => c.id) });
+    // (Camouflage: piles assigned at random instead of declaring blockers; creatures that can block more than one
+    // attacker are listed in caps)
+    const caps = M.blockCaps(game, cands);
+    const ans = (await M.replaceDeclareBlockers(game, dp, atks, cands)) || await game.ask(dp, { type: 'blockers', attackers: atks.map(c => c.id), candidates: cands.map(c => c.id), ...(caps ? { caps } : {}) });
     const pairs = [];
-    const usedB = new Set();
+    const uses = new Map();
     for (const pr of ans || []) {
       const b = game.cardById(pr.blocker), a = game.cardById(pr.attacker);
-      if (!b || !a || usedB.has(b.id) || !cands.includes(b) || !atks.includes(a)) continue;
+      if (!b || !a || !cands.includes(b) || !atks.includes(a)) continue;
+      if (pairs.some(p => p.b === b && p.a === a) || (uses.get(b.id) || 0) >= M.blockCapacity(game, b)) continue;
       if (!canBlock(game, b, a)) continue;
-      usedB.add(b.id);
+      uses.set(b.id, (uses.get(b.id) || 0) + 1);
       pairs.push({ b, a });
     }
     applyBlockRequirements(game, atks, cands, pairs);
@@ -355,92 +370,122 @@ export async function declareBlockers(game) {
       const key = `${s.host.id}:${s.st.key}${s.p.ValidDefender ? ':' + dp : ''}`;
       combat.blockCounts = combat.blockCounts || {};
       const room = Math.max(0, max - (combat.blockCounts[key] || 0));
-      if (pairs.length > room) {
-        const drop = pairs.splice(room);
-        game.log(`${game.name(s.host)}: no more than ${max} creature${max === 1 ? '' : 's'} can block (${drop.map(p => game.name(p.b)).join(', ')} won't block).`);
+      const blockers = [...new Set(pairs.map(p => p.b))];
+      if (blockers.length > room) {
+        const drop = blockers.slice(room);
+        for (let i = pairs.length - 1; i >= 0; i--) if (drop.includes(pairs[i].b)) pairs.splice(i, 1);
+        game.log(`${game.name(s.host)}: no more than ${max} creature${max === 1 ? '' : 's'} can block (${drop.map(b => game.name(b)).join(', ')} won't block).`);
         validate();
       }
-      combat.blockCounts[key] = (combat.blockCounts[key] || 0) + pairs.length;
+      combat.blockCounts[key] = (combat.blockCounts[key] || 0) + new Set(pairs.map(p => p.b)).size;
     }
+    // "can't block alone", "can't block unless at least two other creatures block"
+    M.blockAloneRules(game, pairs);
+    validate();
     // "creatures can't block unless their controller pays {N} for each of those creatures"
-    for (const pr of [...pairs]) {
-      const tax = blockTax(game, pr.b, pr.a);
+    for (const b of [...new Set(pairs.map(p => p.b))]) {
+      const tax = blockTax(game, b, pairs.filter(p => p.b === b).map(p => p.a));
       if (tax <= 0) continue;
       const cost = parseMana(String(tax));
-      if (canAfford(game, dp, cost) && await payManaCost(game, dp, cost)) { game.log(`${game.players[dp].name} pays {${tax}} to block with ${game.name(pr.b)}.`); continue; }
-      pairs.splice(pairs.indexOf(pr), 1);
-      game.log(`${game.players[dp].name} can't pay {${tax}} to block with ${game.name(pr.b)}.`);
+      if (canAfford(game, dp, cost) && await payManaCost(game, dp, cost)) { game.log(`${game.players[dp].name} pays {${tax}} to block with ${game.name(b)}.`); continue; }
+      for (let i = pairs.length - 1; i >= 0; i--) if (pairs[i].b === b) pairs.splice(i, 1);
+      game.log(`${game.players[dp].name} can't pay {${tax}} to block with ${game.name(b)}.`);
       validate();
     }
-    for (const { b, a } of pairs) {
-      combat.blockers.set(b.id, a.id);
-      const rec = combat.attackers.find(x => x.card === a.id);
-      rec.blockers.push(b.id);
-      rec.blocked = true;
-      // block history: "blocked this combat", "blocked or was blocked by a legendary creature this turn"
-      combat.blockedIds = [...(combat.blockedIds || []), b.id];
-      game.turnState.blocks.push({ blocker: b.id, blockerZcc: b.zcc, blockerLKI: game.makeLKI(b), attacker: a.id, attackerZcc: a.zcc, attackerLKI: game.makeLKI(a) });
-    }
     if (pairs.length) game.log(`${game.players[dp].name} blocks: ${pairs.map(p => `${game.name(p.b)} blocks ${game.name(p.a)}`).join(', ')}`, { type: 'block' });
+    // banding: blocking one creature in a band blocks the whole band
+    const banded = [];
+    for (const { b, a } of pairs) for (const m of M.bandOf(game, a)) if (m !== a && !pairs.some(p => p.b === b && p.a === m) && !banded.some(p => p.b === b && p.a === m)) banded.push({ b, a: m });
+    if (banded.length) game.log(`Bands are blocked together: ${banded.map(p => `${game.name(p.b)} also blocks ${game.name(p.a)}`).join(', ')}.`);
+    // block history: "blocked this combat", "blocked or was blocked by a legendary creature this turn"
+    for (const { b, a } of [...pairs, ...banded]) M.addBlock(game, b, a);
   }
   game.touch();
+  // triggers: "whenever one or more creatures block", "whenever CARDNAME blocks" (once, however many it blocks),
+  // "whenever CARDNAME becomes blocked", "whenever one or more creatures you control become blocked"
+  const allBlockers = [...combat.blockers.keys()].map(id => game.cardById(id)).filter(Boolean);
+  if (allBlockers.length) game.fire('BlockersDeclared', { Blockers: allBlockers, Attackers: combat.attackers.filter(r => r.blockers.length).map(r => game.cardById(r.card)).filter(Boolean) });
+  for (const b of allBlockers) { const as = M.attackersBlockedBy(game, b); game.fire('Blocks', { Blocker: b, Card: b, Attacker: as[0], Attackers: as }); }
+  const blockedNow = [];
   for (const rec of combat.attackers) {
     const a = game.cardById(rec.card);
     if (!a) continue;
     if (rec.blocked) {
       const bl = rec.blockers.map(id => game.cardById(id)).filter(Boolean);
-      for (const b of bl) game.fire('Blocks', { Blocker: b, Card: b, Attacker: a });
       game.fire('AttackerBlocked', { Attacker: a, Card: a, Blockers: bl, Blocker: bl[0], DefendingPlayer: rec.defenderPlayer, NumBlockers: bl.length });
       for (const b of bl) game.fire('AttackerBlockedByCreature', { Attacker: a, Blocker: b });
+      blockedNow.push(a);
     } else {
       game.fire('AttackerUnblocked', { Attacker: a, Card: a, DefendingPlayer: rec.defenderPlayer });
     }
   }
+  if (blockedNow.length) game.fire('AttackerBlockedOnce', { Attackers: blockedNow });
   const unb = combat.attackers.filter(r => !r.blocked).map(r => game.cardById(r.card)).filter(Boolean);
   if (unb.length) game.fire('AttackerUnblockedOnce', { Attackers: unb, AttackingPlayer: game.activePlayer });
 }
 
-const LURE = 'All creatures able to block CARDNAME do so.';
 function mustBlockNow(game, b) { return game.activeStatics('MustBlock').some(s => matchValid(game, b, s.p.ValidCreature || s.p.ValidCard || 'Card.Self', s.ctx)); }
 
 // Blocking requirements ("blocks each combat if able", "target creature blocks it this turn if able", lure,
-// "must be blocked if able"): extend the declared blocks so as many requirements as possible are obeyed.
+// "all Walls able to block it do so", "must be blocked if able"): extend the declared blocks so as many requirements as
+// possible are obeyed. A creature that can block more than one attacker takes on another one rather than switching.
 export function applyBlockRequirements(game, atks, cands, pairs) {
-  const byBlocker = () => new Map(pairs.map(p => [p.b.id, p]));
-  const assign = (b, a) => { const ex = byBlocker().get(b.id); if (ex) ex.a = a; else pairs.push({ b, a }); };
-  const lure = a => hidden(game, a, LURE);
+  const of = b => pairs.filter(p => p.b === b);
+  const cap = new Map();
+  const capOf = b => { if (!cap.has(b.id)) cap.set(b.id, M.blockCapacity(game, b)); return cap.get(b.id); };
+  const assign = (b, a) => {
+    const mine = of(b);
+    if (mine.some(p => p.a === a)) return;
+    if (mine.length < capOf(b)) pairs.push({ b, a });
+    else mine[mine.length - 1].a = a;
+  };
+  const lures = new Map(atks.map(a => [a.id, M.lureFilters(game, a)]));
+  const lure = a => (lures.get(a.id) || []).length > 0;
+  const luredBy = (b, a) => (lures.get(a.id) || []).some(v => matchValid(game, b, v, { host: a, you: a.controller }));
   for (const a of atks) {
     if (!lure(a)) continue;
-    for (const b of cands) { const cur = byBlocker().get(b.id); if ((!cur || !lure(cur.a)) && canBlock(game, b, a)) assign(b, a); }
+    for (const b of cands) {
+      if (!luredBy(b, a) || !canBlock(game, b, a)) continue;
+      const mine = of(b);
+      if (mine.length >= capOf(b) && mine.some(p => lure(p.a))) continue;
+      assign(b, a);
+    }
   }
   for (const b of cands) {
     const req = b.mustBlock;
     if (!req || req.turn !== game.turnNumber) continue;
-    const a = atks.find(x => x.id === req.attacker);
-    const cur = byBlocker().get(b.id);
-    if (a && canBlock(game, b, a) && !(cur && (cur.a === a || lure(cur.a)))) assign(b, a);
+    // ("blocks each attacking creature this turn if able": as many as it can block)
+    for (const a of atks.filter(x => (req.attackers || [req.attacker]).includes(x.id))) {
+      const mine = of(b);
+      if (!canBlock(game, b, a) || mine.some(p => p.a === a)) continue;
+      if (mine.length >= capOf(b) && mine.some(p => lure(p.a))) continue;
+      assign(b, a);
+    }
   }
   for (const b of cands) {
-    if (byBlocker().has(b.id) || !mustBlockNow(game, b)) continue;
+    if (of(b).length || !mustBlockNow(game, b)) continue;
     const a = atks.find(x => canBlock(game, b, x));
     if (a) assign(b, a);
   }
   for (const a of atks) {
-    if (pairs.some(p => p.a === a)) continue;
     const ach = game.chars(a);
-    if (!ach.keywords.some(k => /^(HIDDEN )?CARDNAME must be blocked (if able|by exactly one creature if able)\.$/.test(k))) continue;
-    const taken = byBlocker();
-    const b = cands.find(x => !taken.has(x.id) && canBlock(game, x, a));
-    if (b) assign(b, a);
+    const two = ach.keywords.some(k => /^(HIDDEN )?CARDNAME must be blocked by two or more creatures if able\.$/.test(k));
+    if (!two && !ach.keywords.some(k => /^(HIDDEN )?CARDNAME must be blocked (if able|by exactly one creature if able)\.$/.test(k))) continue;
+    const need = two ? 2 : 1;
+    const free = cands.filter(x => !of(x).length && canBlock(game, x, a));
+    const have = pairs.filter(p => p.a === a).length;
+    if (have >= need || have + free.length < need) continue;
+    for (const b of free.slice(0, need - have)) assign(b, a);
   }
   return pairs;
 }
 
-function blockTax(game, b, a) {
+// what blocking costs this creature's controller (each static once, for any of the attackers it blocks)
+function blockTax(game, b, atks) {
   let tax = 0;
   for (const s of game.activeStatics('CantBlockUnless')) {
     if (!matchValid(game, b, s.p.ValidCard || 'Creature', s.ctx)) continue;
-    if (s.p.ValidAttacker && !matchValid(game, a, s.p.ValidAttacker, s.ctx)) continue;
+    if (s.p.ValidAttacker && !atks.some(a => matchValid(game, a, s.p.ValidAttacker, s.ctx))) continue;
     const cost = s.p.Cost || '0';
     tax += /^\d+$/.test(cost) ? +cost : Math.max(0, calcCtx(game, cost, s.ctx));
   }
@@ -463,7 +508,7 @@ function dealsThisStep(game, c, firstStrike) {
 export function combatPower(game, c) {
   const ch = game.chars(c);
   if (game.activeStatics('CombatDamageToughness').some(s => matchValid(game, c, s.p.ValidCard || 'Creature', s.ctx))) return ch.toughness;
-  return ch.power;
+  return M.negatedPower(game, c, ch.power);
 }
 
 export async function combatDamage(game, firstStrike) {
@@ -476,16 +521,20 @@ export async function combatDamage(game, firstStrike) {
     if (!dealsThisStep(game, a, firstStrike)) continue;
     const power = combatPower(game, a);
     if (firstStrike) combat.firstStrikeDone.add(a.id);
-    if (power <= 0) continue;
+    if (power <= 0 || M.assignsNoCombatDamage(game, a)) continue;
     const defTarget = rec.defenderCard ? game.cardById(rec.defenderCard) : game.players[rec.defenderPlayer];
     const defAlive = defTarget && (defTarget.isPlayer ? !defTarget.lost : defTarget.zone === 'battlefield');
     const trample = kw(game, a, 'Trample');
     const asUnblocked = game.activeStatics('AssignCombatDamageAsUnblocked').some(s => matchValid(game, a, s.p.ValidCard || 'Card.Self', s.ctx));
+    const blockers = rec.blockers.map(id => game.cardById(id)).filter(b => b && b.zone === 'battlefield');
+    // Butcher Orgg, Cunning Giant, banding blockers: damage the attacking player (or, with banding, the defending
+    // player) divides some other way
+    const special = await M.attackerDamage(game, rec, a, power, rec.blocked && !(asUnblocked && !rec.blockers.length) ? blockers : []);
+    if (special) { assigns.push(...special); continue; }
     if (!rec.blocked || asUnblocked && rec.blocked && !rec.blockers.length) {
       if (defAlive) assigns.push({ src: a, tgt: defTarget, n: power });
       continue;
     }
-    const blockers = rec.blockers.map(id => game.cardById(id)).filter(b => b && b.zone === 'battlefield');
     if (!blockers.length) { if (trample && defAlive) assigns.push({ src: a, tgt: defTarget, n: power }); continue; }
     // order: kill as many as possible
     const deathtouch = kw(game, a, 'Deathtouch');
@@ -506,14 +555,17 @@ export async function combatDamage(game, firstStrike) {
     }
     for (const b of blockers) if (per.get(b.id)) assigns.push({ src: a, tgt: b, n: per.get(b.id) });
   }
-  for (const [bid, aid] of combat.blockers) {
-    const b = game.cardById(bid), a = game.cardById(aid);
+  // blockers: each deals its damage to the attacker it blocks, or divides it among several (a creature that can block
+  // more than one, or one blocking a band)
+  for (const bid of [...combat.blockers.keys()]) {
+    const b = game.cardById(bid);
     if (!b || b.zone !== 'battlefield') continue;
     if (!dealsThisStep(game, b, firstStrike)) continue;
     if (firstStrike) combat.firstStrikeDone.add(b.id);
-    if (!a || a.zone !== 'battlefield') continue;
+    const atks = M.attackersBlockedBy(game, b).filter(a => a.zone === 'battlefield');
+    if (!atks.length) continue;
     const power = combatPower(game, b);
-    if (power > 0) assigns.push({ src: b, tgt: a, n: power });
+    if (power > 0 && !M.assignsNoCombatDamage(game, b)) assigns.push(...await M.blockerDamage(game, b, atks, power));
   }
   if (!assigns.length) return;
   game.beginDamageBatch();

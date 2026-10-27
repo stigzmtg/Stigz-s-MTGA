@@ -17,6 +17,8 @@ function playerObj(game, id) { return id == null ? null : (typeof id === 'object
 
 export const SUPPORTED_TRIGGER_MODES = new Set(['ChangesZone', 'ChangesZoneAll', 'Phase', 'Attacks', 'AttackersDeclared', 'AttackersDeclaredOneTarget', 'SpellCast', 'SpellCastOrCopy', 'AbilityCast', 'SpellAbilityCast', 'DamageDone', 'DamageDoneOnce', 'DamageDealtOnce', 'DamageAll', 'Drawn', 'Sacrificed', 'Destroyed', 'LifeGained', 'LifeLost', 'LifeLostAll', 'TapsForMana', 'Cycled', 'Discarded', 'DiscardedAll', 'BecomesTarget', 'BecomesTargetOnce', 'Taps', 'Untaps', 'Blocks', 'AttackerBlocked', 'AttackerBlockedByCreature', 'AttackerUnblocked', 'AttackerUnblockedOnce', 'CounterAdded', 'CounterAddedOnce', 'CounterRemoved', 'LandPlayed', 'Always', 'TokenCreated', 'TokenCreatedOnce', 'TurnBegin', 'Milled', 'MilledAll', 'Exiled', 'LosesGame', 'BecomeMonarch', 'TakesInitiative', 'RoomEntered', 'DungeonCompleted', 'Explores', 'Connives', 'Surveil', 'Scry', 'Investigated', 'Fight', 'Attached', 'Unattached', 'ChangesController', 'Transformed', 'SpellCopy', 'BecomesCrewed', 'TurnFaceUp', 'Mutates', 'BecomeMonstrous', 'Evolved', 'CommitCrime', 'FlippedCoin', 'RolledDie', 'RolledDieOnce', 'Exploited', 'AbilityTriggered', 'AbilityResolves', 'CounterPlayerAddedAll', 'ManaAdded',
   'ClassLevelGained', 'Clashed', 'DamagePrevented', 'DamagePreventedOnce', 'GiveGift', 'UnlockDoor', 'FullyUnlock', 'ManaExpend', 'Exerted', 'Vote', 'BecomeRenowned', 'MilledOnce', 'Shuffled', 'CounterTypeAddedAll', 'CounterRemovedOnce', 'SearchedLibrary', 'PhaseOutAll']);
+// combat (mech-combat.js): blocks, excess damage, crew / saddle / enlist
+for (const m of ['AttackerBlockedOnce', 'BlockersDeclared', 'ExcessDamage', 'ExcessDamageAll', 'Crewed', 'Saddled', 'BecomesSaddled', 'Enlisted']) SUPPORTED_TRIGGER_MODES.add(m);
 
 export function triggerMatches(game, p, host, rp, ctx) {
   const mode = rp.Mode;
@@ -178,12 +180,23 @@ export function triggerMatches(game, p, host, rp, ctx) {
       return true;
     }
     case 'Taps': case 'Untaps': return vc(game, rp.Card, p.ValidCard, ctx) && (!p.Attacker || (p.Attacker === 'True') === !!rp.Attacker);
-    case 'Blocks': return vc(game, rp.Blocker, p.ValidCard, ctx) && (!p.ValidBlocked || vc(game, rp.Attacker, p.ValidBlocked, ctx));
+    case 'Blocks': return vc(game, rp.Blocker, p.ValidCard, ctx) && (!p.ValidBlocked || (rp.Attackers || [rp.Attacker]).some(a => vc(game, a, p.ValidBlocked, ctx)));
     case 'AttackerBlocked': case 'AttackerBlockedByCreature': return vc(game, rp.Attacker, p.ValidCard, ctx) && (!p.ValidBlocker || (rp.Blockers || [rp.Blocker]).some(b => vc(game, b, p.ValidBlocker, ctx)));
     case 'AttackerUnblocked': return vc(game, rp.Attacker, p.ValidCard, ctx);
     case 'AttackerUnblockedOnce': {
       if (p.ValidAttackingPlayer && !vc(game, playerObj(game, rp.AttackingPlayer), p.ValidAttackingPlayer, ctx)) return false;
       const list = (rp.Attackers || []).filter(a => vc(game, a, p.ValidCard || 'Creature', ctx));
+      return list.length > 0;
+    }
+    // combat (mech-combat.js): "whenever one or more creatures you control become blocked", "whenever one or more
+    // creatures block", excess damage
+    case 'AttackerBlockedOnce': return (rp.Attackers || []).some(a => vc(game, a, p.ValidCard || 'Creature', ctx));
+    case 'BlockersDeclared': return true;
+    case 'ExcessDamage': return vc(game, rp.Target, p.ValidTarget, ctx) && (!p.CombatDamage || (p.CombatDamage === 'True') === !!rp.IsCombatDamage);
+    case 'ExcessDamageAll': {
+      if (p.CombatDamage && (p.CombatDamage === 'True') !== !!rp.IsCombatDamage) return false;
+      const list = (rp.DamageTargets || []).filter(t => vc(game, t, p.ValidTarget, ctx));
+      rp.Targets = list;
       return list.length > 0;
     }
     case 'CounterAdded': case 'CounterAddedOnce': {
@@ -225,6 +238,11 @@ export function triggerMatches(game, p, host, rp, ctx) {
     case 'Unattached': return vc(game, rp.AttachSource, p.ValidAttachment, ctx) && vc(game, rp.AttachTarget, p.ValidObject, ctx);
     case 'ChangesController': return vc(game, rp.Card, p.ValidCard, ctx);
     case 'BecomesCrewed': return vc(game, rp.Card, p.ValidVehicle || p.ValidCard, ctx);
+    // combat (mech-combat.js): "whenever this creature crews a Vehicle / saddles a Mount", "becomes saddled for the first
+    // time each turn", "enlists a creature"
+    case 'Crewed': case 'Saddled': return vc(game, rp.Card, p.ValidCard, ctx) && (!p.ValidCrew || [].concat(rp.Crew || []).some(c => vc(game, c, p.ValidCrew, ctx)));
+    case 'BecomesSaddled': return vc(game, rp.Card, p.ValidSaddled || p.ValidCard, ctx) && (p.FirstTimeSaddled !== 'True' || rp.TimesSaddled === 1);
+    case 'Enlisted': return vc(game, rp.Card, p.ValidCard, ctx) && vc(game, rp.Enlisted, p.ValidEnlisted, ctx);
     case 'UnlockDoor': case 'FullyUnlock':
       if (!vc(game, rp.Card, p.ValidCard, ctx)) return false;
       if (p.ValidPlayer && !vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx)) return false;

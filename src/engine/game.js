@@ -8,6 +8,7 @@ import { SA, castSpell, activateAbility, resolveStackItem, chooseTargetsForSA, g
 import { triggerMatches } from './triggers.js';
 import * as combat from './combat.js';
 import { parseAbility } from './forge.js';
+import { excessDamageOf, noteExcessDamage, flushExcessDamage } from './mech-combat.js';
 
 export const STEPS = ['untap', 'upkeep', 'draw', 'main1', 'beginCombat', 'declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage', 'endCombat', 'main2', 'end', 'cleanup'];
 export const STEP_NAMES = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main 1', beginCombat: 'Beginning of Combat', declareAttackers: 'Declare Attackers', declareBlockers: 'Declare Blockers', firstStrikeDamage: 'First-Strike Damage', combatDamage: 'Combat Damage', endCombat: 'End of Combat', main2: 'Main 2', end: 'End Step', cleanup: 'Cleanup' };
@@ -495,7 +496,7 @@ export class Game {
           const ids = await this.ask(ap, { type: 'cards', prompt: `Discard ${n} card(s) to hand size`, cards: p.hand.map(c => c.id), min: n, max: n, purpose: 'discard' });
           for (const id of ids) { const c = this.cardById(id); if (c && c.zone === 'hand') await this.discard(c, null); }
         }
-        for (const c of this.battlefield) { c.damage = 0; c.deathtouchHit = false; }
+        for (const c of this.battlefield) { if (this.activeStatics('NoCleanupDamage').some(s => matchValid(this, c, s.p.ValidCard || 'Card.Self', s.ctx))) continue; c.damage = 0; c.deathtouchHit = false; }
         await this.expireDurations('EOT');
         this.touch();
         await this.processTriggersAndSBA();
@@ -1680,6 +1681,8 @@ export class Game {
     if (target.isCard && target.zone !== 'battlefield') return 0;
     const srcCh = source ? this.chars(source.lki ? source : source) : null;
     const srcCtrl = source ? (source.lki ? source.controller : source.controller) : null;
+    // "Black and/or red permanents and spells are colorless sources of damage" (Ghostly Flame): for protection and prevention
+    if (source && source.isCard && !source.lki && this.activeStatics('ColorlessDamageSource').some(s => matchValid(this, source, s.p.ValidCard || 'Card', s.ctx))) { source = this.makeLKI(source); source.chars.colors = new Set(); }
     // protection / prevention
     const canPrevent = !this.activeStatics('CantPreventDamage').length;
     const prevent = () => { this.notePrevented(source, target, amount, !!opts.combat); return 0; };
@@ -1707,7 +1710,7 @@ export class Game {
     if (rp.preventedAmount > 0) this.notePrevented(source, target, rp.preventedAmount, !!opts.combat);
     amount = rp.DamageAmount;
     if (amount <= 0) return 0;
-    const infect = srcCh && this.hasKeywordIn(srcCh, 'Infect');
+    const infect = (srcCh && this.hasKeywordIn(srcCh, 'Infect')) || this.activeStatics('InfectDamage').some(s => matchValid(this, target, s.p.ValidTarget || 'Any', s.ctx));
     const wither = srcCh && (this.hasKeywordIn(srcCh, 'Wither') || this.activeStatics('WitherDamage').some(s => !s.p.ValidCard || (source && matchValid(this, source, s.p.ValidCard, s.ctx))));
     const deathtouch = srcCh && this.hasKeywordIn(srcCh, 'Deathtouch');
     const lifelink = srcCh && this.hasKeywordIn(srcCh, 'Lifelink');
@@ -1730,6 +1733,7 @@ export class Game {
       this.log(`${source ? this.name(source) : 'Damage'} deals ${amount} damage to ${target.name}.`, { type: 'damage' });
     } else {
       const tch = this.chars(target);
+      const excess = excessDamageOf(this, target, tch, amount, deathtouch);
       if (tch.types.has('Planeswalker') && !tch.types.has('Creature')) {
         await this.removeCounters(target, 'LOYALTY', amount);
       } else if (tch.types.has('Battle') && !tch.types.has('Creature')) {
@@ -1742,6 +1746,7 @@ export class Game {
       }
       this.turnState.damagedCards[target.id] = true;
       this.log(`${source ? this.name(source) : 'Damage'} deals ${amount} damage to ${this.name(target)}.`, { type: 'damage' });
+      if (excess > 0) noteExcessDamage(this, source, target, excess, !!opts.combat);
     }
     if (source) this.turnState.dealtDamage[source.id] = true;
     // what dealt damage to what this turn ("if it dealt damage to an opponent this turn")
@@ -1777,6 +1782,7 @@ export class Game {
     for (const t of byTarget.values()) this.fire('DamageDoneOnce', t);
     for (const s of bySource.values()) this.fire('DamageDealtOnce', s);
     if (batch.length) this.fire('DamageAll', { Amount: batch.reduce((a, d) => a + d.DamageAmount, 0), IsCombatDamage: batch[0].IsCombatDamage });
+    flushExcessDamage(this);
     const prevented = this.preventBatch || [];
     this.preventBatch = null;
     const byPrevTarget = new Map();
