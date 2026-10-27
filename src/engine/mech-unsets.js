@@ -169,7 +169,7 @@ async function putSticker(game, sa, card, opts, optional) {
     const n = cur ? cur.split(' ').length : 0;
     if (n > 0) {
       const choices = Array.from({ length: n + 1 }, (_, i) => ({ label: addStickerWord(cur, s.word, i), value: i }));
-      pos = await game.ask(pid, { type: 'option', prompt: `Where does “${s.word}” go in ${cur}'s name?`, options: choices, sa, purpose: 'stickerNamePosition', cardId: card.id });
+      pos = await game.ask(pid, { type: 'option', prompt: `Where does “${s.word}” go in ${cur}'s name?`, options: choices, sa, purpose: 'stickerNamePosition', cardId: card.id, cards: [card.id] });
       pos = +pos || 0;
     }
   }

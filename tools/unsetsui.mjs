@@ -192,7 +192,10 @@ await page.screenshot({ path: `${OUT}/8b-visit-roll.png` });
 // ---- on a phone the mat still fits
 await page.setViewportSize({ width: 390, height: 844 });
 await page.waitForTimeout(500);
-ok(!(await S(() => document.documentElement.scrollWidth > innerWidth + 1)), 'no sideways scrolling on a phone');
+// (the mat settles its card size over a few frames after the resize)
+await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth + 1, null, { timeout: 4000 }).catch(() => {});
+const wide =await S(() => document.documentElement.scrollWidth > innerWidth + 1 ? [...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > innerWidth + 1 && !(e.parentElement && e.parentElement.getBoundingClientRect().right > innerWidth + 1)).slice(0, 6).map(e => `${e.tagName}.${e.className} ${Math.round(e.getBoundingClientRect().right)}`) : null);
+ok(!wide, `no sideways scrolling on a phone (${JSON.stringify(wide)})`);
 await page.screenshot({ path: `${OUT}/9-phone.png` });
 
 console.log(errors.length ? `errors:\n${errors.join('\n')}` : 'no page errors');
