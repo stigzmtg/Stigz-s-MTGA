@@ -2,6 +2,7 @@
 import { parseCardScript, parseAbility } from './forge.js';
 import { parseMana, cmc, costColors } from './mana.js';
 import { CARD_TYPES, SUPERTYPES, NAME_TO_COLOR, COLORS } from './util.js';
+import { hauntSpellAbilities } from './mech-classic-rules.js';
 
 const TYPE_SET = new Set(CARD_TYPES);
 const SUPER_SET = new Set(SUPERTYPES);
@@ -37,7 +38,7 @@ export class FaceDef {
     this.loyalty = raw.loyalty;
     this.defense = raw.defense;
     this.keywords = raw.K;
-    this.abilities = raw.A;
+    this.abilities = hauntSpellAbilities(raw); // (mech-classic: a haunt spell's ability is its spell)
     this.triggers = raw.T;
     this.statics = raw.S;
     this.replacements = raw.R;

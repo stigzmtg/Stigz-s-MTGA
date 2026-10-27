@@ -3,6 +3,7 @@ import { compare, CAP_COLOR, COLORS, BASIC_LAND_TYPES, NAME_TO_COLOR, PERMANENT_
 import { cmc, manaColorsFromProduced } from './mana.js';
 import { stickerCardProp, stickerCount, unsetsPlayerProperty } from './mech-unsets-rules.js';
 import { filterExt } from './ext.js';
+import { phasedOutProps, CLASSIC_CARD_PROPS, classicCardProp, classicCardPropArg, CLASSIC_PLAYER_PROPS, classicPlayerProp, classicCount } from './mech-classic-rules.js';
 
 export const unknownProps = new Set(); // collected for coverage diagnostics
 
@@ -118,6 +119,7 @@ function matchPlayer(game, p, typePart, props, ctx) {
 function playerProp(game, p, prop, ctx) {
   const you = ctx.you;
   if (prop.startsWith('!')) return !playerProp(game, p, prop.slice(1), ctx);
+  if (CLASSIC_PLAYER_PROPS.has(prop)) return classicPlayerProp(game, p, prop, ctx); // (mech-classic)
   switch (prop) {
     case 'isMonarch': return game.monarch === p.id;
     case 'hasInitiative': return game.initiative === p.id;
@@ -229,6 +231,8 @@ function matchCard(game, card, typePart, props, ctx) {
     if (!ref) return false;
     return matchCard(game, card, 'Card', props.length ? props : ['Self'], { ...ctx, host: ref });
   }
+  // (mech-classic: a phased-out permanent is treated as though it doesn't exist, unless the filter asks for it)
+  if (card.phasedOut && !card.lki) { props = phasedOutProps(props); if (!props) return false; }
   const ch = charsOf(game, card);
   if (!ch) return false;
   if (typePart !== 'Card' && typePart !== 'Any') {
@@ -247,6 +251,7 @@ function cardProp(game, card, ch, prop, ctx) {
   const you = ctx.you;
   const ctrl = ctrlOf(game, card);
   const host = ctx.host;
+  if (CLASSIC_CARD_PROPS.has(prop)) return classicCardProp(game, card, ch, prop, ctx); // (mech-classic)
   switch (prop) {
     case 'YouCtrl': return ctrl === you;
     case 'YouDontCtrl': return ctrl !== you;
@@ -556,6 +561,7 @@ function cardProp(game, card, ch, prop, ctx) {
   if (prop === 'ExiledByYou') { const h = card.zone === 'exile' && card.exiledWith != null ? game.cardById(card.exiledWith) : null; return !!h && (h.zone === 'battlefield' ? h.controller : h.owner) === you; }
   // "Card.TriggeredNewCard", "Card.TriggeredSources": the object(s) the trigger refers to
   if (/^Triggered\w+$/.test(prop)) return resolveDefined(game, prop, ctx).some(x => x && !x.isPlayer && x.id === card.id);
+  { const r = classicCardPropArg(game, card, prop, ctx); if (r !== undefined) return r; } // (mech-classic: "DamagedBy Remembered")
   if ((m = prop.match(/^(\w+)Ctrl$/))) {
     const who = resolveDefined(game, m[1], ctx).map(x => x.isPlayer ? x.id : ctrlOf(game, x));
     if (who.length) return who.includes(ctrl);
@@ -1282,6 +1288,7 @@ function playerProperty(game, p, prop, ctx) {
   if (prop === 'DamageThisTurn' || prop === 'DamageDoneThisTurn') return game.turnState.damagedPlayers[p.id] || 0;
   if (prop === 'AttractionsVisitedThisTurn') return unsetsPlayerProperty(game, p, prop);
   if (prop === 'OppsAtLifeTotal') return 0;
+  if (prop === 'TiedForHighestLife') return p.life === Math.max(...game.livingPlayers().map(q => q.life)) ? 1 : 0; // (mech-classic: Celestial Convergence)
   return 0;
 }
 
@@ -1291,6 +1298,7 @@ function countExpr(game, rest, ctx, depth) {
   const you = game.players[youId];
   const sa = ctx && ctx.sa;
   let m;
+  { const v = classicCount(game, rest, ctx); if (v !== undefined) return v; } // (mech-classic: coin flips, activations this turn)
   switch (rest) {
     case 'xPaid': case 'XPaid': return xPaid(ctx);
     case 'TriggerRememberAmount': { const r = sa && sa.root ? sa.root() : sa; return (r && r.triggerRememberAmount) || (sa && sa.triggerRememberAmount) || 0; }

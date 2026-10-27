@@ -4,6 +4,7 @@ import { normalizeCounter } from './game.js';
 import { UNSETS_TRIGGER_MODES, unsetsTriggerMatches } from './mech-unsets-rules.js';
 import { triggerExt } from './ext.js';
 import { NEWSETS_TRIGGER_MODES, triggerMatches as newsetsTriggerMatches } from './mech-newsets.js';
+import { classicTriggerMatches, CLASSIC_TRIGGER_MODES } from './mech-classic-rules.js';
 
 function vc(game, obj, valid, ctx) {
   if (!valid) return true;
@@ -28,6 +29,8 @@ for (const m of ['BecomesPlotted', 'Foretell', 'CollectEvidence', 'Forage', 'Ada
 for (const m of NEWSETS_TRIGGER_MODES) SUPPORTED_TRIGGER_MODES.add(m);
 // combat (mech-combat.js): blocks, excess damage, crew / saddle / enlist
 for (const m of ['AttackerBlockedOnce', 'BlockersDeclared', 'ExcessDamage', 'ExcessDamageAll', 'Crewed', 'Saddled', 'BecomesSaddled', 'Enlisted']) SUPPORTED_TRIGGER_MODES.add(m);
+// classic (mech-classic.js): phasing in and out, cumulative upkeep and echo paid or not
+for (const m of CLASSIC_TRIGGER_MODES) SUPPORTED_TRIGGER_MODES.add(m);
 
 export function triggerMatches(game, p, host, rp, ctx) {
   const mode = rp.Mode;
@@ -274,6 +277,7 @@ export function triggerMatches(game, p, host, rp, ctx) {
     case 'StickerPlaced': case 'VisitAttraction': case 'ClaimPrize': return unsetsTriggerMatches(game, p, rp, ctx, vc);
     case 'AbilityTriggered': case 'AbilityResolves': return false;
     case 'ManaAdded': return false;
+    case 'PhaseIn': case 'PhaseOut': case 'PayCumulativeUpkeep': case 'PayEcho': return classicTriggerMatches(game, p, rp, (o, v) => vc(game, o, v, ctx)); // (mech-classic)
     default: return triggerExt[mode] ? triggerExt[mode](game, p, host, rp, ctx) : newsetsTriggerMatches(game, p, host, rp, ctx);
   }
 }

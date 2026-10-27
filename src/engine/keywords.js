@@ -1,6 +1,7 @@
 // Keywords -> synthesized activated abilities, triggers and replacements (expressed in Forge script syntax).
 import { parseAbility } from './forge.js';
 import { keywordExt } from './ext.js';
+import { classicKeywordDef, CLASSIC_KEYWORDS } from './mech-classic-rules.js';
 
 const cache = new Map();
 
@@ -18,6 +19,7 @@ function defFor(kw, face) {
   const A = [], T = [], R = [], S = {};
   const etbSelf = 'Mode$ ChangesZone | Origin$ Any | Destination$ Battlefield | ValidCard$ Card.Self';
   const diesSelf = 'Mode$ ChangesZone | Origin$ Battlefield | Destination$ Graveyard | ValidCard$ Card.Self';
+  if (classicKeywordDef(name, parts, face, A, T, R, S)) return { A, T, R, S }; // (mech-classic: soulshift, modular, fading, haunt, ...)
   switch (name) {
     case 'Equip': {
       const cost = a || '0';
@@ -427,3 +429,5 @@ for (const k of ['Warp', 'Sneak', 'Web-slinging', 'Freerunning', 'Teamwork', 'Mo
 for (const k of ['Firebending', 'Increment', 'Storied']) SUPPORTED_KEYWORDS.add(k);
 // combat (mech-combat.js): banding, rampage, provoke, saddle, blocking requirements and damage assignment
 for (const k of ['Banding', 'Bands with other', 'Rampage', 'Provoke', 'Saddle', 'MustBeBlockedByAll', "You may assign CARDNAME's combat damage divided as you choose among defending player and/or any number of creatures they control.", 'If CARDNAME is unblocked, you may have it assign its combat damage to a creature defending player controls.']) SUPPORTED_KEYWORDS.add(k);
+// classic (mech-classic.js): soulshift, modular, fading, haunt, ingest, phasing, aura swap, and deck-building rules
+for (const k of CLASSIC_KEYWORDS) SUPPORTED_KEYWORDS.add(k);

@@ -13,6 +13,8 @@ import { attractionDestination } from './mech-unsets-rules.js';
 import { castingLeftBattlefield } from './mech-casting.js';
 import { onFire, keepCombatMana, capCounters } from './mech-newsets.js';
 import { excessDamageOf, noteExcessDamage, flushExcessDamage } from './mech-combat.js';
+import { untapPhasing, turnStart, turnBegun, deciderFor, destroyReplaced, attachmentSBA } from './mech-classic.js';
+import { cantDiscard, cantVenture, ignoresZeroLoyalty, manaBurns, cantTransform, wardSuppressed } from './mech-classic-rules.js';
 
 export const STEPS = ['untap', 'upkeep', 'draw', 'main1', 'beginCombat', 'declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage', 'endCombat', 'main2', 'end', 'cleanup'];
 export const STEP_NAMES = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main 1', beginCombat: 'Beginning of Combat', declareAttackers: 'Declare Attackers', declareBlockers: 'Declare Blockers', firstStrikeDamage: 'First-Strike Damage', combatDamage: 'Combat Damage', endCombat: 'End of Combat', main2: 'Main 2', end: 'End Step', cleanup: 'Cleanup' };
@@ -261,8 +263,11 @@ export class Game {
   async ask(pid, req) {
     if (this.over) throw new GameOver();
     if (++this.askCount % 100 === 0) await new Promise(r => setTimeout(r, 0));
-    const agent = this.agents[pid];
+    // (mech-classic: while someone controls this player's turn, that player's seat decides for them)
+    const via = deciderFor(this, pid);
+    const agent = this.agents[via];
     req.player = pid;
+    if (via !== pid) { req.decider = via; if (req.prompt) req.prompt = `For ${this.players[pid].name}: ${req.prompt}`; }
     this.pendingAsk = { pid, req };
     this.notify();
     let ans;
@@ -325,6 +330,7 @@ export class Game {
 
   // ---------------------------------------------------------------- turns
   async takeTurn() {
+    await turnStart(this); // (mech-classic: skipped turns, a restarted game)
     this.turnNumber++;
     const ap = this.activePlayer;
     const p = this.players[ap];
@@ -342,6 +348,7 @@ export class Game {
     p.turns = [...p.turns.slice(-2), this.turnNumber];
     for (const c of this.battlefield) { c.abilityUses = {}; if (!c.tapped) c.untappedTurn = this.turnNumber; }
     this.log(`Turn ${this.turnNumber}: ${p.name}`, { type: 'turn' });
+    turnBegun(this); // (mech-classic: who controls this turn)
     // effects lasting "until your next turn"
     await this.expireDurations('UntilYourNextTurn', ap);
     this.extraCombats = 0;
@@ -431,11 +438,9 @@ export class Game {
     switch (step) {
       case 'untap': {
         const untapped = [];
+        await untapPhasing(this, ap); // (mech-classic: phasing)
         for (const c of [...this.battlefield]) {
-          if (c.phasedOut && c.controller === ap) {
-            if (!c.wontPhaseIn && !this.activeStatics('CantPhaseIn').some(s => matchValid(this, c, s.p.ValidCard || 'Card', s.ctx))) { c.phasedOut = false; this.touch(); }
-            continue;
-          }
+          if (c.phasedOut) continue;
           if (c.controller === ap) {
             c.sick = false;
             if (c.skipNextUntap) { c.skipNextUntap = false; continue; } // exerted
@@ -542,6 +547,7 @@ export class Game {
       const np = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
       for (const k of Object.keys(np)) if (keep[k]) np[k] = pl.pool[k] || 0;
       if (lost > 0 && this.replacementsFor('LoseMana').some(({ p, ctx }) => !p.ValidPlayer || matchValid(this, pl, p.ValidPlayer, ctx))) np.C += lost;
+      else if (lost > 0 && manaBurns(this, pl.id)) this.loseLife(pl, lost, null); // (mech-classic: mana burn, Yurlok)
       keepCombatMana(this, pl, np);
       pl.pool = np;
     }
@@ -654,7 +660,7 @@ export class Game {
     if (this.over) return;
     rp.Mode = mode;
     if ((mode === 'ChangesZone' || mode === 'ChangesZoneAll') && rp.Destination === 'Battlefield' && this.battlefield.length) {
-      const off = this.activeStatics('DisableTriggers').filter(s => (!s.p.ValidMode || s.p.ValidMode.split(',').includes(mode)) && (!s.p.Destination || s.p.Destination === 'Battlefield'));
+      const off = this.activeStatics('DisableTriggers').filter(s => !s.p.ValidTrigger && (!s.p.ValidMode || s.p.ValidMode.split(',').includes(mode)) && (!s.p.Destination || s.p.Destination === 'Battlefield'));
       if (off.length) {
         const blocked = c => c && off.some(s => matchValid(this, c, s.p.ValidCause || 'Creature', s.ctx));
         if (mode === 'ChangesZone' && blocked(rp.Card)) return;
@@ -667,6 +673,7 @@ export class Game {
       if (p.Mode !== mode && !(mode === 'SpellCast' && p.Mode === 'SpellCastOrCopy') && !(mode === 'SpellCopy' && p.Mode === 'SpellCastOrCopy')) continue;
       const controller = t.delayed && t.delayed.controller != null ? t.delayed.controller : host.isEffect ? host.controller : (host.lki ? host.controller : (zone === 'battlefield' || zone === 'stack' ? host.controller : host.owner));
       if (!this.triggerZoneOk(p, zone, host, rp)) continue;
+      if (t.key && /^kw:Ward/.test(t.key) && wardSuppressed(this, host)) continue; // (mech-classic: Nowhere to Run)
       // "When CARDNAME enters during the declare attackers step, ..." (Phase$ on a non-phase trigger)
       if (p.Phase && mode !== 'Phase' && !p.Phase.split(',').map(s => s.trim()).includes(FORGE_PHASE[this.step])) continue;
       const ctx = { host, you: controller, trig: rp, svars: t.svars, door: t.door, sa: { svars: t.svars, host, controller, trig: rp, root() { return { x: host.xPaid || 0, paid: {} }; }, parent: null, targets: [], trigRemembered: t.delayed ? t.delayed.remembered : undefined } };
@@ -800,6 +807,8 @@ export class Game {
   async venture(pid, { undercity = false } = {}) {
     const p = this.players[pid];
     if (!p || p.lost) return;
+    if (cantVenture(this, pid)) return; // (mech-classic: Keen-Eared Sentry)
+    p.venturedTurn = this.turnNumber;
     if (p.dungeon && !p.dungeon.next.length) this.completeDungeon(p);
     let room;
     if (!p.dungeon) {
@@ -933,7 +942,7 @@ export class Game {
           if (ch.toughness <= 0) toGrave.push(c);
           else if ((c.damage >= ch.toughness && c.damage > 0) || c.deathtouchHit) toDestroy.push(c);
         }
-        if (ch.types.has('Planeswalker') && (c.counters.LOYALTY || 0) <= 0 && !c.enteringPW) toGrave.push(c);
+        if (ch.types.has('Planeswalker') && (c.counters.LOYALTY || 0) <= 0 && !c.enteringPW && !ignoresZeroLoyalty(this, c)) toGrave.push(c);
         if (ch.types.has('Battle') && (c.counters.DEFENSE || 0) <= 0) toGrave.push(c);
         // aura legality
         if (ch.subtypes.has('Aura') && !ch.types.has('Creature')) {
@@ -967,7 +976,7 @@ export class Game {
       const legends = {};
       for (const c of this.battlefield) {
         const ch = this.chars(c);
-        if (!ch.supertypes.has('Legendary') || !ch.name) continue;
+        if (!ch.supertypes.has('Legendary') || !ch.name || c.phasedOut) continue; // (mech-classic: a phased-out legend doesn't count)
         if (this.activeStatics('IgnoreLegendRule').some(s => matchValid(this, c, s.p.ValidCard || 'Card.Self', s.ctx))) continue;
         const k = c.controller + '|' + ch.name;
         (legends[k] = legends[k] || []).push(c);
@@ -978,6 +987,7 @@ export class Game {
         const keepId = await this.ask(pid, { type: 'cards', prompt: `Legend rule: choose the ${this.name(list[0])} to keep`, cards: list.map(c => c.id), min: 1, max: 1, purpose: 'legendKeep' });
         for (const c of list) if (c.id !== keepId[0]) toGrave.push(c);
       }
+      if (await attachmentSBA(this)) acted = true; // (mech-classic: "can't be enchanted / equipped")
       const uniqG = [...new Set(toGrave)];
       const uniqD = [...new Set(toDestroy)].filter(c => !uniqG.includes(c));
       if (uniqG.length || uniqD.length) {
@@ -1535,6 +1545,7 @@ export class Game {
 
   async discard(card, sa) {
     const p = this.players[card.owner];
+    if (cantDiscard(this, p.id, sa, !!(sa && sa.payingCost))) return; // (mech-classic: Tamiyo, Collector of Tales)
     const madness = card.zone === 'hand' ? this.chars(card).keywords.find(k => k.startsWith('Madness:')) : null; // (printed, or Falkenrath Gorger's)
     if (madness) {
       await this.moveCard(card, 'exile', { cause: sa, silent: true });
@@ -1571,6 +1582,7 @@ export class Game {
   async destroy(card, sa, opts = {}) {
     if (!card || card.zone !== 'battlefield') return false;
     if (this.hasKeyword(card, 'Indestructible')) return false;
+    if ((await destroyReplaced(this, card, sa, opts)) === false) return false; // (mech-classic: destroy replacements, "can't be regenerated")
     if (card.regenShields > 0 && !opts.noRegen) {
       card.regenShields--; card.tapped = true; card.damage = 0; card.deathtouchHit = false;
       if (this.combat) { this.combat.attackers = this.combat.attackers.filter(a => a.card !== card.id); this.combat.blockers.delete(card.id); }
@@ -1849,6 +1861,9 @@ export class Game {
           if (rp.DamageAmount <= 0) return null;
           continue;
         }
+        // "instead that damage is dealt, but all other damage already dealt to him is healed" (Wolverine, Fierce Fighter;
+        // mech-classic's HealDamage): do it, then the damage goes ahead
+        if (p.ReplacementResult === 'Updated' && parsed.api === 'HealDamage') { await this.resolveSAChain(new SA(this, { raw, parsed, svars: r.svars, src: h, key: r.key }, h, you, { trig: rp })); continue; }
         if (p.PreventionEffect === 'True' && parsed.api !== 'ReplaceSplitDamage') {
           // "prevent that damage and [do something else instead]"
           if (this.activeStatics('CantPreventDamage').length) continue;
@@ -1901,7 +1916,7 @@ export class Game {
       if (f.length < 2 || c.faceDown) continue;
       const toBack = v === 'Night' && c.face === 0 && f[0].keywords.includes('Daybound');
       const toFront = v === 'Day' && c.face === 1 && f[1].keywords.includes('Nightbound');
-      if (!toBack && !toFront) continue;
+      if ((!toBack && !toFront) || cantTransform(this, c)) continue; // (mech-classic: Immerwolf)
       c.face = toBack ? 1 : 0; c.transformed = toBack;
       this.log(`${this.name(c)} transforms.`);
       this.fire('Transformed', { Card: c });

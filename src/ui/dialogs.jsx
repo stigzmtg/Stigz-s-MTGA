@@ -42,6 +42,8 @@ const PURPOSE_TITLES = {
   band: 'Attack in a band', camouflagePile: 'Camouflage', exploreGrave: 'Explore', pile: 'Make two piles', choosePile: 'Choose a pile', openingHand: 'Opening hand', blight: 'Blight', dredge: 'Dredge', cumulativeUpkeepGrave: 'Cumulative upkeep',
   // casting (mech-casting.js)
   collectEvidence: 'Collect evidence', splice: 'Splice', amplify: 'Amplify', costExileCtrlOrGrave: 'Craft', costPutCardToLibFromHand: 'Put a card on your library', costPutCardToLibFromGrave: 'Put cards on the library', costPutCardToLib: 'Put cards on the library', costExileFromStack: 'Exile a spell', costRevealOrChoose: 'Reveal or choose', costRevealFromExile: 'Reveal', learnDiscard: 'Learn', costReturn: 'Return to hand',
+  // (mech-classic)
+  phaseChoice: 'Phase out', reorder: 'Reorder', auraSwap: 'Aura swap', exchangeChoice: 'Exchange control',
 };
 // new sets (src/engine/mech-newsets.js)
 Object.assign(PURPOSE_TITLES, { waterbend: 'Waterbend', ringBearer: 'The Ring tempts you' });
@@ -149,8 +151,8 @@ export function ConfirmDialog({ game, req, respond, onHover }) {
 }
 
 export function NumberDialog({ game, req, respond, onHover }) {
-  // (dividing combat damage: start from the engine's suggestion)
-  const [n, setN] = useState(req.combatDamage && req.aiSuggest != null ? req.aiSuggest : req.max);
+  // (dividing combat damage: start from the engine's suggestion; otherwise the request's default)
+  const [n, setN] = useState(req.combatDamage && req.aiSuggest != null ? req.aiSuggest : req.default != null ? req.default : req.max);
   // dividing damage or counters: show which target this amount is for
   const target = req.purpose === 'divide' && req.target != null ? fromRef(game, req.target) : null;
   return (

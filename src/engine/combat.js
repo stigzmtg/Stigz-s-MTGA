@@ -5,6 +5,7 @@ import { refOf, fromRef, payManaCost, canAfford } from './abilities.js';
 import { parseMana } from './mana.js';
 import { BASIC_LAND_TYPES } from './util.js';
 import * as M from './mech-combat.js';
+import { cantBecomeMonarch } from './mech-classic-rules.js';
 
 function kw(game, c, k) { return game.hasKeyword(c, k); }
 function hidden(game, c, text) { return game.chars(c).keywords.some(k => k === text || k === 'HIDDEN ' + text); }
@@ -579,7 +580,7 @@ export async function combatDamage(game, firstStrike) {
   // monarch steal
   if (game.monarch != null) {
     const hit = assigns.find(x => x.tgt.isPlayer && x.tgt.id === game.monarch && x.src.controller !== game.monarch);
-    if (hit) { game.monarch = hit.src.controller; game.log(`${game.players[game.monarch].name} becomes the monarch.`); game.fire('BecomeMonarch', { Player: game.monarch }); }
+    if (hit && !cantBecomeMonarch(game, hit.src.controller)) { game.monarch = hit.src.controller; game.log(`${game.players[game.monarch].name} becomes the monarch.`); game.fire('BecomeMonarch', { Player: game.monarch }); }
   }
 }
 
