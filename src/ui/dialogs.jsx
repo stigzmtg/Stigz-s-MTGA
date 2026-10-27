@@ -39,7 +39,7 @@ const PURPOSE_TITLES = {
   legendKeep: 'Legend rule', crew: 'Crew', searchBattlefield: 'Search your library', searchHand: 'Search your library', search: 'Choose cards',
   digHand: 'Look at the top of your library', dig: 'Look at the top of your library', digBattlefield: 'Look at the top of your library', chooseCard: 'Choose', clone: 'Choose a card to copy',
   casualty: 'Casualty', emerge: 'Emerge', enlist: 'Enlist', exert: 'Exert', costExile: 'Exile', costExileSameGrave: 'Exile', cipher: 'Cipher', clashBottom: 'Clash',
-  exploreGrave: 'Explore', pile: 'Make two piles', choosePile: 'Choose a pile', openingHand: 'Opening hand', blight: 'Blight', dredge: 'Dredge', cumulativeUpkeepGrave: 'Cumulative upkeep',
+  band: 'Attack in a band', camouflagePile: 'Camouflage', exploreGrave: 'Explore', pile: 'Make two piles', choosePile: 'Choose a pile', openingHand: 'Opening hand', blight: 'Blight', dredge: 'Dredge', cumulativeUpkeepGrave: 'Cumulative upkeep',
   // casting (mech-casting.js)
   collectEvidence: 'Collect evidence', splice: 'Splice', amplify: 'Amplify', costExileCtrlOrGrave: 'Craft', costPutCardToLibFromHand: 'Put a card on your library', costPutCardToLibFromGrave: 'Put cards on the library', costPutCardToLib: 'Put cards on the library', costExileFromStack: 'Exile a spell', costRevealOrChoose: 'Reveal or choose', costRevealFromExile: 'Reveal', learnDiscard: 'Learn', costReturn: 'Return to hand',
 };
@@ -54,7 +54,8 @@ export function CardsDialog({ game, req, respond, onHover }) {
   const title = PURPOSE_TITLES[req.purpose] || 'Choose cards';
   const range = req.min === req.max ? `${req.min}` : req.min === 0 ? `up to ${req.max}` : `${req.min}–${req.max}`;
   // crewing: the tapped creatures' power has to add up to the crew number
-  const power = req.need ? sel.reduce((a, id) => { const c = game.cardById(id); return a + (c ? Math.max(0, game.chars(c).power || 0) : 0); }, 0) : 0;
+  // (req.powers: what each creature counts for, "crews Vehicles as though its power were 2 greater")
+  const power = req.need ? sel.reduce((a, id) => { const c = game.cardById(id); return a + (req.powers && req.powers[id] != null ? req.powers[id] : c ? Math.max(0, game.chars(c).power || 0) : 0); }, 0) : 0;
   // collecting evidence: the exiled cards' mana values have to add up to the number
   const mv = req.needMV ? sel.reduce((a, id) => { const c = game.cardById(id); return a + (c ? game.chars(c).cmc || 0 : 0); }, 0) : 0;
   return (
@@ -148,7 +149,8 @@ export function ConfirmDialog({ game, req, respond, onHover }) {
 }
 
 export function NumberDialog({ game, req, respond, onHover }) {
-  const [n, setN] = useState(req.max);
+  // (dividing combat damage: start from the engine's suggestion)
+  const [n, setN] = useState(req.combatDamage && req.aiSuggest != null ? req.aiSuggest : req.max);
   // dividing damage or counters: show which target this amount is for
   const target = req.purpose === 'divide' && req.target != null ? fromRef(game, req.target) : null;
   return (

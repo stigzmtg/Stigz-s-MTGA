@@ -97,9 +97,10 @@ export function CardSlot({ card, ctx, size = 'mini', count = 1, ids = null }) {
     else if (ctx.attack.candidates.has(card.id)) cls.push('targetable');
   }
   if (ctx.block) {
+    // (one that can block several attackers stays picked, and shows it, while you add more)
     if (ctx.block.assigned.has(card.id)) { cls.push('blocking'); wrapCls.push('guard'); }
-    else if (ctx.block.picked === card.id) cls.push('selected');
-    else if (ctx.block.candidates.has(card.id)) cls.push('targetable');
+    if (ctx.block.picked === card.id) cls.push('selected');
+    else if (!ctx.block.assigned.has(card.id) && ctx.block.candidates.has(card.id)) cls.push('targetable');
     // with a blocker picked, only the attackers it may block light up
     if (ctx.block.attackers.has(card.id)) cls.push(!ctx.block.picked ? 'attacking' : ctx.block.canBlock(ctx.block.picked, card.id) ? 'attacker-target' : 'attacking no-block');
   }
@@ -547,10 +548,11 @@ export function ArrowLayer({ game, ctx, boardRef, tick }) {
     const pendingAtk = ctx.attack ? ctx.attack.assigned : null;
     if (combat) {
       for (const a of combat.attackers) add(center(refEl('c' + a.card)), center(refEl(a.defenderCard ? 'c' + a.defenderCard : 'p' + a.defenderPlayer)), 'attack');
-      for (const [b, a] of combat.blockers) add(center(refEl('c' + b)), center(refEl('c' + a)), 'block');
+      // (a creature can block more than one attacker: Avatar of Hope, a band)
+      for (const r of combat.attackers) for (const b of r.blockers) add(center(refEl('c' + b)), center(refEl('c' + r.card)), 'block');
     }
     if (pendingAtk) for (const [id, d] of pendingAtk) add(center(refEl('c' + id)), center(refEl(d)), 'attack pending');
-    if (ctx.block) for (const [b, a] of ctx.block.assigned) add(center(refEl('c' + b)), center(refEl('c' + a)), 'block pending');
+    if (ctx.block) for (const [b, list] of ctx.block.assigned) for (const a of list) add(center(refEl('c' + b)), center(refEl('c' + a)), 'block pending');
     const key = JSON.stringify(out.map(p => [Math.round(p.a.x), Math.round(p.a.y), Math.round(p.b.x), Math.round(p.b.y), p.kind]));
     setPaths(prev => (prev.key === key ? prev : Object.assign(out.map(p => ({ ...p, a: { x: p.a.x, y: p.a.y }, b: { x: p.b.x, y: p.b.y } })), { key })));
     if (size.w !== root.scrollWidth || size.h !== root.scrollHeight) setSize({ w: root.scrollWidth, h: root.scrollHeight });

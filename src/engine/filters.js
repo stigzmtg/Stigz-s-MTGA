@@ -318,7 +318,11 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'IsGoaded': case 'goaded': return card.lki ? (card.goadedBy || []).length > 0 || ((card.chars && card.chars.goadedBy) || []).length > 0 : game.goaders(card).length > 0;
     case 'kicked': case 'Kicked': return card.kicked > 0;
     case 'Transformed': return !!card.transformed;
-    case 'Monstrous': return !!card.monstrous;
+    case 'Monstrous': case 'IsMonstrous': return !!card.monstrous;
+    // combat (mech-combat.js): saddled Mounts and who saddled them, bands
+    case 'IsSaddled': { const c0 = card.lki ? card.card : card; const s = c0 && c0.saddled; return !!s && s.turn === game.turnNumber && s.zcc === c0.zcc; }
+    case 'SaddledThisTurn': { const s = host && host.saddled; return !!s && s.turn === game.turnNumber && s.zcc === host.zcc && s.by.some(x => x.id === card.id && x.zcc === card.zcc); }
+    case 'attackersBandedWith': { const rs = game.combat ? game.combat.attackers : [], h = host && rs.find(r => r.card === host.id), r = rs.find(x => x.card === card.id); return !!h && !!r && h.band != null && h.band === r.band && r !== h; }
     case 'Suspected': return !!card.suspected;
     case 'powerGTtoughness': return ch.power > ch.toughness;
     case 'powerLTtoughness': return ch.power < ch.toughness;
@@ -396,15 +400,15 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'PromisedGift': return card.promisedGift != null;
     case 'copiedSpell': return !!card.isSpellCopy;
     case 'milledThisTurn': return game.turnState.moves.some(m => m.card === card && m.from === 'library' && m.to === 'graveyard');
-    case 'wasDealtExcessDamageThisTurn': return false;
-    case 'blockedBySource': return !!(ctx.host && game.combat && game.combat.blockers.get(ctx.host.id) === card.id);
+    case 'wasDealtExcessDamageThisTurn': return !!card.excessDamage && card.excessDamage.turn === game.turnNumber && card.excessDamage.zcc === card.zcc;
+    case 'blockedBySource': return !!ctx.host && blockedAttackers(game, ctx.host).includes(card.id);
     case 'canReceiveCounters P1P1': return !card.lki && card.zone === 'battlefield';
     case 'canBeTurnedFaceUp': return !!card.faceDown && card.faceDef && card.def.faces[0].types.includes('Creature');
     case 'targetedBy': return false;
     case 'sameName': return !!host && namesMatch(ch, charsOf(game, host));
     // combat history: this combat, this turn, its controller's last turn
-    case 'blockingSource': return !!host && blockedAttacker(game, card) === host.id;
-    case 'blockedBySourceLKI': { const src = host && !host.lki && host.zone !== 'battlefield' ? sourceLKI(game, host, ctx) : host; return !!src && blockedAttacker(game, src) === card.id; }
+    case 'blockingSource': return !!host && blockedAttackers(game, card).includes(host.id);
+    case 'blockedBySourceLKI': { const src = host && !host.lki && host.zone !== 'battlefield' ? sourceLKI(game, host, ctx) : host; return !!src && blockedAttackers(game, src).includes(card.id); }
     case 'attackedThisCombat': return !!game.combat && (game.combat.attackedIds || []).includes(card.id);
     case 'blockedThisCombat': return !!game.combat && (game.combat.blockedIds || []).includes(card.id);
     case 'blockedThisTurn': return blocksThisTurn(game, card, 'blocker').length > 0;
@@ -558,6 +562,9 @@ function cardProp(game, card, ch, prop, ctx) {
   }
   // properties added by mechanics in their own modules (ext.js)
   for (const f of filterExt.cardProp) { const r = f(game, card, ch, prop, ctx); if (r !== undefined) return r; }
+  // "dealt damage by CARDNAME this turn", "if a Giant, Wizard, or spell you controlled dealt damage to it this turn"
+  // (DamagedByGiant.YouCtrl;Wizard.YouCtrl;Spell.YouCtrl)
+  if ((m = prop.match(/^DamagedBy(.*)$/))) return damagedBy(game, card, m[1], ctx);
   if (/^[A-Z][a-zA-Z'-]*$/.test(prop)) return hasType(game, ch, prop, card);
   // "the artifact with the highest mana value", "a creature with the highest mana value among those that player controls"
   if ((m = prop.match(/^greatestCMC_(NonLandPermanent|[A-Za-z]+?)(ControlledByRemembered)?$/))) {
@@ -604,14 +611,14 @@ function cardProp(game, card, ch, prop, ctx) {
   if (prop === 'blockingTriggeredAttacker') {
     const t = ctx.trig || (ctx.sa && ctx.sa.trig) || {};
     const a = t.Attacker || t.Card;
-    return !!game.combat && !!a && game.combat.blockers.get(card.id) === a.id;
+    return !!game.combat && !!a && blockedAttackers(game, card).includes(a.id);
   }
   // "blocking equipped creature", "blocking enchanted creature", "blocking a creature you control", "blocking a Goblin"
   if ((m = prop.match(/^blocking([A-Z].*)$/))) {
-    const att = blockedAttacker(game, card);
-    if (att == null) return false;
-    if (m[1] === 'CreatureYouCtrl') { const a = game.cardById(att); return !!a && a.controller === you; }
-    return resolveDefined(game, m[1], ctx).some(o => o && !o.isPlayer && o.id === att);
+    const atts = blockedAttackers(game, card);
+    if (!atts.length) return false;
+    if (m[1] === 'CreatureYouCtrl') return atts.some(id => { const a = game.cardById(id); return !!a && a.controller === you; });
+    return resolveDefined(game, m[1], ctx).some(o => o && !o.isPlayer && atts.includes(o.id));
   }
   if (prop === 'otherAbility') { const r = ctx.sa && (ctx.sa.root ? ctx.sa.root() : ctx.sa); return !(r && r.stackItem === card); }
   // two-word creature types ("Time Lord")
@@ -662,10 +669,37 @@ function mostProminentColors(game) {
   return max ? COLORS.filter(col => n[col] === max) : [];
 }
 
-// combat history. The attacker a creature is blocking (as it last was in combat, for one that has left the battlefield)
-function blockedAttacker(game, card) {
-  if (card.lki) return card.blocking;
-  return game.combat && game.combat.blockers.has(card.id) ? game.combat.blockers.get(card.id) : null;
+// combat history. The attackers a creature is blocking (as it last was in combat, for one that has left the battlefield)
+// (one that can block several, or one blocking a band, blocks more than one)
+function blockedAttackers(game, card) {
+  if (card.lki) return card.blocking != null ? [card.blocking] : [];
+  return game.combat ? game.combat.attackers.filter(r => r.blockers.includes(card.id)).map(r => r.card) : [];
+}
+// dealt damage this turn by the host (DamagedBy) or by a source of some kind (DamagedBy<valid>, ";" between choices)
+function damagedBy(game, card, valid, ctx) {
+  const hits = game.turnState.damageLog.filter(e => e.card === card.id);
+  if (!valid) return !!ctx.host && hits.some(e => e.source === ctx.host.id);
+  const v = valid.replace(/;/g, ',');
+  return hits.some(e => { const s = e.source != null ? game.cardById(e.source) : null; return !!s && matchValid(game, s, v, ctx); });
+}
+// combat (mech-combat.js): what a creature counts for as it crews a Vehicle, saddles a Mount or stations ("as though its
+// power were 2 greater", "using its toughness rather than its power": TapPowerValue)
+export function tapPowerValue(game, c, sa) {
+  const ch = game.chars(c);
+  let tough = false, mod = 0;
+  for (const s of game.activeStatics('TapPowerValue')) {
+    if (s.p.ValidCard && !matchValid(game, c, s.p.ValidCard, s.ctx)) continue;
+    if (s.p.ValidSA && !s.p.ValidSA.split(',').some(v => tapSAIs(game, sa, v.trim()))) continue;
+    if (s.p.Value === 'Toughness') tough = true; else mod += +s.p.Value || 0;
+  }
+  return Math.max(0, tough ? ch.toughness : ch.power + mod);
+}
+// "Activated.Saddle+Mount", "Activated.Crew+Vehicle", "Activated.Station"
+function tapSAIs(game, sa, spec) {
+  if (!sa) return false;
+  const p = sa.p || {}, host = sa.host;
+  const sub = host && !host.isPlayer ? charsOf(game, host).subtypes : new Set();
+  return spec.replace(/^Activated\.?/, '').split('+').filter(Boolean).every(x => x === 'Saddle' ? p.Saddle === 'True' : x === 'Crew' ? p.IsCrew === 'True' : x === 'Station' ? p.Station === 'True' : sub.has(x));
 }
 // blocks declared this turn with this object as the blocker or as the attacker that was blocked
 function blocksThisTurn(game, card, side) {
@@ -752,6 +786,8 @@ function defendingPlayer(game, ctx) {
   if (t && t.DefendingPlayer != null) return t.DefendingPlayer;
   if (t && t.Attacker && game.combat) { const d = game.attackTargetOf(t.Attacker); if (d != null) return d; }
   if (ctx.host && game.combat) { const d = game.attackTargetOf(ctx.host); if (d != null) return d; }
+  // a spell or ability during combat (Blaze of Glory, False Orders): the player being attacked (you, if you are one)
+  if (game.combat && game.combat.attackers.length) { const ds = game.combat.attackers.map(a => a.defenderPlayer); return ds.includes(ctx.you) ? ctx.you : ds[0]; }
   return null;
 }
 
@@ -1104,6 +1140,7 @@ function cardStat(game, card, stat, ctx) {
     case 'Amount': return 1;
     case 'CardLoyalty': return (card.counters || {}).LOYALTY || 0;
     case 'CardSumPower': return ch.power;
+    case 'TapPowerValue': return tapPowerValue(game, card.lki ? card.card || card : card, ctx.sa);
   }
   if ((m = stat.match(/^CardCounters\.(\w+)$/))) return m[1] === 'ALL' ? Object.values(card.counters || {}).reduce((a, b) => a + b, 0) : ((card.counters || {})[m[1]] || 0);
   // "TriggeredCard$Valid Creature.attacking": 1 if the object matches

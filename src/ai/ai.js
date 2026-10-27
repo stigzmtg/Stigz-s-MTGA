@@ -6,6 +6,7 @@ import { parseAbility } from '../engine/forge.js';
 import { sleep, COLORS, BASIC_LAND_TYPES } from '../engine/util.js';
 import { addCosts } from '../engine/mana.js';
 import { unsetsAI, availableStickers } from '../engine/mech-unsets.js';
+import { aiExtraBlocks, aiSaddleScore } from '../engine/mech-combat.js';
 
 const HARMFUL = new Set(['Destroy', 'DestroyAll', 'DealDamage', 'DamageAll', 'Counter', 'Sacrifice', 'SacrificeAll', 'Discard', 'LoseLife', 'Mill', 'GainControl', 'Tap', 'TapAll', 'Goad', 'Fight', 'Phases', 'ExchangeControl', 'RemoveCounter']);
 const BENEFICIAL = new Set(['Pump', 'PumpAll', 'PutCounter', 'PutCounterAll', 'GainLife', 'Draw', 'Untap', 'UntapAll', 'Attach', 'Regenerate', 'Animate', 'Token', 'CopyPermanent', 'Clone', 'Investigate', 'Scry', 'Surveil', 'Proliferate', 'Dig', 'BecomeMonarch', 'Explore', 'Connive', 'Amass', 'MultiplyCounter', 'Mana']);
@@ -50,6 +51,8 @@ export class AIAgent {
   // every other choice: mulligans, targets, cards, modes, options, numbers, colors, players
   choose(game, pid, req) {
     { const r = unsetsAI(this, game, pid, req); if (r !== undefined) return r; } // Un-sets: stickers, dice
+    // (the engine's own suggestion, where it has one: dividing combat damage, bands, crew and saddle picks, ...)
+    if (req.aiSuggest !== undefined) return req.aiSuggest;
     switch (req.type) {
       case 'mulligan': return this.mulligan(game, pid);
       case 'targets': return this.targets(game, pid, req);
@@ -481,6 +484,7 @@ export class AIAgent {
       const need = +(cost.parts.find(x => x.type === 'Crew') || { amount: 1 }).amount || 1;
       return sick.reduce((s, c) => s + game.chars(c).power, 0) >= need ? 3 : 0;
     }
+    if (p.Saddle === 'True') return aiSaddleScore(game, pid, card, cost, ctx);
     if (p.IsCycling === 'True') {
       const lands = game.battlefield.filter(c => c.controller === pid && game.chars(c).types.has('Land')).length;
       const isLand = game.chars(card).types.has('Land');
@@ -1167,7 +1171,8 @@ export class AIAgent {
         if (!game.hasKeyword(a, 'Trample')) incoming -= strikeDamage(game, a);
       }
     }
-    return out;
+    // (a creature that can block more than one attacker takes on others it survives)
+    return aiExtraBlocks(game, pid, req, out);
   }
 }
 

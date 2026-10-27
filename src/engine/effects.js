@@ -10,6 +10,7 @@ import { canAttack, defendersFor, playerInDirection } from './combat.js';
 import { UNSETS_EFFECTS } from './mech-unsets.js';
 import { CASTING_EFFECTS, castingAlterAttribute, castingCascadeReplacement, castingCanAdapt, castingCantBeCopied, castingWhileSearching } from './mech-casting.js';
 import { NEWSETS_EFFECTS, afterMana } from './mech-newsets.js';
+import { COMBAT_EFFECTS, pumpBlockExtras, saddle, mustBlockAll, unblockBlockedOnlyBy } from './mech-combat.js';
 
 const Z = z => (z ? (zoneMap[z] || z.toLowerCase()) : z);
 
@@ -536,6 +537,7 @@ export const E = {
       const cch = game.chars(c);
       const a = dblA ? cch.power : a0, d = dblD ? cch.toughness : d0;
       const rec = { power: a, toughness: d, keywords: kws.filter(k => k !== 'HIDDEN'), removeKeywords: p.KWRemove ? kwList(p.KWRemove) : null };
+      if (p.CanBlockAmount != null || p.CanBlockAny != null) Object.assign(rec, pumpBlockExtras(game, sa));
       applyDuration(game, sa, c, rec);
       c.temp.push(rec);
       game.touch();
@@ -1028,6 +1030,7 @@ export const E = {
     if (p.RememberLKI === 'True') e.remembered = e.remembered.map(o => o.isCard ? game.makeLKI(o) : o);
     if (e.duration === 'UntilHostLeavesPlay' || e.duration === 'UntilLoseControlOfHost') { e.endsWhenHostLeaves = sa.host.id; e.duration = 'Permanent'; }
     if (e.duration === 'UntilHostLeavesPlayOrEOT') { e.endsWhenHostLeaves = sa.host.id; e.duration = 'EOT'; }
+    if (e.duration === 'UntilHostLeavesPlayOrEndOfCombat') { e.endsWhenHostLeaves = sa.host.id; e.duration = 'UntilEndOfCombat'; }
     if (e.duration === 'UntilUntaps') { e.endsWhenHostUntaps = sa.host.id; e.endsWhenHostLeaves = sa.host.id; e.duration = 'Permanent'; }
     if (p.Stackable === 'False' && game.effects.some(x => x.effectName === e.effectName && x.controller === e.controller)) return;
     if (p.Duration === 'Permanent' && /Emblem/.test(e.effectName)) e.isEmblem = true;
@@ -1795,6 +1798,7 @@ export const E = {
         if (a === 'Renowned') c.renowned = true;
         if (a === 'Harnessed') c.harnessed = true;
         if (a === 'Prepared' || a === 'Plotted') castingAlterAttribute(game, sa, c, a, sa.p.Activate !== 'False');
+        if (a === 'Saddle' || a === 'Saddled') saddle(game, sa, c);
       }
     }
     game.touch();
@@ -1912,6 +1916,7 @@ export const E = {
   async RemoveFromCombat(game, sa) {
     if (!game.combat) return;
     for (const c of cardsOf(objs(game, sa, 'Self'))) {
+      if (sa.p.UnblockCreaturesBlockedOnlyBy) unblockBlockedOnlyBy(game, c);
       game.combat.attackers = game.combat.attackers.filter(a => a.card !== c.id);
       game.combat.blockers.delete(c.id);
       for (const a of game.combat.attackers) a.blockers = a.blockers.filter(b => b !== c.id);
@@ -1986,6 +1991,7 @@ export const E = {
 
   // "target creature blocks <attacker> this turn if able" (Grappling Hook, provoke)
   async MustBlock(game, sa) {
+    if (sa.p.BlockAllDefined) return mustBlockAll(game, sa, cardsOf(objs(game, sa, 'Self')));
     const ctx = ctxOf(game, sa);
     const attacker = cardsOf(resolveDefined(game, sa.p.DefinedAttacker || 'Self', ctx)).map(c => liveOrLki(game, c)).find(c => c && c.isCard);
     if (!attacker) return;
@@ -2618,6 +2624,7 @@ export async function copyStackItem(game, item, controller, mayChooseTargets) {
 Object.assign(E, UNSETS_EFFECTS);
 Object.assign(E, CASTING_EFFECTS);
 Object.assign(E, NEWSETS_EFFECTS);
+Object.assign(E, COMBAT_EFFECTS);
 export const SUPPORTED_APIS = new Set(Object.keys(E).concat(['Charm']));
 
 export async function runEffect(game, sa) {

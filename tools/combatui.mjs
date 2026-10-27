@@ -4,12 +4,14 @@
 // your creatures that can block something light up; with one picked, exactly the attackers it may block light up; a
 // click on one it may not block is refused with the reason; menace needs two blockers before you can confirm; and
 // what you confirm is what the engine records. At every attackers prompt: a creature can't be sent at a player or
-// planeswalker it may not attack. Usage: node tools/combatui.mjs [out dir] [turns=12]   (serve dist/ on :8765 first)
+// planeswalker it may not attack. Usage: node tools/combatui.mjs [out dir] [turns=12] [site, default http://localhost:8765/]
+// (serve dist/ there first)
 import fs from 'node:fs';
 import { chromium } from 'playwright';
 
 const OUT = process.argv[2] || '/tmp/combatui';
 const TURNS = +(process.argv[3] || 12);
+const BASE = process.argv[4] || 'http://localhost:8765/';
 fs.mkdirSync(OUT, { recursive: true });
 let pass = 0, fail = 0, blocksSeen = 0, illegalTried = 0, menaceSeen = 0, attacksSeen = 0;
 const ok = (c, msg) => { if (c) pass++; else { fail++; console.log('FAIL', msg); } };
@@ -22,7 +24,7 @@ await page.addInitScript(() => {
   window.__paAutoplay = -1; window.__paHumanTypes = ['blockers', 'attackers', 'mulligan']; window.__paExpose = true;
   try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'instant' })); localStorage.setItem('pa-tips', JSON.stringify({ mtg: { off: true, seen: [] } })); } catch { /* blocked */ }
 });
-await page.goto('http://localhost:8765/#mtg');
+await page.goto(BASE + '#mtg');
 await page.waitForSelector('text=Pick a deck, take a seat', { timeout: 60000 });
 await page.click('.seg button:has-text("1 vs 1")');
 await page.click('button:has-text("Shuffle up")');

@@ -7,6 +7,7 @@ import { Modal, CardsDialog, TargetsDialog, OptionDialog, ModesDialog, ConfirmDi
 import { getActions, refOf, fromRef, manaAbilitiesOf, manaSourcesFor, activateManaAbility, parseCost, whyCantPlay, mayPlayFrom, canSeeTopOfLibrary } from '../engine/abilities.js';
 import { STEP_NAMES } from '../engine/game.js';
 import { blockRules, blockProblem, canBlock, canAttackDefender } from '../engine/combat.js';
+import { blockCapacity } from '../engine/mech-combat.js';
 import { applyOp, cardMenuItems, playerMenuItems } from './manual.js';
 import { RoomStatus } from './online.jsx';
 import { useGameSounds } from './sound.js';
@@ -168,7 +169,9 @@ function PromptBar({ game, human, me, mode, ctx, actions, onPass, onEndTurn, spe
     const n = ctx.block.assigned.size;
     const sh = ctx.block.short[0];
     msg = <><div className="step">Declare blockers</div><div className="txt">{!ctx.block.candidates.size && !n ? 'None of your creatures can block these attackers.'
-      : ctx.block.picked ? `Now click the attacker ${game.name(game.cardById(ctx.block.picked))} should block (the ones it can block are lit up).`
+      : ctx.block.picked ? (ctx.block.cap(ctx.block.picked) > 1
+        ? `Now click the attackers ${game.name(game.cardById(ctx.block.picked))} should block: it can block ${ctx.block.cap(ctx.block.picked) >= 99 ? 'any number' : `up to ${ctx.block.cap(ctx.block.picked)}`} (the ones it can block are lit up). Click one again to take it off; click ${game.name(game.cardById(ctx.block.picked))} when done.`
+        : `Now click the attacker ${game.name(game.cardById(ctx.block.picked))} should block (the ones it can block are lit up).`)
         : sh ? `${game.name(sh.a)} needs at least ${sh.min} blockers: add ${sh.min - sh.n === 1 ? 'one more' : `${sh.min - sh.n} more`} or take ${sh.n === 1 ? 'yours' : 'them'} off.`
           : 'Click one of your creatures, then the attacker it blocks.'}</div></>;
     acts = <>
@@ -210,7 +213,7 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
   useSyncExternalStore(subscribeImages, imagesVersion);
   const { game, human } = session;
   // browser tests can reach the running game (window.__paExpose)
-  if (typeof window !== 'undefined' && window.__paExpose) { window.__paSession = session; window.__paCombat = { canBlock, blockProblem, canAttackDefender, blockRules }; }
+  if (typeof window !== 'undefined' && window.__paExpose) { window.__paSession = session; window.__paCombat = { canBlock, blockProblem, canAttackDefender, blockRules, blockCapacity }; }
   const me = human.pid != null ? human.pid : 0;
   const self = session.spectator ? -1 : me; // the seat that is "you" (spectators have none)
   useGameSounds(game, { kind: 'mtg', me, watching: !!session.spectator });
@@ -227,7 +230,7 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
   const [chosen, setChosen] = useState([]);
   const [attackMap, setAttackMap] = useState(new Map());
   const [attackCur, setAttackCur] = useState(null);
-  const [blockMap, setBlockMap] = useState(new Map());
+  const [blockMap, setBlockMap] = useState(new Map());   // blocker id -> the attacker ids it blocks
   const [picked, setPicked] = useState(null);
   const [confirmExit, setConfirmExit] = useState(false);
   const [toast, setToast] = useState(null);
@@ -359,14 +362,16 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
   }
   if (mode === 'blockers') {
     // menace and "can't be blocked except by three or more": an attacker blocked by too few would come off
-    const short = req.attackers.map(id => game.cardById(id)).filter(Boolean).map(a => ({ a, n: [...blockMap.values()].filter(x => x === a.id).length, min: blockRules(game, a).min })).filter(x => x.n > 0 && x.n < x.min);
+    const short = req.attackers.map(id => game.cardById(id)).filter(Boolean).map(a => ({ a, n: [...blockMap.values()].filter(l => l.includes(a.id)).length, min: blockRules(game, a).min })).filter(x => x.n > 0 && x.n < x.min);
     ctx.block = {
       candidates: new Set(req.candidates.filter(id => blockOpts.get(id).size)), attackers: new Set(req.attackers), assigned: blockMap, picked,
       canBlock: (b, a) => !!(blockOpts.get(b) && blockOpts.get(b).has(a)), opts: blockOpts, short,
+      // how many attackers it can block (Two-Headed Giant, Avatar of Hope: more than one)
+      cap: id => (req.caps && req.caps[id]) || 1,
       clear: () => { setBlockMap(new Map()); setPicked(null); },
       confirm: () => {
         if (short.length) { setToast(`${game.name(short[0].a)} needs at least ${short[0].min} blockers (it has ${short[0].n}). Add ${short[0].min - short[0].n === 1 ? 'another' : 'more'}, or take ${short[0].n === 1 ? 'yours' : 'them'} off.`); return; }
-        human.respond([...blockMap].map(([blocker, attacker]) => ({ blocker, attacker })));
+        human.respond([...blockMap].flatMap(([blocker, list]) => list.map(attacker => ({ blocker, attacker }))));
       },
     };
   }
@@ -389,18 +394,24 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
       return;
     }
     if (mode === 'blockers') {
-      if (ctx.block.assigned.has(card.id)) { setBlockMap(m => { const n = new Map(m); n.delete(card.id); return n; }); return; }
-      if (ctx.block.candidates.has(card.id)) { setPicked(p => p === card.id ? null : card.id); return; }
+      // (one that can block more than one attacker stays picked while it has room: click it again when done)
+      if (picked === card.id) { setPicked(null); return; }
+      if (ctx.block.assigned.has(card.id) && ctx.block.assigned.get(card.id).length >= ctx.block.cap(card.id)) { setBlockMap(m => { const n = new Map(m); n.delete(card.id); return n; }); return; }
+      if (ctx.block.candidates.has(card.id)) { setPicked(card.id); return; }
       // one of yours that can't block any of these attackers: say why
       if (blockOpts.has(card.id)) { const a = req.attackers.map(id => game.cardById(id)).find(Boolean); setToast(req.attackers.length === 1 && a ? blockProblem(game, card, a) : `${game.name(card)} can’t block any of these attackers.`); return; }
       if (ctx.block.attackers.has(card.id) && picked) {
         const b = game.cardById(picked);
+        const mine = blockMap.get(picked) || [], cap = ctx.block.cap(picked);
+        // a second click on an attacker it already blocks takes that block off
+        if (cap > 1 && mine.includes(card.id)) { setBlockMap(m => { const n = new Map(m); const l = mine.filter(x => x !== card.id); if (l.length) n.set(picked, l); else n.delete(picked); return n; }); return; }
         if (!ctx.block.canBlock(picked, card.id)) { setToast(blockProblem(game, b, card) || `${game.name(b)} can’t block ${game.name(card)}.`); return; }
         const rules = blockRules(game, card);
-        const count = [...blockMap.values()].filter(x => x === card.id).length + 1;
+        const count = [...blockMap.values()].filter(l => l.includes(card.id)).length + 1;
         if (count > rules.max) { setToast(`${game.name(card)} can’t be blocked by more than ${rules.max} creature${rules.max === 1 ? '' : 's'}.`); return; }
-        setBlockMap(m => { const n = new Map(m); n.set(picked, card.id); return n; });
-        setPicked(null);
+        const next = cap > 1 ? [...mine.slice(0, cap - 1), card.id] : [card.id];
+        setBlockMap(m => { const n = new Map(m); n.set(picked, next); return n; });
+        if (cap <= 1 || next.length >= cap) setPicked(null);
         if (count < rules.min) setToast(`${game.name(card)} needs at least ${rules.min} blockers: pick ${rules.min - count === 1 ? 'one more' : `${rules.min - count} more`}.`);
       }
       return;

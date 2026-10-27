@@ -258,9 +258,23 @@ function defFor(kw, face) {
       T.push('Mode$ AttackerBlockedByCreature | ValidCard$ Card.Self | ValidBlocker$ Creature.withoutFlanking | Execute$ KWFlanking | TriggerDescription$ Flanking (the blocking creature gets -1/-1 until end of turn)');
       S.KWFlanking = 'DB$ Pump | Defined$ TriggeredBlocker | NumAtt$ -1 | NumDef$ -1 | IsCurse$ True';
       break;
+    // combat (mech-combat.js): rampage counts the blockers as the trigger resolves; provoke; saddle
+    case 'Rampage':
+      T.push(`Mode$ AttackerBlocked | ValidCard$ Card.Self | ValidBlocker$ Creature | TriggerZones$ Battlefield | Execute$ KWRampage | TriggerDescription$ Rampage ${a} (it gets +${a}/+${a} for each creature blocking it beyond the first)`);
+      S.KWRampage = 'DB$ Pump | Defined$ Self | NumAtt$ +KWRampageX | NumDef$ +KWRampageX';
+      S.KWRampageX = `Count$Valid Creature.blockingTriggeredAttacker/Minus.1/Times.${a || 1}/LimitMin.0`;
+      break;
+    case 'Provoke':
+      T.push('Mode$ Attacks | ValidCard$ Card.Self | OptionalDecider$ You | Execute$ KWProvoke | TriggerDescription$ Provoke (you may have target creature defending player controls untap and block it if able)');
+      S.KWProvoke = 'DB$ MustBlock | ValidTgts$ Creature.DefenderCtrl | TgtPrompt$ Select target creature defending player controls | SubAbility$ KWProvokeUntap';
+      S.KWProvokeUntap = 'DB$ Untap | Defined$ Targeted';
+      break;
+    case 'Saddle':
+      A.push(`AB$ AlterAttribute | Cost$ tapXType<Any/Creature.Other+withTotalPowerGE${a}> | Attributes$ Saddle | Defined$ Self | SorcerySpeed$ True | Saddle$ True | SpellDescription$ Saddle ${a} (tap any number of other creatures you control with total power ${a} or more: it becomes saddled until end of turn; saddle only as a sorcery)`);
+      break;
     case 'Station':
       A.push(`AB$ PutCounter | Cost$ tapXType<1/Creature.Other/another untapped creature you control> | Defined$ Self | CounterType$ CHARGE | CounterNum$ KWStationX | SorcerySpeed$ True | Station$ True | SpellDescription$ Station (tap another creature you control: put charge counters equal to its power on CARDNAME)`);
-      S.KWStationX = 'Tapped$CardPower';
+      S.KWStationX = 'Tapped$TapPowerValue';
       break;
     case 'Vanishing':
       T.push('Mode$ Phase | Phase$ Upkeep | ValidPlayer$ You | TriggerZones$ Battlefield | IsPresent$ Card.Self+counters_GE1_TIME | Execute$ KWVanishRemove | TriggerDescription$ Vanishing — remove a time counter from CARDNAME');
@@ -411,3 +425,5 @@ for (const k of ['StickerSheet', 'Visit', 'Prize', 'Once each turn, you may pay 
 for (const k of ['Warp', 'Sneak', 'Web-slinging', 'Freerunning', 'Teamwork', 'More Than Meets the Eye', 'Living metal', 'Splice', 'Prototype', 'Craft', 'Assist', 'Conspire', 'Ripple', 'Epic', 'Amplify', 'Tribute', 'Recover', 'Paradigm', 'Transfigure', 'Spend only colored mana on X. No more than one mana of each color may be spent this way.', "While you're searching your library, you may cast CARDNAME from your library."]) SUPPORTED_KEYWORDS.add(k);
 // new sets (mech-newsets.js)
 for (const k of ['Firebending', 'Increment', 'Storied']) SUPPORTED_KEYWORDS.add(k);
+// combat (mech-combat.js): banding, rampage, provoke, saddle, blocking requirements and damage assignment
+for (const k of ['Banding', 'Bands with other', 'Rampage', 'Provoke', 'Saddle', 'MustBeBlockedByAll', "You may assign CARDNAME's combat damage divided as you choose among defending player and/or any number of creatures they control.", 'If CARDNAME is unblocked, you may have it assign its combat damage to a creature defending player controls.']) SUPPORTED_KEYWORDS.add(k);
