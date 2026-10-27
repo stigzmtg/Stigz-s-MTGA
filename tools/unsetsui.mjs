@@ -101,7 +101,7 @@ async function castFromHand(name) {
   const any = slot || (await page.$$('.hand .handslot .card.playable')).pop();
   await any.click();
   await page.waitForTimeout(300);
-  const item = await page.$('.menu .item.primary, .menu button.primary');
+  const item = await page.waitForSelector('.menu .mi.cast', { timeout: 1500 }).catch(() => null);
   if (item) await item.click();
 }
 

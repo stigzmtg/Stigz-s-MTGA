@@ -74,7 +74,7 @@ ok(!!land, 'their land is in the hand row');
 if (land && canLand) {
   await land.click();
   await page.waitForTimeout(400);
-  const item = await page.$('.menu .item.primary, .menu button.primary');
+  const item = await page.waitForSelector('.menu .mi.cast', { timeout: 1500 }).catch(() => null);
   if (item) await item.click();
   await page.waitForTimeout(500);
   const played = await page.evaluate(id => { const g = window.__paSession.game; const c = g.cardById(id); return { zone: c.zone, controller: c.controller }; }, opp.land);
@@ -112,7 +112,7 @@ const pr = await page.evaluate(script => {
 await page.waitForTimeout(300);
 await page.click(`.hand [data-ref="c${pr}"]`);
 await page.waitForTimeout(300);
-{ const item = await page.$('.menu .item.primary, .menu button.primary'); if (item) await item.click(); }
+{ const item = await page.waitForSelector('.menu .mi.cast', { timeout: 1500 }).catch(() => null); if (item) await item.click(); }
 let sawStart = null;
 for (let k = 0; k < 40; k++) {
   const st = await state();

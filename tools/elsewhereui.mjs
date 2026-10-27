@@ -53,7 +53,7 @@ await page.screenshot({ path: `${OUT}/1-flashback-strip.png` });
 const before = await page.evaluate(() => window.__paSession.game.players[window.__paSession.human.pid].graveyard.length);
 await page.click('.handslot.elsewhere .card.playable');
 await page.waitForTimeout(400);
-const item = await page.$('.menu .item.primary, .menu button.primary');
+const item = await page.waitForSelector('.menu .mi.cast', { timeout: 1500 }).catch(() => null);
 if (item) await item.click();
 await page.waitForFunction(n => { const s = window.__paSession, g = s.game; return g.players[s.human.pid].graveyard.length < n || g.stack.length > 0; }, before, { timeout: 10000 }).catch(() => {});
 const cast = await page.evaluate(() => { const s = window.__paSession, g = s.game; return { stack: g.stack.map(x => g.name(x.card)), log: g.logs.slice(-6).map(l => l.text) }; });
@@ -92,7 +92,7 @@ await page.waitForTimeout(400);
 ok(!(await page.$('.dialog .dlg-cards')), 'clicking it closes the viewer to play it');
 await page.screenshot({ path: `${OUT}/4b-after-click.png` });
 console.log('after click:', JSON.stringify(await page.evaluate(() => ({ prompt: (document.querySelector('.prompt') || {}).textContent, dialog: (document.querySelector('.overlay .dialog') || {}).textContent, menu: [...document.querySelectorAll('.menu .item')].map(x => x.textContent) }))));
-const it2 = await page.$('.menu .item.primary, .menu button.primary');
+const it2 = await page.waitForSelector('.menu .mi.cast', { timeout: 1500 }).catch(() => null);
 if (it2) await it2.click();
 // (Deep Analysis targets a player: you)
 const plate = await page.$('.mat.bottom.targetable .plate, .mat.targetable .plate');

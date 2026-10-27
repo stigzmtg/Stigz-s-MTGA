@@ -42,7 +42,7 @@ ok(await page.$('.topbar button:has-text("Take back")') != null, 'a Take back bu
 // play something from your hand
 await page.click('.hand .card.playable');
 await page.waitForTimeout(300);
-const menu = await page.$('.menu .item.primary, .menu button.primary');
+const menu = await page.waitForSelector('.menu .mi.cast', { timeout: 1500 }).catch(() => null);
 if (menu) await menu.click();
 await page.waitForFunction(b => { const s = window.__paSession, g = s.game, me = g.players[s.human.pid]; return me.hand.length !== b; }, (await snap()).hand.split('|').length, { timeout: 20000 }).catch(() => {});
 await page.waitForTimeout(600);
@@ -62,7 +62,7 @@ await page.screenshot({ path: `${OUT}/2-taken-back.png` });
 // twice: play again, take back again
 await page.click('.hand .card.playable');
 await page.waitForTimeout(300);
-const menu2 = await page.$('.menu .item.primary, .menu button.primary');
+const menu2 = await page.waitForSelector('.menu .mi.cast', { timeout: 1500 }).catch(() => null);
 if (menu2) await menu2.click();
 await page.waitForTimeout(800);
 await page.click('.topbar button:has-text("Take back")');
