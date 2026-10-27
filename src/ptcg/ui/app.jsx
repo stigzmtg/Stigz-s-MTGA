@@ -41,7 +41,7 @@ function newBattle(data, cfg) {
     agent = { ask: (g, pid, req) => (g.turn < window.__pkAutoplay ? bot.ask(g, pid, req) : human.ask(g, pid, req)) };
   }
   const game = new PokemonGame({
-    db: data.cards, onUpdate: () => store.bump(),
+    db: data.cards, onUpdate: () => store.bump(), seed: cfg.seed,
     players: [{ name: 'You', deck: cfg.mine, agent, human: true }, { name: cfg.opp.name, deck: cfg.opp, agent: ai }],
   });
   // every decision is recorded so the battle can be replayed (ui/records.js)
@@ -123,6 +123,8 @@ export function PokemonApp({ onHome }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [session, setSession] = useState(null);
+  // browser tests can read the battle (window.__paExpose)
+  if (typeof window !== 'undefined' && window.__paExpose) window.__pkSession = session;
   const [help, setHelp] = useState(false);
   const [api, setApi] = useState(undefined);
   const [room, setRoom] = useState(null);

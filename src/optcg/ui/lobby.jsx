@@ -1,4 +1,5 @@
 // One Piece lobby: pick a starter deck or one of your own (or build one), pick (or randomize) the computer's, set sail.
+import { DailyPanel } from '../../ui/dailypanel.jsx';
 import { DeckRecord } from '../../ui/replaybar.jsx';
 import { SizeButton } from '../../ui/dialogs.jsx';
 import { DeckStyleButton, subscribeDeckStyles, deckStylesVersion } from '../../ui/deckstyle.jsx';
@@ -123,6 +124,9 @@ export function OpLobby({ data, online, onStart, onHome, onHelp, onBuild }) {
           <h1>Choose your crew, set sail</h1>
           <p>{data.decks.length} starter decks, each one exactly as it comes in the box: a Leader and 50 cards. Or build your own deck from every card in the game. Battle the computer or a friend, with every [On Play], [Trigger] and Counter working by the official rules.</p>
         </section>
+        {!friends ? <DailyPanel kind="op" decks={data.decks} about={d => (data.cards[d.leader] || {}).name || ''}
+          art={d => <span className="art">{opThumb(d.featured || d.leader) ? <img src={opThumb(d.featured || d.leader)} alt="" draggable="false" /> : null}</span>}
+          onPlay={d => onStart({ mine: d.mine, opp: d.opps[0], seed: d.seed, daily: d.key })} /> : null}
         <div className="op-lobby-grid">
           <section className="panel" aria-label="Your deck">
             <div className="panel-head"><h2>Your deck</h2><span className="note">{shown.length === data.decks.length ? `${data.decks.length} starter decks` : `${shown.length} of ${data.decks.length} starter decks`}{mineList.length ? ` · ${mineList.length} of yours` : ''}</span>{onBuild ? <button className="btn sm" onClick={() => onBuild(null)}>+ Build a deck</button> : null}</div>

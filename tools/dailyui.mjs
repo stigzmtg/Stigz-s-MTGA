@@ -1,6 +1,6 @@
 // The daily challenge in a real browser: the lobby shows today's game; two separate profiles get the same decks and
 // the same shuffle (opening hands, libraries); a finished game is remembered with today's date, a win counts and the
-// streak goes up; favorite decks list first; on a phone it fits. Usage: node tools/dailyui.mjs [out dir] [site]   (serve dist/ on :8765 first)
+// streak goes up; favorite decks list first; Pokémon and One Piece have their own; on a phone it fits. Usage: node tools/dailyui.mjs [out dir] [site]   (serve dist/ on :8765 first)
 import fs from 'node:fs';
 import { chromium } from 'playwright';
 
@@ -15,21 +15,21 @@ const errors = [];
 const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
 const yesterday = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
 
-async function profile(records, viewport = { width: 1440, height: 900 }) {
+async function profile(records, viewport = { width: 1440, height: 900 }, where = ['#mtg', 'text=Pick a deck, take a seat']) {
   const ctx = await browser.newContext({ viewport });
   await ctx.addInitScript(recs => {
     window.__paExpose = true;
     try {
       localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'instant' }));
-      localStorage.setItem('pa-tips', JSON.stringify({ mtg: { off: true, seen: [] } }));
+      localStorage.setItem('pa-tips', JSON.stringify({ mtg: { off: true, seen: [] }, pk: { off: true, seen: [] }, op: { off: true, seen: [] } }));
       if (recs && !localStorage.getItem('pa-seeded')) { localStorage.setItem('pa-records', JSON.stringify(recs)); localStorage.setItem('pa-seeded', '1'); }
     } catch { /* blocked */ }
   }, records);
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
-  await page.goto(BASE + '#mtg');
-  await page.waitForSelector('text=Pick a deck, take a seat', { timeout: 60000 });
+  await page.goto(BASE + where[0]);
+  await page.waitForSelector(where[1], { timeout: 60000 });
   return page;
 }
 // the opening of today's game as the engine dealt it
@@ -97,6 +97,22 @@ await F.click('.decklist > div:first-child .deckrow');
 await F.click('.fav-btn.on');
 ok(!/Your favorites/.test(await F.textContent('.decklist .setgroup')), 'unstarring takes it off');
 await F.close();
+
+// ---- Pokémon and One Piece have their own daily battle, the same for everyone too
+for (const [kind, where, sess] of [['Pokémon', ['#pokemon', 'text=Pick a deck, start a battle'], '__pkSession'], ['One Piece', ['#onepiece', 'text=Choose your crew, set sail'], '__opSession']]) {
+  const deal = async () => {
+    const p = await profile(null, undefined, where);
+    const names = await p.$$eval('.dseat .dsn b', bs => bs.map(b => b.textContent));
+    await p.click('.daily button.btn.primary');
+    await p.waitForFunction(k => window[k] && window[k].game && window[k].game.players.every(q => q.hand.length > 0), sess, { timeout: 60000 });
+    const got = await p.evaluate(k => { const g = window[k].game; return { seed: g.seed, hands: g.players.map(q => q.hand.map(c => c.def.name || c.def.id).sort().join('|')).join(' / '), deck: g.players.map(q => (q.deck || []).slice(0, 6).map(c => c.def.name || c.def.id).join('|')).join(' / ') }; }, sess);
+    await p.close();
+    return { names, ...got };
+  };
+  const [x, y] = [await deal(), await deal()];
+  ok(x.names.length === 2 && JSON.stringify(x.names) === JSON.stringify(y.names), `${kind}: a daily battle, the same decks for everyone (${x.names.join(' vs ')})`);
+  ok(x.seed === y.seed && x.hands === y.hands && x.deck === y.deck, `${kind}: the same shuffle (${x.hands.slice(0, 80)})`);
+}
 
 // ---- on a phone
 const P = await profile(null, { width: 390, height: 844 });

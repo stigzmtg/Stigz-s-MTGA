@@ -3,6 +3,7 @@
 import { Energy } from './energy.jsx';
 
 const TYPE_ORDER = ['Grass', 'Fire', 'Water', 'Lightning', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Dragon', 'Colorless'];
+import { DailyPanel } from '../../ui/dailypanel.jsx';
 import { DeckRecord } from '../../ui/replaybar.jsx';
 import { SizeButton } from '../../ui/dialogs.jsx';
 import { DeckStyleButton, subscribeDeckStyles, deckStylesVersion } from '../../ui/deckstyle.jsx';
@@ -123,6 +124,9 @@ export function PkLobby({ data, online, onStart, onHome, onHelp, onBuild, onDele
           <h1>Pick a deck, start a battle</h1>
           <p>{builtIn.length} of the most-played decks from top Pokémon TCG tournaments, card for card as their players built them, or build your own. Battle the computer or a friend, with every attack, Ability and Trainer working by the rules.</p>
         </section>
+        {!friends ? <DailyPanel kind="pk" decks={builtIn} about={d => (d.player ? `Played by ${d.player}` : d.list || '')}
+          art={d => <span className="art">{pkImage(d.featured) ? <img src={pkImage(d.featured)} alt="" draggable="false" /> : null}</span>}
+          onPlay={d => onStart({ mine: d.mine, opp: d.opps[0], seed: d.seed, daily: d.key })} /> : null}
         <div className="pk-lobby-grid">
           <section className="panel" aria-label="Your deck">
             <div className="panel-head"><h2>Your deck</h2><span className="note">{shown.length + shownMine.length === data.decks.length ? `${data.decks.length} decks` : `${shown.length + shownMine.length} of ${data.decks.length} decks`}</span><button className="btn sm" onClick={() => onBuild(null)}>+ Build a deck</button></div>
