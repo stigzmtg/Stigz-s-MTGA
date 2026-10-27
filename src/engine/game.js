@@ -1,6 +1,6 @@
 // Core game state and flow: zones, turns, priority, the stack, state-based actions and triggers.
 import { Card, Player, newTimestamp } from './cards.js';
-import { untapPrevented as paramUntapPrevented, untapLocked, noteTurnEnd, noteTargeted, applyStaticEffect, heldPersistentMana, settleEmptiedPool, damageRedirect, dealRedirected, triggerController, replacementPhaseOk } from './mech-params.js';
+import { untapPrevented as paramUntapPrevented, untapLocked, noteTurnEnd, noteTargeted, applyStaticEffect, poolBeforeEmptying, settleEmptiedPool, damageRedirect, dealRedirected, triggerController, replacementPhaseOk } from './mech-params.js';
 import { RNG, COLORS, BASIC_LAND_TYPES, NAME_TO_COLOR, sleep, compare } from './util.js';
 import { computeAll, charsOutside, isRoom } from './chars.js';
 import { matchValid, resolveDefined, calcCtx, checkPresence, ctrlOf, zoneMap, findTargets } from './filters.js';
@@ -520,7 +520,7 @@ export class Game {
   // mana empties between steps, except what "you don't lose unspent mana" keeps; Omnath turns lost mana colorless
   emptyPools() {
     for (const pl of this.players) {
-      const held = heldPersistentMana(this, pl); // "you don't lose this mana as steps and phases end" (mech-params.js)
+      const emptied = poolBeforeEmptying(this, pl); // sets aside mana kept "as steps and phases end" (mech-params.js)
       const keep = {};
       for (const s of this.activeStatics('UnspentMana')) {
         if (!matchValid(this, pl, s.p.ValidPlayer || 'You', s.ctx)) continue;
@@ -532,7 +532,7 @@ export class Game {
       for (const k of Object.keys(np)) if (keep[k]) np[k] = pl.pool[k] || 0;
       if (lost > 0 && this.replacementsFor('LoseMana').some(({ p, ctx }) => !p.ValidPlayer || matchValid(this, pl, p.ValidPlayer, ctx))) np.C += lost;
       pl.pool = np;
-      settleEmptiedPool(this, pl, lost, held); // the color lost mana becomes, mana kept as steps end (mech-params.js)
+      settleEmptiedPool(this, pl, lost, emptied); // the color lost mana becomes, set-aside mana back (mech-params.js)
     }
     this.touch();
   }

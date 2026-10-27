@@ -264,13 +264,16 @@ export async function applyStaticEffect(game, card, cause) {
   game.touch();
 }
 
-// the mana a "you don't lose this mana" ability made, kept as pools empty this turn (game.js emptyPools)
-export function heldPersistentMana(game, pl) {
-  if (!pl.persistentMana) return null;
-  if (pl.persistentManaTurn !== game.turnNumber) { pl.persistentMana = null; return null; }
-  const out = {};
-  for (const [k, n] of Object.entries(pl.persistentMana)) { const m = Math.min(n, pl.pool[k] || 0); pl.persistentMana[k] = m; if (m > 0) { out[k] = m; pl.pool[k] -= m; } }
-  return out;
+// game.js emptyPools, before it empties pl's pool: sets aside the mana a "you don't lose this mana" ability made this
+// turn (back in after), and notes the rest of the pool for settleEmptiedPool
+export function poolBeforeEmptying(game, pl) {
+  let held = null;
+  if (pl.persistentMana && pl.persistentManaTurn !== game.turnNumber) pl.persistentMana = null;
+  if (pl.persistentMana) {
+    held = {};
+    for (const [k, n] of Object.entries(pl.persistentMana)) { const m = Math.min(n, pl.pool[k] || 0); pl.persistentMana[k] = m; if (m > 0) { held[k] = m; pl.pool[k] -= m; } }
+  }
+  return { held, before: { ...pl.pool } };
 }
 
 // ---------------------------------------------------------------- effects replaced outright (registered in effects.js)
@@ -544,7 +547,9 @@ export function paramCostMods(game, { kind, pid, card, sa, opt = null, final = f
       if (!n) continue;
       if (mode === 'RaiseCost') {
         const c = p.Cost || '1';
-        if (isManaStr(c)) { const m = parseMana(c); for (let i = 0; i < n; i++) out.addMana = out.addMana ? addCosts(out.addMana, m) : cloneCost(m); }
+        const pc = isManaStr(c) ? null : engine().parseCost(c);
+        const asMana = pc ? (pc.hasMana && !pc.parts.length && !pc.tap && !pc.untap ? pc.mana : null) : parseMana(c); // (a cost paid as mana: waterbend)
+        if (asMana) { for (let i = 0; i < n; i++) out.addMana = out.addMana ? addCosts(out.addMana, asMana) : cloneCost(asMana); }
         else if (final) out.parts.push(n > 1 ? c.replace(/<(\d+)\//, (_, k) => `<${+k * n}/`) : c);
       } else if (p.Color) {
         for (const col of p.Color.split(' ')) {
@@ -562,7 +567,7 @@ export function paramCostMods(game, { kind, pid, card, sa, opt = null, final = f
 // Returns the new cost and what was actually changed, so it can be taken back exactly.
 export function applyCostMods(mana, mods) {
   let m = cloneCost(mana);
-  const applied = { addMana: mods.addMana, generic: 0, colors: {} };
+  const applied = { addMana: mods.addMana, generic: 0, colors: {}, other: otherCostFields(mana) };
   if (mods.addMana) m = addCosts(m, mods.addMana);
   m.generic += mods.raise;
   applied.raise = mods.raise;
@@ -580,8 +585,20 @@ export function applyCostMods(mana, mods) {
   }
   return { mana: m, applied };
 }
+// fields other code keeps on a mana cost (how much of it is a waterbend cost: mech-newsets.js); undoCostMods puts
+// them back as they were, since adding costs merges them
+const COST_FIELDS = new Set(['generic', 'colored', 'hybrid', 'twobrid', 'phyrexian', 'x', 'snow']);
+function otherCostFields(mana) {
+  const o = {};
+  for (const k of Object.keys(mana)) if (!COST_FIELDS.has(k)) o[k] = mana[k];
+  return o;
+}
 function undoCostMods(mana, applied) {
   const m = cloneCost(mana);
+  if (applied.other) {
+    for (const k of Object.keys(m)) if (!COST_FIELDS.has(k)) delete m[k];
+    Object.assign(m, applied.other);
+  }
   m.generic += applied.generic;
   for (const [k, n] of Object.entries(applied.colors)) m.colored[k] += n;
   m.generic = Math.max(0, m.generic - applied.raise);
@@ -1079,16 +1096,20 @@ function loseManaColor(game, pl) {
   return 'C';
 }
 
-// after the pool empties (game.js gave unspent mana a LoseMana replacement saves to {C}): Omnath, Locus of All makes it
-// black instead; mana held "as steps and phases end" goes back in
-export function settleEmptiedPool(game, pl, lost, held) {
+// after the pool empties. game.js gave a LoseMana replacement all of the unspent mana as {C}: count only what really
+// left the pool (mana kept some other way, such as until end of combat, wasn't lost) and give it the replacement's
+// color (Omnath, Locus of All: black; Kruphix: colorless). Then the set-aside mana goes back in.
+export function settleEmptiedPool(game, pl, lost, { held, before }) {
+  if (lost > 0 && game.replacementsFor('LoseMana').some(({ p, ctx }) => !p.ValidPlayer || matchValid(game, pl, p.ValidPlayer, ctx))) {
+    const pool = pl.pool;
+    const c = Math.max(0, (pool.C || 0) - lost);
+    let gone = 0;
+    for (const k of Object.keys(before)) gone += Math.max(0, (before[k] || 0) - (k === 'C' ? c : (pool[k] || 0)));
+    pool.C = c;
+    const color = loseManaColor(game, pl);
+    pool[color] = (pool[color] || 0) + gone;
+  }
   if (held) for (const k of Object.keys(held)) pl.pool[k] = (pl.pool[k] || 0) + held[k];
-  if (!(lost > 0) || !game.replacementsFor('LoseMana').some(({ p, ctx }) => !p.ValidPlayer || matchValid(game, pl, p.ValidPlayer, ctx))) return;
-  const color = loseManaColor(game, pl);
-  if (color === 'C') return;
-  const n = Math.min(lost, pl.pool.C || 0);
-  pl.pool.C -= n;
-  pl.pool[color] = (pl.pool[color] || 0) + n;
 }
 
 // ---------------------------------------------------------------- trigger controller, replacement phases

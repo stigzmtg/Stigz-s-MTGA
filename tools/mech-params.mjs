@@ -706,6 +706,11 @@ test('LoseMana replacements: under Omnath, Locus of All unspent mana becomes bla
   T.noMana(0); T.A.pool.G = 2; T.A.pool.U = 1;
   g.emptyPools();
   expect(T.A.pool.B === 3 && T.A.pool.G === 0, `three black mana (${JSON.stringify(T.A.pool)})`);
+  // mana kept "as steps and phases end" isn't lost, so it stays red
+  T.noMana(0); T.A.pool.R = 2; T.A.pool.G = 1;
+  T.A.persistentMana = { R: 2 }; T.A.persistentManaTurn = g.turnNumber;
+  g.emptyPools();
+  expect(T.A.pool.R === 2 && T.A.pool.B === 1 && T.A.pool.C === 0 && T.A.pool.G === 0, `two red kept, one black (${JSON.stringify(T.A.pool)})`);
 });
 
 // ------------------------------------------------------------ misc
