@@ -1,6 +1,8 @@
 // Mode-specific trigger matching against event run-params.
 import { matchValid, ctrlOf, resolveDefined, matchCastSA } from './filters.js';
 import { normalizeCounter } from './game.js';
+import { UNSETS_TRIGGER_MODES, unsetsTriggerMatches } from './mech-unsets-rules.js';
+import { triggerExt } from './ext.js';
 import { NEWSETS_TRIGGER_MODES, triggerMatches as newsetsTriggerMatches } from './mech-newsets.js';
 
 function vc(game, obj, valid, ctx) {
@@ -18,6 +20,10 @@ function playerObj(game, id) { return id == null ? null : (typeof id === 'object
 
 export const SUPPORTED_TRIGGER_MODES = new Set(['ChangesZone', 'ChangesZoneAll', 'Phase', 'Attacks', 'AttackersDeclared', 'AttackersDeclaredOneTarget', 'SpellCast', 'SpellCastOrCopy', 'AbilityCast', 'SpellAbilityCast', 'DamageDone', 'DamageDoneOnce', 'DamageDealtOnce', 'DamageAll', 'Drawn', 'Sacrificed', 'Destroyed', 'LifeGained', 'LifeLost', 'LifeLostAll', 'TapsForMana', 'Cycled', 'Discarded', 'DiscardedAll', 'BecomesTarget', 'BecomesTargetOnce', 'Taps', 'Untaps', 'Blocks', 'AttackerBlocked', 'AttackerBlockedByCreature', 'AttackerUnblocked', 'AttackerUnblockedOnce', 'CounterAdded', 'CounterAddedOnce', 'CounterRemoved', 'LandPlayed', 'Always', 'TokenCreated', 'TokenCreatedOnce', 'TurnBegin', 'Milled', 'MilledAll', 'Exiled', 'LosesGame', 'BecomeMonarch', 'TakesInitiative', 'RoomEntered', 'DungeonCompleted', 'Explores', 'Connives', 'Surveil', 'Scry', 'Investigated', 'Fight', 'Attached', 'Unattached', 'ChangesController', 'Transformed', 'SpellCopy', 'BecomesCrewed', 'TurnFaceUp', 'Mutates', 'BecomeMonstrous', 'Evolved', 'CommitCrime', 'FlippedCoin', 'RolledDie', 'RolledDieOnce', 'Exploited', 'AbilityTriggered', 'AbilityResolves', 'CounterPlayerAddedAll', 'ManaAdded',
   'ClassLevelGained', 'Clashed', 'DamagePrevented', 'DamagePreventedOnce', 'GiveGift', 'UnlockDoor', 'FullyUnlock', 'ManaExpend', 'Exerted', 'Vote', 'BecomeRenowned', 'MilledOnce', 'Shuffled', 'CounterTypeAddedAll', 'CounterRemovedOnce', 'SearchedLibrary', 'PhaseOutAll']);
+// Un-sets (mech-unsets.js): stickers and Attractions
+for (const m of UNSETS_TRIGGER_MODES) SUPPORTED_TRIGGER_MODES.add(m);
+// casting (mech-casting.js): plotting, foretelling, collecting evidence, foraging, adapting, copies of spells and abilities
+for (const m of ['BecomesPlotted', 'Foretell', 'CollectEvidence', 'Forage', 'Adapt', 'SpellAbilityCopy']) SUPPORTED_TRIGGER_MODES.add(m);
 // new sets (mech-newsets.js): bending, day/night, the Ring, and the "one or more" batch triggers
 for (const m of NEWSETS_TRIGGER_MODES) SUPPORTED_TRIGGER_MODES.add(m);
 
@@ -166,8 +172,9 @@ export function triggerMatches(game, p, host, rp, ctx) {
       if (p.ValidResult && (p.ValidResult === 'Win') !== !!rp.Result) return false;
       return !p.ValidPlayer || vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx);
     case 'RolledDie': case 'RolledDieOnce': {
-      // "whenever you roll a 4 or higher" / "a die's highest natural result"
-      const m = (p.ValidResult || '').match(/^(EQ|NE|LT|LE|GT|GE)(\d+)$/);
+      // "whenever you roll a 4 or higher" / "a die's highest natural result" / "whenever you roll to visit your Attractions"
+      if (p.RolledToVisitAttractions === 'True' && !rp.ToVisit) return false;
+      const m = (p.ValidResult || '').replace(/^(\d+)$/, 'EQ$1').match(/^(EQ|NE|LT|LE|GT|GE)(\d+)$/);
       if (m && !({ EQ: rp.Result === +m[2], NE: rp.Result !== +m[2], LT: rp.Result < +m[2], LE: rp.Result <= +m[2], GT: rp.Result > +m[2], GE: rp.Result >= +m[2] })[m[1]]) return false;
       if (p.ValidResult === 'Highest' && rp.Result !== rp.Sides) return false;
       return !p.ValidPlayer || vc(game, playerObj(game, rp.Player), p.ValidPlayer, ctx);
@@ -246,9 +253,10 @@ export function triggerMatches(game, p, host, rp, ctx) {
       if (p.CombatDamage === 'False' && rp.IsCombatDamage) return false;
       return true;
     }
+    case 'StickerPlaced': case 'VisitAttraction': case 'ClaimPrize': return unsetsTriggerMatches(game, p, rp, ctx, vc);
     case 'AbilityTriggered': case 'AbilityResolves': return false;
     case 'ManaAdded': return false;
-    default: return newsetsTriggerMatches(game, p, host, rp, ctx);
+    default: return triggerExt[mode] ? triggerExt[mode](game, p, host, rp, ctx) : newsetsTriggerMatches(game, p, host, rp, ctx);
   }
 }
 

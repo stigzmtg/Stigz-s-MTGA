@@ -4,6 +4,7 @@ import { parseAbility } from './forge.js';
 import { cmc } from './mana.js';
 import { BASIC_LAND_TYPES, NAME_TO_COLOR, COLORS } from './util.js';
 import { matchValid, resolveDefined, calcCtx, checkPresence, zoneMap } from './filters.js';
+import { applyStickers, gainStickerAbilities } from './mech-unsets-rules.js';
 
 const FACE_DOWN = { name: '', manaCost: null, supertypes: [], types: ['Creature'], subtypes: [], colors: [], power: '2', toughness: '2', loyalty: null, keywords: [], abilities: [], triggers: [], statics: [], replacements: [], svars: {}, oracle: '' };
 
@@ -40,9 +41,13 @@ export function baseChars(game, card) {
   if (card.zone === 'battlefield' && card.unlocked && !card.faceDown && !card.copyOf) roomChars(card, ch);
   // impending: not a creature while it has time counters
   if (card.impending && card.zone === 'battlefield' && (card.counters.TIME || 0) > 0) ch.types.delete('Creature');
+  // prototype: cast prototyped, it has the prototype's mana cost, colors, power and toughness on the stack and battlefield
+  const proto = (card.zone === 'stack' || card.zone === 'battlefield') && !card.faceDown && card.castSA && card.castSA.opt && card.castSA.opt.prototype;
+  if (proto) Object.assign(ch, { manaCost: proto.manaCost, cmc: cmc(proto.manaCost), colors: new Set(proto.colors), powerStr: proto.power, toughnessStr: proto.toughness });
   if (card.copyOf && card.copyOf.extra) applyCopyExtras(ch, card.copyOf.extra);
   if (card.textSwap && card.zone === 'battlefield' && !card.faceDown) swapTextBox(game, card, ch);
   if (card.textChanges && card.textChanges.length && !card.faceDown) applyTextChanges(ch, card.textChanges);
+  if (card.stickers && card.stickers.length) applyStickers(game, card, ch); // Un-sets: name, ability and P/T stickers
   return ch;
 }
 
@@ -338,7 +343,7 @@ export function computeAll(game) {
       if (p.RemoveAllAbilities) { ch.abilities = []; ch.triggers = []; ch.statics = []; ch.replacements = []; ch.keywords = []; }
       // a spell that was cast keeps what it was given as it was cast (castGrants, below), not what's true now
       const locked = toSpells && c.zone === 'stack' && c.castGrants;
-      if (p.AddKeyword && !locked) for (const k of p.AddKeyword.split(' & ')) ch.keywords.push(k.replace('ChosenColor', (st.host.chosen && st.host.chosen.colors || ['W']).map(x => ({ W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' })[x]).join('')));
+      if (p.AddKeyword && !locked) for (const k of p.SharedKeywordsZone ? sharedKeywords(game, p, ctx, map) : p.AddKeyword.split(' & ')) ch.keywords.push(k.replace('ChosenColor', (st.host.chosen && st.host.chosen.colors || ['W']).map(x => ({ W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' })[x]).join('')));
       if (p.AddHiddenKeyword) for (const k of p.AddHiddenKeyword.split(' & ')) ch.keywords.push(k);
       if (p.RemoveKeyword) { const rm = p.RemoveKeyword.split(' & '); ch.keywords = ch.keywords.filter(k => !rm.includes(k)); }
       if (p.AddAbility) grantAbilities(ch, p.AddAbility, st.svars, st.host, 'A', 's' + st.host.id + st.key);
@@ -358,6 +363,8 @@ export function computeAll(game) {
       }
     }
   }
+  // Un-sets: "has all abilities of ability stickers on ..." (Clandestine Chameleon, Pin Collection)
+  gainStickerAbilities(game, active, map, (st, ctx) => affectedCards(game, st, ctx, map), matchValid);
   // continuous statics granted in layer 6 (AddStaticAbility, granted by other statics) apply from layer 7 on
   const known = new Set(statics.map(st => st.raw + '|' + st.host.id));
   for (const c of bf) {
@@ -382,6 +389,8 @@ export function computeAll(game) {
     if (ch.keywords.includes('Devoid')) ch.colors = new Set();
     // "loses flying" (Debuff, mech-newsets.js): also what statics and keyword counters give it
     for (const t of c.temp) if (t.loseKeywords) ch.keywords = ch.keywords.filter(k => !t.loseKeywords.includes(k));
+    // living metal: during your turn, this Vehicle is also a creature
+    if (ch.keywords.includes('Living metal') && c.zone === 'battlefield' && game.activePlayer === c.controller) ch.types.add('Creature');
   }
   // layer 7a/7b: base & set P/T
   for (const c of all) { const ch = map.get(c.id); applyOwnMods(game, c, ch, 7); }
@@ -450,6 +459,20 @@ export function computeAll(game) {
   game._playerChars = pchars;
   game._activeStatics = active;
   return map;
+}
+
+// "it has flying as long as an exiled card used to craft it has flying; the same is true for first strike, ..."
+// (SharedKeywordsZone): the listed keywords that cards there have, as they have them ("protection from red")
+function sharedKeywords(game, p, ctx, map) {
+  const zones = p.SharedKeywordsZone.split(',').map(z => zoneMap[z] || z.toLowerCase());
+  const pool = zones.flatMap(z => z === 'battlefield' ? game.battlefield : game.cardsInZone(z)).filter(c => matchValid(game, c, p.SharedRestrictions || 'Card', ctx));
+  const have = pool.flatMap(c => (map.get(c.id) || game.chars(c)).keywords);
+  const out = [];
+  for (const k of p.AddKeyword.split(' & ')) {
+    const kl = k.toLowerCase();
+    for (const x of have) { const l = x.toLowerCase(); if ((l === kl || l.startsWith(kl + ':') || l.startsWith(kl + ' ')) && !out.includes(x)) out.push(x); }
+  }
+  return out;
 }
 
 function lazy(game, c) {

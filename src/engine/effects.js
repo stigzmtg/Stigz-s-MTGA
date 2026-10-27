@@ -7,6 +7,8 @@ const counterLabel = k => `${counterName(k)} counter`;
 import { COLORS, COLOR_NAMES, NAME_TO_COLOR, BASIC_LAND_TYPES } from './util.js';
 import { cmc, parseMana, addCosts } from './mana.js';
 import { canAttack, defendersFor, playerInDirection } from './combat.js';
+import { UNSETS_EFFECTS } from './mech-unsets.js';
+import { CASTING_EFFECTS, castingAlterAttribute, castingCascadeReplacement, castingCanAdapt, castingCantBeCopied, castingWhileSearching } from './mech-casting.js';
 import { NEWSETS_EFFECTS, afterMana } from './mech-newsets.js';
 
 const Z = z => (z ? (zoneMap[z] || z.toLowerCase()) : z);
@@ -302,6 +304,7 @@ export const E = {
       const chooserP = p.Chooser ? playersOf(resolveDefined(game, p.Chooser, { ...ctx, you: sa.controller }))[0] : pl;
       const chooser = chooserP ? chooserP.id : pl.id;
       const fctx = { ...ctx, you: pl.id };
+      if (origins.includes('library') && chooser === pl.id) await castingWhileSearching(game, sa, pl.id); // (Panglacial Wurm)
       let pool = [];
       for (const o of origins) {
         if (o === 'battlefield') pool.push(...game.battlefield.filter(c => c.controller === pl.id));
@@ -429,7 +432,8 @@ export const E = {
       for (const c of cardsOf(list)) { if (c.monstrous) continue; await game.addCounters(c, 'P1P1', mn, sa); c.monstrous = true; game.fire('BecomeMonstrous', { Card: c }); }
       return;
     }
-    if (p.Adapt === 'True') { for (const c of cardsOf(list)) if (!(c.counters.P1P1 > 0)) await game.addCounters(c, 'P1P1', n, sa); return; }
+    // adapt N: N +1/+1 counters if it has none (or "as though it had no +1/+1 counters": Biomancer's Familiar)
+    if (p.Adapt) { const an = p.Adapt === 'True' ? n : calc(game, p.Adapt, sa); for (const c of cardsOf(list)) if (!(c.counters.P1P1 > 0) || castingCanAdapt(game, c)) { await game.addCounters(c, 'P1P1', an, sa); game.fire('Adapt', { Card: c }); } return; }
     for (let i = 0; i < list.length; i++) {
       const o = list[i];
       const amt = sa.division ? sa.division[i] : n;
@@ -1621,12 +1625,16 @@ export const E = {
 
   async Phases(game, sa) {
     const out = [];
-    for (const c of cardsOf(objs(game, sa, 'Self'))) {
+    // "phase out all creatures" (AllValid$, Out of Time)
+    const list = sa.p.AllValid ? game.battlefield.filter(c => !c.phasedOut && matchValid(game, c, sa.p.AllValid, ctxOf(game, sa))) : cardsOf(objs(game, sa, 'Self'));
+    for (const c of list) {
       if (c.zone !== 'battlefield') continue;
-      if (c.phasedOut) { if (sa.p.PhaseInOrOut === 'True') { c.phasedOut = false; game.log(`${game.name(c)} phases in.`); } continue; }
-      c.phasedOut = true; out.push(c);
+      if (c.phasedOut) { if (sa.p.PhaseInOrOut === 'True') { c.phasedOut = false; c.wontPhaseIn = false; game.log(`${game.name(c)} phases in.`); } continue; }
+      // "phases out until ..." (Ferris Wheel, Oubliette): not back in at its controller's untap step
+      c.phasedOut = true; c.wontPhaseIn = sa.p.WontPhaseInNormal === 'True'; out.push(c);
       game.log(`${game.name(c)} phases out.`);
     }
+    if (sa.p.RememberAffected === 'True') remember(sa, out);
     game.touch();
     if (out.length) game.fire('PhaseOutAll', { Cards: out, Amount: out.length });
   },
@@ -1694,6 +1702,7 @@ export const E = {
       if (!ch.types.has('Land') && ch.cmc < mv) { hit = c; break; }
     }
     game.log(`Cascade: ${pl.name} exiles ${exiled.length} card(s)${hit ? ', hitting ' + game.name(hit) : ''}.`);
+    await castingCascadeReplacement(game, sa, pid, exiled); // (Averna: a land from among them)
     if (hit) {
       const yes = await game.ask(pid, { type: 'confirm', prompt: `Cascade: cast ${game.name(hit)} without paying its mana cost?`, purpose: 'castFree', sa, cards: [hit.id] });
       if (yes) {
@@ -1785,6 +1794,7 @@ export const E = {
         if (a === 'Solved' && !c.solved) { c.solved = true; game.fire('CaseSolved', { Card: c, Player: c.controller }); }
         if (a === 'Renowned') c.renowned = true;
         if (a === 'Harnessed') c.harnessed = true;
+        if (a === 'Prepared' || a === 'Plotted') castingAlterAttribute(game, sa, c, a, sa.p.Activate !== 'False');
       }
     }
     game.touch();
@@ -1839,7 +1849,8 @@ export const E = {
         if (!cands.length) continue;
         const max = Math.min(spec.max, cands.length);
         const chooser = sa.p.Chooser ? (playersOf(resolveDefined(game, sa.p.Chooser, ctx))[0] || game.players[sa.controller]) : game.players[sa.controller];
-        const ans = await game.ask(chooser.id, { type: 'targets', prompt: `Choose new targets for ${item.description}`, cands: cands.map(refOf), min: Math.min(spec.min, max), max, sa: s, spec, purpose: 'changeTargets' });
+        // "reselect its target at random" (Grip of Chaos)
+        const ans = sa.p.RandomTarget === 'True' ? [refOf(cands[game.rng.int(cands.length)])] : await game.ask(chooser.id, { type: 'targets', prompt: `Choose new targets for ${item.description}`, cands: cands.map(refOf), min: Math.min(spec.min, max), max, sa: s, spec, purpose: 'changeTargets' });
         const picked = (ans || []).map(r => fromRef(game, r)).filter(o => o && cands.includes(o));
         if (picked.length < spec.min) continue;
         s.targets = picked; s.targetZcc = picked.map(o => (o.isCard ? o.zcc : null)); changed = true;
@@ -2142,7 +2153,9 @@ export const E = {
     await game.moveCard(c, 'exile', { silent: true, faceDown: true });
     c.foretold = true;
     c.foretoldTurn = game.turnNumber;
+    c.foretoldReduced = !c.def.faces[0].keywords.some(k => k.startsWith('Foretell:')); // (given foretell: its mana cost reduced by {2})
     game.log(`${game.players[sa.controller].name} foretells a card.`);
+    game.fire('Foretell', { Card: c, Player: sa.controller });
   },
   // soulbond: pair the host with another unpaired creature you control
   async Pair(game, sa) {
@@ -2200,10 +2213,11 @@ export const E = {
   // plot: exile it from your hand; cast it as a sorcery on a later turn without paying its mana cost
   async Plot(game, sa) {
     const c = sa.host;
-    if (!c || c.zone !== 'hand') return;
+    if (!c || (c.zone !== 'hand' && c.zone !== 'library')) return; // (Fblthp: from the top of your library)
     await game.moveCard(c, 'exile', { silent: true });
     c.plotted = { turn: game.turnNumber, zcc: c.zcc };
     game.log(`${game.players[sa.controller].name} plots ${game.name(c)}.`);
+    game.fire('BecomesPlotted', { Card: c, Player: sa.controller });
   },
 
   // champion: exile another [type] you control or sacrifice this; it returns when this leaves
@@ -2569,8 +2583,9 @@ function creatureTypesInGame(game) {
   return list;
 }
 
-async function copyStackItem(game, item, controller, mayChooseTargets) {
+export async function copyStackItem(game, item, controller, mayChooseTargets) {
   const orig = item.sa;
+  if (castingCantBeCopied(game, item)) { game.log(`${item.description} can't be copied.`); return; }
   let card = null;
   if (item.card) {
     card = game.newCard(item.card.def, controller);
@@ -2597,8 +2612,11 @@ async function copyStackItem(game, item, controller, mayChooseTargets) {
   game.touch();
   game.log(`${game.players[controller].name} copies ${item.description}.`);
   if (card) game.fire('SpellCopy', { Card: card, Player: controller, IsSpell: true, StackItem: copy });
+  game.fire('SpellAbilityCopy', { Card: card || orig.host, Player: controller, IsSpell: !!card, StackItem: copy, SpellAbility: sa, Targets: sa.chain().flatMap(s => s.targets || []) });
 }
 
+Object.assign(E, UNSETS_EFFECTS);
+Object.assign(E, CASTING_EFFECTS);
 Object.assign(E, NEWSETS_EFFECTS);
 export const SUPPORTED_APIS = new Set(Object.keys(E).concat(['Charm']));
 

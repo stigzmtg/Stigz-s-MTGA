@@ -1,5 +1,6 @@
 // Keywords -> synthesized activated abilities, triggers and replacements (expressed in Forge script syntax).
 import { parseAbility } from './forge.js';
+import { keywordExt } from './ext.js';
 
 const cache = new Map();
 
@@ -277,7 +278,7 @@ function defFor(kw, face) {
       A.push(`AB$ PutCounter | Cost$ ${b} Discard<1/CARDNAME> | ActivationZone$ Hand | ValidTgts$ Creature | TgtPrompt$ Select target creature | CounterType$ P1P1 | CounterNum$ ${a} | SpellDescription$ Reinforce ${a} — ${costText(b)} (discard this: put ${a} +1/+1 counters on target creature)`);
       break;
     case 'Plot':
-      A.push(`AB$ Plot | Cost$ ${a} | ActivationZone$ Hand | SorcerySpeed$ True | Static$ True | SpellDescription$ Plot ${costText(a)} (exile it; cast it on a later turn as a sorcery without paying its mana cost)`);
+      A.push(`AB$ Plot | Cost$ ${a} | ActivationZone$ Hand,Library | SorcerySpeed$ True | Static$ True | SpellDescription$ Plot ${costText(a)} (exile it; cast it on a later turn as a sorcery without paying its mana cost)`);
       break;
     case 'Gravestorm':
       T.push('Mode$ SpellCast | ValidCard$ Card.Self | Execute$ KWGravestorm | TriggerDescription$ Gravestorm (copy this spell for each permanent put into a graveyard this turn)');
@@ -332,7 +333,10 @@ function defFor(kw, face) {
       S.KWOffN = 'Count$OffspringPaid';
       S.KWOffspring = 'DB$ CopyPermanent | Defined$ Self | SetPower$ 1 | SetToughness$ 1';
       break;
-    default: return null;
+    default:
+      // keywords defined by mechanics in their own modules (ext.js)
+      if (!keywordExt[name]) return null;
+      keywordExt[name]({ A, T, R, S, a, b, parts, face, kw });
   }
   return { A, T, R, S };
 }
@@ -401,5 +405,9 @@ export function keywordInfo(kw) { return defFor(kw, { svars: {} }); }
 export const SUPPORTED_KEYWORDS = new Set(['Flying', 'Equip', 'Trample', 'ETBReplacement', 'Enchant', 'Cycling', 'Vigilance', 'Flash', 'Haste', 'etbCounter', 'Deathtouch', 'Lifelink', 'Menace', 'First Strike', 'Flashback', 'Reach', 'TypeCycling', 'Indestructible', 'Changeling', 'Crew', 'Chapter', 'Defender', 'Kicker', 'Convoke', 'Ward', 'Double Strike', 'Cascade', 'Partner', 'Partner with', 'Evoke', 'Devoid', 'Multikicker', 'Unearth', 'Hexproof', 'Myriad', 'Ravenous', 'Landwalk', 'Fear', 'Intimidate', 'Shroud', 'Annihilator', 'Prowess', 'Persist', 'Undying', 'Exalted', 'Extort', 'Evolve', 'Living Weapon', 'Job select', 'Fabricate', 'Riot', 'Mentor', 'Training', 'Battle cry', 'Melee', 'Bushido', 'Afflict', 'Storm', 'Demonstrate', 'Backup', 'Squad', 'Blitz', 'Dash', 'Echo', 'Hideaway', 'Devour', 'Exploit', 'Dethrone', 'Renown', 'Toxic', 'Infect', 'Wither', 'Affinity', 'Delve', 'Improvise', 'Escape', 'Retrace', 'Overload', 'Split second', 'Umbra armor', 'Totem armor', 'Morph', 'Megamorph', 'Disguise', 'Encore', 'Embalm', 'Eternalize', 'Outlast', 'Scavenge', 'Transmute', 'Ninjutsu', 'CommanderNinjutsu', 'Decayed', 'Offspring', 'Afterlife', 'Squad', 'Protection', 'Shadow', 'Horsemanship', 'Skulk', 'Jump-start', 'Discover', 'Rebound', 'Choose a Background', 'Friends forever', 'Doctor\'s companion', 'Ascend', 'Reconfigure', 'Level up', 'Foretell', 'Suspend', 'Class', 'Madness', 'Miracle', 'Aftermath', 'Undaunted', 'Spectacle', 'Surge', 'Bargain', 'Mutate', 'Bestow', 'Strive', 'Escalate', 'Fuse',
   'Graft', 'Flanking', 'Sunburst', 'Mayhem', 'All creatures able to block CARDNAME do so.', 'Gift', 'Casualty', 'Replicate', 'AlternateAdditionalCost', 'Emerge', 'Prowl', 'Entwine', 'MayFlashCost', 'Tiered', 'Spree', 'Dredge', 'Cipher', 'Cloak', 'Station', 'Vanishing', 'For Mirrodin', 'Reinforce', 'Plot', 'Gravestorm', 'Champion', 'Cumulative upkeep', 'Bloodthirst', 'Read ahead', 'Harmonize', 'Offering', 'Buyback', 'You may choose not to untap CARDNAME during your untap step.', 'Soulbond', 'Daybound', 'Nightbound', 'Awaken', 'Space sculptor', 'As an additional cost to cast creature spells, you may pay any amount of mana. If you do, that creature enters with that many additional +1/+1 counters on it.', 'Enlist', 'Fortify', 'Disturb', 'Companion', 'MayEffectFromOpeningHand', 'Unleash', 'Compleated', 'Impending', 'Mobilize', 'Start your engines', 'MayFlashSac',
   'Prevent all combat damage that would be dealt to and dealt by CARDNAME.', 'Prevent all combat damage that would be dealt to CARDNAME.', 'Prevent all damage that would be dealt to CARDNAME.', 'Prevent all combat damage that would be dealt by CARDNAME.', 'Prevent all damage that would be dealt to and dealt by CARDNAME.']);
+// Un-sets (mech-unsets.js): sticker sheets, Attractions' Visit and Prize, dice you may change after rolling
+for (const k of ['StickerSheet', 'Visit', 'Prize', 'Once each turn, you may pay {1} to reroll one or more dice you rolled.', 'After you roll a die, you may pay 1 life. If you do, increase or decrease the result by 1. Do this only once each turn.', 'After you roll a die, you may remove a +1/+1 counter from Xenosquirrels. If you do, increase or decrease the result by 1.']) SUPPORTED_KEYWORDS.add(k);
+// casting (mech-casting.js): alternative and additional costs, casting from other zones
+for (const k of ['Warp', 'Sneak', 'Web-slinging', 'Freerunning', 'Teamwork', 'More Than Meets the Eye', 'Living metal', 'Splice', 'Prototype', 'Craft', 'Assist', 'Conspire', 'Ripple', 'Epic', 'Amplify', 'Tribute', 'Recover', 'Paradigm', 'Transfigure', 'Spend only colored mana on X. No more than one mana of each color may be spent this way.', "While you're searching your library, you may cast CARDNAME from your library."]) SUPPORTED_KEYWORDS.add(k);
 // new sets (mech-newsets.js)
 for (const k of ['Firebending', 'Increment', 'Storied']) SUPPORTED_KEYWORDS.add(k);

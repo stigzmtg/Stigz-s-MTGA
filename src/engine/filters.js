@@ -1,6 +1,8 @@
 // Forge "Valid" filters, "Defined" references, numeric expressions and conditions.
 import { compare, CAP_COLOR, COLORS, BASIC_LAND_TYPES, NAME_TO_COLOR, PERMANENT_TYPES } from './util.js';
 import { cmc, manaColorsFromProduced } from './mana.js';
+import { stickerCardProp, stickerCount, unsetsPlayerProperty } from './mech-unsets-rules.js';
+import { filterExt } from './ext.js';
 
 export const unknownProps = new Set(); // collected for coverage diagnostics
 
@@ -554,6 +556,8 @@ function cardProp(game, card, ch, prop, ctx) {
     const who = resolveDefined(game, m[1], ctx).map(x => x.isPlayer ? x.id : ctrlOf(game, x));
     if (who.length) return who.includes(ctrl);
   }
+  // properties added by mechanics in their own modules (ext.js)
+  for (const f of filterExt.cardProp) { const r = f(game, card, ch, prop, ctx); if (r !== undefined) return r; }
   if (/^[A-Z][a-zA-Z'-]*$/.test(prop)) return hasType(game, ch, prop, card);
   // "the artifact with the highest mana value", "a creature with the highest mana value among those that player controls"
   if ((m = prop.match(/^greatestCMC_(NonLandPermanent|[A-Za-z]+?)(ControlledByRemembered)?$/))) {
@@ -612,6 +616,7 @@ function cardProp(game, card, ch, prop, ctx) {
   if (prop === 'otherAbility') { const r = ctx.sa && (ctx.sa.root ? ctx.sa.root() : ctx.sa); return !(r && r.stackItem === card); }
   // two-word creature types ("Time Lord")
   if (/^[A-Z][a-zA-Z'-]* [A-Z][a-zA-Z'-]*$/.test(prop)) return hasType(game, ch, prop, card);
+  if (prop.startsWith('stickered')) { const v = stickerCardProp(card, prop); if (v != null) return v; } // Un-sets: "stickered", "stickeredWith Art"
   unknownProps.add(prop);
   return false;
 }
@@ -721,6 +726,7 @@ function castSAProp(game, sa, card, prop, ctx) {
   }
   if ((m = prop.match(/^numTargets (EQ|NE|LT|LE|GT|GE)(\d+)$/))) return compare(root.chain().flatMap(s => s.targets || []).length, m[1], +m[2]);
   if ((m = prop.match(/^IsTargeting (?:Valid )?(.+)$/))) return root.chain().flatMap(s => s.targets || []).some(t => matchValid(game, t, m[1], ctx));
+  for (const f of filterExt.castSA) { const r = f(game, sa, card, prop, ctx); if (r !== undefined) return r; }
   return undefined;
 }
 
@@ -1180,8 +1186,10 @@ export function evalExpr(game, expr, ctx, depth) {
       break;
     }
     case 'Imprinted': { const list = refList(game, ctx, 'Imprinted'); n = rest === 'Amount' ? list.length : list.reduce((a, c) => a + cardStat(game, c, rest, ctx), 0); break; }
+    // the cards exiled with it ("the total power of the exiled cards used to craft it")
+    case 'ExiledWith': { const list = resolveDefined(game, 'ExiledWith', ctx); n = rest === 'Amount' ? list.length : rest === 'Colors' ? new Set(list.flatMap(c => [...charsOf(game, c).colors])).size : list.reduce((a, c) => a + cardStat(game, c, rest, ctx), 0); break; }
     case 'Emerged': { const r = sa && sa.root ? sa.root() : null; const lki = (r && r.emerged) || (host && host.castSA && host.castSA.emerged); n = lki ? cardStat(game, lki, rest, ctx) : 0; break; }
-    case 'Sacrificed': case 'Discarded': case 'Exiled': case 'Tapped': case 'Revealed': {
+    case 'Sacrificed': case 'Discarded': case 'Exiled': case 'Tapped': case 'Revealed': case 'Returned': {
       const list = sa ? (sa.root().paid[head] || []) : [];
       n = rest === 'Amount' ? list.length : list.reduce((a, c) => a + cardStat(game, c, rest, ctx), 0);
       break;
@@ -1235,6 +1243,7 @@ function playerProperty(game, p, prop, ctx) {
     return n;
   }
   if (prop === 'DamageThisTurn' || prop === 'DamageDoneThisTurn') return game.turnState.damagedPlayers[p.id] || 0;
+  if (prop === 'AttractionsVisitedThisTurn') return unsetsPlayerProperty(game, p, prop);
   if (prop === 'OppsAtLifeTotal') return 0;
   return 0;
 }
@@ -1306,6 +1315,8 @@ function countExpr(game, rest, ctx, depth) {
     case 'Renowned': return host && host.renowned ? 1 : 0;
     case 'HighestCMC_Creature.YouCtrl': return Math.max(0, ...game.battlefield.filter(c => c.controller === youId && game.chars(c).types.has('Creature')).map(c => game.chars(c).cmc));
   }
+  // Un-sets: CardStickers.<kind>..., Valid <filter>$StickerPower / $StickerToughness
+  if (/^CardStickers|\$Sticker(Power|Toughness)$/.test(rest)) return stickerCount(game, rest, ctx, matchValid);
   if ((m = rest.match(/^CardCounters\.(\w+)$/))) return host ? ((host.counters || {})[m[1]] || 0) : 0;
   if ((m = rest.match(/^Initiative\.(\d+)\.(\d+)$/))) return game.initiative === youId ? +m[1] : +m[2];
   if ((m = rest.match(/^(Night|Day|AllFourBend)\.(\d+)\.(\d+)$/))) return (m[1] === 'AllFourBend' ? !!you.bends && you.bends.turn === game.turnNumber && you.bends.kinds.length >= 4 : game.dayNight === m[1]) ? +m[2] : +m[3];
@@ -1394,6 +1405,7 @@ function countExpr(game, rest, ctx, depth) {
   if ((m = rest.match(/^CardTypes_?(.*)$/))) return graveyardTypes(game, you);
   if ((m = rest.match(/^Valid(Hand|Graveyard|Library|Exile) (.+)$/))) return game.zone(youId, zoneMap[m[1]]).filter(c => matchValid(game, c, m[2], ctx)).length;
   if ((m = rest.match(/^Calculate/))) return 0;
+  for (const f of filterExt.count) { const r = f(game, rest, ctx); if (r !== undefined) return r; }
   if ((m = rest.match(/^(\w+)$/)) && svarLookup(ctx, m[1])) return evalExpr(game, svarLookup(ctx, m[1]), ctx, depth + 1);
   return 0;
 }

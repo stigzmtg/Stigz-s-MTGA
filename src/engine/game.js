@@ -8,6 +8,9 @@ import { SA, castSpell, activateAbility, resolveStackItem, chooseTargetsForSA, g
 import { triggerMatches } from './triggers.js';
 import * as combat from './combat.js';
 import { parseAbility } from './forge.js';
+import { setupUnsets, rollToVisitAtMain } from './mech-unsets.js';
+import { attractionDestination } from './mech-unsets-rules.js';
+import { castingLeftBattlefield } from './mech-casting.js';
 import { onFire, keepCombatMana, capCounters } from './mech-newsets.js';
 
 export const STEPS = ['untap', 'upkeep', 'draw', 'main1', 'beginCombat', 'declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage', 'endCombat', 'main2', 'end', 'cleanup'];
@@ -57,6 +60,7 @@ export class Game {
     this.askCount = 0;
     this.activeRepl = new Set();
     for (const [i, cfg] of players.entries()) this.addPlayer(i, cfg);
+    setupUnsets(this); // Un-sets: sticker sheets and Attraction decks for the players whose cards use them
   }
 
   // ---------------------------------------------------------------- setup
@@ -137,7 +141,12 @@ export class Game {
   }
   cardsInZone(z) {
     if (z === 'battlefield') return this.battlefield;
-    if (z === 'stack') return this.stack.filter(s => s.card && s.kind === 'spell').map(s => s.card);
+    if (z === 'stack') {
+      const list = this.stack.filter(s => s.card && s.kind === 'spell').map(s => s.card);
+      // the spell that's resolving is still on the stack ("if this spell was cast using teamwork")
+      const r = this.resolving && this.resolving.kind === 'spell' && this.resolving.card;
+      return r && r.zone === 'stack' && !list.includes(r) ? [...list, r] : list;
+    }
     if (z === 'all') return [...this.battlefield, ...this.players.flatMap(p => [...p.hand, ...p.graveyard, ...p.exile, ...p.command, ...p.library])];
     if (z === 'any') return this.cardsInZone('all');
     return this.players.flatMap(p => p[z] || []);
@@ -423,7 +432,7 @@ export class Game {
         const untapped = [];
         for (const c of [...this.battlefield]) {
           if (c.phasedOut && c.controller === ap) {
-            if (!this.activeStatics('CantPhaseIn').some(s => matchValid(this, c, s.p.ValidCard || 'Card', s.ctx))) { c.phasedOut = false; this.touch(); }
+            if (!c.wontPhaseIn && !this.activeStatics('CantPhaseIn').some(s => matchValid(this, c, s.p.ValidCard || 'Card', s.ctx))) { c.phasedOut = false; this.touch(); }
             continue;
           }
           if (c.controller === ap) {
@@ -468,6 +477,7 @@ export class Game {
         }
         // saga lore counters
         for (const c of this.battlefield.filter(x => x.controller === ap && this.chars(x).subtypes.has('Saga'))) await this.addCounters(c, 'LORE', 1, null);
+        await rollToVisitAtMain(this, ap); // Un-sets: roll to visit your Attractions
         this.fire('Phase', { Phase: 'Main1', Player: ap });
         break;
       }
@@ -622,6 +632,7 @@ export class Game {
     }
     const item = this.stack.pop();
     this.touch();
+    this.resolving = item;
     try {
       await resolveStackItem(this, item);
     } catch (e) {
@@ -630,7 +641,7 @@ export class Game {
       if (this.throwErrors) throw e;
       console.error(e);
       if (item.card && item.card.zone === 'stack') await this.moveCard(item.card, 'graveyard');
-    }
+    } finally { this.resolving = null; }
     this.touch();
     this.notify();
   }
@@ -733,9 +744,10 @@ export class Game {
         for (const c of p[z]) {
           if (seen.has(c.id)) continue;
           const f = c.faceDef;
-          if (!f.triggers.length && !(c.def.faces.length > 1)) continue;
+          const zoneKw = f.keywords.some(k => k.startsWith('Recover:')); // (recover triggers from the graveyard)
+          if (!f.triggers.length && !(c.def.faces.length > 1) && !zoneKw) continue;
           const isSelf = rp.Card && rp.Card.id === c.id;
-          if (!isSelf && !f.triggers.some(t => /TriggerZones\$/.test(t))) continue;
+          if (!isSelf && !zoneKw && !f.triggers.some(t => /TriggerZones\$/.test(t))) continue;
           if (z === 'library' && !isSelf) continue;
           add(c, z, this.chars(c).triggers);
         }
@@ -1110,6 +1122,7 @@ export class Game {
       if (r === null) return card; // replaced entirely
       dest = r;
     }
+    if (card.attraction) dest = attractionDestination(this, card, dest); // Un-sets: Attractions go to the junkyard
     // "triggered abilities you control can't cause you to exile creature tokens you control"
     if (dest === 'exile' && from === 'battlefield' && opts.cause && this.cantByStatic('CantExile', card, opts.cause, !!opts.forCost)) return card;
     const lki = from === 'battlefield' ? this.makeLKI(card) : (from === 'stack' ? this.makeLKI(card) : null);
@@ -1123,6 +1136,7 @@ export class Game {
       }
       this.lookback.push(lki);
       this.turnState.permanentLeft[card.controller] = true;
+      castingLeftBattlefield(this, card); // (a prepared creature's spell copy stops existing)
       if (lki.chars.types.has('Creature') && dest === 'graveyard') this.turnState.creaturesDied++;
       // attached things fall off
       for (const a of this.battlefield) if (a.attachedTo === card.id) { a.attachedTo = null; }
@@ -1145,6 +1159,7 @@ export class Game {
     // (a new token made as a copy keeps what it copies, with its exceptions: "except it's 1/1", "it has haste")
     const keepCopy = from === 'none' ? card.copyOf : null;
     card.reset();
+    if (card.stickers && (dest === 'hand' || dest === 'library')) card.stickers = null; // Un-sets: stickers stay in public zones only
     if (keepCopy) card.copyOf = keepCopy;
     card.zcc++;
     // (a copy of a card being cast — Wondrous Crucible — is a token on the stack, not gone)
