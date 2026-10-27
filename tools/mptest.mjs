@@ -2,6 +2,8 @@
 // script. The host creates a room with an AI seat, the guest joins with the room code, the host starts,
 // both play (an AI makes their choices for the first turns), and both boards must match.
 // Usage: node tools/mptest.mjs <out dir> [turns=10]
+// CUSTOM=1: the guest plays its own deck made of cards no precon plays (data/more), so both browsers load the rest of
+// the card pool before the game starts
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 const OUT = process.argv[2] || '/tmp/mptest';
@@ -14,6 +16,12 @@ const BASE = process.env.BASE || 'http://localhost:8765/';
 // RELAY=1: the site's own relay (run the Worker locally: wrangler dev --assets dist --port 8787, and BASE=http://localhost:8787/);
 // RELAY=poll: the same, with WebSockets treated as blocked
 const RELAY = process.env.RELAY || '';
+// a colorless deck of cards beyond the precons: Kozilek, 30 colorless artifacts from data/more, Wastes
+const CUSTOM = process.env.CUSTOM ? (() => {
+  const more = JSON.parse(fs.readFileSync('data/more/cards-1.json', 'utf8'));
+  const arts = Object.keys(more).filter(n => /^Types:Artifact$/m.test(more[n]) && /^ManaCost:\d+$/m.test(more[n]) && !/playing for ante/i.test(more[n])).slice(0, 30);
+  return { id: 'custom-mptest01', name: 'Colorless pool test', custom: true, commanders: ['Kozilek, the Great Distortion'], cards: [...arts.map(n => [n, 1]), ['Wastes', 99 - arts.length]] };
+})() : null;
 const browser = await chromium.launch(P2P || RELAY ? { args: ['--proxy-server=' + process.env.HTTPS_PROXY, '--proxy-bypass-list=localhost;127.0.0.1', '--disable-features=WebRtcHideLocalIpsWithMdns'] } : {});
 const pages = [];
 const errors = [];
@@ -26,7 +34,8 @@ async function newPlayer(label) {
     });
     await ctx.addInitScript(mock);
   }
-  await ctx.addInitScript(t => { window.__paAutoplay = t; try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'fast' })); } catch {} }, TURNS);
+  await ctx.addInitScript(t => { window.__paAutoplay = t; window.__paExpose = true; try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'fast' })); } catch {} }, TURNS);
+  if (CUSTOM && label === 'guest') await ctx.addInitScript(d => { try { localStorage.setItem('pa-custom-decks', JSON.stringify([d])); localStorage.setItem('pa-lobby', JSON.stringify({ mine: d.id })); } catch {} }, CUSTOM);
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(`${label}: ${e.message}`));
   page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|ERR_TUNNEL/.test(m.text())) errors.push(`${label}: ${m.text()}`); });
@@ -76,6 +85,10 @@ await guest.screenshot({ path: `${OUT}/4-guest-game.png` });
 console.log('host view ', JSON.stringify(sa));
 console.log('guest view', JSON.stringify(sb));
 console.log(JSON.stringify(sa) === JSON.stringify(sb) ? 'boards match' : 'BOARDS DIFFER');
+if (CUSTOM) {
+  const has = p => p.evaluate(n => { const g = window.__paSession && window.__paSession.game; return !!g && g.players.some(pl => pl.deckId === 'custom-mptest01') && !!g.db.get(n); }, CUSTOM.cards[0][0]).catch(() => false);
+  console.log((await has(host)) && (await has(guest)) ? `the guest's own deck (${CUSTOM.cards[0][0]} and more) is in both games` : 'CUSTOM DECK MISSING');
+}
 // the guest reloads mid-game with the invite link, rejoins its seat and replays from local storage;
 // a third person opens the link and watches
 const LATER = TURNS + 6;
