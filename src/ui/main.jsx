@@ -36,7 +36,7 @@ function newSession(data, cfg) {
   const settings = loadSettings();
   const human = new HumanAgent(() => store.bump(), settings);
   const pace = makePace(settings);
-  const ais = cfg.opps.map(() => new AIAgent({ pace }));
+  const ais = cfg.opps.map(() => new AIAgent({ pace, level: cfg.level }));
   const used = new Set();
   const players = [{ name: 'You', deck: cfg.mine, agent: human, human: true }, ...cfg.opps.map((d, i) => {
     let nm = shortName(d.commanders[0]);

@@ -62,6 +62,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
   const [colors, setColors] = useState([]);
   const [mine, setMine] = useState(saved.mine && decks.find(d => d.id === saved.mine) ? saved.mine : (decks.find(d => !d.custom && !d.community) || decks[0]).id);
   const [numOpp, setNumOpp] = useState(saved.numOpp || 1);
+  const [level, setLevel] = useState(saved.level === 'easy' ? 'easy' : 'normal');
   const [opps, setOpps] = useState(saved.opps || ['random', 'random', 'random']);
   const [help, setHelp] = useState(false);
   const identities = useMemo(() => Object.fromEntries(decks.map(d => [d.id, deckIdentity(db, d)])), [decks]);
@@ -84,7 +85,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
   const deck = decks.find(d => d.id === mine) || decks[0];
   const stats = useMemo(() => deckStats(db, deck, support), [deck]);
   const sortedDecks = useMemo(() => decks.slice().sort((a, b) => a.name.localeCompare(b.name)), [decks]);
-  useEffect(() => { storageSet('pa-lobby', { mine, numOpp, opps }); }, [mine, numOpp, opps]);
+  useEffect(() => { storageSet('pa-lobby', { mine, numOpp, opps, level }); }, [mine, numOpp, opps, level]);
   const styles = useSyncExternalStore(subscribeDeckStyles, deckStylesVersion);
   useEffect(() => { if (online && online.onDeck) online.onDeck(mine); }, [mine, online && online.room, styles]);
   const friends = online && online.mode === 'friends';
@@ -96,7 +97,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
       const id = opps[i];
       chosen.push(id === 'random' ? pickRandom([deck.id, ...chosen.map(x => x.id)]) : decks.find(d => d.id === id));
     }
-    onStart({ mine: deck, opps: chosen });
+    onStart({ mine: deck, opps: chosen, level });
   };
 
   return (
@@ -143,6 +144,9 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
             <h2>Opponents</h2>
             <div className="filters"><span className="label">Players</span>
               <div className="seg" role="group" aria-label="Number of opponents">{[1, 2, 3].map(n => <button key={n} className={numOpp === n ? 'on' : ''} onClick={() => setNumOpp(n)}>{n === 1 ? '1 vs 1' : `${n + 1}-player`}</button>)}</div>
+            </div>
+            <div className="filters"><span className="label">Opponents</span>
+              <div className="seg" role="group" aria-label="How hard the computer plays">{[['easy', 'Easy'], ['normal', 'Normal']].map(([k, l]) => <button key={k} className={level === k ? 'on' : ''} aria-pressed={level === k} onClick={() => setLevel(k)} title={k === 'easy' ? 'They sometimes hold back a spell, skip an attack or miss a block: good for learning' : 'They play their best'}>{l}</button>)}</div>
             </div>
             <div className="oppslots">
               {Array.from({ length: numOpp }, (_, i) => (

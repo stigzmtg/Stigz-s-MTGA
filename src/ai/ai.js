@@ -12,9 +12,13 @@ const BENEFICIAL = new Set(['Pump', 'PumpAll', 'PutCounter', 'PutCounterAll', 'G
 export class AIAgent {
   // pace(kind) -> milliseconds to wait before acting ('think', 'land', 'attack', 'block', 'choose', 'respond'),
   // so a computer opponent plays at a person's tempo; none for headless games
-  constructor({ pace = null, name = 'AI' } = {}) {
+  // level: 'normal', or 'easy' for new players (it sometimes holds a spell back, skips an attack or misses a block,
+  // but never a block that keeps it alive). Only the seat's own computer decides, so its dice needn't be the game's.
+  constructor({ pace = null, name = 'AI', level = 'normal' } = {}) {
     this.pace = pace;
     this.name = name;
+    this.level = level;
+    this.seed = (Math.random() * 2 ** 31) >>> 0 || 1;
     this.uses = new Map();
     this.passedWindow = null;
   }
@@ -53,6 +57,13 @@ export class AIAgent {
       case 'player': return this.player(game, pid, req);
       default: return undefined;
     }
+  }
+
+  // easy opponents' slips: true about p of the time
+  slip(p) {
+    if (this.level !== 'easy') return false;
+    this.seed = (this.seed * 1103515245 + 12345) >>> 0;
+    return ((this.seed >>> 8) % 1000) / 1000 < p;
   }
 
   async pause(kind) {
@@ -164,6 +175,8 @@ export class AIAgent {
       else if (a.type === 'activate') s = this.scoreActivate(game, pid, a, { main, myTurn, stackTop });
       consider(a, s);
     }
+    // (an easy opponent sometimes keeps a spell for later, more often when it would be a response)
+    if (best && best.type === 'cast' && this.slip(main ? 0.3 : 0.6)) best = null;
     if (best) {
       const k = `${turnKey}:${best.cardId}:${best.abilityKey || best.optionKey}`;
       this.uses.set(k, (this.uses.get(k) || 0) + 1);
@@ -1032,7 +1045,8 @@ export class AIAgent {
         out.push({ attacker: c.id, defender: def });
       }
     }
-    return out;
+    // (an easy opponent leaves some attackers home; the ones that must attack still do)
+    return this.level === 'easy' ? out.filter(x => used.has(x.attacker) || !this.slip(0.4)) : out;
   }
 
   blockersFor(game, attacker, defPid) {
@@ -1080,6 +1094,8 @@ export class AIAgent {
       } else if (cand.length >= rules.min && (lethal || cand.filter(b => this.wouldKill(game, b, a)).length)) {
         pickList = cand.sort((x, y) => this.value(x) - this.value(y)).slice(0, rules.min);
       }
+      // (an easy opponent misses some blocks, but not one that keeps it alive)
+      if (pickList && !lethal && this.slip(0.35)) pickList = null;
       if (pickList) {
         for (const b of pickList) { out.push({ blocker: b.id, attacker: a.id }); avail.delete(b.id); }
         if (!game.hasKeyword(a, 'Trample')) incoming -= strikeDamage(game, a);
