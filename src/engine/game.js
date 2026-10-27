@@ -8,7 +8,7 @@ import { SA, castSpell, activateAbility, resolveStackItem, chooseTargetsForSA, g
 import { triggerMatches } from './triggers.js';
 import * as combat from './combat.js';
 import { parseAbility } from './forge.js';
-import { untapPrevented as paramUntapPrevented, noteTurnEnd, noteTargeted, applyStaticEffect, heldPersistentMana } from './mech-params.js';
+import { untapPrevented as paramUntapPrevented, noteTurnEnd, noteTargeted, applyStaticEffect, heldPersistentMana, damageRedirect, dealRedirected } from './mech-params.js';
 
 export const STEPS = ['untap', 'upkeep', 'draw', 'main1', 'beginCombat', 'declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage', 'endCombat', 'main2', 'end', 'cleanup'];
 export const STEP_NAMES = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main 1', beginCombat: 'Beginning of Combat', declareAttackers: 'Declare Attackers', declareBlockers: 'Declare Blockers', firstStrikeDamage: 'First-Strike Damage', combatDamage: 'Combat Damage', endCombat: 'End of Combat', main2: 'Main 2', end: 'End Step', cleanup: 'Cleanup' };
@@ -1702,8 +1702,9 @@ export class Game {
       }
       this.shields = this.shields.filter(sh => sh.amount > 0 && sh.turn === this.turnNumber);
     }
-    let rp = { Affected: target, Source: source, DamageSource: source, DamageAmount: amount, IsCombat: !!opts.combat };
+    let rp = { Affected: target, Source: source, DamageSource: source, DamageAmount: amount, IsCombat: !!opts.combat, _applied: opts.redirectApplied };
     const prevented = await this.applyDamageReplacements(rp);
+    { const red = await dealRedirected(this, source, rp, opts); if (red != null) return red; } // dealt to another object instead (mech-params.js)
     if (prevented === null) { if (rp.prevented) this.notePrevented(source, target, amount, !!opts.combat); return 0; }
     if (rp.preventedAmount > 0) this.notePrevented(source, target, rp.preventedAmount, !!opts.combat);
     amount = rp.DamageAmount;
@@ -1812,6 +1813,9 @@ export class Game {
         const raw = p.ReplaceWith && r.svars[p.ReplaceWith];
         if (!raw) continue;
         const parsed = parseAbility(raw);
+        const red = damageRedirect(this, h, r, p, parsed, ctx, rp); // Pariah, Harm's Way (mech-params.js)
+        if (red === 'skip') continue;
+        if (red === 'redirect') return rp;
         if (parsed.api === 'ReplaceDamage' || parsed.api === 'ReplaceEffect') {
           if (p.PreventionEffect === 'True' && this.activeStatics('CantPreventDamage').length) continue;
           const v = calcCtx(this, parsed.p.Amount || parsed.p.VarValue, ctx);

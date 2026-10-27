@@ -907,3 +907,46 @@ export function paramFinalLayer(game, active, map, affected, chOf) {
 }
 const ARTIFACT_TYPES = new Set(['Attraction', 'Blood', 'Bobblehead', 'Clue', 'Contraption', 'Equipment', 'Food', 'Fortification', 'Gold', 'Incubator', 'Infinity', 'Junk', 'Lander', 'Map', 'Powerstone', 'Shard', 'Spacecraft', 'Stone', 'Treasure', 'Vehicle']);
 
+
+// ---------------------------------------------------------------- damage redirection (game.js applyDamageReplacements / dealDamage)
+// "All damage that would be dealt to you is dealt to enchanted creature instead" (Pariah, Palisade Giant, Protector of
+// the Crown: ReplaceEffect | VarName$ Affected | VarType$ Card) and "the next N damage ... is dealt to target creature
+// instead" (Harm's Way, Nomads en-Kor, Martyrdom: ReplaceSplitDamage | DamageTarget$). Returns 'redirect' when the
+// replacement moved some or all of the damage (rp.redirectTo / rp.splitTo, rp.DamageAmount what stays), 'skip' when it
+// can't apply (no legal new target), or null when it isn't a redirection.
+export function damageRedirect(game, h, r, p, parsed, ctx, rp) {
+  if (parsed.api === 'ReplaceEffect' && parsed.p.VarName === 'Affected') {
+    const to = resolveDefined(game, parsed.p.VarValue || p.DamageTarget || 'Self', ctx).map(o => (o && o.lki ? game.cardById(o.id) : o))[0];
+    if (!damageable(to) || to === rp.Affected) return 'skip';
+    rp.redirectTo = to;
+    return 'redirect';
+  }
+  if (parsed.api === 'ReplaceSplitDamage') {
+    const to = resolveDefined(game, parsed.p.DamageTarget || p.DamageTarget || 'Remembered', ctx).map(o => (o && o.lki ? game.cardById(o.id) : o))[0];
+    if (!damageable(to) || to === rp.Affected) return 'skip';
+    // the shield: how much is left to move (an SVar such as ShieldAmount, else 1), kept on the object that has it
+    const key = `paShield:${r.key}`;
+    if (h[key] == null) h[key] = parsed.p.VarName ? calcCtx(game, parsed.p.VarName, ctx) : 1;
+    const n = Math.min(rp.DamageAmount, h[key]);
+    if (n <= 0) return 'skip';
+    h[key] -= n;
+    rp.splitTo = (rp.splitTo || []).concat([{ target: to, n }]);
+    rp.DamageAmount -= n;
+    // a one-shot shield is used up: the effect ends (Harm's Way's 2, Nomads en-Kor's 1)
+    if (h[key] <= 0 && h.isEffect) game.effects = game.effects.filter(e => e !== h);
+    return 'redirect';
+  }
+  return null;
+}
+const damageable = o => !!o && ((o.isPlayer && !o.lost) || (o.isCard && o.zone === 'battlefield'));
+
+// dealDamage's hook, once replacements ran: deal what was redirected to its new targets. Returns the damage dealt when
+// nothing is left for the original target, else null (the rest is dealt as usual).
+export async function dealRedirected(game, source, rp, opts) {
+  if (!rp.redirectTo && !rp.splitTo) return null;
+  const o2 = { ...opts, redirectApplied: rp._applied };
+  let dealt = 0;
+  for (const { target, n } of rp.splitTo || []) dealt += (await game.dealDamage(source, target, n, o2)) || 0;
+  if (rp.redirectTo) return dealt + ((await game.dealDamage(source, rp.redirectTo, rp.DamageAmount, o2)) || 0);
+  return rp.DamageAmount > 0 ? null : dealt;
+}

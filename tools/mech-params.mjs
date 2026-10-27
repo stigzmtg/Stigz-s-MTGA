@@ -583,4 +583,42 @@ test('SetName and AddReplacementEffect: Witness Protection renames; Cloudsteel K
   expect(!T.A.lost, 'with the Kirin attached, A doesn\'t lose at 0 life');
 });
 
+// ------------------------------------------------------------ damage redirection
+test('Damage redirection: Pariah sends damage dealt to you to the enchanted creature', async T => {
+  const g = T.game;
+  const bear = await T.put(0, 'Serra Angel');
+  await T.put(0, 'Pariah', 'battlefield', { attachTo: bear.id });
+  const life = T.A.life;
+  T.b.on('targets', () => ['p0']);
+  g.activePlayer = 1;
+  await T.cast('Lightning Bolt', 1);
+  expect(T.A.life === life && bear.damage === 3, `the Angel takes the 3, not A (${life - T.A.life} life, ${bear.damage} damage)`);
+});
+test('Damage redirection: Palisade Giant takes the damage dealt to you and your other permanents', async T => {
+  const g = T.game;
+  const giant = await T.put(0, 'Palisade Giant');
+  const elf = await T.put(0, 'Llanowar Elves');
+  T.b.on('targets', () => [refOf(elf)]);
+  g.activePlayer = 1;
+  await T.cast('Lightning Bolt', 1);
+  expect(elf.zone === 'battlefield' && giant.damage === 3, `the Elves survive, the Giant has 3 damage (${elf.zone}, ${giant.damage})`);
+  const life = T.A.life;
+  T.b.on('targets', () => ['p0']);
+  await T.cast('Lightning Bolt', 1);
+  expect(T.A.life === life && giant.damage === 6, `and the damage to A (${life - T.A.life}, ${giant.damage})`);
+});
+test('Damage redirection: Harm\'s Way moves the next 2 damage from a source to any target', async T => {
+  const g = T.game;
+  const ogre = await T.put(1, 'Hill Giant');
+  const shock = await T.put(1, 'Prodigal Pyromancer');
+  T.a.on('chooseSource', req => req.cards ? [shock.id] : undefined).on('targets', () => [refOf(ogre)]);
+  T.a.on('cards', req => req.cards && req.cards.includes(shock.id) ? [shock.id] : undefined);
+  await T.cast('Harm\'s Way');
+  const life = T.A.life;
+  await g.dealDamage(shock, T.A, 3, {});
+  expect(T.A.life === life - 1 && ogre.damage === 2, `2 to the Giant, 1 to A (${life - T.A.life}, ${ogre.damage})`);
+  await g.dealDamage(shock, T.A, 2, {});
+  expect(T.A.life === life - 3, 'used up: the next damage is dealt as usual');
+});
+
 process.exit(await run(tests) ? 1 : 0);
