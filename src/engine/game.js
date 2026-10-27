@@ -958,7 +958,7 @@ export class Game {
       const legends = {};
       for (const c of this.battlefield) {
         const ch = this.chars(c);
-        if (!ch.supertypes.has('Legendary') || !ch.name) continue;
+        if (!ch.supertypes.has('Legendary') || !ch.name || c.phasedOut) continue; // (mech-classic: a phased-out legend doesn't count)
         if (this.activeStatics('IgnoreLegendRule').some(s => matchValid(this, c, s.p.ValidCard || 'Card.Self', s.ctx))) continue;
         const k = c.controller + '|' + ch.name;
         (legends[k] = legends[k] || []).push(c);

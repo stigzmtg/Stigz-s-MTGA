@@ -149,6 +149,19 @@ test('Can\'t phase out: Ertai\'s Familiar until your next upkeep; Spatial Bindin
   await untapStep(T, 1);
   expect(!imp.phasedOut, 'Spatial Binding kept the Imp in');
 });
+test('Phased out: a permanent\'s replacement effects stop and a phased-out legend doesn\'t count for the legend rule', async T => {
+  const { phaseOut } = await import('../src/engine/mech-classic.js');
+  const lv = await T.put(1, 'Leyline of the Void');
+  phaseOut(T.game, lv);
+  const bear = await T.put(0, 'Grizzly Bears');
+  await kill(T, bear);
+  expect(bear.zone === 'graveyard', `a phased-out Leyline doesn't exile it (${bear.zone})`);
+  const k1 = await T.put(0, 'Isamaru, Hound of Konda');
+  phaseOut(T.game, k1);
+  const k2 = await T.put(0, 'Isamaru, Hound of Konda');
+  await T.game.processTriggersAndSBA();
+  expect(k1.zone === 'battlefield' && k2.zone === 'battlefield', 'both stay');
+});
 test('Phase in / out triggers and Time and Tide: phased-out creatures phase in, creatures with phasing out', async T => {
   const imp = await T.put(0, "Teferi's Imp");
   const bear = await T.put(1, 'Grizzly Bears');

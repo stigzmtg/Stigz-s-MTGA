@@ -446,6 +446,8 @@ export function computeAll(game) {
     }
   }
   game._playerChars = pchars;
+  // (mech-classic) a phased-out permanent is treated as though it doesn't exist: its replacement effects don't apply
+  for (const c of bf) if (c.phasedOut) map.get(c.id).replacements = [];
   game._activeStatics = active;
   return map;
 }
