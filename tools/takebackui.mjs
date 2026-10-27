@@ -46,6 +46,8 @@ const menu = await page.waitForSelector('.menu .mi.cast', { timeout: 1500 }).cat
 if (menu) await menu.click();
 await page.waitForFunction(b => { const s = window.__paSession, g = s.game, me = g.players[s.human.pid]; return me.hand.length !== b; }, (await snap()).hand.split('|').length, { timeout: 20000 }).catch(() => {});
 await page.waitForTimeout(600);
+// the card may ask something as it's cast or enters (Metallic Mimic: choose a creature type): answer with the first choice
+for (let k = 0; k < 4; k++) { const d = await page.$('.overlay .dialog'); if (!d) break; const b = await page.$('.overlay .dialog .opts button, .overlay .dialog .btn.primary:not([disabled]), .overlay .dialog button'); if (b) await b.click().catch(() => {}); await page.waitForTimeout(500); }
 const after = await snap();
 ok(after.hand !== before.hand, `a card left your hand (${before.hand.split('|').length} → ${after.hand.split('|').length})`);
 await page.screenshot({ path: `${OUT}/1-after-move.png` });

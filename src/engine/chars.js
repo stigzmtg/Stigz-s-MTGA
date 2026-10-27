@@ -311,7 +311,8 @@ export function computeAll(game) {
       if (p.RemoveLandTypes) for (const t of [...ch.subtypes]) if (BASIC_LAND_TYPES[t]) ch.subtypes.delete(t);
       if (p.RemoveType) for (const t of p.RemoveType.split(' & ')) { ch.types.delete(t); ch.subtypes.delete(t); ch.supertypes.delete(t); }
       if (p.AddType) for (const t of p.AddType.split(' & ')) {
-        if (t === 'ChosenType' && st.host.chosen && st.host.chosen.type) addTypeWord(ch, st.host.chosen.type);
+        // (the chosen type once there is one: while "as it enters, choose a creature type" is being answered there isn't)
+        if (t === 'ChosenType') { if (st.host.chosen && st.host.chosen.type) addTypeWord(ch, st.host.chosen.type); }
         else addTypeWord(ch, t);
       }
       if (p.AddAllCreatureTypes) ch.allCreatureTypes = true;
