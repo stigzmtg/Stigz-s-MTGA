@@ -1111,7 +1111,22 @@ function staticTimeOk(game, s) {
   return true;
 }
 
-function mayPlayFrom(game, pid, card) {
+// "you may look at the top card of your library any time" (Vizier of the Menagerie, Augur of Autumn), "play with the
+// top card of your library revealed" (Courser of Kruphix: everyone sees it)
+export function canSeeTopOfLibrary(game, viewer, owner = viewer) {
+  const top = game.players[owner].library[0];
+  if (!top) return false;
+  game.ensureChars();
+  for (const { st, ctx } of game._activeStatics || []) {
+    const p = st.parsed.p;
+    if (!p.MayLookAt || !(p.AffectedZone || '').split(',').includes('Library')) continue;
+    if (p.Affected && !matchValid(game, top, p.Affected, ctx)) continue;
+    if (p.MayLookAt === 'Player' || ctx.you === viewer) return true;
+  }
+  return false;
+}
+
+export function mayPlayFrom(game, pid, card) {
   // Continuous statics with MayPlay$ that let you play this card from its current zone
   for (const { st, ctx } of game._activeStatics || []) {
     const p = st.parsed.p;

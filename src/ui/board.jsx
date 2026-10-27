@@ -375,6 +375,9 @@ export function Mat({ game, pid, ctx, side, compact }) {
 }
 
 // ------------------------------------------------------------------ hand fan
+// cards you can play from elsewhere sit after your hand with where they are (table.jsx: elsewhere)
+const FROM_LABEL = { graveyard: 'Graveyard', exile: 'Exile', library: 'Top of library' };
+
 export function Hand({ game, pid, ctx }) {
   const p = game.players[pid];
   const box = useRef(null);
@@ -387,14 +390,20 @@ export function Hand({ game, pid, ctx }) {
     setW(el.clientWidth);
     return () => ro.disconnect();
   }, []);
-  const n = p.hand.length;
+  const extra = ctx.elsewhere || [];
+  const n = p.hand.length + extra.length;
   const cw = cssPx(document.documentElement, '--hand-w', 112);
   const gap = 8;
   // whole pixels everywhere so card images and text are never resampled at a fractional offset
-  const overlap = n > 1 && n * (cw + gap) > w ? Math.floor(Math.max(-cw * 0.72, (w - n * cw) / (n - 1))) : gap;
+  // (inside the hand's padding; the cards from elsewhere start after a fixed break of SEP instead of one overlap)
+  const SEP = 14;
+  const room = w - 16 - (extra.length && p.hand.length ? SEP : 0);
+  const joins = n - 1 - (extra.length && p.hand.length ? 1 : 0);
+  const overlap = joins > 0 && n * cw + joins * gap > room ? Math.floor(Math.max(-cw * 0.72, (room - n * cw) / joins)) : gap;
   return (
     <div className="hand" ref={box} aria-label="Your hand" style={{ '--gap': `${overlap}px`, '--lift': `${Math.round(cw * 0.5)}px`, '--grow': `${Math.round(cw * 1.3)}px`, '--shift': `${-Math.round(cw * 0.15)}px` }}>
       {p.hand.map(c => <div key={c.id} className="handslot"><CardSlot card={c} ctx={ctx} size="hand" /></div>)}
+      {extra.map(({ card, from }, i) => <div key={card.id} className={`handslot elsewhere ${i === 0 ? 'first' : ''}`} title={FROM_LABEL[from]}><span className="from">{FROM_LABEL[from]}</span><CardSlot card={card} ctx={ctx} size="hand" /></div>)}
       {!n ? <span className="empty">Your hand is empty</span> : null}
     </div>
   );

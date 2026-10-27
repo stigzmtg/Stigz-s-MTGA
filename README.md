@@ -95,6 +95,7 @@ node tools/uitest.mjs out/ 80 1280 800 4-player   # click through a game in head
 node tools/blocktest.mjs         # who can block whom for every card that says something about blocking, against its own words; reasons for refused blocks
 node tools/takebackui.mjs out/   # Take back in a solo game: the table exactly as before your last move, twice, and the game goes on
 node tools/dailyui.mjs out/      # the daily challenge in all three games: the same decks and shuffle for everyone, the streak; favorite decks
+node tools/elsewhereui.mjs out/  # playing cards from elsewhere: flashback from the graveyard, the top of your library, the graveyard viewer
 node tools/combatui.mjs out/ 12  # attacks and blocks in a browser: only legal blocks light up and are accepted (with the reason), menace needs two, what's confirmed is what the engine records
 node tools/displaycheck.mjs out/ 14 4   # a 4-player game checked again and again: life, cards in each zone, every permanent with its counters, damage and tapped state, the stack
 node tools/allcardsui.mjs out/   # the whole card pool in a browser: community decks with credit, the builder loading every card, a deck of cards no precon plays in a fresh page, Scryfall pictures

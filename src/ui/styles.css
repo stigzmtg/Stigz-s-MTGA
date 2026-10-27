@@ -1350,3 +1350,9 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 .fav-mark { color: var(--brass-hi); font-size: 15px; }
 .fav-btn.on { color: var(--brass-hi); border-color: rgba(243, 212, 136, 0.55); }
 .panel-head .spacer { flex: 1; }
+
+/* cards you can play from your graveyard, exile or the top of your library, after your hand */
+.handslot.elsewhere { position: relative; }
+.hand > .handslot + .handslot.elsewhere.first { margin-left: 14px; }
+.handslot.elsewhere::before { content: ""; position: absolute; inset: -4px; border-radius: 10px; border: 1.5px dashed rgba(243, 212, 136, 0.45); pointer-events: none; }
+.handslot.elsewhere .from { position: absolute; z-index: 3; left: 50%; top: -11px; transform: translateX(-50%); padding: 1px 7px; border-radius: 999px; background: #1c3628; border: 1px solid rgba(243, 212, 136, 0.55); color: var(--brass-hi); font: 700 10.5px/1.5 var(--font-ui); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; pointer-events: none; }

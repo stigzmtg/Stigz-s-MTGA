@@ -201,7 +201,9 @@ export function MulliganDialog({ game, req, respond, onHover }) {
   );
 }
 
-export function ZoneDialog({ game, pid, me, zone, onClose, onHover, onMenu }) {
+// playable: the cards you could play now (a flashback spell in your graveyard, a card exiled with "you may play it"):
+// they glow, and a click plays them (onPlay)
+export function ZoneDialog({ game, pid, me, zone, onClose, onHover, onMenu, playable, onPlay }) {
   const p = game.players[pid];
   const cards = zone === 'library' ? [] : [...(p[zone] || [])].reverse();
   const title = { graveyard: 'Graveyard', exile: 'Exile', library: 'Library', command: 'Command zone' }[zone];
@@ -210,7 +212,7 @@ export function ZoneDialog({ game, pid, me, zone, onClose, onHover, onMenu }) {
       <h2>{p.name} — {title} ({(p[zone] || []).length})</h2>
       {zone === 'library' ? <div className="sub">Libraries are hidden. {p.library.length} cards remain.</div> : null}
       <div className="dlg-cards">
-        {cards.length ? cards.map(c => <div className="cardwrap" key={c.id}><CardFace v={c.faceDown && c.owner !== me ? { ...viewOf(game, c), name: 'Face-down card', oracle: '' } : viewOf(game, c)} size="hand" onEnter={() => onHover(c.id)} onContextMenu={e => { e.preventDefault(); onMenu(e, c); }} onClick={e => onMenu(e, c)} /></div>) : <div className="empty">Empty</div>}
+        {cards.length ? cards.map(c => { const can = !!(playable && playable.has(c.id) && onPlay); return <div className="cardwrap" key={c.id}><CardFace v={c.faceDown && c.owner !== me ? { ...viewOf(game, c), name: 'Face-down card', oracle: '' } : viewOf(game, c)} size="hand" cls={can ? 'playable' : ''} onEnter={() => onHover(c.id)} onContextMenu={e => { e.preventDefault(); onMenu(e, c); }} onClick={e => (can ? onPlay(c) : onMenu(e, c))} /></div>; }) : <div className="empty">Empty</div>}
       </div>
       <div className="dlg-actions"><button className="btn primary" onClick={onClose}>Close</button></div>
     </Modal>

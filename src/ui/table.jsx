@@ -4,7 +4,7 @@ import { Mat, Hand, StackView, RecentPlays, useRecentPlays, ArrowLayer, TurnBann
 import { imagesAvailable, subscribeImages, imagesVersion, imageOf } from './images.js';
 import { createFlights, runFlights, strike } from './motion.js';
 import { Modal, CardsDialog, TargetsDialog, OptionDialog, ModesDialog, ConfirmDialog, NumberDialog, ColorDialog, PlayerDialog, MulliganDialog, ZoneDialog, SettingsDialog, TokenDialog, HelpDialog, Menu, SoundToggle, SizeButton, Confetti } from './dialogs.jsx';
-import { getActions, refOf, fromRef, manaAbilitiesOf, manaSourcesFor, activateManaAbility, parseCost, whyCantPlay } from '../engine/abilities.js';
+import { getActions, refOf, fromRef, manaAbilitiesOf, manaSourcesFor, activateManaAbility, parseCost, whyCantPlay, mayPlayFrom, canSeeTopOfLibrary } from '../engine/abilities.js';
 import { STEP_NAMES } from '../engine/game.js';
 import { blockRules, blockProblem, canBlock, canAttackDefender } from '../engine/combat.js';
 import { applyOp, cardMenuItems, playerMenuItems } from './manual.js';
@@ -280,6 +280,21 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
     return m;
   }, [actions]);
 
+  // cards you may play from somewhere other than your hand (flashback and unearth from the graveyard, "you may play that
+  // card" from exile, the top of your library with Courser or Bolas's Citadel), and a top card you may look at: they
+  // sit after your hand, marked with where they are
+  const elsewhere = useMemo(() => {
+    const p = game.players[me];
+    if (!p || session.spectator) return [];
+    const out = [], seen = new Set();
+    const add = (c, from) => { if (c && !seen.has(c.id)) { seen.add(c.id); out.push({ card: c, from }); } };
+    for (const a of actions) { const c = game.cardById(a.cardId); if (c && c.owner === me && ['graveyard', 'exile', 'library'].includes(c.zone)) add(c, c.zone); else if (c && c.zone === 'exile') add(c, 'exile'); }
+    for (const c of [...p.exile, ...game.players.filter(q => q.id !== me).flatMap(q => q.exile)]) if (mayPlayFrom(game, me, c)) add(c, 'exile');
+    const top = p.library[0];
+    if (top && (mayPlayFrom(game, me, top) || canSeeTopOfLibrary(game, me))) add(top, 'library');
+    return out;
+  }, [pid, session.store.get(), actions]);
+
   // blocks: which attackers each of your creatures may block, worked out by the rules (only those light up)
   const blockOpts = useMemo(() => {
     if (!req || req.type !== 'blockers') return null;
@@ -319,6 +334,7 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
     sleeves,
     onHover: setHover,
     openZone: (p, z) => setZone({ pid: p, zone: z }),
+    elsewhere,
     chosen,
     toggleTarget: (ref) => setChosen(c => c.includes(ref) ? c.filter(x => x !== ref) : (c.length >= req.max ? (req.max === 1 ? [ref] : c) : [...c, ref])),
   };
@@ -414,6 +430,7 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
       if (items.length) { items.push({ label: 'Inspect card', run: () => setInspect(card.id) }); if (isMine && tools) items.push('-', ...cardMenuItems(game, card, me, use)); setMenu({ x: e ? e.clientX : 200, y: e ? e.clientY : 200, title: game.name(card), items }); return; }
       // a card of yours that can't be played now: say why (mana, timing, a land already played, no targets)
       if (isMine && (card.zone === 'hand' || card.zone === 'command')) { const why = whyCantPlay(game, me, card); if (why) setToast(why); }
+      else if (elsewhere.some(x => x.card === card)) setToast(`${game.name(card)} can't be played right now${card.zone === 'library' ? ': you may only look at it' : ''}.`);
     }
     if (touch) setInspect(card.id);
   };
@@ -498,7 +515,8 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
       </div>
       {dialog}
       {menu ? <Menu menu={menu} onClose={() => setMenu(null)} /> : null}
-      {zone ? <ZoneDialog game={game} pid={zone.pid} me={me} zone={zone.zone} onClose={() => setZone(null)} onHover={setHover} onMenu={(e, c) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, title: game.name(c), items: [{ label: 'Inspect card', run: () => setInspect(c.id) }, ...(tools ? cardMenuItems(game, c, me, use) : [])] }); }} /> : null}
+      {zone ? <ZoneDialog game={game} pid={zone.pid} me={me} zone={zone.zone} onClose={() => setZone(null)} onHover={setHover}
+        playable={mode === 'priority' ? playable : null} onPlay={c => { setZone(null); ctx.onCardClick(c); }} onMenu={(e, c) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, title: game.name(c), items: [{ label: 'Inspect card', run: () => setInspect(c.id) }, ...(tools ? cardMenuItems(game, c, me, use) : [])] }); }} /> : null}
       {showHelp ? <HelpDialog onClose={() => setShowHelp(false)} /> : null}
       {showSettings ? <SettingsDialog settings={session.settings} onChange={s => { session.setSettings(s); session.store.bump(); }} onClose={() => setShowSettings(false)} /> : null}
       {tokenFor != null ? <TokenDialog game={game} onMake={makeToken} onClose={() => setTokenFor(null)} /> : null}
