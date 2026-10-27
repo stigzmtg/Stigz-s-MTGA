@@ -292,6 +292,25 @@ test('Destroy replacement: Harmonious Emergence sacrifices itself instead and th
   await T.game.destroy(land, null); await T.resolve();
   expect(land.zone === 'battlefield' && aura.zone === 'graveyard', 'land survives, the Aura went');
 });
+test('Destroy replacement: Pyramids — the next time the land would be destroyed, remove its damage instead', async T => {
+  const land = await T.put(0, 'Forest');
+  const py = await T.put(0, 'Pyramids');
+  T.a.on('modes', req => [req.options.find(o => /next time/i.test(o.label || '')) ? req.options.find(o => /next time/i.test(o.label || '')).value : req.options[1].value]);
+  T.a.on('targets', () => [refOf(land)]);
+  await T.activate(py, 0, a => a.parsed.api === 'Charm');
+  await T.game.destroy(land, null); await T.resolve();
+  expect(land.zone === 'battlefield', 'the land survives once');
+  await T.game.destroy(land, null); await T.resolve();
+  expect(land.zone === 'graveyard', 'but only once');
+});
+test('Heal Damage: Wolverine, Fierce Fighter — new damage heals the old', async T => {
+  const w = await T.put(0, 'Wolverine, Fierce Fighter');
+  const src = await T.put(1, 'Grizzly Bears');
+  await T.game.dealDamage(src, w, 2, {});
+  await T.game.dealDamage(src, w, 2, {});
+  await T.resolve();
+  expect(w.zone === 'battlefield' && w.damage === 2, `only the last 2 damage stays (${w.damage})`);
+});
 test('Can\'t play lands: Aggressive Mining, Moonhold-style effects, Experimental Frenzy from the hand', async T => {
   await T.put(0, 'Aggressive Mining');
   const f = await T.put(0, 'Forest', 'hand');
@@ -411,6 +430,22 @@ test('Ignore Hexproof: Glaring Spotlight lets you target hexproof creatures', as
   T.a.on('targets', req => { expect(req.cands.includes(refOf(t)), 'the hexproof creature is a target'); return [refOf(t)]; });
   await castSpell(T.game, 0, bolt, {}); await T.resolve();
   expect(t.zone === 'graveyard', 'bolted');
+});
+test('Ignore Hexproof: Nowhere to Run — hexproof doesn\'t stop your spells and ward doesn\'t trigger; ETBs still do', async T => {
+  const ty = await T.put(1, 'Carnage Tyrant');
+  const ward = await T.put(1, 'Canopy Gargantuan');
+  T.a.on('targets', req => (req.cands.includes(refOf(ty)) ? [refOf(ty)] : undefined));
+  await T.cast('Nowhere to Run');
+  expect(T.game.chars(ty).toughness === 3, `the hexproof Tyrant got -3/-3 (${T.game.chars(ty).toughness})`);
+  T.a.on('targets', req => (req.cands.includes(refOf(ward)) ? [refOf(ward)] : undefined));
+  const bolt = await T.cast('Lightning Bolt', 0, { resolve: false });
+  await T.game.processTriggersAndSBA();
+  expect(!T.game.stack.some(s => s.kind === 'trigger' && s.source === ward), 'ward didn\'t trigger');
+  await T.resolve();
+  expect(bolt.zone === 'graveyard' && ward.damage === 3, 'the Bolt resolved');
+  const h = T.A.hand.length;
+  await T.cast('Wall of Omens');
+  expect(T.A.hand.length === h + 1, 'an entering creature\'s trigger still works');
 });
 test('Ignore Shroud: Autumn Willow can be targeted by the chosen player', async T => {
   const w = await T.put(1, 'Autumn Willow');

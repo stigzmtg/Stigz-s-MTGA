@@ -293,6 +293,9 @@ export function mustTargetKinds(game, root) {
 }
 export const fitsKind = (game, o, k) => !!o && o.isCard && o.zone === k.zone && matchValid(game, o, k.type, { you: null });
 
+// "Ward abilities of those creatures don't trigger" (Nowhere to Run)
+export const wardSuppressed = (game, card) => !card.isEffect && statics(game, 'DisableTriggers').some(s => /Ward/.test(s.p.ValidTrigger || '') && matchValid(game, card, s.p.ValidCard || 'Card', s.ctx));
+
 // the result of a coin flip fixed by a static ("those coins come up heads": Edgar), or null
 export function flipCoinFixed(game, pid) {
   const s = statics(game, 'FlipCoinMod').find(x => matchValid(game, game.players[pid], x.p.ValidPlayer || 'You', x.ctx));

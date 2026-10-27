@@ -9,7 +9,7 @@ import { triggerMatches } from './triggers.js';
 import * as combat from './combat.js';
 import { parseAbility } from './forge.js';
 import { untapPhasing, turnStart, turnBegun, deciderFor, destroyReplaced, attachmentSBA } from './mech-classic.js';
-import { cantDiscard, cantVenture, ignoresZeroLoyalty, manaBurns, cantTransform } from './mech-classic-rules.js';
+import { cantDiscard, cantVenture, ignoresZeroLoyalty, manaBurns, cantTransform, wardSuppressed } from './mech-classic-rules.js';
 
 export const STEPS = ['untap', 'upkeep', 'draw', 'main1', 'beginCombat', 'declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage', 'endCombat', 'main2', 'end', 'cleanup'];
 export const STEP_NAMES = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main 1', beginCombat: 'Beginning of Combat', declareAttackers: 'Declare Attackers', declareBlockers: 'Declare Blockers', firstStrikeDamage: 'First-Strike Damage', combatDamage: 'Combat Damage', endCombat: 'End of Combat', main2: 'Main 2', end: 'End Step', cleanup: 'Cleanup' };
@@ -644,7 +644,7 @@ export class Game {
     if (this.over) return;
     rp.Mode = mode;
     if ((mode === 'ChangesZone' || mode === 'ChangesZoneAll') && rp.Destination === 'Battlefield' && this.battlefield.length) {
-      const off = this.activeStatics('DisableTriggers').filter(s => (!s.p.ValidMode || s.p.ValidMode.split(',').includes(mode)) && (!s.p.Destination || s.p.Destination === 'Battlefield'));
+      const off = this.activeStatics('DisableTriggers').filter(s => !s.p.ValidTrigger && (!s.p.ValidMode || s.p.ValidMode.split(',').includes(mode)) && (!s.p.Destination || s.p.Destination === 'Battlefield'));
       if (off.length) {
         const blocked = c => c && off.some(s => matchValid(this, c, s.p.ValidCause || 'Creature', s.ctx));
         if (mode === 'ChangesZone' && blocked(rp.Card)) return;
@@ -657,6 +657,7 @@ export class Game {
       if (p.Mode !== mode && !(mode === 'SpellCast' && p.Mode === 'SpellCastOrCopy') && !(mode === 'SpellCopy' && p.Mode === 'SpellCastOrCopy')) continue;
       const controller = t.delayed && t.delayed.controller != null ? t.delayed.controller : host.isEffect ? host.controller : (host.lki ? host.controller : (zone === 'battlefield' || zone === 'stack' ? host.controller : host.owner));
       if (!this.triggerZoneOk(p, zone, host, rp)) continue;
+      if (t.key && /^kw:Ward/.test(t.key) && wardSuppressed(this, host)) continue; // (mech-classic: Nowhere to Run)
       // "When CARDNAME enters during the declare attackers step, ..." (Phase$ on a non-phase trigger)
       if (p.Phase && mode !== 'Phase' && !p.Phase.split(',').map(s => s.trim()).includes(FORGE_PHASE[this.step])) continue;
       const ctx = { host, you: controller, trig: rp, svars: t.svars, door: t.door, sa: { svars: t.svars, host, controller, trig: rp, root() { return { x: host.xPaid || 0, paid: {} }; }, parent: null, targets: [] } };
@@ -1831,6 +1832,9 @@ export class Game {
           if (rp.DamageAmount <= 0) return null;
           continue;
         }
+        // "instead that damage is dealt, but all other damage already dealt to him is healed" (Wolverine, Fierce Fighter;
+        // mech-classic's HealDamage): do it, then the damage goes ahead
+        if (p.ReplacementResult === 'Updated' && parsed.api === 'HealDamage') { await this.resolveSAChain(new SA(this, { raw, parsed, svars: r.svars, src: h, key: r.key }, h, you, { trig: rp })); continue; }
         if (p.PreventionEffect === 'True' && parsed.api !== 'ReplaceSplitDamage') {
           // "prevent that damage and [do something else instead]"
           if (this.activeStatics('CantPreventDamage').length) continue;
