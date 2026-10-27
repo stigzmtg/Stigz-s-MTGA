@@ -12,6 +12,7 @@ import { filterExt, triggerExt, keywordExt } from './ext.js';
 import { cmc, cloneCost, parseMana } from './mana.js';
 import { COLORS } from './util.js';
 import { copyStackItem } from './effects.js';
+import { lastManaRestriction } from './mech-last.js';
 
 const PERMANENT_TYPES = ['Artifact', 'Creature', 'Enchantment', 'Land', 'Planeswalker', 'Battle'];
 const faceIsPermanent = face => face.types.some(t => PERMANENT_TYPES.includes(t));
@@ -803,6 +804,7 @@ export function castingCantBeCopied(game, item) {
 // "spend only mana produced by basic lands / creatures to cast this spell", "you can't spend mana to cast this spell"
 export function castingManaRestriction(game, card) {
   if (!card || !card.isCard) return null;
+  { const r = lastManaRestriction(game, card); if (r) return r; } // cast for an alternative cost with one (mech-last.js: Security Rhox)
   const sts = card.faceDef.statics.map(s => parseAbility(s).p).filter(p => p.Mode === 'ManaRestriction');
   if (!sts.length) return null;
   return src => sts.every(p => {

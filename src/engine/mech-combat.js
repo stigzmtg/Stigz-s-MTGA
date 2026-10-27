@@ -8,6 +8,7 @@ import { matchValid, calcCtx, resolveDefined, ctxOf, liveOrLki, tapPowerValue } 
 import { parseAbility } from './forge.js';
 import { refOf, fromRef } from './abilities.js';
 import { canBlock, canAttack, canAttackDefender, attackTax, combatPower } from './combat.js';
+import { lethalOf } from './mech-last.js';
 
 const nm = (game, o) => game.name(o);
 const isCreature = (game, c) => !!c && c.zone === 'battlefield' && game.chars(c).types.has('Creature');
@@ -56,7 +57,7 @@ function lethalFrom(game, src, t) {
   if (t.isPlayer) return t.life;
   const ch = game.chars(t);
   if (ch.types.has('Planeswalker') && !ch.types.has('Creature')) return t.counters.LOYALTY || 0;
-  const left = Math.max(0, ch.toughness - t.damage);
+  const left = Math.max(0, lethalOf(ch) - t.damage); // (by power: mech-last.js)
   return src && game.hasKeyword(src, 'Deathtouch') ? Math.min(1, left) : left;
 }
 const unkillable = (game, t) => !t.isPlayer && game.hasKeyword(t, 'Indestructible');
@@ -372,7 +373,7 @@ export async function blockerDamage(game, b, atks, power) {
 // damage beyond what's lethal for a creature (deathtouch: 1), or beyond a planeswalker's loyalty
 export function excessDamageOf(game, target, ch, amount, deathtouch) {
   if (!target.isCard || amount <= 0) return 0;
-  if (ch.types.has('Creature')) { const left = Math.max(0, ch.toughness - target.damage); return Math.max(0, amount - (deathtouch ? Math.min(1, left) : left)); }
+  if (ch.types.has('Creature')) { const left = Math.max(0, lethalOf(ch) - target.damage); return Math.max(0, amount - (deathtouch ? Math.min(1, left) : left)); }
   if (ch.types.has('Planeswalker')) return Math.max(0, amount - (target.counters.LOYALTY || 0));
   return 0;
 }

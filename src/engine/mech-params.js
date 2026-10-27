@@ -1172,17 +1172,13 @@ function storeHostSVar(h, name, value) {
 }
 
 // ---------------------------------------------------------------- not automated: what support.js reports
-// Parameters left out on purpose, so cards that use them don't look fully supported.
+// Parameters left out on purpose, so cards that use them don't look fully supported. (The rest of this list —
+// paying to ignore an effect, votes, announced X and other alternative costs, text changes, ... — is in mech-last.js.)
+// Animus of Predation's keywords come from the draft, which a Commander game never has.
 const UNSUPPORTED_STATIC = {
-  IgnoreEffectCost: 'paying to ignore an effect',
-  ControlOpponentsSearchingLibrary: 'controlling an opponent\'s search',
-  AdditionalVote: 'extra votes', AdditionalOptionalVote: 'extra votes', ControlVote: 'controlling votes', AdditionalVillainousChoice: 'extra villainous choices',
-  LockInText: 'locked-in text', GainTextOf: 'gaining another card\'s text', ChangeColorWordsTo: 'changing color words', AddNames: 'extra names',
-  FromDraftNotes: 'draft notes', LethalDamageByPower: 'lethal damage by power', SourceCanOnlyTarget: 'targeting only its source',
-  MayPlaySnowIgnoreColor: 'snow mana of any color', ValidTurned: 'turning face up triggers twice', XAlternative: 'an X alternative cost',
-  ManaRestriction: 'an alternative cost with a mana restriction',
+  FromDraftNotes: 'draft notes',
 };
-const UNSUPPORTED_REPLACEMENT = { FoundSearchingLibrary: 'controlling an opponent\'s search' };
+const UNSUPPORTED_REPLACEMENT = {};
 export function paramIssues(faces) {
   const out = new Set();
   for (const f of faces) {
@@ -1190,8 +1186,6 @@ export function paramIssues(faces) {
     for (const s of [...f.S, ...sv.filter(v => /^Mode\$/.test(v) && !/Execute\$/.test(v))]) {
       const p = parseAbility(s).p;
       for (const k of Object.keys(p)) if (UNSUPPORTED_STATIC[k]) out.add(UNSUPPORTED_STATIC[k]);
-      // "exile a blue card with mana value X from your hand rather than pay this spell's mana cost" (the Shoals)
-      if (p.Mode === 'AlternativeCost' && p.Announce) out.add('an alternative cost with a chosen X');
     }
     for (const s of [...f.R, ...sv.filter(v => /^Event\$/.test(v))]) {
       const p = parseAbility(s).p;

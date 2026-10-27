@@ -16,6 +16,7 @@ import { onFire, keepCombatMana, capCounters } from './mech-newsets.js';
 import { excessDamageOf, noteExcessDamage, flushExcessDamage } from './mech-combat.js';
 import { untapPhasing, turnStart, turnBegun, deciderFor, destroyReplaced, attachmentSBA } from './mech-classic.js';
 import { cantDiscard, cantVenture, ignoresZeroLoyalty, manaBurns, cantTransform, wardSuppressed } from './mech-classic-rules.js';
+import { lastIgnoreCtx, lastDecider, lethalOf, lastMoveReplacement, lastPanharmonicon } from './mech-last.js';
 
 export const STEPS = ['untap', 'upkeep', 'draw', 'main1', 'beginCombat', 'declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage', 'endCombat', 'main2', 'end', 'cleanup'];
 export const STEP_NAMES = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main 1', beginCombat: 'Beginning of Combat', declareAttackers: 'Declare Attackers', declareBlockers: 'Declare Blockers', firstStrikeDamage: 'First-Strike Damage', combatDamage: 'Combat Damage', endCombat: 'End of Combat', main2: 'Main 2', end: 'End Step', cleanup: 'Cleanup' };
@@ -214,7 +215,7 @@ export class Game {
         const you = host.isEffect ? host.controller : (zone === 'battlefield' ? host.controller : host.owner);
         const ctx = { host, you, svars: st.svars, sa: { svars: st.svars, host, controller: you, root() { return { x: host.xPaid || 0, paid: {} }; } } };
         if (!checkPresence(this, st.parsed.p, ctx)) continue;
-        list.push({ st, host, ctx, p: st.parsed.p });
+        list.push({ st, host, ctx: lastIgnoreCtx(this, st, ctx), p: st.parsed.p }); // (mech-last.js: an ignored effect)
       }
     };
     for (const c of this.battlefield) if (!c.phasedOut) consider(c, this.chars(c).statics, 'battlefield');
@@ -265,7 +266,7 @@ export class Game {
     if (this.over) throw new GameOver();
     if (++this.askCount % 100 === 0) await new Promise(r => setTimeout(r, 0));
     // (mech-classic: while someone controls this player's turn, that player's seat decides for them)
-    const via = deciderFor(this, pid);
+    const via = lastDecider(this, pid) ?? deciderFor(this, pid); // (mech-last.js: Opposition Agent, while they search)
     const agent = this.agents[via];
     req.player = pid;
     if (via !== pid) { req.decider = via; if (req.prompt) req.prompt = `For ${this.players[pid].name}: ${req.prompt}`; }
@@ -703,15 +704,8 @@ export class Game {
       const lc = (this.turnState.loopCounts[lk] = (this.turnState.loopCounts[lk] || 0) + 1);
       if (lc > 80) { if (lc === 81) this.log(`Stopped a possible infinite loop from ${this.name(host)}.`, { type: 'info' }); continue; }
       this.pendingTriggers.push({ host, t, rp: { ...rp }, controller: triggerController(this, p, host, rp, controller), delayed: t.delayed });
-      // Panharmonicon-style doubling
-      if (mode === 'ChangesZone' && rp.Destination === 'Battlefield') {
-        for (const s of this.activeStatics('Panharmonicon')) {
-          if (s.ctx.you !== controller) continue;
-          if (s.p.ValidCard && !matchValid(this, rp.Card, s.p.ValidCard, s.ctx)) continue;
-          if (s.p.ValidCause && !matchValid(this, host, s.p.ValidCause, s.ctx)) continue;
-          this.pendingTriggers.push({ host, t, rp: { ...rp }, controller });
-        }
-      }
+      // Panharmonicon-style doubling, for every trigger mode (mech-last.js)
+      for (let k = lastPanharmonicon(this, mode, host, t, rp, zone); k > 0; k--) this.pendingTriggers.push({ host, t, rp: { ...rp }, controller: triggerController(this, p, host, rp, controller) });
       if (t.delayed) { t.delayed.fired = true; }
     }
     if (this.delayed.some(d => d.fired)) this.delayed = this.delayed.filter(d => !d.fired);
@@ -945,7 +939,7 @@ export class Game {
         const ch = this.chars(c);
         if (ch.types.has('Creature')) {
           if (ch.toughness <= 0) toGrave.push(c);
-          else if ((c.damage >= ch.toughness && c.damage > 0) || c.deathtouchHit) toDestroy.push(c);
+          else if ((c.damage >= lethalOf(ch) && c.damage > 0) || c.deathtouchHit) toDestroy.push(c); // (mech-last.js: by power)
         }
         if (ch.types.has('Planeswalker') && (c.counters.LOYALTY || 0) <= 0 && !c.enteringPW && !ignoresZeroLoyalty(this, c)) toGrave.push(c);
         if (ch.types.has('Battle') && (c.counters.DEFENSE || 0) <= 0) toGrave.push(c);
@@ -1295,6 +1289,8 @@ export class Game {
         if (!zones.includes(h.zone)) continue;
       }
       if (!checkPresence(this, p, ctx)) continue;
+      // "exile each card they find" (Opposition Agent), "exile it with an ice counter instead" (mech-last.js)
+      { const lr = await lastMoveReplacement(this, h, r, p, card, from, opts, key, applied); if (lr === 'skip') continue; if (lr === 'done') { opts.appliedRepl = applied; return null; } }
       if (p.Cause && opts.cause) { /* ignore cause restrictions */ }
       if (p.Layer === 'CantHappen') return null;
       const withRaw = p.ReplaceWith ? r.svars[p.ReplaceWith] : null;

@@ -14,6 +14,7 @@ import { NEWSETS_EFFECTS, afterMana } from './mech-newsets.js';
 import { COMBAT_EFFECTS, pumpBlockExtras, saddle, mustBlockAll, unblockBlockedOnlyBy } from './mech-combat.js';
 import { CLASSIC_EFFECTS } from './mech-classic.js';
 import { cantAttach, cantGainControl, cantTransform, cantBeSuspected, cantBecomeMonarch } from './mech-classic-rules.js';
+import { LAST_EFFECTS, lastCantSearch, lastWhileSearching, lastSetChosenMode } from './mech-last.js';
 
 const Z = z => (z ? (zoneMap[z] || z.toLowerCase()) : z);
 
@@ -317,6 +318,11 @@ export const E = {
       }
       const ctype = (p.ChangeType || 'Card').replace(/\bLand\.IsRemembered\b/, 'Card.IsRemembered');
       pool = pool.filter(c => matchValid(game, c, ctype, fctx));
+      // (mech-last.js) "players can't search libraries" (Leonin Arbiter); searching your own library, an opponent may
+      // control you (Opposition Agent) and what you find may be replaced
+      const noSearch = origins.includes('library') && lastCantSearch(game, chooser);
+      if (noSearch) pool = pool.filter(c => c.zone !== 'library');
+      const ownSearch = origins.includes('library') && chooser === pl.id && !noSearch;
       let n = p.ChangeNum === 'All' ? pool.length : num(game, sa, 'ChangeNum', 1);
       const mandatory = p.Mandatory === 'True' || origins[0] === 'battlefield';
       if (sa.p.Optional === 'True' && !mandatory) {
@@ -327,7 +333,8 @@ export const E = {
       if (p.AtRandom === 'True') { const tmp = pool.slice(); game.rng.shuffle(tmp); chosen = tmp.slice(0, n); }
       else {
         let prompt = p.SelectPrompt || `Choose ${p.ChangeNum === 'All' ? 'any number of' : mandatory ? n : 'up to ' + n} ${p.ChangeTypeDesc || 'card'}${n > 1 ? 's' : ''} (${origins.join('/')} → ${dest})`;
-        chosen = await chooseCards(game, chooser, pool, mandatory ? Math.min(n, pool.length) : 0, n, prompt, sa, 'search' + (dest === 'battlefield' ? 'Battlefield' : dest === 'hand' ? 'Hand' : ''), { reveal: true, dest });
+        const pick = () => chooseCards(game, chooser, pool, mandatory ? Math.min(n, pool.length) : 0, n, prompt, sa, 'search' + (dest === 'battlefield' ? 'Battlefield' : dest === 'hand' ? 'Hand' : ''), { reveal: true, dest });
+        chosen = ownSearch ? await lastWhileSearching(game, pl.id, pick) : await pick();
         if (p.ShareLandType === 'True' && chosen.length > 1) {
           const t0 = [...game.chars(chosen[0]).subtypes].filter(t => BASIC_LAND_TYPES[t]);
           chosen = [chosen[0], ...chosen.slice(1).filter(c => [...game.chars(c).subtypes].some(t => t0.includes(t)))];
@@ -337,12 +344,12 @@ export const E = {
       game.beginBatch();
       for (const c of chosen) {
         const from = c.zone;
-        const r = await game.moveCard(c, dest, moveOpts(c));
+        const r = await game.moveCard(c, dest, { ...moveOpts(c), foundSearching: ownSearch && from === 'library' ? pl.id : null });
         await after(r, from);
       }
       await game.endBatch();
       if (chosen.length && dest !== 'battlefield' && origins.includes('library')) game.log(`${pl.name} searches their library${dest === 'hand' ? ' and puts ' + chosen.length + ' card(s) into their hand' : ''}.`);
-      if (origins.includes('library')) game.fire('SearchedLibrary', { Player: chooser, Searched: pl.id, SearchOwn: chooser === pl.id });
+      if (origins.includes('library') && !noSearch) game.fire('SearchedLibrary', { Player: chooser, Searched: pl.id, SearchOwn: chooser === pl.id });
       if (origins.includes('library') && p.Shuffle !== 'False') game.shuffle(pl, sa);
     }
   },
@@ -919,6 +926,7 @@ export const E = {
     const options = names.map(n => ({ label: (parseAbility(sa.svars[n]).p.SpellDescription || n).replace(/CARDNAME/g, game.name(sa.host)), value: n }));
     const pick = names.length === 1 ? names[0] : await game.ask(chooser.id, { type: 'option', prompt: sa.p.ChoiceTitle || desc(game, sa) || 'Choose one', options, sa, purpose: 'genericChoice', ai: sa.p.AILogic });
     const name = pick || names[0];
+    lastSetChosenMode(game, sa, name); // SetChosenMode$ (mech-last.js: Mirrodin Besieged, the Sieges)
     const sub = new SA(game, { raw: sa.svars[name], parsed: parseAbility(sa.svars[name]), svars: sa.svars, src: sa.abil.src, key: sa.key + '>' + name }, sa.host, sa.controller, { parent: sa, trig: sa.trig });
     sub.etbCard = sa.etbCard;
     if (chooser.id !== sa.controller && sa.p.Defined) sub.controller = sa.controller;
@@ -1012,7 +1020,8 @@ export const E = {
     const ctx = ctxOf(game, sa);
     const ownerP = p.EffectOwner ? playersOf(resolveDefined(game, p.EffectOwner, ctx))[0] : null;
     const names = s => (s || '').split(',').map(x => x.trim()).filter(Boolean);
-    const svars = { ...sa.svars };
+    // (with what StoreSVar wrote on the host, as Forge copies the card's SVars: Shining Shoal's ShieldAmount)
+    const svars = { ...sa.svars, ...(sa.host && sa.host.storedSVars && sa.host.storedSVars.zcc === sa.host.zcc ? sa.host.storedSVars.v : {}) };
     const statics = names(p.StaticAbilities).map(n => svars[n]).filter(Boolean);
     const triggers = names(p.Triggers).map(n => svars[n]).filter(Boolean);
     const repls = names(p.ReplacementEffects).map(n => svars[n]).filter(Boolean);
@@ -2636,6 +2645,7 @@ Object.assign(E, NEWSETS_EFFECTS);
 Object.assign(E, COMBAT_EFFECTS);
 Object.assign(E, CLASSIC_EFFECTS);
 Object.assign(E, PARAMS_EFFECTS);
+Object.assign(E, LAST_EFFECTS);
 export const SUPPORTED_APIS = new Set(Object.keys(E).concat(['Charm']));
 
 export async function runEffect(game, sa) {

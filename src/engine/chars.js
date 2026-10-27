@@ -6,6 +6,7 @@ import { cmc } from './mana.js';
 import { BASIC_LAND_TYPES, NAME_TO_COLOR, COLORS } from './util.js';
 import { matchValid, resolveDefined, calcCtx, checkPresence, zoneMap } from './filters.js';
 import { applyStickers, gainStickerAbilities } from './mech-unsets-rules.js';
+import { lastIgnoreCtx, lastIgnoreAbilities, lastTextLayer, lastLethalLayer } from './mech-last.js';
 
 const FACE_DOWN = { name: '', manaCost: null, supertypes: [], types: ['Creature'], subtypes: [], colors: [], power: '2', toughness: '2', loyalty: null, keywords: [], abilities: [], triggers: [], statics: [], replacements: [], svars: {}, oracle: '' };
 
@@ -250,7 +251,7 @@ function staticActive(game, st) {
   const host = st.host;
   const you = host.isEffect ? host.controller : (host.zone === 'battlefield' ? host.controller : host.owner);
   const ctx = { host, you, svars: st.svars, sa: { svars: st.svars, root() { return { x: host.xPaid || 0, paid: {} }; }, host, controller: you } };
-  return checkPresence(game, st.parsed.p, ctx) ? ctx : null;
+  return checkPresence(game, st.parsed.p, ctx) ? lastIgnoreCtx(game, st, ctx) : null; // (mech-last.js: an ignored effect)
 }
 
 function affectedCards(game, st, ctx, chMap) {
@@ -289,6 +290,7 @@ export function computeAll(game) {
   const all = [...bf, ...stackCards];
   for (const c of all) map.set(c.id, baseChars(game, c));
   game._charMap = map; // partial results visible to filter matching during computation
+  lastTextLayer(game, map, all, (st, ctx) => affectedCards(game, st, ctx, map)); // text-changing effects (mech-last.js)
   for (const c of all) { const ch = map.get(c.id); applyOwnMods(game, c, ch, 4); addIntrinsicMana(ch, c); }
 
   const statics = collectStatics(game, map).filter(st => st.parsed.p.Mode === 'Continuous');
@@ -398,6 +400,9 @@ export function computeAll(game) {
   // card-script params (mech-params.js): abilities gained from other cards, Blood Sun, can't-have keywords, names
   paramAbilitiesLayer(game, active, map, (st, ctx) => affectedCards(game, st, ctx, map), c => map.get(c.id) || lazy(game, c));
   paramFinalLayer(game, active, map, (st, ctx) => affectedCards(game, st, ctx, map), c => map.get(c.id) || lazy(game, c));
+  // (mech-last.js) paying to ignore an effect: the special action on its host; lethal damage by power
+  lastIgnoreAbilities(game, map);
+  lastLethalLayer(game, active, map, (st, ctx) => affectedCards(game, st, ctx, map));
   for (const { st, ctx } of active) {
     const p = st.parsed.p;
     if (!(p.SetPower || p.SetToughness)) continue;

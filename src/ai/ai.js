@@ -8,6 +8,7 @@ import { addCosts } from '../engine/mana.js';
 import { unsetsAI, availableStickers } from '../engine/mech-unsets.js';
 import { aiExtraBlocks, aiSaddleScore } from '../engine/mech-combat.js';
 import { aiCards } from '../engine/mech-classic.js';
+import { aiLast, aiIgnoreScore } from '../engine/mech-last.js';
 
 const HARMFUL = new Set(['Destroy', 'DestroyAll', 'DealDamage', 'DamageAll', 'Counter', 'Sacrifice', 'SacrificeAll', 'Discard', 'LoseLife', 'Mill', 'GainControl', 'Tap', 'TapAll', 'Goad', 'Fight', 'Phases', 'ExchangeControl', 'RemoveCounter']);
 const BENEFICIAL = new Set(['Pump', 'PumpAll', 'PutCounter', 'PutCounterAll', 'GainLife', 'Draw', 'Untap', 'UntapAll', 'Attach', 'Regenerate', 'Animate', 'Token', 'CopyPermanent', 'Clone', 'Investigate', 'Scry', 'Surveil', 'Proliferate', 'Dig', 'BecomeMonarch', 'Explore', 'Connive', 'Amass', 'MultiplyCounter', 'Mana']);
@@ -55,6 +56,7 @@ export class AIAgent {
   // every other choice: mulligans, targets, cards, modes, options, numbers, colors, players
   choose(game, pid, req) {
     { const r = unsetsAI(this, game, pid, req); if (r !== undefined) return r; } // Un-sets: stickers, dice
+    { const r = aiLast(this, game, pid, req); if (r !== undefined) return r; } // votes, an announced X (mech-last.js)
     // (the engine's own suggestion, where it has one: dividing combat damage, bands, crew and saddle picks, ...)
     if (req.aiSuggest !== undefined) return req.aiSuggest;
     switch (req.type) {
@@ -476,6 +478,7 @@ export class AIAgent {
     const api = abil.parsed.api;
     const cost = parseCost(p.Cost);
     const sa = { ...buildDummySA(game, abil, card, pid) };
+    if (api === 'InternalIgnoreEffect') return aiIgnoreScore(this, game, pid, card, abil, ctx); // paying to ignore an effect (mech-last.js)
     // equip
     if (p.IsEquip === 'True') {
       if (!ctx.main) return 0;
