@@ -6,6 +6,7 @@ import { parseMana } from './mana.js';
 import { BASIC_LAND_TYPES } from './util.js';
 import * as M from './mech-combat.js';
 import { cantBecomeMonarch } from './mech-classic-rules.js';
+import { lethalOf } from './mech-last.js';
 
 function kw(game, c, k) { return game.hasKeyword(c, k); }
 function hidden(game, c, text) { return game.chars(c).keywords.some(k => k === text || k === 'HIDDEN ' + text); }
@@ -539,7 +540,8 @@ export async function combatDamage(game, firstStrike) {
     if (!blockers.length) { if (trample && defAlive) assigns.push({ src: a, tgt: defTarget, n: power }); continue; }
     // order: kill as many as possible
     const deathtouch = kw(game, a, 'Deathtouch');
-    const lethal = b => { const t = game.chars(b).toughness - b.damage; return deathtouch ? Math.min(1, Math.max(0, t)) : Math.max(0, t); };
+    // (lethal damage by power: mech-last.js)
+    const lethal = b => { const t = lethalOf(game.chars(b)) - b.damage; return deathtouch ? Math.min(1, Math.max(0, t)) : Math.max(0, t); };
     blockers.sort((x, y) => lethal(x) - lethal(y));
     let left = power;
     const per = new Map();

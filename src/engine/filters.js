@@ -4,6 +4,7 @@ import { cmc, manaColorsFromProduced } from './mana.js';
 import { stickerCardProp, stickerCount, unsetsPlayerProperty } from './mech-unsets-rules.js';
 import { filterExt } from './ext.js';
 import { phasedOutProps, CLASSIC_CARD_PROPS, classicCardProp, classicCardPropArg, CLASSIC_PLAYER_PROPS, classicPlayerProp, classicCount } from './mech-classic-rules.js';
+import { lastIgnored, lastHasName, lastNamesMatch } from './mech-last.js';
 
 export const unknownProps = new Set(); // collected for coverage diagnostics
 
@@ -59,6 +60,8 @@ export function charsOf(game, o) {
 export function matchValid(game, obj, valid, ctx) {
   if (valid == null || valid === '') return true;
   if (!obj) return false;
+  // a static that a player paid to ignore leaves them and its cards alone (mech-last.js: Leonin Arbiter)
+  if (ctx && ctx.lastIgnoring) { if (lastIgnored(obj, ctx)) return false; ctx = { ...ctx, lastIgnoring: null }; }
   for (const alt of splitTop(String(valid), ',')) {
     if (matchOne(game, obj, alt.trim(), ctx)) return true;
   }
@@ -153,6 +156,8 @@ function playerProp(game, p, prop, ctx) {
     case 'withMostLife': return game.livingPlayers().every(q => q.life <= p.life);
     case 'withLowestLife': return game.livingPlayers().every(q => q.life >= p.life);
     case 'withMostCardsInHand': return game.livingPlayers().every(q => q.hand.length <= p.hand.length);
+    // "a player who controls more permanents than each other player" (Damping Engine)
+    case 'withMostPermanentInPlay': { const n = q => game.battlefield.filter(c => c.controller === q.id && !c.phasedOut).length; const mine = n(p); return game.livingPlayers().every(q => q.id === p.id || n(q) < mine); }
     case 'attackedThisTurn': case 'attackedBySourceThisCombat': return !!(game.combat && game.combat.attackers.some(a => a.defenderPlayer === p.id));
     case 'wasDealtDamageThisTurn': return !!game.turnState.damagedPlayers[p.id];
     case 'wasDealtCombatDamageThisTurn': return !!game.turnState.combatDamagedPlayers[p.id];
@@ -355,7 +360,7 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'Spell': return !card.lki && card.zone === 'stack';
     case 'Other+YouCtrl': return (!host || card.id !== host.id) && ctrl === you;
     case 'Attacking': return game.isAttacking(card);
-    case 'sharesNameWith Remembered': return refList(game, ctx, 'Remembered').some(x => x && !x.isPlayer && charsOf(game, x).name === ch.name);
+    case 'sharesNameWith Remembered': return refList(game, ctx, 'Remembered').some(x => x && !x.isPlayer && namesMatch(ch, charsOf(game, x), game));
     case 'cmcEven': return ch.cmc % 2 === 0;
     case 'cmcOdd': return ch.cmc % 2 === 1;
     case 'greatestPower': case 'greatestPowerControlledByYou': {
@@ -411,7 +416,7 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'canReceiveCounters P1P1': return !card.lki && card.zone === 'battlefield';
     case 'canBeTurnedFaceUp': return !!card.faceDown && card.faceDef && card.def.faces[0].types.includes('Creature');
     case 'targetedBy': return false;
-    case 'sameName': return !!host && namesMatch(ch, charsOf(game, host));
+    case 'sameName': return !!host && namesMatch(ch, charsOf(game, host), game);
     // combat history: this combat, this turn, its controller's last turn
     case 'blockingSource': return !!host && blockedAttackers(game, card).includes(host.id);
     case 'blockedBySourceLKI': { const src = host && !host.lki && host.zone !== 'battlefield' ? sourceLKI(game, host, ctx) : host; return !!src && blockedAttackers(game, src).includes(card.id); }
@@ -513,12 +518,12 @@ function cardProp(game, card, ch, prop, ctx) {
     const has = game.hasKeywordIn(ch, kw) || game.hasKeywordIn(ch, m[2]);
     return m[1] ? !has : has;
   }
-  if ((m = prop.match(/^named(.+)$/))) { const nm = m[1].replace(/;/g, ','); return ch.name === nm || card.def.name === nm; }
+  if ((m = prop.match(/^named(.+)$/))) { const nm = m[1].replace(/;/g, ','); return ch.name === nm || card.def.name === nm || lastHasName(game, ch, nm); }
   if ((m = prop.match(/^base(Power|Toughness)(EQ|NE|LT|LE|GT|GE)(.+)$/))) { const b = m[1] === 'Power' ? card.faceDef.power : card.faceDef.toughness; return compare(/^\d+$/.test(b || '') ? +b : 0, m[2], calcCtx(game, m[3], ctx)); }
   if ((m = prop.match(/^kicked (\d)$/))) return (card.kicked || 0) >= +m[1];
   if ((m = prop.match(/^ClassLevel(EQ|GE|LE|GT|LT)(\d+)$/))) return compare(card.classLevel || 1, m[1], +m[2]);
   if ((m = prop.match(/^attacking (.+)$/))) { const d = game.attackTargetOf(card); if (d == null) return false; return resolveDefined(game, m[1], ctx).some(x => x.isPlayer && x.id === d); }
-  if ((m = prop.match(/^notnamed(.+)$/))) return ch.name !== m[1];
+  if ((m = prop.match(/^notnamed(.+)$/))) return ch.name !== m[1] && !lastHasName(game, ch, m[1]);
   if ((m = prop.match(/^non(.+)$/))) return !hasType(game, ch, m[1], card);
   if ((m = prop.match(/^(ControlledBy|OwnedBy) (.+)$/))) {
     const who = resolveDefined(game, m[2], ctx).map(x => x.isPlayer ? x.id : ctrlOf(game, x));
@@ -556,7 +561,7 @@ function cardProp(game, card, ch, prop, ctx) {
     return atts.some(a => matchValid(game, a, m[2], ctx));
   }
   if ((m = prop.match(/^Devotion/))) return false;
-  if ((m = prop.match(/^namedCard$/))) return !!host && host.chosen && host.chosen.name === ch.name;
+  if ((m = prop.match(/^namedCard$/))) return !!host && !!host.chosen && (host.chosen.name === ch.name || lastHasName(game, ch, host.chosen.name));
   if ((m = prop.match(/^ExiledWith(Source|Effect)?$/))) return !!host && card.exiledWith === host.id;
   // exiled by an effect of a permanent / spell you controlled (Haldan, Avid Arcanist)
   if (prop === 'ExiledByYou') { const h = card.zone === 'exile' && card.exiledWith != null ? game.cardById(card.exiledWith) : null; return !!h && (h.zone === 'battlefield' ? h.controller : h.owner) === you; }
@@ -602,7 +607,7 @@ function cardProp(game, card, ch, prop, ctx) {
   // "if there are no tokens with the same name as it" (The Apprentice's Folly), "... as a remembered card"
   if ((m = prop.match(/^doesNotShareNameWith (.+)$/))) {
     const pool = /^(Remembered|Imprinted)/.test(m[1]) ? resolveDefined(game, m[1], ctx) : game.battlefield.filter(x => matchValid(game, x, m[1], ctx));
-    return !pool.some(x => x && !x.isPlayer && namesMatch(ch, charsOf(game, x)));
+    return !pool.some(x => x && !x.isPlayer && namesMatch(ch, charsOf(game, x), game));
   }
   // "if it and at least two other creatures attacked this combat"
   if ((m = prop.match(/^attackedThisCombat (EQ|GE|LE|GT|LT|NE)(\d+)$/))) {
@@ -644,13 +649,13 @@ function shares(game, a, b, kind) {
   }
   if (kind === 'sharesColorWith') { for (const c of a.colors) if (b.colors.has(c)) return true; return false; }
   if (kind === 'sharesCardTypeWith') { for (const t of a.types) if (b.types.has(t)) return true; return false; }
-  if (kind === 'sharesNameWith') return namesMatch(a, b);
+  if (kind === 'sharesNameWith') return namesMatch(a, b, game);
   if (kind === 'sharesLandTypeWith') { for (const t of a.subtypes) if (BASIC_LAND_TYPES[t] && b.subtypes.has(t)) return true; return false; }
   return false;
 }
 
-// (a face-down card has no name to share)
-function namesMatch(a, b) { return !!a.name && a.name === b.name; }
+// (a face-down card has no name to share; Spy Kit gives one all names of nonlegendary creature cards: mech-last.js)
+function namesMatch(a, b, game = null) { return (!!a.name && a.name === b.name) || (!!game && lastNamesMatch(game, a, b)); }
 
 // what "shares a name / color / type with <restriction>" compares against
 function sharesPool(game, restriction, ctx) {

@@ -767,13 +767,12 @@ test('TriggerController: Yuan-Ti Malison\'s trigger is controlled by the creatur
   const pt = g.pendingTriggers.find(x => x.host === yt);
   expect(pt && pt.controller === 1, `controlled by B (${pt && pt.controller})`);
 });
-test('support.js flags the parameters left out: Opposition Agent, Leonin Arbiter, the Shoals; not the cards fixed here', async T => {
+test('support.js flags the parameters left out (draft notes: Animus of Predation); not the cards fixed here or in mech-last.js', async T => {
   const { allCardScripts } = await import('./lib/allcards.mjs');
   const all = allCardScripts();
   const issues = n => analyzeCard(all[n]);
-  expect(issues('Opposition Agent').some(i => /search/.test(i)), `Opposition Agent (${issues('Opposition Agent')})`);
-  expect(issues('Leonin Arbiter').some(i => /ignore/.test(i)), `Leonin Arbiter (${issues('Leonin Arbiter')})`);
-  expect(issues('Disrupting Shoal').some(i => /chosen X/.test(i)), `Disrupting Shoal (${issues('Disrupting Shoal')})`);
+  expect(issues('Animus of Predation').some(i => /draft/.test(i)), `Animus of Predation (${issues('Animus of Predation')})`);
+  for (const n of ['Opposition Agent', 'Leonin Arbiter', 'Disrupting Shoal']) expect(!issues(n).length, `${n} looks supported (mech-last.js: ${issues(n)})`);
   for (const n of ["Bolas's Citadel", 'Fact or Fiction', 'Cataclysmic Gearhulk', 'Enduring Vitality', 'Necrotic Ooze', 'Charmed Sleep', 'Pariah', 'Terror of the Peaks']) expect(!issues(n).length, `${n} looks supported (${issues(n)})`);
 });
 

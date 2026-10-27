@@ -3,6 +3,7 @@
 // "can't ..." / "ignore ..." static checks. It only imports filters.js and nothing here runs at load, so any engine
 // module (keywords.js, filters.js, triggers.js) can import it without import-order trouble.
 import { matchValid, resolveDefined, calcCtx, zoneMap } from './filters.js';
+import { lastHasName } from './mech-last.js';
 
 // ---------------------------------------------------------------- keywords (keywords.js defFor)
 // Fills A / T / R / S (activated abilities, triggers, replacements, svars) like defFor does; true when handled.
@@ -99,7 +100,7 @@ export function classicCardProp(game, card, ch, prop, ctx) {
     // dealt damage by the source this turn (Bone Shaman)
     case 'DamagedBy': return !!host && game.turnState.damageLog.some(e => e.card === card.id && e.source === host.id);
     case 'setARN': return ARABIAN_NIGHTS.has(ch.name || card.def.name);
-    case 'NamedCard': return !!host && !!host.chosen && !!ch.name && (host.chosen.name === ch.name || (host.chosen.names || []).includes(ch.name));
+    case 'NamedCard': return !!host && !!host.chosen && !!ch.name && (host.chosen.name === ch.name || (host.chosen.names || []).includes(ch.name) || [host.chosen.name, ...(host.chosen.names || [])].some(n => lastHasName(game, ch, n)));
     case 'IsSuspected': return !!card.suspected;
     // (a phased-out permanent's "phasedOut..." properties were already turned into the plain ones by phasedOutProps)
     default: return false;

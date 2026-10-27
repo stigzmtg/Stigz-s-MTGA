@@ -12,6 +12,7 @@ import { tapPowerValue } from './filters.js';
 import { cantCrew, crewedBy, crewPowers, crewPick } from './mech-combat.js';
 import { payLifeReplaced, mustTargetCands, mustTargetFix, noteActivation, activationsUsed, spellResolved } from './mech-classic.js';
 import { cantPlayLand, cantAttach, cantPayLife, lifeForMana, ignoresHexproof, activationLimit } from './mech-classic-rules.js';
+import { bindLast, lastActivatorOk, lastCantTarget, lastAltOptionExtras, lastAltCostOptions, lastAnnounceOk, lastAnnounce, lastSourceUnits, lastSpellText, lastSpellView } from './mech-last.js';
 
 export class Cancelled extends Error { constructor() { super('cancelled'); this.cancelled = true; } }
 
@@ -52,6 +53,7 @@ export function makeSA(game, raw, svars, host, controller, opts = {}) {
   return new SA(game, { raw, parsed: parseAbility(raw), svars, src: host, key: opts.key || 'x' }, host, controller, opts);
 }
 bindEngine({ SA, makeSA, resolveChain, parseCost, canPayNonMana, Cancelled, runEffect }); // mech-params.js can't import this module
+bindLast({ SA, makeSA, resolveChain, canPayNonMana, parseCost, Cancelled, costLabel, availableManaCount }); // nor can mech-last.js
 
 // ---------------------------------------------------------------- refs (for UI / agents)
 export function refOf(o) {
@@ -670,7 +672,7 @@ export function manaSourcesFor(game, pid, { exclude = new Set(), spellCard = nul
       if (p.ActivationLimit && (card.abilityUses[abil.key] || 0) >= +p.ActivationLimit) continue;
       if (!checkPresence(game, p, { host: card, you: pid, svars: abil.svars, sa: { svars: abil.svars, host: card, controller: pid, root() { return { x: 0, paid: {} }; } } })) continue;
       if (p.SubAbility) penalty += 1.5;
-      const units = producedUnits(game, card, abil);
+      const units = lastSourceUnits(game, pid, card, spellCard, producedUnits(game, card, abil)); // snow mana of any color (mech-last.js)
       if (!units.length) continue;
       const extra = cost.hasMana ? cost.mana : null;
       if (extra) penalty += 1;
@@ -1024,12 +1026,8 @@ export function canBeTargetedBy(game, obj, sa) {
     }
   }
   if (sa.host && game.hasProtectionFrom(obj, sa.host)) return false;
-  for (const s of game.activeStatics('CantTarget')) {
-    if (s.p.ValidCard && !matchValid(game, obj, s.p.ValidCard, s.ctx)) continue;
-    if (s.p.ValidSource && !(sa.host && matchValid(game, sa.host, s.p.ValidSource, s.ctx))) continue;
-    if (s.p.Activator && !matchValid(game, game.players[you], s.p.Activator, s.ctx)) continue;
-    return false;
-  }
+  // ValidTarget$, AffectedZone$, ValidSA$, ValidSource$, Activator$, SourceCanOnlyTarget$ (mech-last.js)
+  if (game.activeStatics('CantTarget').some(s => lastCantTarget(game, s, obj, sa, you))) return false;
   if (game.hasKeywordIn(ch, "CARDNAME can't be the target of spells or abilities your opponents control.") && obj.controller !== you) return false;
   return true;
 }
@@ -1317,8 +1315,9 @@ export function spellOptions(game, pid, card, { anyZone = false } = {}) {
       if (sp.ValidSA && !/Spell(\.Self)?$/.test(sp.ValidSA)) continue;
       const ctx = { host: card, you: pid };
       if (!checkPresence(game, sp, ctx)) continue;
-      pushFace(0, { altCost: 'Alternative', altManaStr: sp.Cost, label: `Cast ${f.name} (${(sp.Description || 'alternative cost').slice(0, 50)})` });
+      pushFace(0, { altCost: 'Alternative', altManaStr: sp.Cost, label: `Cast ${f.name} (${(sp.Description || 'alternative cost').slice(0, 50)})`, ...lastAltOptionExtras(sp) });
     }
+    lastAltCostOptions(game, pid, card, from, pushFace); // other cards' "rather than pay the mana cost" (mech-last.js)
     castingAltOptions(game, pid, card, from, pushFace, kwsHere); // warp, sneak, web-slinging, freerunning, converted, prototype
   }
   // aftermath half from the graveyard
@@ -1383,7 +1382,9 @@ function buildSpellSA(game, pid, card, opt) {
     const zm = valid.match(/inZone(\w+)/);
     raw = `SP$ Attach | ValidTgts$ ${valid}${zm ? ' | TgtZone$ ' + zm[1] : ''} | AILogic$ ${face.svars.AttachAILogic || 'Pump'} | SpellDescription$ Enchant ${valid}`;
   } else raw = `SP$ Permanent${face.types.join('')} | SpellDescription$ ${face.name}`;
-  const abil = { raw, parsed: parseAbility(raw), svars: face.svars, src: card, key: `cast:${opt.key}` };
+  let svars = face.svars;
+  { const t = lastSpellText(game, card, raw, svars); if (t) ({ raw, svars } = t); } // color words changed (mech-last.js)
+  const abil = { raw, parsed: parseAbility(raw), svars, src: card, key: `cast:${opt.key}` };
   const sa = new SA(game, abil, card, pid);
   sa.isSpell = true;
   sa.permanent = !!opt.permanent || /^SP\$ Permanent/.test(raw) || (abil.parsed.api === 'Attach' && face.subtypes.includes('Aura'));
@@ -1415,7 +1416,7 @@ function spellCost(game, pid, card, opt, sa) {
   if (opt.addCostStr) { const c = parseCost(opt.addCostStr); if (c.hasMana) mana = addCosts(mana, c.mana); extra = { ...extra, parts: [...(extra.parts || []), ...c.parts] }; }
   if (opt.from === 'command' && card.isCommander) { mana = addCosts(mana, parseMana(String(game.commanderTax(card)))); }
   // cost modifiers
-  const ctxCard = card;
+  const ctxCard = lastSpellView(game, card, opt) || card; // a face-down spell is a 2/2 creature spell (mech-last.js)
   let reduce = 0, raise = 0;
   const colorReduce = [];
   for (const s of game.activeStatics('ReduceCost')) {
@@ -1484,6 +1485,7 @@ export function castableOptions(game, pid, card, { ignoreTiming = false, freeCas
     const sa = buildSpellSA(game, pid, card, opt);
     const { mana, extra } = spellCost(game, pid, card, freeCast ? { ...opt, withoutMana: true } : opt, sa);
     let xFree = castingSetCost(game, pid, card, mana.x ? { ...mana, x: 0 } : mana); // (Trinisphere)
+    if (!lastAnnounceOk(opt, game, sa, extra)) continue; // an announced X (mech-last.js: the Shoals)
     if (!canPayNonMana(game, sa, extra)) continue;
     const face = card.def.faces[opt.face] || card.def.faces[0];
     // emerge / offering: some permanent to sacrifice must make the rest payable (without its own mana)
@@ -1514,7 +1516,10 @@ export function castableOptions(game, pid, card, { ignoreTiming = false, freeCas
     }
     const altAdd = face.keywords.map(k => k.match(/^AlternateAdditionalCost:(.+)$/)).find(Boolean);
     if (altAdd && !altAdd[1].split(':').some(s => { const c = parseCost(s); return canPayNonMana(game, sa, { ...c, parts: [...extra.parts, ...c.parts] }) && canAfford(game, pid, addCosts(xFree, c.mana), { spellCard: card, exclude: new Set([card.id]) }); })) continue;
-    if (!canAfford(game, pid, xFree, { spellCard: card, exclude: new Set([card.id, ...costPartExclusions(game, sa, extra.parts)]) })) continue;
+    card.lastRestrict = opt.manaRestriction || null; // "spend only mana produced by Treasures to cast it this way" (mech-last.js)
+    const affordable = canAfford(game, pid, xFree, { spellCard: card, exclude: new Set([card.id, ...costPartExclusions(game, sa, extra.parts)]) });
+    card.lastRestrict = null;
+    if (!affordable) continue;
     if (!targetsPossible(game, sa)) continue;
     out.push({ ...opt, manaCost: mana });
   }
@@ -1850,6 +1855,7 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
   }
   // splice
   await castingAdditionalCosts(game, pid, card, sa, opt, face, kws, { addCost, affordable });
+  if (!(await lastAnnounce(game, pid, card, opt, sa, extra))) return false; // "exile a card with mana value X" (mech-last.js)
   // X that only appears in non-mana costs (e.g. "pay X life")
   const xPart = extra.parts.find(pt => pt.amount === 'X');
   if (!mana.x && xPart) {
@@ -1903,13 +1909,17 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
     if (n) { sa.delveCards = gy.slice(0, n); const m2 = cloneCost(mana); m2.generic -= n; mana = m2; }
   }
   mana = await castingAssist(game, pid, card, sa, mana, kws); // another player may pay some of the generic mana
-  if (!canAfford(game, pid, mana, { spellCard: card, exclude })) {
-    if (!game.players[pid].isHuman) return false;
-    game.log(`Not enough mana to cast ${face.name}.`, { type: 'info' });
-    return false;
-  }
-  // pay
-  const paidOk = await payManaCost(game, pid, mana, { exclude, spellCard: card, sa });
+  card.lastRestrict = opt.manaRestriction || null; // "spend only mana produced by Treasures to cast it this way" (mech-last.js)
+  let paidOk;
+  try {
+    if (!canAfford(game, pid, mana, { spellCard: card, exclude })) {
+      if (!game.players[pid].isHuman) return false;
+      game.log(`Not enough mana to cast ${face.name}.`, { type: 'info' });
+      return false;
+    }
+    // pay
+    paidOk = await payManaCost(game, pid, mana, { exclude, spellCard: card, sa });
+  } finally { card.lastRestrict = null; }
   if (!paidOk) return false;
   if (sa.delveCards) for (const c of sa.delveCards) await game.moveCard(c, 'exile');
   await applyCostParts(game, sa, extra, choices);
@@ -2242,6 +2252,7 @@ export function canActivate(game, pid, card, abil, { ignoreTiming = false } = {}
   if (p.ActivationPhases && !phaseOk(game, p.ActivationPhases)) return false;
   const ctx = { host: card, you: pid, svars: abil.svars, sa: { svars: abil.svars, host: card, controller: pid, root() { return { x: 0, paid: {} }; } } };
   if (!checkPresence(game, p, ctx)) return false;
+  if (!lastActivatorOk(game, pid, card, abil)) return false; // paying to ignore an effect (mech-last.js)
   if (game.activeStatics('CantBeActivated').some(s => matchValid(game, card, s.p.ValidCard || 'Card', s.ctx) && (!s.p.AffectedZone || true))) return false;
   const sa = new SA(game, abil, card, pid);
   const cost = parseCost(p.Cost);
