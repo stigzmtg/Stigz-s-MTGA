@@ -35,6 +35,11 @@ export function untapReplacements(game, card, stepPlayer) {
   return out;
 }
 
+// a can't-happen replacement keeps it tapped (sync: game.js's untap step asks before untapping)
+export function untapLocked(game, card, stepPlayer) {
+  return untapReplacements(game, card, stepPlayer).some(r => r.p.Layer === 'CantHappen');
+}
+
 // true when the card stays tapped: a can't-happen replacement applies, or one that does something else instead
 // (Freyalise's Winds: "remove all wind counters from it instead") was applied
 export async function untapPrevented(game, card, stepPlayer) {
@@ -1063,7 +1068,7 @@ export function replaceProducedUnits(game, card, units) {
 
 // "If you would lose unspent mana, that mana becomes black / red / colorless instead" (Omnath, Locus of All; Ozai;
 // Kruphix): the color lost mana turns into (game.js emptyPools)
-export function loseManaColor(game, pl) {
+function loseManaColor(game, pl) {
   for (const { r, p, ctx } of game.replacementsFor('LoseMana')) {
     if (p.ValidPlayer && !matchValid(game, pl, p.ValidPlayer, ctx)) continue;
     const w = p.ReplaceWith && r.svars[p.ReplaceWith];
@@ -1072,6 +1077,18 @@ export function loseManaColor(game, pl) {
     if (t && SHORT[t]) return SHORT[t];
   }
   return 'C';
+}
+
+// after the pool empties (game.js gave unspent mana a LoseMana replacement saves to {C}): Omnath, Locus of All makes it
+// black instead; mana held "as steps and phases end" goes back in
+export function settleEmptiedPool(game, pl, lost, held) {
+  if (held) for (const k of Object.keys(held)) pl.pool[k] = (pl.pool[k] || 0) + held[k];
+  if (!(lost > 0) || !game.replacementsFor('LoseMana').some(({ p, ctx }) => !p.ValidPlayer || matchValid(game, pl, p.ValidPlayer, ctx))) return;
+  const color = loseManaColor(game, pl);
+  if (color === 'C') return;
+  const n = Math.min(lost, pl.pool.C || 0);
+  pl.pool.C -= n;
+  pl.pool[color] = (pl.pool[color] || 0) + n;
 }
 
 // ---------------------------------------------------------------- trigger controller, replacement phases

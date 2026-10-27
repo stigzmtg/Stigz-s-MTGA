@@ -1,6 +1,6 @@
 // Core game state and flow: zones, turns, priority, the stack, state-based actions and triggers.
 import { Card, Player, newTimestamp } from './cards.js';
-import { untapPrevented as paramUntapPrevented, noteTurnEnd, noteTargeted, applyStaticEffect, heldPersistentMana, damageRedirect, dealRedirected, loseManaColor, triggerController, replacementPhaseOk } from './mech-params.js';
+import { untapPrevented as paramUntapPrevented, untapLocked, noteTurnEnd, noteTargeted, applyStaticEffect, heldPersistentMana, settleEmptiedPool, damageRedirect, dealRedirected, triggerController, replacementPhaseOk } from './mech-params.js';
 import { RNG, COLORS, BASIC_LAND_TYPES, NAME_TO_COLOR, sleep, compare } from './util.js';
 import { computeAll, charsOutside, isRoom } from './chars.js';
 import { matchValid, resolveDefined, calcCtx, checkPresence, ctrlOf, zoneMap, findTargets } from './filters.js';
@@ -430,8 +430,8 @@ export class Game {
             c.sick = false;
             if (c.skipNextUntap) { c.skipNextUntap = false; continue; } // exerted
             if (c.tapped && this.hasKeyword(c, 'You may choose not to untap CARDNAME during your untap step.') && await this.ask(ap, { type: 'confirm', prompt: `Keep ${this.name(c)} tapped?`, purpose: 'keepTapped', cardId: c.id })) continue;
-            if (c.tapped && !this.hasKeyword(c, "CARDNAME doesn't untap during your untap step.") && !c.doesntUntap && !(await this.untapPrevented(c))) await this.untap(c);
-          } else if (c.tapped && this.activeStatics('UntapOtherPlayer').some(s => s.ctx.you === c.controller && matchValid(this, c, s.p.ValidCard || 'Permanent.YouCtrl', s.ctx)) && !(await this.untapPrevented(c))) await this.untap(c);
+            if (c.tapped && !this.hasKeyword(c, "CARDNAME doesn't untap during your untap step.") && !c.doesntUntap && !this.untapPrevented(c)) await this.untap(c);
+          } else if (c.tapped && this.activeStatics('UntapOtherPlayer').some(s => s.ctx.you === c.controller && matchValid(this, c, s.p.ValidCard || 'Permanent.YouCtrl', s.ctx))) await this.untap(c);
         }
         // goad wears off at goader's next turn
         for (const c of this.battlefield) if (c.goadedBy.includes(ap)) c.goadedBy = c.goadedBy.filter(x => x !== ap);
@@ -530,9 +530,9 @@ export class Game {
       const lost = Object.keys(pl.pool).filter(k => !keep[k]).reduce((a, k) => a + (pl.pool[k] || 0), 0);
       const np = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
       for (const k of Object.keys(np)) if (keep[k]) np[k] = pl.pool[k] || 0;
-      if (lost > 0 && this.replacementsFor('LoseMana').some(({ p, ctx }) => !p.ValidPlayer || matchValid(this, pl, p.ValidPlayer, ctx))) np[loseManaColor(this, pl)] += lost;
-      if (held) for (const k of Object.keys(held)) np[k] += held[k];
+      if (lost > 0 && this.replacementsFor('LoseMana').some(({ p, ctx }) => !p.ValidPlayer || matchValid(this, pl, p.ValidPlayer, ctx))) np.C += lost;
       pl.pool = np;
+      settleEmptiedPool(this, pl, lost, held); // the color lost mana becomes, mana kept as steps end (mech-params.js)
     }
     this.touch();
   }
@@ -1624,7 +1624,7 @@ export class Game {
   }
   async untap(card) {
     if (!card.tapped) return false;
-    if (this.step !== 'untap' && await paramUntapPrevented(this, card, null)) return false; // "can't become untapped"
+    if (await paramUntapPrevented(this, card, this.step === 'untap' ? this.activePlayer : null)) return false; // doesn't untap / can't become untapped (mech-params.js)
     // stun counters: "if it would become untapped, instead remove a stun counter from it"
     if ((card.counters.STUN || 0) > 0) {
       const r = await this.removeCounters(card, 'STUN', 1);
@@ -1640,8 +1640,9 @@ export class Game {
     return true;
   }
 
-  // during the untap step: Untap replacements on any permanent or effect (mech-params.js)
-  async untapPrevented(c) { return paramUntapPrevented(this, c, this.activePlayer); }
+  // "doesn't untap during its controller's untap step" from any permanent or effect, for whatever its ValidCard names
+  // (mech-params.js); untap() also applies the ones that do something else instead (Freyalise's Winds)
+  untapPrevented(c) { return untapLocked(this, c, this.activePlayer); }
 
   lifeLocked(p) { return this.activeStatics('CantChangeLife').some(s => matchValid(this, p, s.p.ValidPlayer || 'You', s.ctx)); }
 

@@ -51,6 +51,20 @@ test('Untap replacements: "can\'t become untapped" works outside the untap step;
   await g.runStep('untap');
   expect(!elf.tapped, 'and it untaps in the next untap step');
 });
+test('Untap locks on a creature only reach what they name: Hokori and Rimescale Dragon untap themselves', async T => {
+  const g = T.game;
+  const hokori = await T.put(0, 'Hokori, Dust Drinker');
+  const dragon = await T.put(0, 'Rimescale Dragon');
+  const forest = await T.put(0, 'Forest');
+  const bear = await T.put(0, 'Grizzly Bears');
+  bear.counters.ICE = 1;
+  for (const c of [hokori, dragon, forest, bear]) c.tapped = true;
+  g.activePlayer = 0;
+  await g.runStep('untap');
+  expect(!hokori.tapped && !dragon.tapped, `the creatures with the locks untap (${hokori.tapped}, ${dragon.tapped})`);
+  expect(forest.tapped, 'lands don\'t untap (Hokori)');
+  expect(bear.tapped, 'a creature with an ice counter doesn\'t untap (Rimescale Dragon)');
+});
 
 // ------------------------------------------------------------ triggers
 test('Werewolves transform only if no spells were cast last turn, and back after a player cast two (Mayor of Avabruck)', async T => {
