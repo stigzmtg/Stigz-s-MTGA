@@ -7,6 +7,7 @@ const counterLabel = k => `${counterName(k)} counter`;
 import { COLORS, COLOR_NAMES, NAME_TO_COLOR, BASIC_LAND_TYPES } from './util.js';
 import { cmc, parseMana, addCosts } from './mana.js';
 import { canAttack, defendersFor, playerInDirection } from './combat.js';
+import { UNSETS_EFFECTS } from './mech-unsets.js';
 
 const Z = z => (z ? (zoneMap[z] || z.toLowerCase()) : z);
 
@@ -1618,12 +1619,16 @@ export const E = {
 
   async Phases(game, sa) {
     const out = [];
-    for (const c of cardsOf(objs(game, sa, 'Self'))) {
+    // "phase out all creatures" (AllValid$, Out of Time)
+    const list = sa.p.AllValid ? game.battlefield.filter(c => !c.phasedOut && matchValid(game, c, sa.p.AllValid, ctxOf(game, sa))) : cardsOf(objs(game, sa, 'Self'));
+    for (const c of list) {
       if (c.zone !== 'battlefield') continue;
-      if (c.phasedOut) { if (sa.p.PhaseInOrOut === 'True') { c.phasedOut = false; game.log(`${game.name(c)} phases in.`); } continue; }
-      c.phasedOut = true; out.push(c);
+      if (c.phasedOut) { if (sa.p.PhaseInOrOut === 'True') { c.phasedOut = false; c.wontPhaseIn = false; game.log(`${game.name(c)} phases in.`); } continue; }
+      // "phases out until ..." (Ferris Wheel, Oubliette): not back in at its controller's untap step
+      c.phasedOut = true; c.wontPhaseIn = sa.p.WontPhaseInNormal === 'True'; out.push(c);
       game.log(`${game.name(c)} phases out.`);
     }
+    if (sa.p.RememberAffected === 'True') remember(sa, out);
     game.touch();
     if (out.length) game.fire('PhaseOutAll', { Cards: out, Amount: out.length });
   },
@@ -2593,6 +2598,7 @@ async function copyStackItem(game, item, controller, mayChooseTargets) {
   if (card) game.fire('SpellCopy', { Card: card, Player: controller, IsSpell: true, StackItem: copy });
 }
 
+Object.assign(E, UNSETS_EFFECTS);
 export const SUPPORTED_APIS = new Set(Object.keys(E).concat(['Charm']));
 
 export async function runEffect(game, sa) {

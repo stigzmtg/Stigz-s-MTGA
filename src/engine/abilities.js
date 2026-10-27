@@ -4,6 +4,7 @@ import { parseMana, emptyCost, addCosts, cmc, isManaToken, planPayment, payFromP
 import { matchValid, resolveDefined, calcCtx, checkConditions, checkPresence, ctxOf, findTargets, zoneMap, ctrlOf } from './filters.js';
 import { COLORS } from './util.js';
 import { runEffect } from './effects.js';
+import { adjustDiceRolls, visitAttractions, bindAbilities } from './mech-unsets.js';
 
 export class Cancelled extends Error { constructor() { super('cancelled'); this.cancelled = true; } }
 
@@ -401,17 +402,23 @@ export function humanValid(v) {
 }
 
 // roll dice for a player: "roll that many plus one and ignore the lowest" replacements (Barbarian Class) apply
-export async function rollDice(game, pid, amount, sides, ignore = 0, sa = null) {
+// (opts.toVisit / ToVisitYourAttractions$: rolling to visit Attractions; Monitor Monitor, Night Shift of the Living Dead
+// and Xenosquirrels may change the results first: mech-unsets.js)
+export async function rollDice(game, pid, amount, sides, ignore = 0, sa = null, opts = {}) {
   const rr = await game.applySimpleReplacement('RollDice', { Affected: game.players[pid], Player: pid, Number: amount, Ignore: ignore }, sa);
   if (rr) { amount = rr.Number; ignore = rr.Ignore || 0; }
   const rolls = [];
   for (let i = 0; i < amount; i++) rolls.push(1 + game.rng.int(sides));
   // "roll two d20 and ignore the lower roll"
   if (ignore > 0) { rolls.sort((a, b) => b - a); rolls.splice(Math.max(1, rolls.length - ignore)); }
+  const toVisit = !!(opts.toVisit || (sa && sa.p.ToVisitYourAttractions === 'True'));
+  await adjustDiceRolls(game, pid, rolls, sides, sa, toVisit);
   const total = rolls.reduce((a, b) => a + b, 0);
-  game.log(`${game.players[pid].name} rolls ${rolls.length > 1 ? rolls.length : 'a'} d${sides}: ${total}.`);
-  game.fire('RolledDie', { Player: pid, Result: total, Sides: sides });
-  game.fire('RolledDieOnce', { Player: pid, Result: total, Sides: sides });
+  game.log(`${game.players[pid].name} rolls ${rolls.length > 1 ? rolls.length : 'a'} d${sides}${toVisit ? ' to visit Attractions' : ''}: ${total}.`);
+  // "whenever you roll a 6": each die
+  for (const r of rolls) game.fire('RolledDie', { Player: pid, Result: r, Sides: sides, ToVisit: toVisit });
+  game.fire('RolledDieOnce', { Player: pid, Result: total, Sides: sides, ToVisit: toVisit });
+  if (toVisit) await visitAttractions(game, pid, total);
   return { rolls, total };
 }
 
@@ -2392,7 +2399,7 @@ export async function resolveChain(game, sa) {
       const switched = s.p.UnlessSwitched === 'True';
       if (paid !== switched) continue;
     }
-    if (s.p.Optional === 'True' && s.api !== 'ChangeZone' && s.api !== 'Dig' && s.api !== 'Play') {
+    if (s.p.Optional === 'True' && s.api !== 'ChangeZone' && s.api !== 'Dig' && s.api !== 'Play' && s.api !== 'PutSticker') {
       const decider = s.p.OptionalDecider ? resolveDefined(game, s.p.OptionalDecider, ctx)[0] : game.players[s.controller];
       const pid = decider && decider.isPlayer ? decider.id : s.controller;
       const yes = await game.ask(pid, { type: 'confirm', prompt: (s.p.OptionQuestion || `${s.description}?`).replace(/CARDNAME/g, game.name(s.host)), purpose: 'optional', sa: s });
@@ -2490,3 +2497,4 @@ export async function castAlternative(game, pid, card, costStr, kind, fromExile)
 }
 
 export { buildSpellSA, spellCost };
+bindAbilities({ SA, rollDice, payManaCost, canAfford, chooseTargetsForSA, resolveChain }); // Un-sets (mech-unsets.js can't import this module)

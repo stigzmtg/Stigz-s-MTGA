@@ -94,9 +94,11 @@ export function TargetsDialog({ game, req, respond, onHover }) {
 }
 
 export function OptionDialog({ game, req, respond }) {
+  const cards = (req.cards || []).map(id => game.cardById(id)).filter(Boolean);
   return (
     <Modal narrow label="Choose">
       <h2>{req.prompt || 'Choose one'}</h2>
+      {cards.length ? <div className="dlg-cards">{cards.map(c => <div className="cardwrap" key={c.id}><CardFace v={viewOf(game, c)} size="hand" /></div>)}</div> : null}
       <div className="optlist">
         {req.options.map(o => <button key={o.value} className="btn" onClick={() => respond(o.value)}><RulesText text={o.label} /></button>)}
       </div>
@@ -206,7 +208,7 @@ export function MulliganDialog({ game, req, respond, onHover }) {
 export function ZoneDialog({ game, pid, me, zone, onClose, onHover, onMenu, playable, onPlay }) {
   const p = game.players[pid];
   const cards = zone === 'library' ? [] : [...(p[zone] || [])].reverse();
-  const title = { graveyard: 'Graveyard', exile: 'Exile', library: 'Library', command: 'Command zone' }[zone];
+  const title = { graveyard: 'Graveyard', exile: 'Exile', library: 'Library', command: 'Command zone', Junkyard: 'Junkyard' }[zone];
   return (
     <Modal label={title} onClose={onClose}>
       <h2>{p.name} — {title} ({(p[zone] || []).length})</h2>

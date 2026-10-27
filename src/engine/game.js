@@ -8,6 +8,8 @@ import { SA, castSpell, activateAbility, resolveStackItem, chooseTargetsForSA, g
 import { triggerMatches } from './triggers.js';
 import * as combat from './combat.js';
 import { parseAbility } from './forge.js';
+import { setupUnsets, rollToVisitAtMain } from './mech-unsets.js';
+import { attractionDestination } from './mech-unsets-rules.js';
 
 export const STEPS = ['untap', 'upkeep', 'draw', 'main1', 'beginCombat', 'declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage', 'endCombat', 'main2', 'end', 'cleanup'];
 export const STEP_NAMES = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main 1', beginCombat: 'Beginning of Combat', declareAttackers: 'Declare Attackers', declareBlockers: 'Declare Blockers', firstStrikeDamage: 'First-Strike Damage', combatDamage: 'Combat Damage', endCombat: 'End of Combat', main2: 'Main 2', end: 'End Step', cleanup: 'Cleanup' };
@@ -56,6 +58,7 @@ export class Game {
     this.askCount = 0;
     this.activeRepl = new Set();
     for (const [i, cfg] of players.entries()) this.addPlayer(i, cfg);
+    setupUnsets(this); // Un-sets: sticker sheets and Attraction decks for the players whose cards use them
   }
 
   // ---------------------------------------------------------------- setup
@@ -421,7 +424,7 @@ export class Game {
       case 'untap': {
         for (const c of [...this.battlefield]) {
           if (c.phasedOut && c.controller === ap) {
-            if (!this.activeStatics('CantPhaseIn').some(s => matchValid(this, c, s.p.ValidCard || 'Card', s.ctx))) { c.phasedOut = false; this.touch(); }
+            if (!c.wontPhaseIn && !this.activeStatics('CantPhaseIn').some(s => matchValid(this, c, s.p.ValidCard || 'Card', s.ctx))) { c.phasedOut = false; this.touch(); }
             continue;
           }
           if (c.controller === ap) {
@@ -465,6 +468,7 @@ export class Game {
         }
         // saga lore counters
         for (const c of this.battlefield.filter(x => x.controller === ap && this.chars(x).subtypes.has('Saga'))) await this.addCounters(c, 'LORE', 1, null);
+        await rollToVisitAtMain(this, ap); // Un-sets: roll to visit your Attractions
         this.fire('Phase', { Phase: 'Main1', Player: ap });
         break;
       }
@@ -1105,6 +1109,7 @@ export class Game {
       if (r === null) return card; // replaced entirely
       dest = r;
     }
+    if (card.attraction) dest = attractionDestination(this, card, dest); // Un-sets: Attractions go to the junkyard
     // "triggered abilities you control can't cause you to exile creature tokens you control"
     if (dest === 'exile' && from === 'battlefield' && opts.cause && this.cantByStatic('CantExile', card, opts.cause, !!opts.forCost)) return card;
     const lki = from === 'battlefield' ? this.makeLKI(card) : (from === 'stack' ? this.makeLKI(card) : null);
@@ -1140,6 +1145,7 @@ export class Game {
     // (a new token made as a copy keeps what it copies, with its exceptions: "except it's 1/1", "it has haste")
     const keepCopy = from === 'none' ? card.copyOf : null;
     card.reset();
+    if (card.stickers && (dest === 'hand' || dest === 'library')) card.stickers = null; // Un-sets: stickers stay in public zones only
     if (keepCopy) card.copyOf = keepCopy;
     card.zcc++;
     // (a copy of a card being cast — Wondrous Crucible — is a token on the stack, not gone)

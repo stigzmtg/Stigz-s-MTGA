@@ -4,6 +4,7 @@ import { parseAbility } from './forge.js';
 import { cmc } from './mana.js';
 import { BASIC_LAND_TYPES, NAME_TO_COLOR, COLORS } from './util.js';
 import { matchValid, resolveDefined, calcCtx, checkPresence, zoneMap } from './filters.js';
+import { applyStickers, gainStickerAbilities } from './mech-unsets-rules.js';
 
 const FACE_DOWN = { name: '', manaCost: null, supertypes: [], types: ['Creature'], subtypes: [], colors: [], power: '2', toughness: '2', loyalty: null, keywords: [], abilities: [], triggers: [], statics: [], replacements: [], svars: {}, oracle: '' };
 
@@ -43,6 +44,7 @@ export function baseChars(game, card) {
   if (card.copyOf && card.copyOf.extra) applyCopyExtras(ch, card.copyOf.extra);
   if (card.textSwap && card.zone === 'battlefield' && !card.faceDown) swapTextBox(game, card, ch);
   if (card.textChanges && card.textChanges.length && !card.faceDown) applyTextChanges(ch, card.textChanges);
+  if (card.stickers && card.stickers.length) applyStickers(game, card, ch); // Un-sets: name, ability and P/T stickers
   return ch;
 }
 
@@ -358,6 +360,8 @@ export function computeAll(game) {
       }
     }
   }
+  // Un-sets: "has all abilities of ability stickers on ..." (Clandestine Chameleon, Pin Collection)
+  gainStickerAbilities(game, active, map, (st, ctx) => affectedCards(game, st, ctx, map), matchValid);
   // continuous statics granted in layer 6 (AddStaticAbility, granted by other statics) apply from layer 7 on
   const known = new Set(statics.map(st => st.raw + '|' + st.host.id));
   for (const c of bf) {

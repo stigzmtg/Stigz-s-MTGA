@@ -3,6 +3,7 @@
 // card's picture id on Scryfall, its EDHREC rank and whether it's banned (data/cardmeta.json). Once loaded they stay.
 import { fetchJSON, onClaudePage } from './common.js';
 import { setCardMeta } from './images.js';
+import { unsetsMissingExtras } from '../engine/mech-unsets-rules.js';
 
 const st = { meta: null, metaPromise: null, all: null, allPromise: null, done: 0, total: 0, version: 0, listeners: new Set() };
 const bump = () => { st.version++; for (const f of st.listeners) f(); };
@@ -54,4 +55,6 @@ export async function prepareDecks(db, decks) {
   if (missingCards(db, list).length) waits.push(loadAllCards(db));
   if (list.some(d => d.custom || d.community)) waits.push(loadCardMeta().catch(() => null));
   await Promise.all(waits);
+  // sticker sheets and Attractions aren't in anyone's deck: a game whose cards use them needs them loaded too
+  if (unsetsMissingExtras(db, list)) await loadAllCards(db);
 }
