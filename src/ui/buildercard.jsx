@@ -1,11 +1,11 @@
 // Cards in the deck builder: mana costs, picture tiles that only load their picture once they scroll into view (the
 // pictures come in packs of about forty, so a whole search page can't load at once), a large preview that follows
-// the mouse, and the card sheet: tap any card to see what it does in your deck, why the helper likes it (or what stops
+// the mouse, and the card sheet: tap any card to see what it does in your deck, why it fits (or what stops
 // it going in), and other cards for the same job.
 import { CardFace, viewOfDef, Pip } from './cardview.jsx';
 import { subscribeImages, imagesVersion } from './images.js';
 import { Modal } from './dialogs.jsx';
-import { ROLES, ROLE_HELP } from './deckai.js';
+import { ROLES, ROLE_HELP } from './deckguide.js';
 
 const { useState, useEffect, useRef, useSyncExternalStore } = React;
 const costPip = t => (/^\d+$/.test(t) || t === 'X' ? t : t.length === 2 && /^[WUBRG2][WUBRGP]$/.test(t) ? `${t[0]}/${t[1]}` : t);
@@ -121,7 +121,7 @@ export function CardSheet({ name, H, db, byName, state, onClose, onOpen, onAdd, 
           ) : null}
           {ready && !isCommander && !choosing && (info.why.length || info.pop) ? (
             <div className="cs-sec">
-              <h4>Why the helper {have ? 'kept' : 'likes'} it</h4>
+              <h4>Why it fits this deck</h4>
               <p>{[...info.why.filter(w => !/can’t fully play/.test(w)), ...(info.pop && !info.why.some(w => /precons?$/.test(w)) ? [`In ${info.pop} precon${info.pop === 1 ? '' : 's'}`] : [])].join(' · ') || 'A solid card for its job.'}</p>
             </div>
           ) : null}

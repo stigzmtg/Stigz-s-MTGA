@@ -2,8 +2,7 @@
 # work on networks blocking browser-to-browser connections) and /save/* (save codes). The site is built and
 # committed with `npm run site`, so nothing needs to be built on Cloudflare. The name must match the Worker's name.
 name = "stigz-s-mtga"
-# (worker/build/index.js is worker/index.js bundled with the Anthropic SDK by tools/build-worker.mjs; npm run site rebuilds it)
-main = "worker/build/index.js"
+main = "worker/index.js"
 compatibility_date = "2025-09-01"
 # settings added in the Cloudflare dashboard stay through deploys (RESEND_API_KEY, the email codes' key, is a secret
 # there: see README)

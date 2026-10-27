@@ -1,6 +1,7 @@
 // The Commander deck builder in a real browser (against `node tools/serve-test.mjs`): the start screen, picking a
 // commander by color, the card sheet, the checklist's Find buttons and the search filters (list and pictures),
-// adding, undo and redo, the AI helper building the rest, grouping by job, the numbers, test hands, saving as you
+// adding, undo and redo, adding by typing a name, pasting a list (to start a deck and to add to one: set codes, a
+// typo, a card the game doesn't have, no commander marked), grouping by job, the numbers, test hands, saving as you
 // go, a copy of a precon, and the same on a phone. Usage: node tools/builderui.mjs [out dir] [site]
 import fs from 'node:fs';
 import { chromium } from 'playwright';
@@ -24,13 +25,15 @@ async function page(name, width, height) {
   return p;
 }
 const total = p => p.$eval('.b-total b', e => +e.textContent);
+const decks = JSON.parse(fs.readFileSync('data/decks.json', 'utf8'));
 
 // ---- desktop
 const D = await page('desktop', 1440, 900);
 await D.click('button:has-text("+ Build a deck")');
 await D.waitForSelector('.b-start');
 await D.waitForTimeout(900);
-ok((await D.$$('.b-way')).length === 4, 'four ways to start');
+ok((await D.$$('.b-way')).length === 3, 'three ways to start');
+ok(!(await D.$('.builder-tabs button:has-text("helper")')), 'no helper tab');
 ok(/100 cards/.test(await D.textContent('.b-rules')), 'the rules in a few lines');
 await D.screenshot({ path: `${OUT}/01-start.png` });
 
@@ -106,33 +109,55 @@ ok(/outside your commander’s colors/.test(await D.textContent('.card-sheet .cs
 await D.click('.card-sheet .dlg-actions button:has-text("Close")');
 await D.check('.bfilters .checkline input');
 
-// the helper builds the rest
-await D.click('.builder-tabs button:has-text("AI helper")');
-await D.click('.helper-chips button:has-text("Build the rest for me")');
-await D.waitForFunction(() => +document.querySelector('.b-total b').textContent === 100, null, { timeout: 20000 });
-ok(true, 'the helper filled it to 100');
+// add a card by typing its name
+await D.fill('.quickadd input', 'sol ri');
+await D.waitForSelector('.qa-list li');
+ok(/Sol Ring/.test(await D.textContent('.qa-list li.on')), 'typing a name finds the card');
+await D.keyboard.press('Enter');
+ok(await total(D) === 5, 'Enter adds it');
+ok(await D.inputValue('.quickadd input') === '', 'and clears the box for the next one');
+await D.fill('.quickadd input', 'counterspe');
+await D.waitForSelector('.qa-list li');
+ok(/Not your colors/.test(await D.textContent('.qa-list')), 'an off-color card shows why it can’t go in');
+await D.keyboard.press('Enter');
+ok(await total(D) === 5, 'and isn’t added');
+await D.fill('.quickadd input', '');
+await D.screenshot({ path: `${OUT}/07-quick-add.png` });
+// paste several cards into the box: the paste dialog opens to add them
+await D.focus('.quickadd input');
+await D.evaluate(() => { const i = document.querySelector('.quickadd input'); const dt = new DataTransfer(); dt.setData('text/plain', '1 Rampant Growth\n1 Kodama\'s Reach (C21) 199\n1 Harmonize\n1 Chaos Warp\n1 Llanowar Elve\n1 Blarg the Mighty\n1 Sol Ring'); i.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); });
+await D.waitForSelector('.imp-out .imp-sum');
+ok(await D.$('.imp-mode button.on:has-text("Add to my deck")') != null, 'pasting a list into the box opens the paste dialog, set to add');
+ok(/Llanowar Elve → Llanowar Elves/.test(await D.textContent('.imp-out')), 'a typo is read as the closest card');
+ok(/Blarg the Mighty/.test(await D.textContent('.imp-missing')), 'a card the game doesn’t have is listed');
+await D.waitForTimeout(400);
+await D.screenshot({ path: `${OUT}/08-paste-add.png` });
+await D.click('.dialog .dlg-actions .btn.primary');
+ok(await total(D) === 10, `five new cards added, Sol Ring already in (${await total(D)})`);
+ok(/already in your deck/.test(await D.textContent('.toast')), 'it says one was already in');
+// the rest with basics
+await D.click('.dlist-top button:has-text("Fill the rest with basic lands")');
+ok(await total(D) === 100, 'filled to 100 with basic lands');
 ok(/Ready to play/.test(await D.textContent('.b-foot')), 'ready to play');
-const states = await D.$$eval('.ckp', cs => cs.map(c => c.className.replace('ckp ', '').trim()));
-ok(states.filter(s => s === 'good').length >= 4, `the checklist is mostly green (${states.join(',')})`);
 await D.waitForTimeout(800);
-await D.screenshot({ path: `${OUT}/07-built.png` });
+await D.screenshot({ path: `${OUT}/09-built.png` });
 // explain a checklist row
 await D.click('.ckp:has-text("Card draw")');
-ok(/hand full/.test(await D.textContent('.ck-detail')), 'the helper text for card draw');
+ok(/hand full/.test(await D.textContent('.ck-detail')), 'the checklist explains card draw');
 await D.click('.dlist-top .seg button:has-text("Job")');
 ok((await D.$$('.dgroup')).length >= 4, 'grouped by job');
-await D.screenshot({ path: `${OUT}/08-by-job.png` });
+await D.screenshot({ path: `${OUT}/10-by-job.png` });
 await D.click('.b-tabs button:has-text("Numbers")');
 await D.waitForSelector('.curve2');
 ok(/of opening hands have 2 to 4 lands/.test(await D.textContent('.dstats')), 'opening-hand odds');
-await D.screenshot({ path: `${OUT}/09-numbers.png` });
+await D.screenshot({ path: `${OUT}/11-numbers.png` });
 await D.click('.dstats button:has-text("Draw a test hand")');
 await D.waitForSelector('.th-cards .tile');
 ok((await D.$$('.th-cards .tile')).length === 7, 'a test hand of seven');
 await D.click('.th-top button:has-text("Draw a card")');
 ok((await D.$$('.th-cards .tile')).length === 8, 'draw an eighth');
 await D.waitForTimeout(2500);
-await D.screenshot({ path: `${OUT}/10-test-hand.png` });
+await D.screenshot({ path: `${OUT}/12-test-hand.png` });
 // saved as it goes
 await D.waitForSelector('.b-status .saved:has-text("Saved on this device")', { timeout: 5000 });
 const saved = await D.evaluate(() => JSON.parse(localStorage.getItem('pa-custom-decks') || '[]'));
@@ -147,18 +172,50 @@ await P.waitForSelector('.b-deck');
 ok(await total(P) === 100, 'a precon copy has all 100 cards');
 ok(/\(my version\)/.test(await P.inputValue('.deckname')), 'named as your version');
 await P.waitForTimeout(800);
-await P.screenshot({ path: `${OUT}/11-precon-copy.png` });
+await P.screenshot({ path: `${OUT}/13-precon-copy.png` });
+
+// ---- a pasted list to start a deck: printings, foil marks and categories, a typo, a card the game doesn't have
+const typoable = n => n.length > 12 && !/[^a-z ,']/i.test(n) && n[5] !== n[6] && !/[ ,']/.test(n[5] + n[6]);
+const pre = decks.find(d => d.commanders.length === 1 && d.cards.length > 60 && d.cards.some(([n]) => typoable(n)));
+const typo = pre.cards.find(([n]) => typoable(n))[0];
+const lines = ['About', 'Name Pasted Deck', '', 'Commander', `1 ${pre.commanders[0]} (CMM) 12 *F*`, '', 'Deck', ...pre.cards.map(([n, k], i) => (n === typo ? `${k} ${n.slice(0, 5)}${n[6]}${n[5]}${n.slice(7)}` : i % 3 === 0 ? `${k}x ${n} (c21) ${100 + i} [Ramp]` : i % 3 === 1 ? `${k} ${n}` : `${n} x${k}`)), '1 Blarg the Mighty', '', 'Sideboard', '1 Lightning Bolt'];
+const I = await page('paste', 1440, 900);
+await I.click('button:has-text("+ Build a deck")');
+await I.click('.b-way:has-text("Paste a decklist")');
+await I.fill('.builder-import', lines.join('\n'));
+await I.waitForSelector('.imp-out .imp-sum');
+const out = await I.textContent('.imp-out');
+ok(/^100 cards read from “?Pasted Deck/.test(out.replace(/\s+/g, ' ')), `the whole list is read (${out.slice(0, 60)})`);
+ok(out.includes(`Commander: ${pre.commanders[0]}`), 'the commander is found');
+ok(out.includes(`→ ${typo}`), `the typo is read as ${typo}`);
+ok(/1 not in the game yet/.test(out) && /sideboard or maybeboard card left out/.test(out), 'the missing card and the sideboard are reported');
+ok(!(await I.$('.imp-mode')), 'no replace-or-add choice for a new deck');
+await I.waitForTimeout(400);
+await I.screenshot({ path: `${OUT}/14-paste-start.png` });
+await I.click('.dialog .dlg-actions .btn.primary');
+await I.waitForSelector('.b-deck');
+ok(await total(I) === 100, 'the pasted deck has 100 cards');
+ok(await I.inputValue('.deckname') === 'Pasted Deck', 'and the list’s name');
+// replace it with a list that marks no commander: the dialog asks which card leads
+await I.click('.topbar button:has-text("Paste a list")');
+await I.fill('.builder-import', ['1 Sol Ring', `1 ${pre.commanders[0]}`, '1 Arcane Signet', '1 Command Tower'].join('\n'));
+await I.waitForSelector('.imp-pick');
+ok(await I.$('.imp-mode button.on:has-text("Replace my deck")') != null, 'a deck already there: replace is the default');
+ok(await I.$(`.imp-pick .chip.on:has-text("${pre.commanders[0].split(',')[0]}")`) != null, 'the likely commander is picked');
+await I.screenshot({ path: `${OUT}/15-paste-pick.png` });
+await I.click('.dialog .dlg-actions .btn.primary');
+ok(await total(I) === 4, `the deck is replaced (${await total(I)})`);
 
 // ---- a phone
 const M = await page('phone', 390, 844);
 await M.click('button:has-text("+ Build a deck")');
 await M.waitForSelector('.b-start');
 await M.waitForTimeout(900);
-await M.screenshot({ path: `${OUT}/12-phone-start.png`, fullPage: true });
+await M.screenshot({ path: `${OUT}/16-phone-start.png`, fullPage: true });
 await M.click('.b-way:has-text("Pick a commander myself")');
 await M.waitForSelector('.bresults .tile');
 await M.waitForTimeout(1500);
-await M.screenshot({ path: `${OUT}/13-phone-commanders.png` });
+await M.screenshot({ path: `${OUT}/17-phone-commanders.png` });
 ok(await M.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no sideways scrolling (commanders)');
 await M.click('.bresults .tile .btn:has-text("Choose")');
 await M.waitForSelector('.b-deck');
@@ -170,12 +227,12 @@ await M.click('.b-switch button:nth-child(2)');
 await M.click('.dlist-top button:has-text("Fill the rest with basic lands")');
 ok(await total(M) === 100, 'filled with basic lands');
 await M.waitForTimeout(3200);
-await M.screenshot({ path: `${OUT}/14-phone-deck.png`, fullPage: true });
+await M.screenshot({ path: `${OUT}/18-phone-deck.png`, fullPage: true });
 ok(await M.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'no sideways scrolling (deck)');
 await M.click('.drow .dname');
 await M.waitForSelector('.card-sheet');
 await M.waitForTimeout(900);
-await M.screenshot({ path: `${OUT}/15-phone-sheet.png` });
+await M.screenshot({ path: `${OUT}/19-phone-sheet.png` });
 
 console.log(errors.length ? `errors:\n${errors.join('\n')}` : 'no page errors');
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -36,19 +36,6 @@ const dataHash = crypto.createHash('sha1');
 for (const f of ['cards.json', 'tokens.json', 'decks.json', 'support.json', 'images.json', 'ptcg/cards.json', 'ptcg/decks.json', 'ptcg/images.json', 'optcg/cards.json', 'optcg/decks.json', 'optcg/images.json']) if (fs.existsSync(path.join(DIST, 'data', f))) dataHash.update(fs.readFileSync(path.join(DIST, 'data', f)));
 const DATA_VERSION = dataHash.digest('hex').slice(0, 10);
 
-// the AI deck helper's own script (the Anthropic SDK is big): loaded only when the helper opens (src/ui/aiload.js)
-await build({
-  entryPoints: ['src/ui/deckagent.js'],
-  bundle: true,
-  minify: !process.env.NOMINIFY,
-  format: 'iife',
-  globalName: 'LotusAI',
-  target: ['es2020'],
-  outfile: path.join(DIST, 'ai.js'),
-  legalComments: 'none',
-});
-const AI_VERSION = hashOf(fs.readFileSync(path.join(DIST, 'ai.js')));
-
 await build({
   entryPoints: ['src/ui/main.jsx'],
   bundle: true,
@@ -60,7 +47,7 @@ await build({
   loader: { '.jsx': 'jsx' },
   outfile: path.join(DIST, 'app.js'),
   legalComments: 'none',
-  define: { __DATA_VERSION__: JSON.stringify(DATA_VERSION), __AI_VERSION__: JSON.stringify(AI_VERSION) },
+  define: { __DATA_VERSION__: JSON.stringify(DATA_VERSION) },
 });
 const APP_VERSION = hashOf(fs.readFileSync(path.join(DIST, 'app.js')));
 
@@ -171,4 +158,4 @@ fs.writeFileSync(path.join(DIST, 'manifest.webmanifest'), JSON.stringify({
   fs.writeFileSync(path.join(DIST, 'sw.js'), fs.readFileSync('src/sw.js', 'utf8').replace('__VERSION__', h.digest('hex').slice(0, 12)));
 }
 const kb = f => (fs.statSync(path.join(DIST, f)).size / 1024).toFixed(0) + 'KB';
-console.log('built', ['app.js', 'ai.js', 'index.html', 'artifact.html', 'data/cards.json'].map(f => `${f} ${kb(f)}`).join(', '), `| ${Object.keys(support).length} cards flagged`);
+console.log('built', ['app.js', 'index.html', 'artifact.html', 'data/cards.json'].map(f => `${f} ${kb(f)}`).join(', '), `| ${Object.keys(support).length} cards flagged`);

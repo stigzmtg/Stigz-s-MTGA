@@ -58,6 +58,31 @@ export function unpackDeck(p) {
 const COLORS = ['W', 'U', 'B', 'R', 'G'];
 const LAND_COLOR = { Plains: 'W', Island: 'U', Swamp: 'B', Mountain: 'R', Forest: 'G' };
 const MAIN_TYPES = ['Creature', 'Planeswalker', 'Battle', 'Instant', 'Sorcery', 'Artifact', 'Enchantment', 'Land'];
+// the ways two commanders can share the command zone: Partner (with any other Partner), Partner with one named card,
+// Partner—a group (Character select), Friends forever, Choose a Background (with a Background) and Doctor's
+// companion (with a Time Lord Doctor)
+function pairingOf(s, typeLine) {
+  const p = {};
+  for (const l of s.split('\n')) {
+    let m;
+    if (/^K:Partner$/.test(l)) p.any = true;
+    else if ((m = /^K:Partner with:([^:]+)/.exec(l))) p.with = m[1];
+    else if ((m = /^K:Partner:(.+)$/.exec(l))) p.group = m[1].trim();
+    else if (/^K:Friends forever$/i.test(l)) p.group = 'Friends forever';
+    else if (/^K:Choose a Background$/i.test(l)) p.background = true;
+    else if (/^K:Doctor.s companion$/i.test(l)) p.companion = true;
+  }
+  if (/\bLegendary\b/.test(typeLine) && /\bBackground\b/.test(typeLine)) p.isBackground = true;
+  if (/\bTime Lord Doctor\b/.test(typeLine)) p.isDoctor = true;
+  return Object.keys(p).length ? p : null;
+}
+// can these two cards be commanders together?
+export function canPair(a, b) {
+  const p = a && a.pairing, q = b && b.pairing;
+  if (!p || !q || a.name === b.name) return false;
+  return !!((p.any && q.any) || p.with === b.name || q.with === a.name || (p.group && p.group === q.group)
+    || (p.background && q.isBackground) || (q.background && p.isBackground) || (p.companion && q.isDoctor) || (q.companion && p.isDoctor));
+}
 export function buildIndex(raw) {
   const out = [];
   for (const name of Object.keys(raw)) {
@@ -74,12 +99,14 @@ export function buildIndex(raw) {
     let cmc = 0;
     if (cost && cost !== 'no cost') for (const t of cost.split(/\s+/)) { if (/^\d+$/.test(t)) cmc += +t; else if (/^\d[WUBRG]$/.test(t)) cmc += +t[0]; else if (t && !/^[XYZ]$/.test(t)) cmc += 1; }
     const typeLine = type || '';
+    const pairing = pairingOf(s, typeLine);
     out.push({
       name, cost: cost && cost !== 'no cost' ? cost.split(/\s+/) : [], cmc, type: typeLine, text,
       main: MAIN_TYPES.find(t => new RegExp('\\b' + t + '\\b').test(typeLine)) || 'Other',
       ci: COLORS.filter(c => ci.has(c)),
-      commander: (/\bLegendary\b/.test(typeLine) && /\bCreature\b/.test(typeLine)) || /can be your commander/i.test(text),
-      partner: /^K:Partner$/m.test(s),
+      // (legendary Vehicles and Spacecraft with power and toughness can lead too)
+      commander: (/\bLegendary\b/.test(typeLine) && (/\bCreature\b/.test(typeLine) || (/\b(?:Vehicle|Spacecraft)\b/.test(typeLine) && /^PT:/m.test(s)))) || /can be your commander/i.test(text),
+      pairing, partner: !!pairing,
       anyNumber: BASICS.has(name) || /A deck can have any number of cards named/i.test(text),
       lower: name.toLowerCase(),
     });
@@ -92,7 +119,7 @@ export function buildIndex(raw) {
 export function deckProblems(deck, byName, identity) {
   const out = [];
   if (!deck.commanders.length) out.push('Choose a commander.');
-  if (deck.commanders.length === 2 && !deck.commanders.every(n => byName.get(n) && byName.get(n).partner)) out.push('Two commanders need Partner.');
+  if (deck.commanders.length === 2 && !canPair(byName.get(deck.commanders[0]), byName.get(deck.commanders[1]))) out.push('These two can’t be commanders together: two commanders need Partner (or Partner with each other, or a Background).');
   const total = deck.commanders.length + deck.cards.reduce((a, [, n]) => a + n, 0);
   if (total !== 100) out.push(`A Commander deck has exactly 100 cards (this one has ${total}).`);
   const off = deck.cards.filter(([n]) => { const c = byName.get(n); return c && c.ci.some(x => !identity.includes(x)); }).map(([n]) => n);

@@ -172,12 +172,6 @@ export class Accounts extends DurableObject {
     this.run('INSERT OR REPLACE INTO limits (key, n, until) VALUES (?, 1, ?)', key, now + ms);
     return false;
   }
-  // the AI deck helper (worker/ai.js): may this address make another request? null, or which limit it hit
-  aiAllow(ip, perHour, perDay) {
-    if (this.limited('ai:ip:' + ip, perHour, 3600e3)) return 'ip';
-    if (this.limited('ai:day:' + new Date().toISOString().slice(0, 10), perDay, 86400e3)) return 'day';
-    return null;
-  }
   tidy() {
     const now = Date.now();
     this.run('DELETE FROM limits WHERE until < ?', now);

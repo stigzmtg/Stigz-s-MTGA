@@ -1,63 +1,106 @@
 // The Commander deck builder: pick a commander, then 99 more cards from the 6,400 the rules engine has scripts for,
-// within the commander's colors and one copy each (basic lands excepted). Start from nothing, from the AI helper,
-// from a copy of a precon or from a pasted list. The checklist says what a deck still needs and why; every card
+// within the commander's colors and one copy each (basic lands excepted). Start by picking a commander, from a copy
+// of a precon or from a pasted list, then add cards by search, by name or by pasting more. The checklist says what a deck still needs and why; every card
 // opens to show its job and how it fits; the numbers and test hands show how the deck will play. Every change can be
 // undone, and the deck saves on this device as you go. Decks play like any precon, solo or with friends.
 import { Pip } from './cardview.jsx';
 import { subscribeImages, imagesVersion } from './images.js';
-import { buildIndex, BASICS, deckProblems, loadCustomDecks, saveCustomDeck, deleteCustomDeck, newDeckId } from './customdecks.js';
+import { buildIndex, BASICS, deckProblems, canPair, loadCustomDecks, saveCustomDeck, deleteCustomDeck, newDeckId } from './customdecks.js';
 import { Modal } from './dialogs.jsx';
-import { createDeckHelper } from './deckai.js';
-import { DeckHelper } from './deckhelper.jsx';
+import { createDeckGuide } from './deckguide.js';
+import { parseDeckText, countCards, deckToText } from './decktext.js';
 import { CardSheet, HoverCard, useHoverPreview, CardTile } from './buildercard.jsx';
 import { CardSearch, CommanderPicker, PreconPicker } from './builderfind.jsx';
-import { Checklist, DeckList, DeckStats, TestHand } from './builderdeck.jsx';
+import { Checklist, DeckList, DeckStats, TestHand, QuickAdd } from './builderdeck.jsx';
 export { Cost } from './buildercard.jsx';
 
 const { useState, useMemo, useEffect, useRef, useSyncExternalStore } = React;
+// the button for a second commander, in the words of what the first one pairs with
+const pairLabel = p => (p.background ? 'Add a Background' : p.companion ? 'Add a Doctor' : p.isDoctor && !p.any ? 'Add a companion' : p.with ? `Add ${p.with.split(',')[0]}` : p.isBackground ? 'Add a commander' : 'Add a partner');
 const BASIC_FOR = { W: 'Plains', U: 'Island', B: 'Swamp', R: 'Mountain', G: 'Forest' };
 // a decklist as a map, adding up a card listed more than once (precons list each printing)
 const toMap = cards => { const m = new Map(); for (const [n, k] of cards) m.set(n, (m.get(n) || 0) + k); return m; };
 
-// "1 Sol Ring", "1x Sol Ring", "Sol Ring"; a "Commander" heading (or *CMDR*) marks the commander
-export function parseDeckText(text, byName) {
-  const out = { commanders: [], cards: new Map(), missing: [] };
-  let section = '';
-  const lower = new Map([...byName.keys()].map(k => [k.toLowerCase(), k]));
-  for (let line of text.split(/\r?\n/)) {
-    line = line.trim();
-    if (!line || line.startsWith('//') || line.startsWith('#')) continue;
-    if (/^(commanders?|command zone)\s*:?$/i.test(line)) { section = 'cmd'; continue; }
-    if (/^(deck|mainboard|main|library|sideboard|maybeboard|creatures?|lands?|spells?|artifacts?|enchantments?|instants?|sorcer(y|ies)|planeswalkers?)\b.*:?$/i.test(line) && !/^\d/.test(line)) { section = /^(sideboard|maybeboard)/i.test(line) ? 'skip' : ''; continue; }
-    if (section === 'skip') continue;
-    let m = /^(\d+)\s*x?\s+(.+?)\s*(\*cmdr\*|\(commander\))?$/i.exec(line);
-    const n = m ? +m[1] : 1;
-    let name = (m ? m[2] : line).replace(/\s*\([A-Z0-9]{2,6}\)\s*[\w-]*$/, '').replace(/\s*\*[A-Z]+\*$/, '').trim();
-    const isCmd = section === 'cmd' || /\*cmdr\*|\(commander\)/i.test(line);
-    const key = lower.get(name.toLowerCase()) || lower.get(name.split(' // ')[0].toLowerCase());
-    if (!key) { out.missing.push(name); continue; }
-    if (isCmd && out.commanders.length < 2) out.commanders.push(key);
-    else out.cards.set(key, (out.cards.get(key) || 0) + n);
-  }
-  return out;
-}
-
-function ImportDialog({ byName, onImport, onClose }) {
-  const [text, setText] = useState('');
+// ---- pasting a list: what it holds shows as you paste, with a commander to pick if none is marked, near-miss
+// names read as the card they're closest to, and suggestions for names the game doesn't know
+function ImportDialog({ byName, hasDeck, initial = '', initialMode = 'replace', onImport, onClose }) {
+  const [text, setText] = useState(initial);
+  const [mode, setMode] = useState(hasDeck ? initialMode : 'replace');
+  const [pick, setPick] = useState(null);           // the commander chosen from the list, when none was marked
+  const [swaps, setSwaps] = useState(() => new Map());   // a name the game doesn't know -> the suggestion used instead
   const parsed = useMemo(() => (text.trim() ? parseDeckText(text, byName) : null), [text]);
+  useEffect(() => { setPick(parsed ? parsed.guess : null); }, [parsed && parsed.guess, parsed && parsed.candidates.join('|')]);
+  const result = useMemo(() => {
+    if (!parsed) return null;
+    const cards = new Map(parsed.cards);
+    for (const m of parsed.missing) { const to = swaps.get(m.name); if (to && !cards.has(to)) cards.set(to, (byName.get(to) || {}).anyNumber ? m.n : 1); }
+    let commanders = parsed.commanders;
+    if (!commanders.length && pick && cards.has(pick)) { commanders = [pick]; cards.delete(pick); }
+    return { name: parsed.name, commanders, cards, mode };
+  }, [parsed, swaps, pick, mode]);
+  const n = result ? countCards(result.cards) + result.commanders.length : 0;
+  const left = parsed ? parsed.missing.filter(m => !swaps.has(m.name)) : [];
+  const readFile = e => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    f.text().then(t => setText(t.slice(0, 200000)), () => {});
+    e.target.value = '';
+  };
   return (
-    <Modal label="Import a decklist" onClose={onClose}>
+    <Modal label="Paste a decklist" onClose={onClose}>
       <h2>Paste a decklist</h2>
-      <p className="sub">One card per line (“1 Sol Ring”), copied from Moxfield, Archidekt, EDHREC or anywhere. Put the commander under a “Commander” line, or mark it *CMDR*. Cards the game can’t play yet are left out.</p>
-      <textarea className="input builder-import" value={text} onChange={e => setText(e.target.value)} placeholder={'Commander\n1 Atraxa, Praetors\' Voice\n\nDeck\n1 Sol Ring\n1 Arcane Signet\n…'} aria-label="Decklist" autoFocus />
-      {parsed ? <p className="note">{parsed.commanders.length ? `Commander: ${parsed.commanders.join(' & ')}. ` : 'No commander marked. '}{[...parsed.cards.values()].reduce((a, b) => a + b, 0)} other cards found{parsed.missing.length ? `; not available: ${parsed.missing.slice(0, 6).join(', ')}${parsed.missing.length > 6 ? ` and ${parsed.missing.length - 6} more` : ''}` : ''}.</p> : null}
-      <div className="dlg-actions"><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!parsed} onClick={() => onImport(parsed)}>Use this list</button></div>
+      <p className="sub">Copy a list from Moxfield, Archidekt, MTG Arena, EDHREC or anywhere and paste it here, one card per line. Set codes, foil marks and categories are fine.</p>
+      <div className="imp-grid">
+        <div className="imp-in">
+          <textarea className="input builder-import" value={text} onChange={e => setText(e.target.value)} placeholder={'Commander\n1 Atraxa, Praetors\' Voice\n\nDeck\n1 Sol Ring\n1 Arcane Signet\n…'} aria-label="Decklist" autoFocus spellCheck={false} />
+          <label className="btn sm ghost filebtn">Open a text file<input type="file" accept=".txt,.dec,.dek,text/plain" onChange={readFile} /></label>
+        </div>
+        <div className="imp-out" aria-live="polite">
+          {!parsed ? <p className="muted">What the list holds shows here as you paste.</p> : <>
+            <p className="imp-sum"><b>{n}</b> card{n === 1 ? '' : 's'} read{parsed.name ? <> from <q>{parsed.name}</q></> : null}</p>
+            {result.commanders.length && parsed.commanders.length ? <p className="imp-cmd">Commander: <b>{result.commanders.join(' & ')}</b></p>
+              : parsed.candidates.length ? (
+                <div className="imp-pick">
+                  <p>Which card is your commander?</p>
+                  <div className="imp-chips">
+                    {parsed.candidates.map(c => <button key={c} type="button" className={`chip ${pick === c ? 'on' : ''}`} aria-pressed={pick === c} onClick={() => setPick(c)}>{c}</button>)}
+                    <button type="button" className={`chip ${!pick ? 'on' : ''}`} aria-pressed={!pick} onClick={() => setPick(null)}>{hasDeck ? 'Keep mine' : 'Choose later'}</button>
+                  </div>
+                </div>
+              ) : <p className="imp-warn">No commander in this list{hasDeck ? ': yours stays.' : '. You can choose one after.'}</p>}
+            {parsed.notCommander.length ? <p className="imp-note">{parsed.notCommander.join(', ')} can’t be a commander (only legendary creatures can), so {parsed.notCommander.length === 1 ? 'it’s' : 'they’re'} in the deck.</p> : null}
+            {parsed.fixed.length ? <div className="imp-note"><p>Read as the closest card:</p><ul>{parsed.fixed.map(f => <li key={f.from}>{f.from} → <b>{f.to}</b></li>)}</ul></div> : null}
+            {parsed.clamped.length ? <p className="imp-note">One copy of each card: kept one {parsed.clamped.slice(0, 4).join(', ')}{parsed.clamped.length > 4 ? ` and ${parsed.clamped.length - 4} more` : ''}.</p> : null}
+            {parsed.skipped ? <p className="imp-note">{parsed.skipped} sideboard or maybeboard card{parsed.skipped === 1 ? '' : 's'} left out.</p> : null}
+            {parsed.missing.length ? (
+              <div className="imp-missing">
+                <p><b>{left.length ? `${left.length} not in the game yet` : 'All replaced'}</b>{left.length ? ' (left out)' : ''}{parsed.missing.some(m => m.suggestions.length) ? '. Tap a suggestion to use it instead:' : '.'}</p>
+                <ul>
+                  {parsed.missing.slice(0, 40).map(m => (
+                    <li key={m.name} className={swaps.has(m.name) ? 'swapped' : ''}>
+                      <span className="imp-gone">{m.n > 1 ? `${m.n} ` : ''}{m.name}</span>
+                      {m.suggestions.map(sg => <button key={sg} type="button" className={`chip sm ${swaps.get(m.name) === sg ? 'on' : ''}`} aria-pressed={swaps.get(m.name) === sg} onClick={() => setSwaps(w => { const x = new Map(w); if (x.get(m.name) === sg) x.delete(m.name); else x.set(m.name, sg); return x; })}>{sg}</button>)}
+                    </li>
+                  ))}
+                  {parsed.missing.length > 40 ? <li>and {parsed.missing.length - 40} more</li> : null}
+                </ul>
+              </div>
+            ) : null}
+          </>}
+        </div>
+      </div>
+      {hasDeck ? (
+        <div className="seg imp-mode" role="group" aria-label="What to do with your deck">
+          <button type="button" className={mode === 'replace' ? 'on' : ''} aria-pressed={mode === 'replace'} onClick={() => setMode('replace')}>Replace my deck</button>
+          <button type="button" className={mode === 'add' ? 'on' : ''} aria-pressed={mode === 'add'} onClick={() => setMode('add')}>Add to my deck</button>
+        </div>
+      ) : null}
+      <div className="dlg-actions"><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!n} onClick={() => onImport(result)}>{mode === 'add' && hasDeck ? `Add ${n} card${n === 1 ? '' : 's'}` : 'Use this list'}</button></div>
     </Modal>
   );
 }
 
 const ICONS = {
-  spark: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l1.8 4.6L18.5 8l-4.7 1.5L12 14l-1.8-4.5L5.5 8l4.7-1.4z" /><path d="M18.5 13l.9 2.3 2.3.8-2.3.8-.9 2.3-.9-2.3-2.3-.8 2.3-.8z" /></svg>,
   crown: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7l4.5 4L12 4l4.5 7L21 7l-2 11H5z" /></svg>,
   box: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l9 4.5v11L12 22l-9-4.5v-11zm0 2.2L5.5 7.5 12 10.8l6.5-3.3zM5 9.1v7.2l6 3v-7.2zm8 10.2l6-3V9.1l-6 3z" /></svg>,
   paste: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6a1 1 0 011 1v1h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2V3a1 1 0 011-1zm1 2v2h4V4zM8 10v2h8v-2zm0 4v2h6v-2z" /></svg>,
@@ -67,16 +110,16 @@ const ICONS = {
 };
 
 // ---- before there's a commander: the ways to start, and the rules in four lines
-function StartPanel({ onHelper, onPick, onPrecon, onImport, commanders }) {
+function StartPanel({ onPick, onPrecon, onImport, commanders, waiting }) {
   return (
     <section className="panel b-start" aria-label="Start a deck">
       <h2>Build a Commander deck</h2>
       <p className="sub">Choose how to start. You can change anything later, and every change can be undone.</p>
+      {waiting ? <p className="b-waiting">{waiting} card{waiting === 1 ? ' is' : 's are'} ready from your list. <button className="linkish" onClick={onPick}>Choose your commander</button> to see {waiting === 1 ? 'it' : 'them'}.</p> : null}
       <div className="b-ways">
-        <button className="b-way" onClick={onHelper}>{ICONS.spark}<b>Let the helper build one</b><span>Say what you like (dragons, tokens, a color) and it finds a commander, then picks all 99 cards with you.</span></button>
         <button className="b-way" onClick={onPick}>{ICONS.crown}<b>Pick a commander myself</b><span>Browse all {commanders.toLocaleString('en-US')} commanders by color, then add cards your way.</span></button>
         <button className="b-way" onClick={onPrecon}>{ICONS.box}<b>Upgrade a precon</b><span>Start from one of the ready-made decks and make it yours.</span></button>
-        <button className="b-way" onClick={onImport}>{ICONS.paste}<b>Paste a decklist</b><span>From Moxfield, Archidekt, EDHREC or anywhere else.</span></button>
+        <button className="b-way" onClick={onImport}>{ICONS.paste}<b>Paste a decklist</b><span>From Moxfield, Archidekt, MTG Arena, EDHREC or anywhere else.</span></button>
       </div>
       <div className="b-rules">
         <h3>How a Commander deck works</h3>
@@ -95,7 +138,7 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
   useSyncExternalStore(subscribeImages, imagesVersion);
   const index = useMemo(() => buildIndex(data.db.raw), [data]);
   const byName = useMemo(() => new Map(index.map(c => [c.name, c])), [index]);
-  const H = useMemo(() => createDeckHelper(index, data.decks, data.support || {}), [index]);
+  const H = useMemo(() => createDeckGuide(index, data.decks, data.support || {}), [index]);
   const commanderCount = useMemo(() => index.filter(c => c.commander && H.feats.get(c.name).legal).length, [index]);
   // where it starts: a saved deck, a copy of a precon, or nothing
   const [start] = useState(() => {
@@ -130,8 +173,6 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
   const total = commanders.length + list.reduce((a, [, n]) => a + n, 0);
   const problems = deckProblems(deck, byName, identity);
   const state = useMemo(() => ({ commanders, cards }), [hist.now]);
-  const deckRef = useRef(state);   // (the AI helper's tools read the deck as it is right now)
-  deckRef.current = state;
   const rank = useMemo(() => (commanders.length ? H.rank(state) : null), [state]);
   const recipe = useMemo(() => H.recipe(state), [state]);
 
@@ -148,14 +189,14 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
   useEffect(() => () => { if (dirty.current && latest.current.commanders.length) saveCustomDeck(latest.current); }, []);
 
   // ---- what's on screen
-  const [left, setLeft] = useState(() => (start.commanders.length ? 'search' : 'helper'));   // helper, search, commander
+  const [left, setLeft] = useState(() => (start.commanders.length ? 'search' : 'commander'));   // search, commander
   const [partnerMode, setPartnerMode] = useState(false);
   const [right, setRight] = useState('cards');      // cards, stats, test
   const [pane, setPane] = useState('deck');   // (phones: one side at a time; the start screen is on the deck side)
   const [groupBy, setGroupBy] = useState('type');
   const [sheet, setSheet] = useState(null);
   const [req, setReq] = useState(null);
-  const [importing, setImporting] = useState(false);
+  const [importing, setImporting] = useState(null);   // null, or { text, mode } to open the paste dialog with
   const [precons, setPrecons] = useState(false);
   const [toast, setToast] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -189,7 +230,7 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
     const c = byName.get(n);
     if (!c) return;
     if (partnerMode && commanders.length === 1) {
-      if (!c.partner || !(byName.get(commanders[0]) || {}).partner) { flash('Both commanders need Partner.'); return; }
+      if (!canPair(byName.get(commanders[0]), c)) { flash(`${n} can’t share the command zone with ${commanders[0]}.`); return; }
       commit(now => ({ commanders: [now.commanders[0], n], cards: (() => { const m = new Map(now.cards); m.delete(n); return m; })() }));
     } else {
       commit(now => {
@@ -214,13 +255,28 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
     flash(`Added ${need} basic land${need === 1 ? '' : 's'}.`);
   };
   const copyList = () => {
-    const text = ['Commander', ...commanders.map(n => `1 ${n}`), '', 'Deck', ...list.map(([n, k]) => `${k} ${n}`)].join('\n');
+    const text = deckToText({ commanders, cards: list });
     try { navigator.clipboard.writeText(text).then(() => flash('Decklist copied: paste it anywhere.'), () => flash('Copying isn’t allowed here.')); } catch { flash('Copying isn’t allowed here.'); }
   };
-  const doImport = parsed => {
-    commit(now => ({ commanders: parsed.commanders.length ? parsed.commanders : now.commanders, cards: new Map(parsed.cards) }));
-    setImporting(false); setLeft('search'); setPane('deck');
-    flash(`Imported ${[...parsed.cards.values()].reduce((a, b) => a + b, 0) + parsed.commanders.length} cards${parsed.missing.length ? `; ${parsed.missing.length} not available` : ''}.${parsed.commanders.length ? '' : ' Mark the commander, or choose one.'}`);
+  // a pasted list replaces the deck, or adds to it (cards already in it stay one copy)
+  const doImport = r => {
+    const adding = r.mode === 'add' && (commanders.length > 0 || list.length > 0);
+    const cmds = adding && commanders.length ? commanders : r.commanders.length ? r.commanders : commanders;
+    const m = adding ? new Map(cards) : new Map();
+    let added = 0, already = 0;
+    for (const [n, k] of r.cards) {
+      if (cmds.includes(n)) continue;
+      const have = m.get(n) || 0;
+      if (have && !(byName.get(n) || {}).anyNumber) { already++; continue; }
+      m.set(n, have + k); added += k;
+    }
+    for (const n of cmds) m.delete(n);
+    commit(() => ({ commanders: cmds.slice(), cards: m }));
+    if (r.name && !name.trim()) setName(r.name);
+    setImporting(null); setLeft(cmds.length ? 'search' : 'commander'); setPane(cmds.length ? 'deck' : 'find');
+    flash(adding
+      ? `Added ${added} card${added === 1 ? '' : 's'}${already ? ` (${already} already in your deck)` : ''}.`
+      : `Imported ${added + (cmds === r.commanders ? cmds.length : 0)} cards.${cmds.length ? '' : ' Now choose your commander.'}`);
   };
   const usePrecon = d => {
     commit(() => ({ commanders: d.commanders.slice(), cards: toMap(d.cards) }));
@@ -246,7 +302,7 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
           <button className="btn sm iconbtn" onClick={undo} disabled={!hist.past.length} title="Undo (Ctrl+Z)" aria-label="Undo">{ICONS.undo}<span>Undo</span></button>
           <button className="btn sm iconbtn" onClick={redo} disabled={!hist.future.length} title="Redo (Ctrl+Y)" aria-label="Redo">{ICONS.redo}<span>Redo</span></button>
         </span>
-        <button className="btn sm" onClick={() => setImporting(true)}>Import list</button>
+        <button className="btn sm" onClick={() => setImporting({ text: '', mode: 'replace' })}>Paste a list</button>
         <button className="btn sm" onClick={() => { if (dirty.current) saveNow(); onDone(); }}>Back to decks</button>
       </header>
       <div className="b-switch" role="tablist" aria-label="Builder sections">
@@ -256,19 +312,16 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
       <div className={`b-grid pane-${pane}`}>
         <section className="panel b-left" aria-label="Find cards">
           <div className="builder-tabs" role="tablist">
-            <button role="tab" aria-selected={left === 'helper'} className={left === 'helper' ? 'on' : ''} onClick={() => setLeft('helper')}>{ICONS.spark}AI helper</button>
             {commanders.length ? <button role="tab" aria-selected={left === 'search'} className={left === 'search' ? 'on' : ''} onClick={() => setLeft('search')}>{ICONS.search}Find cards</button> : null}
             <button role="tab" aria-selected={left === 'commander'} className={left === 'commander' ? 'on' : ''} onClick={() => { setLeft('commander'); setPartnerMode(false); }}>{ICONS.crown}{commanders.length ? 'Commanders' : 'Choose a commander'}</button>
           </div>
-          <DeckHelper H={H} index={index} commanders={commanders} cards={cards} setCards={setCards} onChooseCommander={chooseCommander} onHover={() => {}} onOpen={open} byName={byName} hidden={left !== 'helper'}
-            getDeck={() => deckRef.current} onApply={d => commit(() => ({ commanders: d.commanders.slice(), cards: new Map(d.cards) }))} />
           {left === 'search' && commanders.length ? <CardSearch H={H} index={index} db={data.db} state={state} identity={identity} rank={rank} onAdd={add} onOpen={open} hv={hv} req={req} /> : null}
           {left === 'commander' || (left === 'search' && !commanders.length) ? <CommanderPicker H={H} index={index} db={data.db} partnerOf={partnerMode ? commanders[0] : null} onOpen={open} onChoose={chooseCommander} hv={hv} /> : null}
         </section>
 
         <div className="b-right">
           {!commanders.length ? (
-            <StartPanel commanders={commanderCount} onHelper={() => { setLeft('helper'); setPane('find'); setTimeout(() => { const el = document.querySelector('.helper-ask input'); if (el) el.focus(); }, 50); }} onPick={() => { setLeft('commander'); setPane('find'); }} onPrecon={() => setPrecons(true)} onImport={() => setImporting(true)} />
+            <StartPanel commanders={commanderCount} waiting={total} onPick={() => { setLeft('commander'); setPane('find'); }} onPrecon={() => setPrecons(true)} onImport={() => setImporting({ text: '', mode: 'replace' })} />
           ) : (
             <section className="panel b-deck" aria-label="Your deck">
               <div className="b-deckhead">
@@ -283,7 +336,7 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
                   </div>
                   <div className="row">
                     <button className="btn sm ghost" onClick={() => { setLeft('commander'); setPartnerMode(false); setPane('find'); }}>Change commander</button>
-                    {commanders.length === 1 && (byName.get(commanders[0]) || {}).partner ? <button className="btn sm ghost" onClick={() => { setLeft('commander'); setPartnerMode(true); setPane('find'); }}>Add a partner</button> : null}
+                    {commanders.length === 1 && (byName.get(commanders[0]) || {}).partner ? <button className="btn sm ghost" onClick={() => { setLeft('commander'); setPartnerMode(true); setPane('find'); }}>{pairLabel(byName.get(commanders[0]).pairing)}</button> : null}
                   </div>
                 </div>
                 <div className={`b-total ${total === 100 ? 'full' : counts.over ? 'over' : ''}`} aria-label={`${total} of 100 cards`}>
@@ -291,6 +344,7 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
                   <i className="b-ring" style={{ '--p': Math.min(100, total) }} />
                 </div>
               </div>
+              <QuickAdd index={index} H={H} state={state} identity={identity} onAdd={add} onOpen={open} onPasteList={text => setImporting({ text, mode: 'add' })} />
               <Checklist recipe={recipe} onFind={find} />
               <div className="b-tabs" role="tablist">
                 <button role="tab" aria-selected={right === 'cards'} className={right === 'cards' ? 'on' : ''} onClick={() => setRight('cards')}>Cards <small>{total - commanders.length}</small></button>
@@ -301,7 +355,7 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
                 {right === 'cards' ? (list.length || total < 100
                   ? <DeckList H={H} byName={byName} state={state} list={list} rank={rank} groupBy={groupBy} setGroupBy={setGroupBy} identity={identity} onOpen={open} onAdd={add} onRemove={remove} onFillLands={fillBasics} total={total} hv={hv} />
                   : null) : null}
-                {right === 'cards' && !list.length ? <div className="empty">No cards yet. Ask the AI helper to build the rest, use the checklist’s Find buttons, or search on the left.</div> : null}
+                {right === 'cards' && !list.length ? <div className="empty">No cards yet. Type a card’s name above, paste a list, use the checklist’s Find buttons, or search on the left.</div> : null}
                 {right === 'stats' ? <DeckStats H={H} byName={byName} state={state} list={list} recipe={recipe} total={total} onTest={() => setRight('test')} /> : null}
                 {right === 'test' ? <TestHand H={H} db={data.db} byName={byName} state={state} list={list} onOpen={open} hv={hv} /> : null}
               </div>
@@ -323,7 +377,7 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
       </div>
       <HoverCard hover={hv.hover} db={data.db} />
       {sheet ? <CardSheet name={sheet} H={H} db={data.db} byName={byName} state={state} choosing={choosing && !!(byName.get(sheet) || {}).commander && !commanders.includes(sheet)} onClose={() => setSheet(null)} onOpen={setSheet} onAdd={add} onRemove={remove} onCommander={chooseCommander} /> : null}
-      {importing ? <ImportDialog byName={byName} onImport={doImport} onClose={() => setImporting(false)} /> : null}
+      {importing ? <ImportDialog byName={byName} hasDeck={!!(commanders.length || list.length)} initial={importing.text} initialMode={importing.mode} onImport={doImport} onClose={() => setImporting(null)} /> : null}
       {precons ? <PreconPicker decks={data.decks} onPick={usePrecon} onClose={() => setPrecons(false)} /> : null}
       {toast ? <div className="toast" role="status">{toast}</div> : null}
     </div>

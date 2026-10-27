@@ -1,11 +1,12 @@
 // Your deck in the deck builder: the checklist (each part of a good Commander deck, how many you have and about how
-// many to aim for, with what it means and a button to find more), the card list (by type, by job or by cost), the
-// numbers (mana curve, color balance, how often an opening hand has the right number of lands) and test hands.
+// many to aim for, with what it means and a button to find more), a box to add a card by typing its name (or to paste
+// several), the card list (by type, by job or by cost), the numbers (mana curve, color balance, how often an opening hand has the right number of lands) and test hands.
 import { BASICS } from './customdecks.js';
 import { Pip } from './cardview.jsx';
 import { Cost, RoleTags, CardTile, SHORT_ROLE } from './buildercard.jsx';
+import { normName } from './decktext.js';
 
-const { useState, useMemo } = React;
+const { useState, useMemo, useRef } = React;
 const BASIC_FOR = { W: 'Plains', U: 'Island', B: 'Swamp', R: 'Mountain', G: 'Forest' };
 const TYPE_ORDER = ['Creature', 'Planeswalker', 'Battle', 'Instant', 'Sorcery', 'Artifact', 'Enchantment', 'Land', 'Other'];
 const TYPE_LABEL = { Creature: 'Creatures', Planeswalker: 'Planeswalkers', Battle: 'Battles', Instant: 'Instants', Sorcery: 'Sorceries', Artifact: 'Artifacts', Enchantment: 'Enchantments', Land: 'Lands', Other: 'Other' };
@@ -35,6 +36,72 @@ export function Checklist({ recipe, onFind }) {
           <p><b>{row.label}.</b> {row.help} <b>{tip(row)}</b></p>
           <button type="button" className="btn sm" onClick={() => onFind(row.id)}>Find {row.id === 'plan' ? 'cards for the plan' : row.label.toLowerCase()}</button>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---- add a card by name: matches show as you type (names that start with it first, then most played); Enter adds
+// the one picked. Pasting several lines opens the paste dialog with them, to add to the deck.
+export function QuickAdd({ index, H, state, identity, onAdd, onOpen, onPasteList }) {
+  const [q, setQ] = useState('');
+  const [at, setAt] = useState(0);
+  const [open, setOpen] = useState(false);
+  const input = useRef(null);
+  const names = useMemo(() => index.filter(c => c.main !== 'Other').map(c => [normName(c.name), c]), [index]);
+  const k = normName(q);
+  const matches = useMemo(() => {
+    if (k.length < 2) return [];
+    const out = [];
+    for (const [n, c] of names) {
+      if (state.commanders.includes(c.name)) continue;
+      const r = n.startsWith(k) ? 0 : n.includes(' ' + k) || n.includes(',' + k) ? 1 : n.includes(k) ? 2 : -1;
+      if (r >= 0) out.push([r, c]);
+    }
+    const pop = c => (H.feats.get(c.name) || { pop: 0 }).pop;
+    out.sort((a, b) => a[0] - b[0] || pop(b[1]) - pop(a[1]) || a[1].name.localeCompare(b[1].name));
+    return out.slice(0, 8).map(([, c]) => c);
+  }, [k, names, state.commanders]);
+  const offColor = c => c.ci.some(x => !identity.includes(x));
+  const inDeck = c => !!state.cards.get(c.name) && !c.anyNumber;
+  const pickOne = c => {
+    if (!c || offColor(c) || inDeck(c)) return;
+    onAdd(c.name);
+    setQ(''); setAt(0);
+    if (input.current) input.current.focus();
+  };
+  const key = e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setAt(i => Math.min(matches.length - 1, i + 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setAt(i => Math.max(0, i - 1)); }
+    else if (e.key === 'Enter') { e.preventDefault(); pickOne(matches[at]); }
+    else if (e.key === 'Escape') { setQ(''); setOpen(false); }
+  };
+  const paste = e => {
+    const t = e.clipboardData && e.clipboardData.getData('text');
+    if (t && /\n\s*\S/.test(t.trim())) { e.preventDefault(); setQ(''); onPasteList(t); }
+  };
+  const show = open && matches.length > 0;
+  return (
+    <div className="quickadd">
+      <label className="searchbox">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z" /></svg>
+        <input ref={input} className="input" value={q} placeholder="Add a card: type its name, or paste a list" aria-label="Add a card by name"
+          role="combobox" aria-expanded={show} aria-controls="quickadd-list" aria-autocomplete="list" aria-activedescendant={show ? `qa-${at}` : undefined}
+          onChange={e => { setQ(e.target.value); setAt(0); setOpen(true); }} onKeyDown={key} onPaste={paste} onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} />
+      </label>
+      {show ? (
+        <ul className="qa-list" id="quickadd-list" role="listbox">
+          {matches.map((c, i) => {
+            const why = offColor(c) ? 'Not your colors' : inDeck(c) ? 'In your deck' : null;
+            return (
+              <li key={c.name} id={`qa-${i}`} role="option" aria-selected={i === at} aria-disabled={!!why} className={`${i === at ? 'on' : ''} ${why ? 'no' : ''}`}
+                onMouseDown={e => { e.preventDefault(); if (why) onOpen(c.name); else pickOne(c); }} onMouseEnter={() => setAt(i)}>
+                <span className="qa-name"><b>{c.name}</b><small>{c.type}</small></span>
+                {why ? <em>{why}</em> : <Cost cost={c.cost} />}
+              </li>
+            );
+          })}
+        </ul>
       ) : null}
     </div>
   );

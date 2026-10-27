@@ -6,7 +6,7 @@ import { createFlights, runFlights, strike } from './motion.js';
 import { Modal, CardsDialog, TargetsDialog, OptionDialog, ModesDialog, ConfirmDialog, NumberDialog, ColorDialog, PlayerDialog, MulliganDialog, ZoneDialog, SettingsDialog, TokenDialog, HelpDialog, Menu, SoundToggle, SizeButton, Confetti } from './dialogs.jsx';
 import { getActions, refOf, fromRef, manaAbilitiesOf, manaSourcesFor, activateManaAbility, parseCost } from '../engine/abilities.js';
 import { STEP_NAMES } from '../engine/game.js';
-import { blockRules } from '../engine/combat.js';
+import { blockRules, blockProblem, canBlock, canAttackDefender } from '../engine/combat.js';
 import { applyOp, cardMenuItems, playerMenuItems } from './manual.js';
 import { RoomStatus } from './online.jsx';
 import { useGameSounds } from './sound.js';
@@ -166,7 +166,11 @@ function PromptBar({ game, human, me, mode, ctx, actions, onPass, onEndTurn, spe
     </>;
   } else if (mode === 'blockers') {
     const n = ctx.block.assigned.size;
-    msg = <><div className="step">Declare blockers</div><div className="txt">{ctx.block.picked ? `Now click the attacker ${game.name(game.cardById(ctx.block.picked))} should block.` : 'Click one of your creatures, then the attacker it blocks.'}</div></>;
+    const sh = ctx.block.short[0];
+    msg = <><div className="step">Declare blockers</div><div className="txt">{!ctx.block.candidates.size && !n ? 'None of your creatures can block these attackers.'
+      : ctx.block.picked ? `Now click the attacker ${game.name(game.cardById(ctx.block.picked))} should block (the ones it can block are lit up).`
+        : sh ? `${game.name(sh.a)} needs at least ${sh.min} blockers: add ${sh.min - sh.n === 1 ? 'one more' : `${sh.min - sh.n} more`} or take ${sh.n === 1 ? 'yours' : 'them'} off.`
+          : 'Click one of your creatures, then the attacker it blocks.'}</div></>;
     acts = <>
       {n ? <button className="btn ghost" onClick={ctx.block.clear}>Clear</button> : null}
       <button className="btn primary" onClick={ctx.block.confirm}>{n ? `Block with ${n}` : 'No blocks'}</button>
@@ -206,7 +210,7 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
   useSyncExternalStore(subscribeImages, imagesVersion);
   const { game, human } = session;
   // browser tests can reach the running game (window.__paExpose)
-  if (typeof window !== 'undefined' && window.__paExpose) window.__paSession = session;
+  if (typeof window !== 'undefined' && window.__paExpose) { window.__paSession = session; window.__paCombat = { canBlock, blockProblem, canAttackDefender, blockRules }; }
   const me = human.pid != null ? human.pid : 0;
   const self = session.spectator ? -1 : me; // the seat that is "you" (spectators have none)
   useGameSounds(game, { kind: 'mtg', me, watching: !!session.spectator });
@@ -276,6 +280,18 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
     return m;
   }, [actions]);
 
+  // blocks: which attackers each of your creatures may block, worked out by the rules (only those light up)
+  const blockOpts = useMemo(() => {
+    if (!req || req.type !== 'blockers') return null;
+    const atks = req.attackers.map(id => game.cardById(id)).filter(Boolean);
+    return new Map(req.candidates.map(id => { const b = game.cardById(id); return [id, new Set(b ? atks.filter(a => canBlock(game, b, a)).map(a => a.id) : [])]; }));
+  }, [pid]);
+  // attacks: may this creature attack that player or planeswalker?
+  const mayAttack = (id, ref) => {
+    const d = req.defenders.find(x => x.ref === ref), c = game.cardById(id);
+    return !!(d && c && canAttackDefender(game, c, d.player, d.card ? game.cardById(d.card) : null));
+  };
+
   let mode = req ? req.type : 'wait';
   const inlineTargets = req && req.type === 'targets' && req.purpose !== 'proliferate' && req.cands.every(r => { const o = fromRef(game, r); return o && (o.isPlayer || (o.isCard && o.zone === 'battlefield')); });
   if (mode === 'targets' && inlineTargets) mode = 'targets-inline';
@@ -314,16 +330,28 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
     ctx.attack = {
       candidates: new Set(req.candidates), assigned: attackMap, defenders, current: attackCur, label,
       setCurrent: setAttackCur,
-      all: () => { const m = new Map(); for (const id of req.candidates) m.set(id, attackCur); setAttackMap(m); },
+      // (only creatures that may attack the chosen player or planeswalker)
+      all: () => {
+        const m = new Map(), left = [];
+        for (const id of req.candidates) { if (mayAttack(id, attackCur)) m.set(id, attackCur); else left.push(game.name(game.cardById(id))); }
+        setAttackMap(m);
+        if (left.length) setToast(`${left.join(', ')} can’t attack ${label(attackCur)}.`);
+      },
       clear: () => setAttackMap(new Map()),
       confirm: () => human.respond([...attackMap].map(([attacker, defender]) => ({ attacker, defender }))),
     };
   }
   if (mode === 'blockers') {
+    // menace and "can't be blocked except by three or more": an attacker blocked by too few would come off
+    const short = req.attackers.map(id => game.cardById(id)).filter(Boolean).map(a => ({ a, n: [...blockMap.values()].filter(x => x === a.id).length, min: blockRules(game, a).min })).filter(x => x.n > 0 && x.n < x.min);
     ctx.block = {
-      candidates: new Set(req.candidates), attackers: new Set(req.attackers), assigned: blockMap, picked,
+      candidates: new Set(req.candidates.filter(id => blockOpts.get(id).size)), attackers: new Set(req.attackers), assigned: blockMap, picked,
+      canBlock: (b, a) => !!(blockOpts.get(b) && blockOpts.get(b).has(a)), opts: blockOpts, short,
       clear: () => { setBlockMap(new Map()); setPicked(null); },
-      confirm: () => human.respond([...blockMap].map(([blocker, attacker]) => ({ blocker, attacker }))),
+      confirm: () => {
+        if (short.length) { setToast(`${game.name(short[0].a)} needs at least ${short[0].min} blockers (it has ${short[0].n}). Add ${short[0].min - short[0].n === 1 ? 'another' : 'more'}, or take ${short[0].n === 1 ? 'yours' : 'them'} off.`); return; }
+        human.respond([...blockMap].map(([blocker, attacker]) => ({ blocker, attacker })));
+      },
     };
   }
 
@@ -340,18 +368,24 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
     }
     if (mode === 'attackers') {
       if (!ctx.attack.candidates.has(card.id)) return;
+      if (!attackMap.has(card.id) && !mayAttack(card.id, attackCur)) { setToast(`${game.name(card)} can’t attack ${ctx.attack.label(attackCur)}.`); return; }
       setAttackMap(m => { const n = new Map(m); if (n.has(card.id)) n.delete(card.id); else n.set(card.id, attackCur); return n; });
       return;
     }
     if (mode === 'blockers') {
       if (ctx.block.assigned.has(card.id)) { setBlockMap(m => { const n = new Map(m); n.delete(card.id); return n; }); return; }
       if (ctx.block.candidates.has(card.id)) { setPicked(p => p === card.id ? null : card.id); return; }
+      // one of yours that can't block any of these attackers: say why
+      if (blockOpts.has(card.id)) { const a = req.attackers.map(id => game.cardById(id)).find(Boolean); setToast(req.attackers.length === 1 && a ? blockProblem(game, card, a) : `${game.name(card)} can’t block any of these attackers.`); return; }
       if (ctx.block.attackers.has(card.id) && picked) {
+        const b = game.cardById(picked);
+        if (!ctx.block.canBlock(picked, card.id)) { setToast(blockProblem(game, b, card) || `${game.name(b)} can’t block ${game.name(card)}.`); return; }
         const rules = blockRules(game, card);
+        const count = [...blockMap.values()].filter(x => x === card.id).length + 1;
+        if (count > rules.max) { setToast(`${game.name(card)} can’t be blocked by more than ${rules.max} creature${rules.max === 1 ? '' : 's'}.`); return; }
         setBlockMap(m => { const n = new Map(m); n.set(picked, card.id); return n; });
         setPicked(null);
-        const count = [...blockMap.values()].filter(x => x === card.id).length + 1;
-        if (count < rules.min) setToast(`${game.name(card)} needs at least ${rules.min} blockers.`);
+        if (count < rules.min) setToast(`${game.name(card)} needs at least ${rules.min} blockers: pick ${rules.min - count === 1 ? 'one more' : `${rules.min - count} more`}.`);
       }
       return;
     }

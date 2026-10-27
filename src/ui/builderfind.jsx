@@ -3,7 +3,8 @@
 // first, with pictures) and the list of precons to start from.
 import { Pip } from './cardview.jsx';
 import { Modal } from './dialogs.jsx';
-import { ROLES } from './deckai.js';
+import { ROLES } from './deckguide.js';
+import { canPair } from './customdecks.js';
 import { Cost, RoleTags, CardTile, SHORT_ROLE } from './buildercard.jsx';
 
 const { useState, useMemo, useEffect } = React;
@@ -137,10 +138,12 @@ export function CommanderPicker({ H, index, db, partnerOf, onOpen, onChoose, hv 
   const [view, setView] = useState('grid');
   const [limit, setLimit] = useState(48);
   const qq = q.trim().toLowerCase();
+  const first = useMemo(() => partnerOf && index.find(c => c.name === partnerOf), [partnerOf]);
   const list = useMemo(() => {
     const out = index.filter(c => {
-      if (!c.commander || !H.feats.get(c.name).legal) return false;
-      if (partnerOf && (!c.partner || c.name === partnerOf)) return false;
+      if (!H.feats.get(c.name).legal) return false;
+      // (a second commander pairs with the first: a Background can only lead that way)
+      if (first ? !canPair(first, c) : !c.commander) return false;
       if (colors.size) {
         const want = [...colors];
         if (want.includes('C')) { if (c.ci.length) return false; }
@@ -152,10 +155,10 @@ export function CommanderPicker({ H, index, db, partnerOf, onOpen, onChoose, hv 
     if (sort === 'popular') out.sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name));
     else if (sort === 'mv') out.sort((a, b) => a.cmc - b.cmc || a.name.localeCompare(b.name));
     return out;
-  }, [qq, colors, exact, sort, partnerOf]);
+  }, [qq, colors, exact, sort, first]);
   return (
     <div className="bfind">
-      <p className="note">{partnerOf ? `Commanders with Partner can share the command zone with ${partnerOf}. Their colors add together.` : 'Your commander is a legendary creature that starts every game ready to cast. Its colors decide which cards your deck can use, and its abilities give the deck a plan.'}</p>
+      <p className="note">{partnerOf ? `These can share the command zone with ${partnerOf} (${first && first.pairing && first.pairing.background ? 'Choose a Background' : first && first.pairing && first.pairing.companion ? 'Doctor’s companion' : first && first.pairing && first.pairing.with ? `Partner with ${first.pairing.with}` : 'Partner'}). Their colors add together.` : 'Your commander is a legendary creature that starts every game ready to cast. Its colors decide which cards your deck can use, and its abilities give the deck a plan.'}</p>
       <div className="bfind-top">
         <label className="searchbox">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3a7 7 0 015.6 11.2l4.6 4.6-1.4 1.4-4.6-4.6A7 7 0 1110 3zm0 2a5 5 0 100 10 5 5 0 000-10z" /></svg>

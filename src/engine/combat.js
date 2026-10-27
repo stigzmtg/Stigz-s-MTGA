@@ -221,37 +221,64 @@ export function canBlockAny(game, b) {
   return true;
 }
 
-export function canBlock(game, b, a) {
-  if (!canBlockAny(game, b)) return false;
+// Can b block a? Returns null when it can, or why not ([kind, detail]): blockProblem() puts that in words for the
+// player, and canBlock() is the yes or no.
+function blockCheck(game, b, a) {
+  if (!canBlockAny(game, b)) return ['cant'];
   const ach = game.chars(a), bch = game.chars(b);
   const has = (ch, k) => game.hasKeywordIn(ch, k);
-  if (has(ach, 'Flying') && !has(bch, 'Flying') && !has(bch, 'Reach')) return false;
-  if (has(bch, "CARDNAME can block only creatures with flying.") && !has(ach, 'Flying')) return false;
-  if (has(ach, 'Shadow') !== has(bch, 'Shadow')) return false;
-  if (has(ach, 'Horsemanship') && !has(bch, 'Horsemanship')) return false;
-  if (has(ach, 'Fear') && !bch.types.has('Artifact') && !bch.colors.has('B')) return false;
-  if (has(ach, 'Intimidate') && !bch.types.has('Artifact') && ![...ach.colors].some(c => bch.colors.has(c))) return false;
-  if (has(ach, 'Skulk') && bch.power > ach.power) return false;
-  if (ach.keywords.some(k => /^(HIDDEN )?(CARDNAME can't be blocked\.|Unblockable)$/.test(k))) return false;
+  if (has(ach, 'Flying') && !has(bch, 'Flying') && !has(bch, 'Reach')) return ['flying'];
+  if (has(bch, "CARDNAME can block only creatures with flying.") && !has(ach, 'Flying')) return ['onlyFlyers'];
+  if (has(ach, 'Shadow') !== has(bch, 'Shadow')) return [has(ach, 'Shadow') ? 'shadow' : 'blockerShadow'];
+  if (has(ach, 'Horsemanship') && !has(bch, 'Horsemanship')) return ['horsemanship'];
+  if (has(ach, 'Fear') && !bch.types.has('Artifact') && !bch.colors.has('B')) return ['fear'];
+  if (has(ach, 'Intimidate') && !bch.types.has('Artifact') && ![...ach.colors].some(c => bch.colors.has(c))) return ['intimidate'];
+  if (has(ach, 'Skulk') && bch.power > ach.power) return ['skulk'];
+  if (ach.keywords.some(k => /^(HIDDEN )?(CARDNAME can't be blocked\.|Unblockable)$/.test(k))) return ['unblockable'];
   // landwalk
   const defPid = b.controller;
   for (const k of ach.keywords) {
     let m = k.match(/^Landwalk:(\w+)/) || k.match(/^(\w+)walk$/);
     if (m) {
       const t = m[1];
-      if (game.battlefield.some(l => l.controller === defPid && game.chars(l).types.has('Land') && (game.chars(l).subtypes.has(t) || (t === 'Nonbasic' && !game.chars(l).supertypes.has('Basic')) || (t === 'Legendary' && game.chars(l).supertypes.has('Legendary'))))) return false;
+      if (game.battlefield.some(l => l.controller === defPid && game.chars(l).types.has('Land') && (game.chars(l).subtypes.has(t) || (t === 'Nonbasic' && !game.chars(l).supertypes.has('Basic')) || (t === 'Legendary' && game.chars(l).supertypes.has('Legendary'))))) return ['landwalk', t];
     }
   }
-  if (game.hasProtectionFrom(a, b)) return false;
+  if (game.hasProtectionFrom(a, b)) return ['protection'];
   for (const s of game.activeStatics('CantBlockBy')) {
     if (s.p.ValidAttacker && !matchValid(game, a, s.p.ValidAttacker, s.ctx)) continue;
     if (s.p.ValidBlocker && !matchValid(game, b, s.p.ValidBlocker, s.ctx)) continue;
     // "can be blocked only by creatures in the same sector" (relative to the attacker)
     if (s.p.ValidBlockerRelative && !matchValid(game, b, s.p.ValidBlockerRelative, { ...s.ctx, attacker: a })) continue;
     if (!s.p.ValidAttacker && !s.p.ValidBlocker && !s.p.ValidBlockerRelative) continue;
-    return false;
+    return ['static', s.host];
   }
-  return true;
+  return null;
+}
+
+export function canBlock(game, b, a) { return !blockCheck(game, b, a); }
+
+// why b can't block a, in a sentence (null when it can)
+export function blockProblem(game, b, a) {
+  const why = blockCheck(game, b, a);
+  if (!why) return null;
+  const A = game.name(a), B = game.name(b);
+  switch (why[0]) {
+    case 'cant': return b.tapped ? `${B} is tapped: tapped creatures can't block.` : b.suspected ? `${B} is suspected: suspected creatures can't block.` : `${B} can't block.`;
+    case 'flying': return `${A} has flying: only creatures with flying or reach can block it.`;
+    case 'onlyFlyers': return `${B} can block only creatures with flying.`;
+    case 'shadow': return `${A} has shadow: only creatures with shadow can block it.`;
+    case 'blockerShadow': return `${B} has shadow: it can block only creatures with shadow.`;
+    case 'horsemanship': return `${A} has horsemanship: only creatures with horsemanship can block it.`;
+    case 'fear': return `${A} has fear: only black creatures and artifact creatures can block it.`;
+    case 'intimidate': return `${A} has intimidate: only artifact creatures and creatures that share a color with it can block it.`;
+    case 'skulk': return `${A} has skulk: creatures with greater power can't block it.`;
+    case 'unblockable': return `${A} can't be blocked.`;
+    case 'landwalk': return `${A} has ${why[1] === 'Nonbasic' ? 'nonbasic land' : why[1] === 'Legendary' ? 'legendary land' : why[1].toLowerCase()}walk: it can't be blocked while you control ${/^[AEIOU]/.test(why[1]) ? 'an' : 'a'} ${why[1] === 'Nonbasic' ? 'nonbasic land' : why[1] === 'Legendary' ? 'legendary land' : why[1]}.`;
+    case 'protection': return `${A} has protection: ${B} can't block it.`;
+    case 'static': return why[1] && why[1].id === a.id ? `${A} can't be blocked by ${B}.` : why[1] && why[1].id === b.id ? `${B} can't block ${A}.` : `${game.name(why[1])} stops ${B} from blocking ${A}.`;
+    default: return `${B} can't block ${A}.`;
+  }
 }
 
 function minBlockers(game, a) {

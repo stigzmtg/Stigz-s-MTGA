@@ -99,8 +99,11 @@ export function CardSlot({ card, ctx, size = 'mini', count = 1, ids = null }) {
     if (ctx.block.assigned.has(card.id)) { cls.push('blocking'); wrapCls.push('guard'); }
     else if (ctx.block.picked === card.id) cls.push('selected');
     else if (ctx.block.candidates.has(card.id)) cls.push('targetable');
-    if (ctx.block.attackers.has(card.id)) cls.push(ctx.block.picked ? 'attacker-target' : 'attacking');
+    // with a blocker picked, only the attackers it may block light up
+    if (ctx.block.attackers.has(card.id)) cls.push(!ctx.block.picked ? 'attacking' : ctx.block.canBlock(ctx.block.picked, card.id) ? 'attacker-target' : 'attacking no-block');
   }
+  // phased out: treated as though it doesn't exist until its controller's next untap step
+  if (onField && card.phasedOut) { wrapCls.push('phased'); badges.push(<span key="ph" className="badge ctr" title="Phased out: it's treated as though it doesn't exist until its controller's next untap step">Phased out</span>); }
   if (ctx.support && ctx.support[card.def.name]) badges.push(<span key="w" className="badge warn" title={`Not fully automated: ${ctx.support[card.def.name].join(', ')}`}>!</span>);
   if (card.isCommander && onField) badges.push(<span key="cmd" className="badge cmdr" title="Commander">★</span>);
   if (count > 1) badges.push(<span key="cnt" className="badge cnt" title={`${count} identical`}>×{count}</span>);
@@ -212,6 +215,8 @@ function StatusChips({ game, pid }) {
   const cmdDmg = Object.entries(p.commanderDamage).filter(([, d]) => d > 0);
   const poison = p.counters.POISON || 0;
   const energy = p.counters.ENERGY || 0;
+  // Auras attached to the player (Curses): the card sits with its controller, so say it here too
+  const curses = game.battlefield.filter(c => c.attachedTo === 'p' + pid);
   return (
     <>
       {game.monarch === pid ? <span className="chip gold" title="The monarch draws a card at the end of their turn">♛ Monarch</span> : null}
@@ -220,6 +225,7 @@ function StatusChips({ game, pid }) {
       {p.dungeonsCompleted.length ? <span className="chip" title={`Completed: ${p.dungeonsCompleted.join(', ')}`}>⛫ ×{p.dungeonsCompleted.length}</span> : null}
       {poison ? <span className="chip poison" title="Poison counters (10 loses)">☣ {poison}</span> : null}
       {energy ? <span className="chip" title="Energy counters"><Pip s="E" /> {energy}</span> : null}
+      {curses.map(c => <span key={c.id} className="chip" title={`${game.name(c)} (${game.players[c.controller].name}'s) is attached to ${p.name}`}>☍ {game.name(c)}</span>)}
       {cmdDmg.map(([id, d]) => <span key={id} className={`chip ${d >= 15 ? 'danger' : ''}`} title={`Commander damage taken from ${game.name(game.cardById(+id))} (21 loses)`}>⚔ {game.name(game.cardById(+id)).split(',')[0]} {d}/21</span>)}
       {p.lost ? <span className="chip danger">Eliminated</span> : null}
     </>
