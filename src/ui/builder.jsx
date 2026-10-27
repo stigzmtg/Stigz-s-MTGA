@@ -130,6 +130,8 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
   const total = commanders.length + list.reduce((a, [, n]) => a + n, 0);
   const problems = deckProblems(deck, byName, identity);
   const state = useMemo(() => ({ commanders, cards }), [hist.now]);
+  const deckRef = useRef(state);   // (the AI helper's tools read the deck as it is right now)
+  deckRef.current = state;
   const rank = useMemo(() => (commanders.length ? H.rank(state) : null), [state]);
   const recipe = useMemo(() => H.recipe(state), [state]);
 
@@ -258,7 +260,8 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
             {commanders.length ? <button role="tab" aria-selected={left === 'search'} className={left === 'search' ? 'on' : ''} onClick={() => setLeft('search')}>{ICONS.search}Find cards</button> : null}
             <button role="tab" aria-selected={left === 'commander'} className={left === 'commander' ? 'on' : ''} onClick={() => { setLeft('commander'); setPartnerMode(false); }}>{ICONS.crown}{commanders.length ? 'Commanders' : 'Choose a commander'}</button>
           </div>
-          <DeckHelper H={H} commanders={commanders} cards={cards} setCards={setCards} onChooseCommander={chooseCommander} onHover={() => {}} onOpen={open} byName={byName} hidden={left !== 'helper'} />
+          <DeckHelper H={H} index={index} commanders={commanders} cards={cards} setCards={setCards} onChooseCommander={chooseCommander} onHover={() => {}} onOpen={open} byName={byName} hidden={left !== 'helper'}
+            getDeck={() => deckRef.current} onApply={d => commit(() => ({ commanders: d.commanders.slice(), cards: new Map(d.cards) }))} />
           {left === 'search' && commanders.length ? <CardSearch H={H} index={index} db={data.db} state={state} identity={identity} rank={rank} onAdd={add} onOpen={open} hv={hv} req={req} /> : null}
           {left === 'commander' || (left === 'search' && !commanders.length) ? <CommanderPicker H={H} index={index} db={data.db} partnerOf={partnerMode ? commanders[0] : null} onOpen={open} onChoose={chooseCommander} hv={hv} /> : null}
         </section>

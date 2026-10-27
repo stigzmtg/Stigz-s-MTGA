@@ -11,6 +11,7 @@ let bytes = 0, files = 0;
 const copy = rel => { fs.copyFileSync(path.join(DIST, rel), path.join(OUT, rel)); bytes += fs.statSync(path.join(OUT, rel)).size; files++; };
 copy('index.html');
 copy('app.js');
+copy('ai.js');
 for (const f of ['manifest.webmanifest', 'sw.js', 'favicon.ico']) if (fs.existsSync(path.join(DIST, f))) copy(f);
 for (const f of fs.readdirSync(path.join(DIST, 'data'))) if (fs.statSync(path.join(DIST, 'data', f)).isFile()) copy(path.join('data', f));
 for (const side of ['ptcg', 'optcg']) for (const f of fs.readdirSync(path.join(DIST, 'data', side))) copy(path.join('data', side, f));
