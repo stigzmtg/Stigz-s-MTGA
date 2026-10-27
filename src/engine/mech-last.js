@@ -283,6 +283,7 @@ export function lastAltOptionExtras(sp) {
 export function lastAltCostOptions(game, pid, card, from, pushFace) {
   if (from !== 'hand' && from !== 'command') return;
   const f = card.def.faces[0];
+  if (f.types.includes('Land')) return; // (lands aren't cast)
   for (const s of game.activeStatics('AlternativeCost')) {
     if (s.host === card || s.host.id === card.id) continue; // (its own: abilities.js)
     const p = s.p;
@@ -492,7 +493,6 @@ export function swapColorWords(text, to) {
 }
 // (memoized: the same texts are changed every time characteristics are computed)
 const swapped = new Map();
-const parsedSwap = raw => { let e = swapped.get('P' + raw); if (!e) { if (swapped.size > 20000) swapped.clear(); e = parseAbility(raw); swapped.set('P' + raw, e); } return e; };
 function swapAbilityText(raw, to, svars) {
   const k = to + '|' + raw;
   if (swapped.has(k)) return swapped.get(k);
@@ -521,7 +521,7 @@ function changeColorWords(ch, to) {
   const svars = swapSvars(ch.svars, to);
   const remap = list => list.map(e => {
     const raw = swapAbilityText(e.raw, to, ch.svars);
-    return { ...e, raw, parsed: raw === e.raw ? e.parsed : parsedSwap(raw), svars: e.svars === ch.svars ? svars : e.svars };
+    return { ...e, raw, parsed: raw === e.raw ? e.parsed : parseAbility(raw), svars: e.svars === ch.svars ? svars : e.svars };
   });
   ch.abilities = remap(ch.abilities); ch.triggers = remap(ch.triggers); ch.statics = remap(ch.statics); ch.replacements = remap(ch.replacements);
   ch.keywords = ch.keywords.map(k => (MODIFIABLE_KW.some(m => k.startsWith(m)) ? swapColorWords(k, to) : k));
@@ -744,7 +744,9 @@ export function aiIgnoreScore(ai, game, pid, card, abil, ctx) {
   const modes = String(p.Mode || '').split(',');
   const cost = String(p.IgnoreEffectCost);
   // a permanent to sacrifice, when that's the cost: something worth less than what it frees
-  const sacOk = limit => !/^Sac/.test(cost) || game.battlefield.some(c => c.controller === pid && c.id !== card.id && (c.token || ai.value(c) <= limit));
+  // (a token, a cheap nonland permanent, or a land when it has plenty)
+  const lands = game.battlefield.filter(c => c.controller === pid && game.chars(c).types.has('Land')).length;
+  const sacOk = limit => !/^Sac/.test(cost) || game.battlefield.some(c => c.controller === pid && c.id !== card.id && (c.token || (game.chars(c).types.has('Land') ? lands >= 7 : ai.value(c) <= limit)));
   if (/CantSearchLibrary/.test(p.AddKeyword || '')) {
     if (!ctx.main) return 0;
     // a search to make right after (a spell in hand it can pay for too, or an ability on the battlefield)
@@ -756,16 +758,18 @@ export function aiIgnoreScore(ai, game, pid, card, abil, ctx) {
     return hand || board ? 8 : 0;
   }
   if (modes.includes('CantPlayLand') || modes.includes('CantBeCast')) {
+    // a spell it could cast right after (not a land: sacrificing one permanent to play another gains nothing)
     if (!(ctx.main && ctx.myTurn)) return 0;
-    const land = me.landsPlayed < 1 && me.hand.some(c => c.faceDef.types.includes('Land'));
-    const spell = me.hand.some(c => ['Artifact', 'Creature', 'Enchantment'].some(t => c.faceDef.types.includes(t)) && c.faceDef.cmc <= game.battlefield.filter(x => x.controller === pid && game.chars(x).types.has('Land')).length);
-    return (land || spell) && sacOk(2) ? 3 : 0;
+    const spell = me.hand.some(c => ['Artifact', 'Creature', 'Enchantment'].some(t => c.faceDef.types.includes(t)) && c.faceDef.cmc <= lands);
+    return spell && sacOk(2) ? 3 : 0;
   }
   // "can't attack or block, and its activated abilities can't be activated": before combat, a creature worth freeing
   const freed = staticAffects(game, card, found.st, found.ctx).cards.filter(c => c.controller === pid);
   if (!freed.length) return 0;
   const best = Math.max(...freed.map(c => ai.value(c)));
   if (!(ctx.myTurn && game.step === 'main1')) return 0;
-  if (!freed.some(c => game.chars(c).power >= 2 || game.chars(c).abilities.some(a => a.parsed.kind === 'AB' && a.parsed.api !== 'Mana'))) return 0;
+  const sac = /^Sac/.test(cost);
+  if (!freed.some(c => (!c.sick && game.chars(c).power >= (sac ? 3 : 2)) || game.chars(c).abilities.some(a => a.parsed.kind === 'AB' && a.parsed.api !== 'Mana'))) return 0;
+  if (sac && best < 5) return 0;
   return sacOk(Math.min(3, best / 2)) ? 2.5 : 0;
 }

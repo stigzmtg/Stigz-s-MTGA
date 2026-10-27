@@ -249,6 +249,15 @@ test('The Valeyard: opponents face a villainous choice twice; it votes an additi
   void lifeB;
 });
 
+test('AI votes: the caster for what helps it most, an opponent for what hurts it least', async T => {
+  let aVote = null, bVote = null;
+  T.a.on('vote', (req, g) => { aVote = T.a.ai.choose(g, 0, req); return aVote; });
+  T.b.on('vote', (req, g) => { bVote = T.b.ai.choose(g, 1, req); return bVote; });
+  await T.put(1, 'Grizzly Bears');
+  await T.cast('Capital Punishment');
+  expect(aVote === 'DBVoteDeath' && bVote === 'DBVoteTaxes', `A: ${aVote}, B: ${bVote}`);
+});
+
 // ------------------------------------------------------------ Opposition Agent
 test('Opposition Agent: its controller searches for the opponent, the card is exiled and castable by them', async T => {
   await T.put(1, 'Opposition Agent');
@@ -438,6 +447,8 @@ test('Kentaro and Fist of Suns: other cards\' alternative costs; commander tax s
   expect(opt, 'Hill Giant for {W}{U}{B}{R}{G}');
   await castSpell(T.game, 0, giant, { optionKey: opt.key }); await T.resolve();
   expect(giant.zone === 'battlefield', 'cast');
+  const land = await T.put(0, 'Forest', 'hand');
+  expect(getActions(T.game, 0).filter(a => a.cardId === land.id).length === 1, 'a land in hand is still just played');
 });
 test('Spy Kit: Pithing Needle naming a nonlegendary creature stops the equipped creature\'s abilities', async T => {
   const pyro = await T.put(0, 'Prodigal Pyromancer');
