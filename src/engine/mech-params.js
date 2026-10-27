@@ -101,6 +101,8 @@ const cardsIn = list => list.filter(o => o && o.isCard);
 function withParams(sa, over) {
   const clone = Object.create(sa);
   clone.p = { ...sa.p, ...over };
+  // (code that reads the ability's own parsed parameters sees the same ones)
+  if (sa.abil && sa.abil.parsed) { clone.abil = { ...sa.abil, parsed: { ...sa.abil.parsed, p: clone.p } }; clone.def = clone.abil.parsed; }
   return clone;
 }
 
@@ -109,6 +111,13 @@ function withParams(sa, over) {
 export async function beforeEffect(game, sa) {
   const p = sa.p;
   let over = null;
+  rememberBefore(game, sa);
+  // RememberSVarAmount$ naming a value kept on the card (Ancient Brass Dragon's d20 "Result")
+  if (sa.api === 'ImmediateTrigger' && p.RememberSVarAmount && !(sa.svars || {})[p.RememberSVarAmount]) {
+    const clone = withParams(sa, {});
+    clone.svars = { ...sa.svars, [p.RememberSVarAmount]: `Number$${calcCtx(game, p.RememberSVarAmount, ctxOf(game, sa))}` };
+    return clone;
+  }
   if (sa.api === 'ChangeZone' || sa.api === 'ChangeZoneAll') {
     // OriginAlternative: Finale of Devastation, Tower Winder ("search your library and/or graveyard"): one search over every zone
     if (p.OriginAlternative) {
@@ -123,6 +132,12 @@ export async function beforeEffect(game, sa) {
   }
   // "creatures you control gain each of those keywords that a creature you control has" (Odric, Majestic Myriarch)
   if (p.SharedKeywordsZone && p.KW && (sa.api === 'Pump' || sa.api === 'PumpAll')) over = { ...over, KW: sharedKeywords(game, p.KW.split(' & '), p.SharedKeywordsZone, p.SharedRestrictions, ctxOf(game, sa)).join(' & ') };
+  // a Mana effect's Amount worked out for this ability (Mana Drain's Count$TriggerRememberAmount; the base code sees
+  // only the card)
+  if (sa.api === 'Mana' && p.Amount && !/^\d+$/.test(p.Amount) && /TriggerRememberAmount|xPaid|Remembered|Targeted|Triggered/.test(`${p.Amount} ${(sa.svars || {})[p.Amount] || ''}`)) {
+    const amount = String(Math.max(0, calcCtx(game, p.Amount, ctxOf(game, sa))));
+    over = { ...over, Amount: amount };
+  }
   if (p.PersistentMana === 'True' && sa.api === 'Mana') sa._poolBefore = { ...game.players[sa.controller].pool };
   if (p.RememberDrawn && sa.api === 'Draw') sa._handsBefore = game.players.map(pl => new Set(pl.hand.map(c => c.id)));
   if (p.RememberDamaged === 'True' && sa.api === 'DamageAll') sa._damageFrom = game.turnState.damageLog.length;
@@ -161,6 +176,8 @@ async function chooseAltDestination(game, sa) {
 // Runs after an effect resolved (before its sub-abilities).
 export async function afterEffect(game, sa) {
   const p = sa.p;
+  rememberAfter(game, sa);
+  if (p.RememberPumped === 'True' && (sa.api === 'Pump' || sa.api === 'PumpAll')) rememberPumped(game, sa);
   // RememberDamaged on DamageAll (Anger of the Gods: "exile it instead" names the creatures dealt damage this way)
   if (sa._damageFrom != null) {
     const hit = game.turnState.damageLog.slice(sa._damageFrom).map(d => (d.card != null ? game.cardById(d.card) : d.player != null ? game.players[d.player] : null)).filter(Boolean);
@@ -1098,4 +1115,75 @@ export function paramIssues(faces) {
     }
   }
   return [...out];
+}
+
+// ---------------------------------------------------------------- what an effect remembers (before / after it runs)
+// Numbers: RememberCounteredCMC (Mana Drain, Spell Swindle), RememberAmount (Creeping Bloodsucker: the damage dealt;
+// Primal Amulet, Sin: the counters removed), read by Count$RememberedNumber and passed to a delayed trigger by
+// RememberNumber$ (Count$TriggerRememberAmount). Objects: RememberPumped (Patriarch's Bidding), RememberPut (Fangs of
+// Kalonia, Ripples of Potential, Agitator Ant), RememberTapped, AlwaysRemember (Wild Magic Surge), and
+// RememberDiscardingPlayers (Professor Onyx, Will of the Jeskai).
+export function rememberedNumbers(host) {
+  return host && host.paNumbers && host.paNumbers.zcc === host.zcc ? host.paNumbers.list : [];
+}
+function addNumber(host, n) {
+  if (!host) return;
+  if (!host.paNumbers || host.paNumbers.zcc !== host.zcc) host.paNumbers = { zcc: host.zcc, list: [] };
+  host.paNumbers.list.push(n);
+}
+const counterTotal = (o, type) => Object.entries(o.counters || {}).filter(([k]) => !type || k === type).reduce((a, [, n]) => a + (n || 0), 0);
+const spellMV = item => {
+  const c = item && item.card;
+  if (!c) return 0;
+  const mc = (c.def.faces[item.sa && item.sa.face || 0] || c.faceDef).manaCost;
+  return mc ? cmc(mc) + (mc.x || 0) * ((item.sa && item.sa.root().x) || 0) : 0;
+};
+
+function rememberBefore(game, sa) {
+  const p = sa.p;
+  const memo = {};
+  if (p.RememberCounteredCMC && sa.api === 'Counter') memo.items = (sa.targets || []).filter(t => t && t.stackItem).map(t => ({ item: t, mv: spellMV(t) }));
+  if (p.RememberAmount) {
+    if (sa.api === 'DealDamage') memo.damageFrom = game.turnState.damageLog.length;
+    else if (/Counter/.test(sa.api)) memo.counters = new Map([...game.battlefield, ...game.players].map(o => [o, counterTotal(o, null)]));
+  }
+  if (p.RememberPut && /^(PutCounter|PutCounterAll|Proliferate)$/.test(sa.api)) memo.put = new Map([...game.battlefield, ...game.players].map(o => [o, counterTotal(o, null)]));
+  if (p.RememberTapped && /^(Tap|TapAll)$/.test(sa.api)) memo.untapped = game.battlefield.filter(c => !c.tapped);
+  if (p.AlwaysRemember && sa.api === 'Destroy') memo.always = (sa.targets && sa.targets.length ? sa.targets : resolveDefined(game, p.Defined || 'Self', ctxOf(game, sa))).filter(o => o && o.isCard).map(c => (p.RememberLKI === 'True' && c.zone === 'battlefield' ? game.makeLKI(c) : c));
+  if (p.RememberDiscardingPlayers && sa.api === 'Discard') memo.graves = game.players.map(pl => pl.graveyard.length + pl.exile.length);
+  if (Object.keys(memo).length) sa._paRemember = memo;
+}
+
+function rememberAfter(game, sa) {
+  const memo = sa._paRemember;
+  const p = sa.p;
+  const h = sa.host;
+  // Cleanup | ClearRemembered$ True clears remembered numbers too
+  if (sa.api === 'Cleanup' && p.ClearRemembered === 'True' && h && h.paNumbers) h.paNumbers = null;
+  // a delayed trigger that remembers the number ("add an amount of {C} equal to that spell's mana value": Mana Drain)
+  if (sa.api === 'DelayedTrigger' && p.RememberNumber === 'True') { const d = game.delayed[game.delayed.length - 1]; if (d) d.triggerRememberAmount = rememberedNumbers(h).reduce((a, b) => a + b, 0); }
+  if (!memo) return;
+  sa._paRemember = null;
+  const remember = list => { if (!h) return; h.remembered = h.remembered || []; for (const o of list) if (o && !h.remembered.includes(o)) h.remembered.push(o); };
+  if (memo.items) for (const { item, mv } of memo.items) if (!game.stack.includes(item)) addNumber(h, mv);
+  if (memo.damageFrom != null) addNumber(h, game.turnState.damageLog.slice(memo.damageFrom).reduce((a, d) => a + (d.amount || 0), 0));
+  if (memo.counters) { let n = 0; for (const [o, before] of memo.counters) n += Math.abs(counterTotal(o, null) - before); addNumber(h, n); }
+  if (memo.put) remember([...memo.put].filter(([o, before]) => counterTotal(o, null) > before).map(([o]) => o));
+  if (memo.untapped) remember(memo.untapped.filter(c => c.tapped));
+  if (memo.always) remember(memo.always);
+  if (memo.graves) remember(game.players.filter((pl, i) => pl.graveyard.length + pl.exile.length > memo.graves[i]));
+}
+// RememberPumped: what the pump applied to (Patriarch's Bidding: the creature cards of the chosen type in graveyards)
+function rememberPumped(game, sa) {
+  const p = sa.p;
+  if (p.RememberPumped !== 'True' || !sa.host) return;
+  let list;
+  if (sa.api === 'PumpAll') {
+    const zones = (p.PumpZone || 'Battlefield').split(',').map(Z);
+    const ctx = ctxOf(game, sa);
+    list = zones.flatMap(z => (z === 'battlefield' ? game.battlefield : game.cardsInZone(z))).filter(c => matchValid(game, c, p.ValidCards || 'Card', ctx));
+  } else list = (sa.targets && sa.targets.length ? sa.targets : resolveDefined(game, p.Defined || 'Self', ctxOf(game, sa))).filter(o => o && o.isCard);
+  const h = sa.host;
+  h.remembered = h.remembered || [];
+  for (const c of list) if (!h.remembered.includes(c)) h.remembered.push(c);
 }

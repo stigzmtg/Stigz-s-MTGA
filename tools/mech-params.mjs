@@ -733,4 +733,57 @@ test('support.js flags the parameters left out: Opposition Agent, Leonin Arbiter
   for (const n of ["Bolas's Citadel", 'Fact or Fiction', 'Cataclysmic Gearhulk', 'Enduring Vitality', 'Necrotic Ooze', 'Charmed Sleep', 'Pariah', 'Terror of the Peaks']) expect(!issues(n).length, `${n} looks supported (${issues(n)})`);
 });
 
+// ------------------------------------------------------------ remembered numbers and objects
+test('RememberCounteredCMC + RememberNumber: Mana Drain adds {C} equal to the countered spell\'s mana value next main phase', async T => {
+  const g = T.game;
+  g.activePlayer = 1;
+  const angel = await T.cast('Serra Angel', 1, { resolve: false });
+  T.a.on('targets', req => req.cands.find(r => r.startsWith('s')) ? [req.cands.find(r => r.startsWith('s'))] : undefined);
+  await T.cast('Mana Drain', 0);
+  expect(angel.zone === 'graveyard', `countered (${angel.zone})`);
+  g.activePlayer = 0;
+  T.noMana(0);
+  g.fire('Phase', { Phase: 'Main1', Player: 0 });
+  await T.resolve();
+  expect(T.A.pool.C === 5, `{C}{C}{C}{C}{C} for a mana value 5 spell (${JSON.stringify(T.A.pool)})`);
+});
+test('RememberAmount + RememberedNumber: Creeping Bloodsucker gains the life it drained', async T => {
+  const g = T.game;
+  await T.put(0, 'Creeping Bloodsucker');
+  const life = T.A.life, opp = T.B.life;
+  g.fire('Phase', { Phase: 'Upkeep', Player: 0 });
+  await T.resolve();
+  expect(T.B.life === opp - 1 && T.A.life === life + 1, `1 damage, 1 life (${opp - T.B.life}, ${T.A.life - life})`);
+});
+test('RememberPumped: Patriarch\'s Bidding returns the creature cards of each chosen type', async T => {
+  const g = T.game;
+  const elf = await T.put(0, 'Llanowar Elves', 'graveyard');
+  const angel = await T.put(1, 'Serra Angel', 'graveyard');
+  const bear = await T.put(0, 'Grizzly Bears', 'graveyard');
+  T.a.on('chooseType', () => 'Elf');
+  T.b.on('chooseType', () => 'Angel');
+  await T.cast("Patriarch's Bidding");
+  expect(elf.zone === 'battlefield' && angel.zone === 'battlefield' && bear.zone === 'graveyard', `the Elf and the Angel return, the Bear stays (${elf.zone}, ${angel.zone}, ${bear.zone})`);
+});
+test('RememberPut: Fangs of Kalonia doubles the counters on the creature it put one on', async T => {
+  const g = T.game;
+  const bear = await T.put(0, 'Grizzly Bears');
+  bear.counters.P1P1 = 2;
+  T.a.on('targets', () => [refOf(bear)]);
+  await T.cast('Fangs of Kalonia');
+  expect(bear.counters.P1P1 === 6, `2 + 1 = 3, doubled to 6 (${bear.counters.P1P1})`);
+});
+test('RememberSVarAmount from a roll: Ancient Brass Dragon\'s d20 sets the total mana value it can return', async T => {
+  const g = T.game;
+  const dragon = await T.put(0, 'Ancient Brass Dragon');
+  const angel = await T.put(1, 'Serra Angel', 'graveyard');
+  let maxSeen = null;
+  T.a.on('targets', req => { maxSeen = req.max; return req.cands.includes(refOf(angel)) ? [refOf(angel)] : []; });
+  g.fire('DamageDone', { Source: dragon, DamageSource: dragon, Target: T.B, DamageTarget: T.B, DamageAmount: 7, IsCombatDamage: true, CombatDamage: true });
+  await T.resolve();
+  const rolled = dragon.storedSVars && dragon.storedSVars.v.Result;
+  expect(rolled != null, 'rolled');
+  expect(+rolled >= 5 ? angel.zone === 'battlefield' : angel.zone === 'graveyard', `rolled ${rolled}: the Angel (mana value 5) ${angel.zone}`);
+});
+
 process.exit(await run(tests) ? 1 : 0);

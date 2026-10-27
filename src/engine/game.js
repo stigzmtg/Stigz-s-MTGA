@@ -861,6 +861,7 @@ export class Game {
     if (pt.delayed) { sa.delayRemembered = pt.delayed.remembered || []; }
     if (t.delayed && t.delayed.remembered) sa.delayRemembered = t.delayed.remembered;
     if ((pt.delayed || t.delayed) && (pt.delayed || t.delayed).spawner) sa.spawner = (pt.delayed || t.delayed).spawner;
+    if ((pt.delayed || t.delayed) && (pt.delayed || t.delayed).triggerRememberAmount != null) sa.triggerRememberAmount = (pt.delayed || t.delayed).triggerRememberAmount; // RememberNumber (mech-params.js)
     sa.description = this.describeTrigger(host, p, sa);
     if (p.Static === 'True') {
       await this.resolveSAChain(sa);

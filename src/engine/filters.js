@@ -1269,7 +1269,12 @@ function countExpr(game, rest, ctx, depth) {
     case 'TotalCommanderCastFromCommandZone': return Object.values(you.commanderCasts).reduce((a, b) => a + b, 0);
     case 'YourTurns': return game.turnState.turnsTaken ? game.turnState.turnsTaken[youId] || 0 : 0;
     case 'Domain': { const types = new Set(); for (const c of game.battlefield) if (c.controller === youId) for (const t of game.chars(c).subtypes) if (BASIC_LAND_TYPES[t]) types.add(t); return types.size; }
-    case 'RememberedSize': case 'RememberedNumber': return (host && host.remembered || []).length;
+    case 'RememberedNumber': { // numbers remembered (Mana Drain, Creeping Bloodsucker): their sum; else as RememberedSize
+      const nums = host && host.paNumbers && host.paNumbers.zcc === host.zcc ? host.paNumbers.list : null;
+      if (nums && nums.length) return nums.reduce((a, b) => a + b, 0);
+      return (host && host.remembered || []).length;
+    }
+    case 'RememberedSize': return (host && host.remembered || []).length;
     case 'ImprintedSize': return (host && host.imprinted || []).length;
     case 'CardNumColors': return host ? charsOf(game, host).colors.size : 0;
     case 'NumColorsCommander': case 'CommanderColors': return you.colorIdentity.length;
