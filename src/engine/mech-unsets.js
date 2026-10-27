@@ -9,9 +9,9 @@
 //    assemble from, but Steamflogger Boss's replacement is understood)
 //  - dice you may change after rolling: Monitor Monitor's reroll, Night Shift of the Living Dead's and
 //    Xenosquirrels' +1/-1
-// Load order: effects.js registers UNSETS_EFFECTS as it loads, so this module imports nothing that imports effects.js
-// (abilities.js is loaded when first needed, by then long since evaluated); chars.js, filters.js, triggers.js and the
-// UI use mech-unsets-rules.js.
+// Load order: effects.js registers UNSETS_EFFECTS as it loads, so this module imports nothing that imports effects.js:
+// abilities.js hands over the few functions of its own used here as it loads (bindAbilities). chars.js, filters.js,
+// triggers.js and the UI use mech-unsets-rules.js.
 import { RNG } from './util.js';
 import { parseMana } from './mana.js';
 import { matchValid, resolveDefined, calc, ctxOf, zoneMap } from './filters.js';
@@ -28,7 +28,9 @@ export const XENO_KW = 'After you roll a die, you may remove a +1/+1 counter fro
 export const DICE_KEYWORDS = [REROLL_KW, NIGHT_SHIFT_KW, XENO_KW];
 
 const ATTRACTION_DECK_SIZE = 10, SHEETS_PER_PLAYER = 3;
-const abilities = () => import('./abilities.js');
+// abilities.js's SA, rollDice, payManaCost, canAfford, chooseTargetsForSA and resolveChain (it imports this module)
+const AB = {};
+export function bindAbilities(fns) { Object.assign(AB, fns); }
 
 // ---------------------------------------------------------------- game setup
 // A separate generator per player and purpose: the game's own rng (shuffles, dice) is untouched, so adding sheets or
@@ -225,7 +227,7 @@ export async function visitAttractions(game, pid, result) {
 // if they control one (a turn-based action).
 export async function rollToVisitAtMain(game, pid) {
   if (!game.battlefield.some(c => c.controller === pid && !c.phasedOut && isAttraction(game, c))) return;
-  const { rollDice } = await abilities();
+  const { rollDice } = AB;
   await rollDice(game, pid, 1, 6, 0, null, { toVisit: true });
 }
 
@@ -243,7 +245,7 @@ export async function adjustDiceRolls(game, pid, rolls, sides, sa, toVisit) {
   const lit = toVisit ? [...new Set(game.battlefield.filter(c => c.controller === pid && isAttraction(game, c)).flatMap(lightsOf))] : [];
   const one = parseMana('1');
   const rerollers = mine.filter(x => has(x, REROLL_KW));
-  const { payManaCost, canAfford } = rerollers.length ? await abilities() : {};
+  const { payManaCost, canAfford } = AB;
   for (const c of rerollers) {
     if (usedThisTurn(c) >= 1 || !canAfford(game, pid, one)) continue;
     let pick;
@@ -332,7 +334,7 @@ export const UNSETS_EFFECTS = {
   async ClaimThePrize(game, sa) {
     const ctx = ctxOf(game, sa);
     const cards = resolveDefined(game, sa.p.Defined || 'Self', ctx).filter(o => o && o.isCard && !o.lki);
-    const { SA, chooseTargetsForSA, resolveChain } = await abilities();
+    const { SA, chooseTargetsForSA, resolveChain } = AB;
     for (const c of cards) {
       game.log(`${game.players[sa.controller].name} claims the prize of ${game.name(c)}!`, { cardId: c.id });
       const ch = game.chars(c);

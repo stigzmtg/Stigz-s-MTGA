@@ -164,7 +164,6 @@ if (last) {
   const jy = await page.$('.mat.bottom [data-unsets="junkyard"]');
   ok(!!jy, 'a junkyard chip after an Attraction leaves');
   if (jy) {
-
     await page.screenshot({ path: `${OUT}/7b-before-junkyard.png` });
     await jy.click();
     await page.waitForSelector('.dialog h2', { timeout: 5000 }).catch(() => {});
@@ -174,6 +173,21 @@ if (last) {
     await page.click('.dialog .dlg-actions .btn.primary');
   }
 }
+
+// ---- your next turn: the precombat main phase starts with a roll to visit your Attractions (the AI plays for you
+// through the opponent's turn)
+await setUp([]);
+await emptyPool();
+const turn = await S(() => window.__paSession.game.turnNumber);
+const lit = await S(() => { const s = window.__paSession, g = s.game; return g.battlefield.filter(c => c.attraction && c.controller === s.human.pid).length; });
+if (!lit) await S(() => { const s = window.__paSession, g = s.game, p = g.players[s.human.pid]; const c = p.AttractionDeck[0]; g.moveCard(c, 'battlefield', { controller: s.human.pid, silent: true }).then(() => s.store.bump()); });
+await S(t => { window.__paAutoplay = t + 2; }, turn);
+await page.click('.prompt .acts .btn:not(.primary)'); // End turn
+await page.waitForFunction(t => { const s = window.__paSession, g = s.game; return g.turnNumber >= t + 2 && g.activePlayer === s.human.pid && g.step === 'main1'; }, turn, { timeout: 120000 }).catch(() => {});
+await page.waitForTimeout(500);
+const rolled = await S(() => { const g = window.__paSession.game; return g.logs.filter(l => l.turn === g.turnNumber).map(l => l.text); });
+ok(rolled.some(t => /roll a d6 to visit Attractions: \d/.test(t) || /rolls a d6 to visit Attractions: \d/.test(t)), `rolled to visit at the start of the main phase (${rolled.slice(0, 6).join(' / ')})`);
+await page.screenshot({ path: `${OUT}/8b-visit-roll.png` });
 
 // ---- on a phone the mat still fits
 await page.setViewportSize({ width: 390, height: 844 });

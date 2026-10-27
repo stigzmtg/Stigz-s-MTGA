@@ -4,7 +4,7 @@ import { parseMana, emptyCost, addCosts, cmc, isManaToken, planPayment, payFromP
 import { matchValid, resolveDefined, calcCtx, checkConditions, checkPresence, ctxOf, findTargets, zoneMap, ctrlOf } from './filters.js';
 import { COLORS } from './util.js';
 import { runEffect } from './effects.js';
-import { adjustDiceRolls, visitAttractions } from './mech-unsets.js';
+import { adjustDiceRolls, visitAttractions, bindAbilities } from './mech-unsets.js';
 
 export class Cancelled extends Error { constructor() { super('cancelled'); this.cancelled = true; } }
 
@@ -2497,3 +2497,4 @@ export async function castAlternative(game, pid, card, costStr, kind, fromExile)
 }
 
 export { buildSpellSA, spellCost };
+bindAbilities({ SA, rollDice, payManaCost, canAfford, chooseTargetsForSA, resolveChain }); // Un-sets (mech-unsets.js can't import this module)
