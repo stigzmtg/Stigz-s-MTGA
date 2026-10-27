@@ -121,12 +121,14 @@ function defFor(kw, face) {
       break;
     case 'Mentor':
       T.push('Mode$ Attacks | ValidCard$ Card.Self | Execute$ KWMentor | TriggerDescription$ Mentor');
-      S.KWMentor = 'DB$ PutCounter | ValidTgts$ Creature.attacking+powerLTKWMentorX | TgtPrompt$ Select target attacking creature with lesser power | CounterType$ P1P1 | CounterNum$ 1';
+      S.KWMentor = 'DB$ PutCounter | ValidTgts$ Creature.attacking+powerLTKWMentorX | TgtPrompt$ Select target attacking creature with lesser power | CounterType$ P1P1 | CounterNum$ 1 | SubAbility$ KWMentored';
+      S.KWMentored = 'DB$ NewsetsEvent | Event$ Mentored | EventCard$ ParentTarget';
       S.KWMentorX = 'Count$CardPower';
       break;
     case 'Training':
       T.push('Mode$ Attacks | ValidCard$ Card.Self | IsPresent$ Creature.attacking+Other+powerGTKWTrainX | Execute$ KWTrain | TriggerDescription$ Training');
-      S.KWTrain = 'DB$ PutCounter | Defined$ Self | CounterType$ P1P1 | CounterNum$ 1';
+      S.KWTrain = 'DB$ PutCounter | Defined$ Self | CounterType$ P1P1 | CounterNum$ 1 | SubAbility$ KWTrained';
+      S.KWTrained = 'DB$ NewsetsEvent | Event$ Trains';
       S.KWTrainX = 'Count$CardPower';
       break;
     case 'Battle cry':
@@ -158,6 +160,25 @@ function defFor(kw, face) {
     case 'Discover':
       T.push(`Mode$ SpellCast | ValidCard$ Card.Self | Execute$ KWDiscover | TriggerDescription$ Discover ${a}`);
       S.KWDiscover = `DB$ Discover | Num$ ${a}`;
+      break;
+    // new sets (mech-newsets.js): firebending's mana lasts until end of combat
+    case 'Firebending':
+      T.push(`Mode$ Attacks | ValidCard$ Card.Self | Execute$ KWFirebend | TriggerDescription$ Firebending ${a}${b || ''} (whenever it attacks, add ${/^\d+$/.test(a) ? '{R}'.repeat(+a) : 'X {R}'}; this mana lasts until end of combat)`);
+      S.KWFirebend = `DB$ Mana | Produced$ R | Amount$ ${a} | CombatMana$ True | Firebending$ True`;
+      break;
+    // increment: when the mana spent on a spell you cast is greater than its power or toughness
+    case 'Increment':
+      T.push('Mode$ SpellCast | ValidActivatingPlayer$ You | TriggerZones$ Battlefield | IsPresent$ Creature.Self | ValidSA$ Spell.ManaSpent GTKWIncP,Spell.ManaSpent GTKWIncT | Execute$ KWIncrement | TriggerDescription$ Increment (whenever you cast a spell, if the mana you spent is greater than this creature\'s power or toughness, put a +1/+1 counter on it)');
+      S.KWIncP = 'Count$CardPower';
+      S.KWIncT = 'Count$CardToughness';
+      S.KWIncrement = 'DB$ PutCounter | Defined$ Self | CounterType$ P1P1 | CounterNum$ 1';
+      break;
+    // storied: with three or more artifacts, legendaries and/or Sagas, you have an enduring story for the rest of the game
+    case 'Storied':
+      if (['Artifact', 'Creature', 'Enchantment', 'Land', 'Planeswalker', 'Battle'].some(t => (face.types || []).includes(t))) {
+        T.push('Mode$ Always | TriggerZones$ Battlefield | Static$ True | EnduringStory$ False | IsPresent$ Permanent.YouCtrl+Historic | PresentCompare$ GE3 | Execute$ KWStory | TriggerDescription$ Storied (you have an enduring story)');
+        S.KWStory = 'DB$ EnduringStory';
+      }
       break;
     case 'Storm':
       T.push('Mode$ SpellCast | ValidCard$ Card.Self | Execute$ KWStorm | TriggerDescription$ Storm');
@@ -380,3 +401,5 @@ export function keywordInfo(kw) { return defFor(kw, { svars: {} }); }
 export const SUPPORTED_KEYWORDS = new Set(['Flying', 'Equip', 'Trample', 'ETBReplacement', 'Enchant', 'Cycling', 'Vigilance', 'Flash', 'Haste', 'etbCounter', 'Deathtouch', 'Lifelink', 'Menace', 'First Strike', 'Flashback', 'Reach', 'TypeCycling', 'Indestructible', 'Changeling', 'Crew', 'Chapter', 'Defender', 'Kicker', 'Convoke', 'Ward', 'Double Strike', 'Cascade', 'Partner', 'Partner with', 'Evoke', 'Devoid', 'Multikicker', 'Unearth', 'Hexproof', 'Myriad', 'Ravenous', 'Landwalk', 'Fear', 'Intimidate', 'Shroud', 'Annihilator', 'Prowess', 'Persist', 'Undying', 'Exalted', 'Extort', 'Evolve', 'Living Weapon', 'Job select', 'Fabricate', 'Riot', 'Mentor', 'Training', 'Battle cry', 'Melee', 'Bushido', 'Afflict', 'Storm', 'Demonstrate', 'Backup', 'Squad', 'Blitz', 'Dash', 'Echo', 'Hideaway', 'Devour', 'Exploit', 'Dethrone', 'Renown', 'Toxic', 'Infect', 'Wither', 'Affinity', 'Delve', 'Improvise', 'Escape', 'Retrace', 'Overload', 'Split second', 'Umbra armor', 'Totem armor', 'Morph', 'Megamorph', 'Disguise', 'Encore', 'Embalm', 'Eternalize', 'Outlast', 'Scavenge', 'Transmute', 'Ninjutsu', 'CommanderNinjutsu', 'Decayed', 'Offspring', 'Afterlife', 'Squad', 'Protection', 'Shadow', 'Horsemanship', 'Skulk', 'Jump-start', 'Discover', 'Rebound', 'Choose a Background', 'Friends forever', 'Doctor\'s companion', 'Ascend', 'Reconfigure', 'Level up', 'Foretell', 'Suspend', 'Class', 'Madness', 'Miracle', 'Aftermath', 'Undaunted', 'Spectacle', 'Surge', 'Bargain', 'Mutate', 'Bestow', 'Strive', 'Escalate', 'Fuse',
   'Graft', 'Flanking', 'Sunburst', 'Mayhem', 'All creatures able to block CARDNAME do so.', 'Gift', 'Casualty', 'Replicate', 'AlternateAdditionalCost', 'Emerge', 'Prowl', 'Entwine', 'MayFlashCost', 'Tiered', 'Spree', 'Dredge', 'Cipher', 'Cloak', 'Station', 'Vanishing', 'For Mirrodin', 'Reinforce', 'Plot', 'Gravestorm', 'Champion', 'Cumulative upkeep', 'Bloodthirst', 'Read ahead', 'Harmonize', 'Offering', 'Buyback', 'You may choose not to untap CARDNAME during your untap step.', 'Soulbond', 'Daybound', 'Nightbound', 'Awaken', 'Space sculptor', 'As an additional cost to cast creature spells, you may pay any amount of mana. If you do, that creature enters with that many additional +1/+1 counters on it.', 'Enlist', 'Fortify', 'Disturb', 'Companion', 'MayEffectFromOpeningHand', 'Unleash', 'Compleated', 'Impending', 'Mobilize', 'Start your engines', 'MayFlashSac',
   'Prevent all combat damage that would be dealt to and dealt by CARDNAME.', 'Prevent all combat damage that would be dealt to CARDNAME.', 'Prevent all damage that would be dealt to CARDNAME.', 'Prevent all combat damage that would be dealt by CARDNAME.', 'Prevent all damage that would be dealt to and dealt by CARDNAME.']);
+// new sets (mech-newsets.js)
+for (const k of ['Firebending', 'Increment', 'Storied']) SUPPORTED_KEYWORDS.add(k);

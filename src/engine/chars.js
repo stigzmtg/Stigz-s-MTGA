@@ -380,6 +380,8 @@ export function computeAll(game) {
     if (c.attachedTo != null && ch.keywords.some(k => k.startsWith('Reconfigure'))) ch.types.delete('Creature');
     if (ch.keywords.includes('Changeling')) ch.allCreatureTypes = true;
     if (ch.keywords.includes('Devoid')) ch.colors = new Set();
+    // "loses flying" (Debuff, mech-newsets.js): also what statics and keyword counters give it
+    for (const t of c.temp) if (t.loseKeywords) ch.keywords = ch.keywords.filter(k => !t.loseKeywords.includes(k));
   }
   // layer 7a/7b: base & set P/T
   for (const c of all) { const ch = map.get(c.id); applyOwnMods(game, c, ch, 7); }

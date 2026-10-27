@@ -5,8 +5,14 @@ import { SUPPORTED_TRIGGER_MODES } from './triggers.js';
 import { SUPPORTED_KEYWORDS } from './keywords.js';
 
 export const STATIC_MODES = new Set(['Continuous', 'ReduceCost', 'RaiseCost', 'CantBlockBy', 'CantAttack', 'CantAttackUnless', 'CastWithFlash', 'CantBlock', 'Panharmonicon', 'CantBeCast', 'CantSacrifice', 'MinMaxBlocker', 'CantGainLife', 'IgnoreLegendRule', 'CanAttackDefender', 'CombatDamageToughness', 'CantTarget', 'ActivateAbilityAsIfHaste', 'CantPreventDamage', 'CantBeActivated', 'AssignCombatDamageAsUnblocked', 'CantPutCounter', 'NumLoyaltyAct', 'CantBeCountered', 'MustAttack', 'AlternativeCost', 'UntapOtherPlayer', 'CantChangeLife', 'WitherDamage', 'MustBlock', 'AttackRestrict', 'BlockRestrict', 'CantBlockUnless', 'OptionalCost', 'OptionalAttackCost', 'UnspentMana', 'PlayerMustAttack', 'CountersRemain', 'Devotion', 'SurveilNum', 'DisableTriggers', 'FlipCoinDoubler', 'CantDraw', 'GainLifeRadiation', 'CantLoseLife', 'DrawFromBottom', 'CantExile', 'CantPhaseIn', 'ManaConvert']);
+// new sets (mech-newsets.js)
+for (const k of ['MaxCounter']) STATIC_MODES.add(k);
 export const REPLACEMENT_EVENTS = new Set(['Moved', 'DamageDone', 'AddCounter', 'CreateToken', 'Draw', 'GainLife', 'Counter', 'Untap', 'GameLoss', 'GameWin', 'BeginPhase', 'BeginTurn', 'TurnFaceUp', 'LoseMana', 'ProduceMana', 'CopySpell', 'DrawCards', 'LifeReduced', 'RollDice', 'Transform', 'Attached', 'Proliferate', 'Explore', 'RollPlanarDice', 'RemoveCounter', 'Planeswalk']);
+// new sets (mech-newsets.js)
+for (const k of ['Connive', 'Mill', 'Scry']) REPLACEMENT_EVENTS.add(k);
 const COSTS = new Set(['T', 'Q', 'Sac', 'SubCounter', 'AddCounter', 'PayLife', 'Discard', 'Exile', 'ExileFromGrave', 'ExileFromHand', 'tapXType', 'untapYType', 'Return', 'PayEnergy', 'RemoveAnyCounter', 'Mill', 'Reveal', 'Draw', 'Exert', 'Unattach', 'Crew', 'ExileAnyGrave', 'Blight', 'RevealChosen', 'ExiledMoveToGrave', 'ExileSameGrave', 'RollDice', 'Behold', 'PutCardToLibFromBattlefield', 'Mana']);
+// new sets (mech-newsets.js): waterbend {N}
+for (const k of ['Waterbend']) COSTS.add(k);
 
 const PRETTY = { Mode: '', api: '' };
 

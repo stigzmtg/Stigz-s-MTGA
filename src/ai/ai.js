@@ -8,6 +8,9 @@ import { addCosts } from '../engine/mana.js';
 
 const HARMFUL = new Set(['Destroy', 'DestroyAll', 'DealDamage', 'DamageAll', 'Counter', 'Sacrifice', 'SacrificeAll', 'Discard', 'LoseLife', 'Mill', 'GainControl', 'Tap', 'TapAll', 'Goad', 'Fight', 'Phases', 'ExchangeControl', 'RemoveCounter']);
 const BENEFICIAL = new Set(['Pump', 'PumpAll', 'PutCounter', 'PutCounterAll', 'GainLife', 'Draw', 'Untap', 'UntapAll', 'Attach', 'Regenerate', 'Animate', 'Token', 'CopyPermanent', 'Clone', 'Investigate', 'Scry', 'Surveil', 'Proliferate', 'Dig', 'BecomeMonarch', 'Explore', 'Connive', 'Amass', 'MultiplyCounter', 'Mana']);
+// new sets (mech-newsets.js)
+for (const a of ['Debuff', 'Detain']) HARMFUL.add(a);
+for (const a of ['Earthbend', 'Endure', 'Recruit']) BENEFICIAL.add(a);
 
 export class AIAgent {
   // pace(kind) -> milliseconds to wait before acting ('think', 'land', 'attack', 'block', 'choose', 'respond'),
@@ -130,6 +133,8 @@ export class AIAgent {
       return 'help';
     }
     if (api === 'Animate' && /OppCtrl/.test(p.ValidTgts || '')) return 'harm';
+    // airbend: exiling an opponent's permanent (or spell) is the point; your own only to save or replay it
+    if (api === 'Airbend') return /YouCtrl/.test(p.ValidTgts || '') && !/Opp/.test(p.ValidTgts || '') ? 'help' : 'harm';
     if (HARMFUL.has(api)) return 'harm';
     if (BENEFICIAL.has(api)) return 'help';
     if (/OppCtrl|Opponent/.test(p.ValidTgts || '')) return 'harm';
@@ -423,6 +428,15 @@ export class AIAgent {
       case 'EndCombatPhase': return game.combat && game.activePlayer !== pid && game.combat.attackers.some(a => a.defenderPlayer === pid) ? 3 : -5;
       case 'BlankLine': return 0;
       case 'Meld': return 4;
+      // new sets (mech-newsets.js)
+      case 'Earthbend': return 1.5 + Math.min(6, num('Num', 1)) * 0.8;
+      case 'Airbend': return this.sentiment(sa) === 'harm' ? this.bestTargetValue(game, pid, sa, 'harm') * 0.6 : 0.3;
+      case 'Detain': return this.bestTargetValue(game, pid, sa, 'harm') * 0.3;
+      case 'Debuff': case 'DayTime': case 'HealDamage': return 0;
+      case 'Endure': return 1 + num('Num', 1) * 0.6;
+      case 'Recruit': return 1.5;
+      case 'RingTemptsYou': return 2;
+      case 'TapOrUntapAll': case 'TaporUntapAll': case 'ChangeSpeed': return 0.5;
       case 'UnlockDoor': { const f = sa.host && sa.host.def && sa.host.def.faces[+p.Door || 0]; return f ? 3 + f.cmc * 0.6 + f.triggers.length + f.statics.length : 2; }
       default: return 1;
     }
@@ -499,6 +513,8 @@ export class AIAgent {
     if (api === 'Animate' && game.chars(card).types.has('Land')) s = 0;
     if (api === 'Mana' || api === 'ManaReflected') s = 0;
     if (api === 'PutCounter' && /Defined\$ Self/.test(abil.raw) && !cost.hasMana && !cost.tap) s = Math.min(s, 0);
+    // waterbend {X} (Katara, Water Tribe's Hope): X as big as the creatures it taps, which then can't attack: not worth it
+    if (cost.mana && cost.mana.waterbend === 'X') s = Math.min(s, 0);
     return s;
   }
 
@@ -667,6 +683,13 @@ export class AIAgent {
     if (purpose === 'costTapXType' || purpose === 'costtapXType') return pick(cards.slice().sort((a, b) => v(a) - v(b)), min);
     if (purpose === 'costRemoveCounter') return pick(cards, min);
     if (purpose === 'ninjutsu') return pick(cards.slice().sort((a, b) => v(a) - v(b)), 1);
+    // waterbend: tap what's needed (the cards come cheapest first), plus artifacts that do nothing else and,
+    // after combat on our own turn, creatures
+    if (purpose === 'waterbend') {
+      const free = c => { const ch = game.chars(c); if (!ch.types.has('Creature')) return !manaSourcesFor(game, pid).some(s => s.card === c); return game.activePlayer === pid && (game.step === 'main2' || game.step === 'end'); };
+      const n = Math.max(min, Math.min(max, cards.filter(free).length));
+      return pick(cards, n);
+    }
     // default: best by value if choosing for self
     const sorted = cards.slice().sort((a, b) => (b.controller === pid ? v(b) : -v(b)) - (a.controller === pid ? v(a) : -v(a)));
     return pick(sorted, Math.max(min, Math.min(max, min || max)));

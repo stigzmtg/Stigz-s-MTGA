@@ -41,6 +41,8 @@ const PURPOSE_TITLES = {
   casualty: 'Casualty', emerge: 'Emerge', enlist: 'Enlist', exert: 'Exert', costExile: 'Exile', costExileSameGrave: 'Exile', cipher: 'Cipher', clashBottom: 'Clash',
   exploreGrave: 'Explore', pile: 'Make two piles', choosePile: 'Choose a pile', openingHand: 'Opening hand', blight: 'Blight', dredge: 'Dredge', cumulativeUpkeepGrave: 'Cumulative upkeep',
 };
+// new sets (src/engine/mech-newsets.js)
+Object.assign(PURPOSE_TITLES, { waterbend: 'Waterbend', ringBearer: 'The Ring tempts you' });
 
 export function CardsDialog({ game, req, respond, onHover }) {
   const [sel, setSel] = useState([]);

@@ -8,6 +8,7 @@ import { SA, castSpell, activateAbility, resolveStackItem, chooseTargetsForSA, g
 import { triggerMatches } from './triggers.js';
 import * as combat from './combat.js';
 import { parseAbility } from './forge.js';
+import { onFire, keepCombatMana, capCounters } from './mech-newsets.js';
 
 export const STEPS = ['untap', 'upkeep', 'draw', 'main1', 'beginCombat', 'declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage', 'endCombat', 'main2', 'end', 'cleanup'];
 export const STEP_NAMES = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main 1', beginCombat: 'Beginning of Combat', declareAttackers: 'Declare Attackers', declareBlockers: 'Declare Blockers', firstStrikeDamage: 'First-Strike Damage', combatDamage: 'Combat Damage', endCombat: 'End of Combat', main2: 'Main 2', end: 'End Step', cleanup: 'Cleanup' };
@@ -419,6 +420,7 @@ export class Game {
     this.notify();
     switch (step) {
       case 'untap': {
+        const untapped = [];
         for (const c of [...this.battlefield]) {
           if (c.phasedOut && c.controller === ap) {
             if (!this.activeStatics('CantPhaseIn').some(s => matchValid(this, c, s.p.ValidCard || 'Card', s.ctx))) { c.phasedOut = false; this.touch(); }
@@ -428,9 +430,10 @@ export class Game {
             c.sick = false;
             if (c.skipNextUntap) { c.skipNextUntap = false; continue; } // exerted
             if (c.tapped && this.hasKeyword(c, 'You may choose not to untap CARDNAME during your untap step.') && await this.ask(ap, { type: 'confirm', prompt: `Keep ${this.name(c)} tapped?`, purpose: 'keepTapped', cardId: c.id })) continue;
-            if (c.tapped && !this.hasKeyword(c, "CARDNAME doesn't untap during your untap step.") && !c.doesntUntap && !this.untapPrevented(c)) await this.untap(c);
+            if (c.tapped && !this.hasKeyword(c, "CARDNAME doesn't untap during your untap step.") && !c.doesntUntap && !this.untapPrevented(c) && await this.untap(c)) untapped.push(c);
           } else if (c.tapped && this.activeStatics('UntapOtherPlayer').some(s => s.ctx.you === c.controller && matchValid(this, c, s.p.ValidCard || 'Permanent.YouCtrl', s.ctx))) await this.untap(c);
         }
+        if (untapped.length) this.fire('UntapAll', { Player: ap, Cards: untapped, Amount: untapped.length });
         // goad wears off at goader's next turn
         for (const c of this.battlefield) if (c.goadedBy.includes(ap)) c.goadedBy = c.goadedBy.filter(x => x !== ap);
         return; // no priority
@@ -528,6 +531,7 @@ export class Game {
       const np = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
       for (const k of Object.keys(np)) if (keep[k]) np[k] = pl.pool[k] || 0;
       if (lost > 0 && this.replacementsFor('LoseMana').some(({ p, ctx }) => !p.ValidPlayer || matchValid(this, pl, p.ValidPlayer, ctx))) np.C += lost;
+      keepCombatMana(this, pl, np);
       pl.pool = np;
     }
     this.touch();
@@ -653,7 +657,7 @@ export class Game {
       if (!this.triggerZoneOk(p, zone, host, rp)) continue;
       // "When CARDNAME enters during the declare attackers step, ..." (Phase$ on a non-phase trigger)
       if (p.Phase && mode !== 'Phase' && !p.Phase.split(',').map(s => s.trim()).includes(FORGE_PHASE[this.step])) continue;
-      const ctx = { host, you: controller, trig: rp, svars: t.svars, door: t.door, sa: { svars: t.svars, host, controller, trig: rp, root() { return { x: host.xPaid || 0, paid: {} }; }, parent: null, targets: [] } };
+      const ctx = { host, you: controller, trig: rp, svars: t.svars, door: t.door, sa: { svars: t.svars, host, controller, trig: rp, root() { return { x: host.xPaid || 0, paid: {} }; }, parent: null, targets: [], trigRemembered: t.delayed ? t.delayed.remembered : undefined } };
       try {
         if (!triggerMatches(this, p, host, rp, ctx)) continue;
         if (!checkPresence(this, p, ctx)) continue;
@@ -688,6 +692,7 @@ export class Game {
       if (t.delayed) { t.delayed.fired = true; }
     }
     if (this.delayed.some(d => d.fired)) this.delayed = this.delayed.filter(d => !d.fired);
+    onFire(this, mode, rp);
   }
 
   triggerZoneOk(p, zone, host, rp) {
@@ -1530,7 +1535,9 @@ export class Game {
   }
 
   async mill(p, n, sa) {
-    const cards = p.library.slice(0, n);
+    const rr = await this.applySimpleReplacement('Mill', { Affected: p, Player: p.id, Number: n }, sa);
+    if (!rr) return [];
+    const cards = p.library.slice(0, rr.Number);
     this.beginBatch();
     for (const c of cards) { await this.moveCard(c, 'graveyard', { cause: sa, silent: true }); this.fire('Milled', { Card: c, Player: p.id }); }
     await this.endBatch();
@@ -1635,7 +1642,7 @@ export class Game {
   untapPrevented(c) {
     for (const r of this.chars(c).replacements) {
       const p = r.parsed.p;
-      if (p.Event === 'Untap' && p.Layer === 'CantHappen') return true;
+      if (p.Event === 'Untap' && p.Layer === 'CantHappen' && checkPresence(this, p, { host: c, you: c.controller, svars: r.svars })) return true;
     }
     return false;
   }
@@ -1862,6 +1869,7 @@ export class Game {
 
   setDayNight(v) {
     if (this.dayNight === v) return;
+    const before = this.dayNight;
     this.dayNight = v;
     this.log(`It becomes ${v.toLowerCase()}.`);
     for (const c of this.battlefield) {
@@ -1874,7 +1882,7 @@ export class Game {
       this.log(`${this.name(c)} transforms.`);
       this.fire('Transformed', { Card: c });
     }
-    this.fire('DayTimeChanges', { DayTime: v });
+    if (before) this.fire('DayTimeChanges', { DayTime: v });
     this.touch();
   }
 
@@ -1967,7 +1975,7 @@ export class Game {
         }
       }
     }
-    n = rp.CounterNum;
+    n = capCounters(this, obj, type, rp.CounterNum);
     if (n <= 0) return 0;
     const before = obj.counters[type] || 0;
     obj.counters[type] = before + n;
@@ -1976,7 +1984,7 @@ export class Game {
     const cap = Math.min(n, 30);
     for (let i = 0; i < cap; i++) this.fire('CounterAdded', { Card: obj.isCard ? obj : null, Player: obj.isPlayer ? obj.id : null, Valid: obj, CounterType: type, CounterAmount: 1, Source: sa ? sa.host : null, Previous: before + i });
     this.fire('CounterAddedOnce', { Card: obj.isCard ? obj : null, Player: obj.isPlayer ? obj.id : null, CounterType: type, Amount: n, CounterAmount: n, Source: sa ? sa.host : null, Previous: before });
-    this.fire('CounterTypeAddedAll', { Object: obj, Card: obj.isCard ? obj : null, Player: obj.isPlayer ? obj.id : null, CounterType: type, Amount: n });
+    this.fire('CounterTypeAddedAll', { Object: obj, Card: obj.isCard ? obj : null, Player: obj.isPlayer ? obj.id : null, CounterType: type, Amount: n, Source: sa ? sa.host : null, SourcePlayer: sa ? sa.controller : null });
     // saga chapters
     if (type === 'LORE' && obj.isCard) await this.sagaChapters(obj, before, before + n);
     return n;

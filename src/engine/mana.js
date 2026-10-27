@@ -36,7 +36,9 @@ export function isManaToken(tok) {
 }
 
 export function cloneCost(c) {
-  return { generic: c.generic, colored: { ...c.colored }, hybrid: c.hybrid.map(h => [...h]), twobrid: [...c.twobrid], phyrexian: [...c.phyrexian], x: c.x, snow: c.snow };
+  const r = { generic: c.generic, colored: { ...c.colored }, hybrid: c.hybrid.map(h => [...h]), twobrid: [...c.twobrid], phyrexian: [...c.phyrexian], x: c.x, snow: c.snow };
+  if (c.waterbend) r.waterbend = c.waterbend; // (how much of the generic part is a waterbend cost: mech-newsets.js)
+  return r;
 }
 
 export function addCosts(a, b) {
@@ -48,6 +50,7 @@ export function addCosts(a, b) {
   r.phyrexian.push(...b.phyrexian);
   r.x += b.x;
   r.snow += b.snow;
+  if (b.waterbend) r.waterbend = r.waterbend === 'X' || b.waterbend === 'X' ? 'X' : (+r.waterbend || 0) + +b.waterbend;
   return r;
 }
 

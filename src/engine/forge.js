@@ -89,6 +89,8 @@ export function parseAbility(str) {
     if (idx === 0 && (k === 'SP' || k === 'AB' || k === 'DB' || k === 'ST')) { kind = k; api = v; continue; }
     p[k] = v;
   }
+  // earthbend's target is part of the action: "target land you control" (mech-newsets.js)
+  if (api === 'Earthbend' && !p.ValidTgts && !p.Defined) { p.ValidTgts = 'Land.YouCtrl'; p.TgtPrompt = p.TgtPrompt || 'Select target land you control'; }
   r = { kind, api, p, raw: str };
   abilityCache.set(str, r);
   return r;
