@@ -5,10 +5,10 @@
 // undone, and the deck saves on this device as you go. Decks play like any precon, solo or with friends.
 import { Pip } from './cardview.jsx';
 import { subscribeImages, imagesVersion } from './images.js';
-import { buildIndex, BASICS, deckProblems, canPair, loadCustomDecks, saveCustomDeck, deleteCustomDeck, newDeckId } from './customdecks.js';
+import { buildIndexAsync, BASICS, deckProblems, canPair, loadCustomDecks, saveCustomDeck, deleteCustomDeck, newDeckId } from './customdecks.js';
 import { Modal } from './dialogs.jsx';
 import { onClaude } from '../net/roomclient.js';
-import { createDeckGuide } from './deckguide.js';
+import { createDeckGuideAsync } from './deckguide.js';
 import { parseDeckText, countCards, deckToText, packDeckLink } from './decktext.js';
 import { loadAllCards, subscribeAllCards, allCardsVersion, allCardsLoaded, allCardsProgress, cardMeta, fullPoolHere } from './allcards.js';
 import { CardSheet, HoverCard, useHoverPreview, CardTile } from './buildercard.jsx';
@@ -159,16 +159,37 @@ function StartPanel({ onPick, onPrecon, onImport, commanders, waiting }) {
   );
 }
 
-export function DeckBuilder({ data, editId, fromId, shared, onDone, onPlay, onHome }) {
-  useSyncExternalStore(subscribeImages, imagesVersion);
-  // the whole card pool loads as the builder opens (the precons' cards are there at once)
-  useSyncExternalStore(subscribeAllCards, allCardsVersion);
+// The cards the builder knows: the precons' at once, then every card once the rest of the pool has loaded. Both are
+// read in steps (buildIndexAsync, createDeckGuideAsync), so even a slow laptop never freezes reading 32,000 cards.
+export function DeckBuilder(props) {
+  const { data } = props;
+  const [pool, setPool] = useState(null);
   const [loadError, setLoadError] = useState(null);
-  useEffect(() => { loadAllCards(data.db).catch(e => setLoadError(e.message)); }, []);
-  const full = allCardsLoaded();
-  const index = useMemo(() => buildIndex(data.db.raw), [data, full]);
-  const byName = useMemo(() => new Map(index.map(c => [c.name, c])), [index]);
-  const H = useMemo(() => createDeckGuide(index, data.decks, data.support || {}, full ? cardMeta : undefined), [index]);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const read = async full => {
+      const index = await buildIndexAsync(data.db.raw);
+      const H = await createDeckGuideAsync(index, data.decks, data.support || {}, full ? cardMeta : undefined);
+      return { index, byName: new Map(index.map(c => [c.name, c])), H, full };
+    };
+    (async () => {
+      if (!pool && !allCardsLoaded()) { const base = await read(false); if (!alive) return; setPool(base); }
+      if (!fullPoolHere()) return;
+      try { await loadAllCards(data.db); } catch (e) { if (alive) setLoadError(e.message); return; }
+      const all = await read(true);
+      if (alive) setPool(all);
+    })();
+    return () => { alive = false; };
+  }, [attempt]);
+  if (!pool) return <div className="app builder"><div className="loading"><div className="label">Reading the cards…</div><div className="bar"><i style={{ width: '50%' }} /></div></div></div>;
+  return <Builder {...props} pool={pool} loadError={loadError} retry={() => { setLoadError(null); setAttempt(a => a + 1); }} />;
+}
+
+function Builder({ data, pool, loadError, retry, editId, fromId, shared, onDone, onPlay, onHome }) {
+  useSyncExternalStore(subscribeImages, imagesVersion);
+  useSyncExternalStore(subscribeAllCards, allCardsVersion);
+  const { index, byName, H, full } = pool;
   const commanderCount = useMemo(() => index.filter(c => c.commander && H.feats.get(c.name).legal).length, [index]);
   // where it starts: a saved deck, a copy of a precon, or nothing
   const [start] = useState(() => {
@@ -352,7 +373,7 @@ export function DeckBuilder({ data, editId, fromId, shared, onDone, onPlay, onHo
       </div>
       <div className={`b-grid pane-${pane}`}>
         <section className="panel b-left" aria-label="Find cards">
-          {!fullPoolHere() ? <div className="b-loading" role="note">Here you can build with the 7,000 cards the precons and community decks play. Every Commander card (over 32,000) is in the deck builder at lotusgoats.com.</div> : !full ? <div className="b-loading" role="status">{loadError ? <>Couldn’t load the rest of the cards ({loadError}). The precons’ cards are all here. <button className="linkish" onClick={() => { setLoadError(null); loadAllCards(data.db).catch(e => setLoadError(e.message)); }}>Try again</button></> : <><span>Loading every Magic card… the precons’ cards are ready now.</span><i className="bar"><b style={{ width: `${Math.round(allCardsProgress() * 100)}%` }} /></i></>}</div> : null}
+          {!fullPoolHere() ? <div className="b-loading" role="note">Here you can build with the 7,000 cards the precons and community decks play. Every Commander card (over 32,000) is in the deck builder at lotusgoats.com.</div> : !full ? <div className="b-loading" role="status">{loadError ? <>Couldn’t load the rest of the cards ({loadError}). The precons’ cards are all here. <button className="linkish" onClick={retry}>Try again</button></> : <><span>{allCardsLoaded() ? 'Reading every Magic card…' : 'Loading every Magic card…'} the precons’ cards are ready now.</span><i className="bar"><b style={{ width: `${Math.round(allCardsProgress() * 100)}%` }} /></i></>}</div> : null}
           <div className="builder-tabs" role="tablist">
             {commanders.length ? <button role="tab" aria-selected={left === 'search'} className={left === 'search' ? 'on' : ''} onClick={() => setLeft('search')}>{ICONS.search}Find cards</button> : null}
             <button role="tab" aria-selected={left === 'commander'} className={left === 'commander' ? 'on' : ''} onClick={() => { setLeft('commander'); setPartnerMode(false); }}>{ICONS.crown}{commanders.length ? 'Commanders' : 'Choose a commander'}</button>

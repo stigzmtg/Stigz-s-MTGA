@@ -4,7 +4,7 @@
 // a job the deck is short on, played in many precons or in this commander's own precon, a sensible cost). The
 // checklist, the "best for this deck" sort, the card sheets and the numbers all come from here; picking the cards is
 // up to you.
-import { BASICS } from './customdecks.js';
+import { BASICS, runSteps, runStepsAsync } from './customdecks.js';
 
 const COLORS = ['W', 'U', 'B', 'R', 'G'];
 const COLOR_NAMES = { W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' };
@@ -72,8 +72,11 @@ function normalize(c) {
 }
 
 // ---- reads every card once, then answers questions about a deck
-// metaOf(name): [Scryfall picture, EDHREC rank, banned] once the whole card pool is loaded (allcards.js), else null
-export function createDeckGuide(index, decks, support = {}, metaOf = () => null) {
+// metaOf(name): [Scryfall picture, EDHREC rank, banned] once the whole card pool is loaded (allcards.js), else null.
+// createDeckGuideAsync does the reading in steps, so the page stays responsive while it reads 32,000 cards.
+export const createDeckGuide = (...args) => runSteps(guideSteps(...args));
+export const createDeckGuideAsync = (...args) => runStepsAsync(guideSteps(...args));
+function* guideSteps(index, decks, support = {}, metaOf = () => null) {
   const pop = new Map(), leads = new Map();
   for (const d of decks) {
     if (d.custom) continue;
@@ -82,7 +85,9 @@ export function createDeckGuide(index, decks, support = {}, metaOf = () => null)
   }
   const allTypes = new Set();
   const feats = new Map();
+  let step = 0;
   for (const c of index) {
+    if (++step % 300 === 0) yield;
     const t = normalize(c);
     const roles = new Set(Object.keys(ROLE_TESTS).filter(r => ROLE_TESTS[r](t, c)));
     if (roles.has('wipe')) roles.delete('removal');
@@ -109,7 +114,7 @@ export function createDeckGuide(index, decks, support = {}, metaOf = () => null)
   const typeWords = new Map();
   for (const ty of allTypes) { typeWords.set(ty.toLowerCase(), ty); for (const p of plural(ty)) typeWords.set(p.toLowerCase(), ty); }
   const mentions = text => { const out = new Set(); for (const w of text.match(/[a-z][a-z'-]+/g) || []) { const ty = typeWords.get(w); if (ty) out.add(ty); } return out; };
-  for (const f of feats.values()) f.mentions = mentions(f.t);
+  for (const f of feats.values()) { f.mentions = mentions(f.t); if (++step % 1500 === 0) yield; }
 
   // ---- the commander's plan
   function plan(state) {

@@ -89,9 +89,12 @@ function copiesAllowed(name, typeLine, text) {
   const m = /A deck can have up to (\w+) cards named/i.exec(text);
   return m ? NUMBER_WORDS[m[1].toLowerCase()] || +m[1] || 1 : 1;
 }
-export function buildIndex(raw) {
+// (in steps: buildIndexAsync lets the page breathe every few hundred cards, so 32,000 of them never freeze it)
+function* indexSteps(raw) {
   const out = [];
+  let n = 0;
   for (const name of Object.keys(raw)) {
+    if (++n % 400 === 0) yield;
     const s = raw[name];
     let cost = null, type = null, text = '';
     const ci = new Set();
@@ -122,6 +125,13 @@ export function buildIndex(raw) {
   out.sort((a, b) => a.name.localeCompare(b.name));
   return out;
 }
+export const buildIndex = raw => runSteps(indexSteps(raw));
+export const buildIndexAsync = raw => runStepsAsync(indexSteps(raw));
+
+// run a generator of work to the end: at once, or with a pause for the page between steps
+export const runSteps = g => { let r; while (!(r = g.next()).done); return r.value; };
+const breather = () => new Promise(res => { if (typeof MessageChannel === 'undefined') { setTimeout(res, 0); return; } const ch = new MessageChannel(); ch.port1.onmessage = () => res(); ch.port2.postMessage(0); });
+export async function runStepsAsync(g) { let r; while (!(r = g.next()).done) await breather(); return r.value; }
 
 // what's wrong with a deck, if anything (an empty list means it's ready to play)
 export function deckProblems(deck, byName, identity) {
