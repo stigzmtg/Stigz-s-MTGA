@@ -1269,15 +1269,22 @@ function timingOk(game, pid, card, opt) {
   return game.canSorcery(pid);
 }
 
+// the static that stops this spell being cast now, if any (its host names it in whyCantPlay)
 function cantBeCast(game, pid, card) {
   for (const s of game.activeStatics('CantBeCast')) {
     if (s.p.ValidCard && !matchValid(game, card, s.p.ValidCard, s.ctx)) continue;
     if (s.p.Caster && !matchValid(game, game.players[pid], s.p.Caster, s.ctx)) continue;
     if (s.p.Origin && !s.p.Origin.split(',').map(z => zoneMap[z] || z.toLowerCase()).includes(card.zone)) continue;
     if (!staticTimeOk(game, s)) continue;
-    return true;
+    // "only any time they could cast a sorcery" (Teferi, Time Raveler)
+    if (s.p.OnlySorcerySpeed === 'True' && game.canSorcery(pid)) continue;
+    // "no more than N spells each turn" (Rule of Law, Ethersworn Canonist, Fires of Invention): once N such were cast
+    if (s.p.NumLimitEachTurn && game.players[pid].spellsCastThisTurn.filter(r => matchValid(game, r.lki, s.p.ValidCard || 'Card', s.ctx)).length < +s.p.NumLimitEachTurn) continue;
+    // "mana value greater than the number of lands that player controls" (Lavinia, Azorius Renegade)
+    if (s.p.cmcGT === 'Land' && game.chars(card).cmc <= game.battlefield.filter(c => c.controller === pid && game.chars(c).types.has('Land')).length) continue;
+    return s;
   }
-  return false;
+  return null;
 }
 
 // Build the spell SA for an option (no state change).
@@ -1451,7 +1458,8 @@ export function whyCantPlay(game, pid, card) {
             : `${name} can only be cast in a main phase (it isn’t an instant and doesn’t have flash).`);
       continue;
     }
-    if (cantBeCast(game, pid, card)) { why.push(`Something on the battlefield stops ${name} being cast right now.`); continue; }
+    const stop = cantBeCast(game, pid, card);
+    if (stop) { why.push(`${stop.host && stop.host.def ? game.name(stop.host) : 'Something on the battlefield'} stops ${name} being cast right now${stop.p.Description ? `: “${stop.p.Description.replace(/CARDNAME/g, game.name(stop.host))}”` : '.'}`); continue; }
     const sa = buildSpellSA(game, pid, card, opt);
     const { mana, extra } = spellCost(game, pid, card, opt, sa);
     if (!canPayNonMana(game, sa, extra)) { why.push(`You can’t pay the rest of ${name}’s cost (${extra.parts.map(pt => pt.type === 'Sac' ? 'something to sacrifice' : pt.type === 'Discard' ? 'a card to discard' : pt.type === 'Exile' ? 'a card to exile' : pt.type === 'PayLife' ? 'life to pay' : pt.type === 'tapXType' ? 'creatures to tap' : 'more').join(', ')}).`); continue; }

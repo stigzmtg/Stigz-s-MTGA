@@ -29,6 +29,50 @@ test('Why a card can’t be played: mana, timing, the land drop, targets', async
   const rancor = await T.put(0, 'Rancor', 'hand');
   expect(/nothing it can target/.test(whyCantPlay(g, 0, rancor) || ''), `targets (${whyCantPlay(g, 0, rancor)})`);
 });
+test('Spell limits: Teferi (sorcery speed), Rule of Law and Canonist (one a turn), Lavinia (lands), Fires (your turn, two)', async T => {
+  const { whyCantPlay } = await import('../src/engine/abilities.js');
+  const g = T.game;
+  const can = (pid, name) => T.put(pid, name, 'hand').then(c => { T.mana(pid); g.priority = pid; return whyCantPlay(g, pid, c); });
+  // Teferi, Time Raveler: opponents only at sorcery speed
+  const teferi = await T.put(1, 'Teferi, Time Raveler');
+  expect(await can(0, 'Divination') === null, 'a sorcery on your own main phase');
+  expect(await can(0, 'Lightning Bolt') === null, 'an instant when you could cast a sorcery');
+  g.activePlayer = 1;
+  expect(/Teferi, Time Raveler stops Lightning Bolt/.test(await can(0, 'Lightning Bolt') || ''), 'no instant on their turn, and Teferi is named');
+  { const w = await can(1, 'Lightning Bolt'); expect(w === null, `Teferi’s controller is not limited (${w})`); }
+  g.activePlayer = 0;
+  await g.moveCard(teferi, 'graveyard', { silent: true });
+  // Rule of Law: one spell each turn, for everyone
+  const law = await T.put(1, 'Rule of Law');
+  expect(await can(0, 'Lightning Bolt') === null, 'the first spell');
+  await T.cast('Llanowar Elves');
+  expect(/Rule of Law/.test(await can(0, 'Lightning Bolt') || ''), 'not a second one');
+  g.players[0].spellsCastThisTurn = [];
+  expect(await can(0, 'Lightning Bolt') === null, 'a new turn, a new spell');
+  await g.moveCard(law, 'graveyard', { silent: true });
+  // Ethersworn Canonist: one nonartifact spell; artifacts still fine
+  await T.put(1, 'Ethersworn Canonist');
+  await T.cast('Llanowar Elves');
+  expect(/Ethersworn Canonist/.test(await can(0, 'Lightning Bolt') || ''), 'no second nonartifact spell');
+  expect(await can(0, 'Sol Ring') === null, 'an artifact spell is fine');
+  g.players[0].spellsCastThisTurn = [];
+  for (const c of [...g.battlefield]) if (c.controller === 1) await g.moveCard(c, 'graveyard', { silent: true });
+  // Lavinia: noncreature spells with mana value above your land count
+  await T.put(1, 'Lavinia, Azorius Renegade');
+  await T.put(0, 'Plains'); await T.put(0, 'Island');
+  expect(await can(0, 'Lightning Bolt') === null, 'mana value 1 with two lands');
+  expect(/Lavinia/.test(await can(0, 'Divination') || ''), 'not mana value 3 with two lands');
+  expect(await can(0, 'Serra Angel') === null, 'creatures are fine');
+  for (const c of [...g.battlefield]) if (c.controller === 1) await g.moveCard(c, 'graveyard', { silent: true });
+  // Fires of Invention: its controller casts only on their own turn, and two spells a turn
+  await T.put(0, 'Fires of Invention');
+  expect(await can(0, 'Lightning Bolt') === null, 'on your turn');
+  g.activePlayer = 1;
+  expect(/Fires of Invention/.test(await can(0, 'Lightning Bolt') || ''), 'not on their turn');
+  g.activePlayer = 0;
+  await T.cast('Llanowar Elves'); await T.cast('Llanowar Elves');
+  expect(/Fires of Invention/.test(await can(0, 'Lightning Bolt') || ''), 'not a third spell');
+});
 test('Graft: enters with counters, may move one onto another creature you control', async T => {
   const spider = await T.cast('Aquastrand Spider');
   expect(spider.counters.P1P1 === 2, `two counters (${spider.counters.P1P1})`);
