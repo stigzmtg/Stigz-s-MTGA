@@ -16,8 +16,9 @@ const OURS = /^(pa|pk|op)-/;
 const LOCAL = /^pa-(cid|savecode|account|device|open-replay|home-join|uisize|motion)$|^pa-room(cfg)?-/;
 const REPLAY = /^pa-replay-(.+)$/;
 const DECKS = 'pa-custom-decks', GONE = 'pa-deleted-decks', SEEN = 'pa-deck-cache';
-// your own decks, the ones you deleted and others' decks met: Commander's, and Pokémon's (src/ptcg/customdecks.js)
-const DECK_KEYS = [[DECKS, GONE, SEEN], ['pk-custom-decks', 'pk-deleted-decks', 'pk-deck-cache']];
+// your own decks, the ones you deleted and others' decks met, for each game that keeps them: Commander's, Pokémon's
+// (src/ptcg/customdecks.js) and One Piece's (src/optcg/ui/mydecks.js)
+const DECK_SETS = [[DECKS, GONE, SEEN], ['pk-custom-decks', 'pk-deleted-decks', 'pk-deck-cache'], ['op-custom-decks', 'op-deleted-decks', 'op-deck-cache']];
 const MAX_PACKED = 2_400_000;               // the server takes up to 2,500,000 characters
 export const TEXT_PREFIX = 'TCGSAVE:';
 export const CODE_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -78,8 +79,8 @@ export function mergeSaves(a, b, winner = 'b') {
     return r.replay ? { ...r, replay: false } : r;
   });
   if (games.length) out[REC_KEY] = JSON.stringify(games); else delete out[REC_KEY];
-  // (Commander decks, then Pokémon decks, kept the same way)
-  for (const [DECKS, GONE, SEEN] of DECK_KEYS) {
+  // (each game's decks kept the same way)
+  for (const [DECKS, GONE, SEEN] of DECK_SETS) {
     // your own decks: the latest version of each, except ones deleted on either side
     const gone = [...new Set([...list(lose[GONE]), ...list(win[GONE])].filter(x => typeof x === 'string'))].slice(-300);
     const decks = new Map();
@@ -110,7 +111,7 @@ export function summarize(items) {
     games: recs.length, mtg: n('mtg'), pk: n('pk'), op: n('op'),
     wins: recs.filter(r => r.result === 'win').length,
     replays: Object.keys(items).filter(k => REPLAY.test(k)).length,
-    decks: DECK_KEYS.reduce((n, [k]) => n + list(items[k]).length, 0),
+    decks: DECK_SETS.reduce((n, [k]) => n + list(items[k]).length, 0),
     name: typeof items['pa-nick'] === 'string' ? items['pa-nick'].slice(0, 40) : null,
     avatar: typeof items['pa-avatar'] === 'string' ? items['pa-avatar'] : null,
     sleeves: !!items['pa-deckstyle'],

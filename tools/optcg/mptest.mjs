@@ -1,7 +1,9 @@
 // One Piece battles with a friend, in real browsers: the host makes a room, the guest opens the invite link and takes
 // the second seat, the host starts, and both play (a computer player makes their choices for the first turns). Both
 // boards must match. Then the guest reloads mid-battle, a third person watches, the host ends the battle and starts
-// another one.
+// another one. CUSTOM=1: both bring a deck of their own from the deck builder (saved on their device, unknown to the
+// other browsers): the host sees the guest's deck in the room, the watcher and the reloaded guest build the same battle
+// from the room, and the guest changing their deck mid-battle doesn't change it.
 // Usage: node tools/optcg/mptest.mjs [out dir] [turns=8]   (serve dist/ on :8765 first; P2P=1 uses real peer-to-peer rooms)
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -19,6 +21,11 @@ const pages = [];
 const errors = [];
 let failed = false;
 const check = (ok, msg) => { console.log((ok ? 'ok   ' : 'FAIL ') + msg); if (!ok) failed = true; };
+// CUSTOM=1: decks of the players' own, as the deck builder saves them (src/optcg/ui/mydecks.js)
+const CUSTOM = !!process.env.CUSTOM;
+const starters = JSON.parse(fs.readFileSync(new URL('../../data/optcg/decks.json', import.meta.url), 'utf8'));
+const ownDeck = (id, name, from, swap) => { const d = starters.find(x => x.id === from); return { id, name, leader: d.leader, cards: d.cards.map(([k, n]) => (swap && k === swap[0] ? [swap[1], n] : [k, n])), updated: Date.now() }; };
+const OWN = { host: ownDeck('opd-hanadeck1', 'Hana’s Red Crew', 'st01', ['ST01-007', 'OP01-016']), guest: ownDeck('opd-gusdeck22', 'Gus’s Green Wall', 'st02') };
 async function newPlayer(label, deck) {
   const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 } });
   await ctx.addInitScript(([p2p, relay]) => { if (p2p) window.__paTransport = 'p2p'; if (relay) window.__paTransport = 'relay'; if (relay === 'poll') window.__paRelayPoll = true; }, [P2P, RELAY]);
@@ -28,10 +35,15 @@ async function newPlayer(label, deck) {
     });
     await ctx.addInitScript(mock);
   }
-  await ctx.addInitScript(([t, d]) => {
+  const own = CUSTOM && OWN[label];
+  await ctx.addInitScript(([t, d, own]) => {
     window.__opAutoplay = t;
-    try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'fast' })); localStorage.setItem('pa-tips', JSON.stringify({ op: { off: true } })); if (!localStorage.getItem('op-lobby')) { const [m, l] = d.split('@'); localStorage.setItem('op-lobby', JSON.stringify({ mine: m, opp: 'random', leads: l ? { [m]: l } : {} })); } } catch {}
-  }, [TURNS, deck]);
+    try {
+      localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'fast' })); localStorage.setItem('pa-tips', JSON.stringify({ op: { off: true } }));
+      if (own && !localStorage.getItem('op-custom-decks')) localStorage.setItem('op-custom-decks', JSON.stringify([own]));
+      if (!localStorage.getItem('op-lobby')) { const [m, l] = (own ? own.id : d).split('@'); localStorage.setItem('op-lobby', JSON.stringify({ mine: m, opp: 'random', leads: l ? { [m]: l } : {} })); }
+    } catch {}
+  }, [TURNS, deck, own || null]);
   const page = await ctx.newPage();
   page.label = label;
   page.on('pageerror', e => errors.push(`${label}: ${e.message}`));
@@ -108,7 +120,11 @@ await guest.click('button:has-text("Join")');
 await guest.waitForSelector('button:has-text("Sit here")', { timeout: 30000 });
 await guest.click('button:has-text("Sit here")');
 await host.waitForSelector('.seat-row:has-text("Gus")', { timeout: 30000 });
-await host.waitForSelector(`.seat-row:has-text("${guestCode}")`, { timeout: 30000 });
+await host.waitForSelector(`.seat-row:has-text("${CUSTOM ? OWN.guest.name : guestCode}")`, { timeout: 30000 });
+if (CUSTOM) {
+  check(true, 'the host sees the guest’s own deck in the room (its list came with the guest)');
+  check(await guest.waitForSelector(`.seat-row:has-text("${OWN.host.name}")`, { timeout: 30000 }).then(() => true, () => false), 'and the guest sees the host’s');
+}
 await guest.screenshot({ path: `${OUT}/2-guest-room.png` });
 await host.waitForSelector('button:has-text("Start battle"):not([disabled])', { timeout: 30000 });
 await host.click('button:has-text("Start battle")');
@@ -125,13 +141,25 @@ console.log('host view ', JSON.stringify(sa));
 console.log('guest view', JSON.stringify(sb));
 check(JSON.stringify(sa) === JSON.stringify(sb), 'host and guest boards match');
 const deckNames = await host.evaluate(async () => { const r = await fetch('data/optcg/decks.json'); const d = await r.json(); return Object.fromEntries(d.map(x => [x.id, x.name])); });
-check(sa.length === 2 && sa.some(s => s.name === 'Gus' && s.deck === deckNames[guestDeck]) && sa.some(s => s.name === 'Hana' && s.deck === deckNames.st01), 'each player brought their own deck');
+check(sa.length === 2 && sa.some(s => s.name === 'Gus' && s.deck === (CUSTOM ? OWN.guest.name : deckNames[guestDeck])) && sa.some(s => s.name === 'Hana' && s.deck === (CUSTOM ? OWN.host.name : deckNames.st01)), 'each player brought their own deck');
+if (CUSTOM) {
+  // the whole decks, as each browser dealt them: the same lists on both, the ones the players brought
+  const dealt = p => p.evaluate(() => window.__opDebug.session.game.players.map(q => [q.leader.def.id, ...[...q.hand, ...q.deck, ...q.trash, ...q.life, ...q.characters, ...(q.stage ? [q.stage] : [])].map(c => c.def.id).sort()].join(',')));
+  const want = [OWN.host, OWN.guest].map(d => [d.leader, ...d.cards.flatMap(([k, n]) => Array(n).fill(k)).sort()].join(','));
+  const [dh, dg] = await Promise.all([dealt(host), dealt(guest)]);
+  check(JSON.stringify(dh) === JSON.stringify(want) && JSON.stringify(dg) === JSON.stringify(want), 'both browsers dealt each player exactly the deck they built');
+  // during the battle the lists travel in the host's config, not in each player's presence
+  const inPresence = await host.evaluate(() => [...window.__opDebug.room.members().values()].map(m => !!m.presence.dk));
+  check(inPresence.every(x => !x), 'no deck list in anyone’s presence while the battle is on');
+}
 if (process.env.GUEST_LEADER) check(sa.some(s => s.name === 'Gus' && s.leader.startsWith(process.env.GUEST_LEADER)), `the guest leads with ${process.env.GUEST_LEADER} on both screens`);
 
 // the guest reloads with the invite link (its name is remembered: straight back in), a third person watches
 const LATER = TURNS + 4;
 await guest.context().addInitScript(t => { window.__opAutoplay = t; }, LATER);
 await host.evaluate(t => { window.__opAutoplay = t; }, LATER);
+// (CUSTOM: the guest changes their deck in the builder first, taking a card out: the battle goes on as it started)
+if (CUSTOM) await guest.evaluate(() => { const l = JSON.parse(localStorage.getItem('op-custom-decks')); l[0].cards = l[0].cards.slice(1); localStorage.setItem('op-custom-decks', JSON.stringify(l)); });
 await guest.goto(BASE + '#' + hash);
 await guest.reload();
 const watcher = await newPlayer('watcher', 'st03');
@@ -173,6 +201,14 @@ if (!over) {
   await host.click('.dialog button:has-text("Back to room")');
   check(true, 'battle was already over; host went back to the room');
   await guest.click('.topbar button:has-text("Back to room")').catch(() => {});
+}
+if (CUSTOM) {
+  // the guest's changed deck is short of 50 cards: the next battle can't start until it's finished again
+  const waiting = await host.waitForSelector('button:has-text("deck isn’t finished")[disabled]', { timeout: 30000 }).then(() => true, () => false);
+  check(waiting, 'the host can’t start with the guest’s unfinished deck, and the button says why');
+  await guest.evaluate(own => { localStorage.setItem('op-custom-decks', JSON.stringify([own])); }, OWN.guest);
+  await guest.reload();
+  await guest.waitForSelector('.op-room', { timeout: 60000 });
 }
 await host.waitForSelector('button:has-text("Start battle"):not([disabled])', { timeout: 30000 });
 await host.evaluate(() => { window.__opAutoplay = 3; });

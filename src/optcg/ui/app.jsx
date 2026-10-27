@@ -1,12 +1,14 @@
-// The One Piece side of the site: load the starter decks and their cards, then lobby <-> battle.
+// The One Piece side of the site: load the starter decks and their cards, then lobby <-> battle (and the deck builder).
 import { OnePieceGame } from '../game.js';
 import { OnePieceAI } from '../ai.js';
 import { OpHuman } from './human.js';
 import { OpLobby } from './lobby.jsx';
 import { OpBattle } from './battle.jsx';
+import { OpBuilder } from './builder.jsx';
 import { HowToPlayOp } from './howto.jsx';
 import { initOpImages } from './images.js';
-import { deckById, baseDeckId } from './decks.js';
+import { baseDeckId, deckOfSeat } from './decks.js';
+import { isCustomId, customDeck, packDeck, unpackDeck, rememberDeck } from './mydecks.js';
 import { createStore, loadSettings, fetchJSON, safeStorage } from '../../ui/common.js';
 import { makePace } from '../../ui/pacing.js';
 import { Lockstep, LocalSeatAgent, RemoteSeatAgent } from '../../net/lockstep.js';
@@ -46,8 +48,11 @@ function newBattle(data, cfg) {
   const recorder = new Recorder();
   game.agents = game.agents.map(a => recorder.wrap(a));
   game.start().then(() => store.bump(), e => { console.error(e); store.bump(); });
-  return { game, human, ai, store, settings, cfg, me: 0, recorder };
+  return { game, human, ai, store, settings, cfg, me: 0, recorder, decks: [cfg.mine, cfg.opp] };
 }
+
+// a deck as a list that travelled with it (a replay, a battle's config), else by its id
+const deckFrom = (data, packed, id) => deckOfSeat(data, packed, id) || data.decks[0];
 
 // watching a replay: the same seed and decks, both seats answering from the recorded decisions
 function newReplayBattle(data, rep) {
@@ -57,7 +62,8 @@ function newReplayBattle(data, rep) {
   const agent = new ReplayAgent(rep.log, ctl, null, opDelay);
   const game = new OnePieceGame({
     db: data.cards, seed: rep.seed, onUpdate: () => store.bump(), maxTurns: rep.maxTurns || 60,
-    players: rep.players.map(p => ({ name: p.name, deck: deckById(data, p.deckId) || data.decks[0], agent, human: p.human })),
+    // (your own deck may have changed since: the replay keeps the list it was played with)
+    players: rep.players.map(p => ({ name: p.name, deck: deckFrom(data, p.opDeck, p.deckId), agent, human: p.human })),
   });
   game.start().then(() => { ctl.end(); store.bump(); }, e => { console.error(e); store.bump(); });
   return { game, human, store, settings: loadSettings(), cfg: null, me: rep.seat || 0, replay: ctl, replayId: rep.id };
@@ -81,11 +87,24 @@ function newOnlineBattle(data, room, cfg) {
   }
   // the host's computer player stands in for a friend who left, once the host asks it to
   const agents = cfg.seats.map((s, pid) => pid === me ? new LocalSeatAgent(net, inner, null, null) : new RemoteSeatAgent(net, null, isHost ? new OnePieceAI({ pace: makePace(settings) }) : null));
-  // player names only appear in text, so each browser can call its own player "You"
-  const players = cfg.seats.map((s, pid) => ({ name: pid === me ? 'You' : s.n || `Player ${pid + 1}`, deck: deckById(data, s.d) || data.decks[0], agent: agents[pid], human: true }));
+  // player names only appear in text, so each browser can call its own player "You". A player's own deck comes from
+  // the list the host wrote into the config, so every browser plays the identical deck.
+  const decks = cfg.seats.map(s => deckFrom(data, s.dk, s.d));
+  const players = cfg.seats.map((s, pid) => ({ name: pid === me ? 'You' : s.n || `Player ${pid + 1}`, deck: decks[pid], agent: agents[pid], human: true }));
   const game = new OnePieceGame({ db: data.cards, seed: cfg.seed, players, onUpdate: () => store.bump() });
   game.start().then(() => store.bump(), e => { console.error(e); store.bump(); });
-  return { game, human, store, settings, cfg, me: me == null ? 0 : me, spectator: me == null, online: { net, code: cfg.code, game: cfg.game } };
+  return { game, human, store, settings, cfg, me: me == null ? 0 : me, spectator: me == null, online: { net, code: cfg.code, game: cfg.game }, decks };
+}
+
+// the deck you bring to a room: its id, sleeves and box, and (one of your own) its list, which the host writes into the
+// battle's config when it starts. While a battle is on, the config carries it, so it leaves your presence (room
+// messages are small and the battle's moves need the room).
+function sendDeck(room, id) {
+  if (!room) return;
+  room.setDeck(id);
+  const d = isCustomId(id) && customDeck(id);
+  const st = savedStyle('op', baseDeckId(id));
+  room.setExtra({ dk: d && !(room.cfg && room.cfg.started) ? packDeck(d) : null, sl: st.s, bx: st.b });
 }
 
 function endBattle(session) {
@@ -105,6 +124,8 @@ export function OnePieceApp({ onHome }) {
   const [invite] = useState(opRoomFromHash);
   const [mode, setMode] = useState(() => invite ? 'friends' : (safeStorage.getItem('op-mode') || 'solo'));
   const [toast, setToast] = useState(null);
+  const [builder, setBuilder] = useState(null);       // { id, from } while the deck builder is open
+  const [decksVersion, setDecksVersion] = useState(0);
   useEffect(() => {
     (async () => {
       try {
@@ -157,6 +178,13 @@ export function OnePieceApp({ onHome }) {
 
   // start, follow and end online battles as the host's config changes
   const cfg = room && room.cfg;
+  // others' own decks: from their presence before a battle, and from the config (the decks in play) during one
+  if (room) {
+    for (const m of room.members().values()) if (m.presence.dk && !m.me) rememberDeck(unpackDeck(m.presence.dk));
+    if (cfg && cfg.started) for (const s of cfg.seats) if (s.dk && s.c !== room.cid) rememberDeck(unpackDeck(s.dk));
+  }
+  // a battle starting or ending: your deck's list leaves or rejoins your presence
+  useEffect(() => { if (room && cfg) sendDeck(room, room.deck); }, [room, cfg && cfg.started]);
   // browser tests only (__opAutoplay = 0: the battle without a computer player in your seat)
   if (typeof window !== 'undefined' && window.__opAutoplay != null) window.__opDebug = { room, session };
   useEffect(() => {
@@ -182,16 +210,34 @@ export function OnePieceApp({ onHome }) {
     api, room, mode, setMode, invite, nick: safeStorage.getItem('pa-nick') || '',
     onCreate, onJoin, onLeave,
     onStart: () => {
-      // names are made unique so the log reads clearly
-      const seats = room.cfg.seats.map((s, i) => ({ ...s, n: i && s.n === room.cfg.seats[0].n ? s.n + ' II' : s.n }));
+      // names are made unique so the log reads clearly; a player's own deck goes into the config as a list, so every
+      // browser builds the battle from the same one (even if they change their deck later)
+      const members = room.members();
+      const seats = room.cfg.seats.map((s, i) => {
+        // (the list the player sends now, else the one this browser knows)
+        const sent = s.c && members.has(s.c) && unpackDeck(members.get(s.c).presence.dk);
+        const d = isCustomId(s.d) ? (sent && sent.id === s.d ? sent : customDeck(s.d)) : null;
+        const { dk, ...rest } = s;
+        return { ...rest, n: i && s.n === room.cfg.seats[0].n ? s.n + ' II' : s.n, ...(d ? { dk: packDeck(d) } : {}) };
+      });
       room.start({ seed: (Math.random() * 2 ** 32) >>> 0, seats });
     },
     onWatch: () => { room.lastAutoStart = room.cfg.game; setSession(newOnlineBattle(data, room, room.cfg)); },
-    onDeck: id => { if (!room) return; room.setDeck(id); const st = savedStyle('op', baseDeckId(id)); room.setExtra({ sl: st.s, bx: st.b }); },
+    onDeck: id => sendDeck(room, id),
   };
   const toastEl = toast ? <div className="toast" role="status">{toast}</div> : null;
+  if (builder) return <>
+    <OpBuilder data={data} editId={builder.id} fromId={builder.from} onHome={onHome}
+      onDone={() => { setBuilder(null); setDecksVersion(v => v + 1); }}
+      onPlay={deck => {
+        // back to the lobby with this deck picked
+        if (deck) { try { const s = JSON.parse(safeStorage.getItem('op-lobby') || '{}'); safeStorage.setItem('op-lobby', JSON.stringify({ ...s, mine: deck.id })); } catch { /* storage blocked */ } }
+        setBuilder(null); setDecksVersion(v => v + 1);
+      }} />
+    {toastEl}
+  </>;
   if (!session) return <>
-    <OpLobby data={data} online={online} onStart={cfg => setSession(newBattle(data, cfg))} onHome={onHome} onHelp={() => setHelp(true)} />
+    <OpLobby key={decksVersion} data={data} online={online} onStart={cfg => setSession(newBattle(data, cfg))} onHome={onHome} onHelp={() => setHelp(true)} onBuild={(id, from) => setBuilder({ id, from })} />
     {help ? <HowToPlayOp onClose={() => setHelp(false)} /> : null}
     {toastEl}
   </>;

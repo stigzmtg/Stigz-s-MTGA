@@ -19,6 +19,7 @@ import { createFlights, runFlights, shake, strike, motionOn } from '../../ui/mot
 import { uiScale } from '../../ui/common.js';
 import { donSlots, createTableMotion, runTableMotion, AttackArrow } from './motion.jsx';
 import { baseDeckId } from './decks.js';
+import { keepReplayDecks } from './mydecks.js';
 import { VerifiedMark, roomKeyOf } from '../../ui/badge.jsx';
 
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, useSyncExternalStore } = React;
@@ -361,7 +362,7 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
     strike(root.querySelector(`[data-ref="c${game.battle.attacker}"]`), root.querySelector(`[data-ref="c${game.battle.blocker || game.battle.target}"]`));
   }, [strikeKey]);
   useGameSounds(game, { kind: 'op', me, watching });
-  useEffect(() => { if (game.over && !session.record) session.record = recordGame(session, 'op'); }, [game.over]);
+  useEffect(() => { if (game.over && !session.record) { session.record = recordGame(session, 'op'); keepReplayDecks(session.record, session.decks); } }, [game.over]);
   const replay = session.replay;
   const emotes = useEmotes(session);
   const avatarOf = pid => (session.online && session.cfg.seats[pid] ? session.cfg.seats[pid].a : null);
