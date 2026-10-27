@@ -71,7 +71,9 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
     return decks.filter(d => {
       if (colors.length && !colors.every(c => identities[d.id].includes(c))) return false;
       if (!qq) return true;
-      return d.name.toLowerCase().includes(qq) || d.commanders.some(c => c.toLowerCase().includes(qq)) || d.setName.toLowerCase().includes(qq) || d.set.toLowerCase() === qq;
+      // (and by any card in it: "sol ring" finds every deck that plays one)
+      return d.name.toLowerCase().includes(qq) || d.commanders.some(c => c.toLowerCase().includes(qq)) || d.setName.toLowerCase().includes(qq) || d.set.toLowerCase() === qq
+        || (qq.length >= 4 && d.cards.some(([n]) => n.toLowerCase().includes(qq)));
     });
   }, [q, colors, decks]);
   const groups = useMemo(() => {
@@ -112,7 +114,8 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
         <section className="panel" aria-label="Your deck">
           <div className="panel-head"><h2>Your deck</h2>{onBuild ? <button className="btn sm" onClick={() => onBuild(null)}>+ Build a deck</button> : null}</div>
           <div className="filters">
-            <input id="deck-search" className="input search" placeholder="Search by deck, commander or set" value={q} onChange={e => setQ(e.target.value)} />
+            <input id="deck-search" className="input search" placeholder="Search by deck, commander, set or a card in it" value={q} onChange={e => setQ(e.target.value)} />
+            <button className="btn sm" title="Pick a deck at random (from the ones shown)" onClick={() => { const pool = filtered.length ? filtered : decks; const d = pool[Math.floor(Math.random() * pool.length)]; setMine(d.id); setTimeout(() => { const el = document.querySelector('.deckrow.sel'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 30); }}>Surprise me</button>
             <div className="colorfilter" role="group" aria-label="Filter by color">
               {['W', 'U', 'B', 'R', 'G'].map(c => <button key={c} className={colors.includes(c) ? 'on' : ''} onClick={() => setColors(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c])} aria-pressed={colors.includes(c)} aria-label={`Filter ${c}`}><Pip s={c} /></button>)}
             </div>

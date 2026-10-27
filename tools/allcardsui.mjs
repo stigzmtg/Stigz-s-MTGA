@@ -49,6 +49,16 @@ for (const r of arch) { if (/Archidekt/.test(await r.textContent())) { await r.c
 await P.waitForTimeout(300);
 ok(/by .+ on Archidekt/.test(await P.textContent('section[aria-label="Selected deck"]')), 'an Archidekt deck names its builder');
 await P.screenshot({ path: `${OUT}/01-lobby-community.png` });
+// the deck list finds decks by a card they play, and Surprise me picks one of the decks shown
+const allRows = (await P.$$('.deckrow')).length;
+await P.fill('#deck-search', 'rhystic study');
+await P.waitForTimeout(300);
+const withCard = (await P.$$('.deckrow')).length;
+ok(withCard > 0 && withCard < allRows, `searching for a card finds the decks that play it (${withCard} of ${allRows})`);
+const picked = new Set();
+for (let k = 0; k < 6; k++) { await P.click('button:has-text("Surprise me")'); await P.waitForTimeout(80); picked.add(await P.textContent('.deckrow.sel').catch(() => '')); }
+ok(picked.size > 1 && ![...picked].some(t => !t), `Surprise me picks among them (${picked.size} different)`);
+await P.fill('#deck-search', '');
 
 // ---- the builder loads every card
 await P.click('button:has-text("+ Build a deck")');

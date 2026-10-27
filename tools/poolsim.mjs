@@ -41,7 +41,7 @@ const errors = new Map(), stuck = [];
 // the engine reports what it caught with console.error: keep where it happened, not the noise
 const stacks = new Map();
 if (!flags.verbose) console.error = e => { if (e && e.message && e.stack) stacks.set(e.message, e.stack.split('\n').slice(1, 3).map(x => x.trim()).join(' | ')); };
-let games = 0, turns = 0;
+let games = 0, turns = 0, casts = 0;
 const t0 = Date.now();
 const seen = new Set();
 for (let g = 0; g < N; g++) {
@@ -62,6 +62,7 @@ for (let g = 0; g < N; g++) {
   clearTimeout(timer);
   game.over = true;
   games++; turns += game.turnNumber;
+  casts += game.logs.filter(l => l.type === 'cast').length;
   for (const l of game.logs) {
     if (l.type !== 'error') continue;
     // "Effect error (Api) on Card: message", "Error resolving Card's ability: message": grouped by message, cards listed
@@ -77,7 +78,7 @@ for (let g = 0; g < N; g++) {
   }
   if (flags.verbose || g % 10 === 9) console.log(`${g + 1}/${N} games, ${errors.size} distinct errors, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
 }
-console.log(`\n${games} games, ${turns} turns, ${seen.size} different cards played, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+console.log(`\n${games} games, ${turns} turns, ${casts} spells cast, ${seen.size} different cards in the decks, ${((Date.now() - t0) / 1000).toFixed(0)}s`);
 const total = [...errors.values()].reduce((a, v) => a + v.n, 0);
 for (const [k, v] of [...errors].sort((a, b) => b[1].n - a[1].n).slice(0, 60)) console.log(`${String(v.n).padStart(4)}  ${k}${v.cards.size ? `  [${[...v.cards].slice(0, 6).join('; ')}]` : ''}${v.where && flags.where ? `\n        at ${v.where}` : ''}`);
 if (stuck.length) console.log('stuck:\n' + stuck.join('\n'));
