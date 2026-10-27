@@ -1,10 +1,10 @@
 // Spell abilities: construction, costs, targeting, casting, activation, mana payment and resolution.
 import { parseAbility } from './forge.js';
+import { bindEngine, charmModeAllowed, noteCharmModes, paramCostStatic, paramSpellCost, paramAbilityCost, paramCostAfterTargets, otherOptionalCosts, mayPlayUsed, noteMayPlayUse, mayPlayOptions, paramTargetFilter, replaceProducedUnits } from './mech-params.js';
 import { parseMana, emptyCost, addCosts, cmc, isManaToken, planPayment, payFromPool, manaColorsFromProduced, costString, poolTotal, cloneCost } from './mana.js';
 import { matchValid, resolveDefined, calcCtx, checkConditions, checkPresence, ctxOf, findTargets, zoneMap, ctrlOf } from './filters.js';
 import { COLORS } from './util.js';
 import { runEffect } from './effects.js';
-import { charmModeAllowed, noteCharmModes, paramCostStatic, paramSpellCost, paramAbilityCost, paramCostAfterTargets, otherOptionalCosts, mayPlayUsed, noteMayPlayUse, mayPlayOptions, paramTargetFilter, replaceProducedUnits } from './mech-params.js';
 
 export class Cancelled extends Error { constructor() { super('cancelled'); this.cancelled = true; } }
 
@@ -44,6 +44,7 @@ export class SA {
 export function makeSA(game, raw, svars, host, controller, opts = {}) {
   return new SA(game, { raw, parsed: parseAbility(raw), svars, src: host, key: opts.key || 'x' }, host, controller, opts);
 }
+bindEngine({ SA, makeSA, resolveChain, parseCost, canPayNonMana, Cancelled, runEffect }); // mech-params.js can't import this module
 
 // ---------------------------------------------------------------- refs (for UI / agents)
 export function refOf(o) {

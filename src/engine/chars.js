@@ -1,10 +1,10 @@
 // Characteristic computation ("layers"): base face -> copy -> types -> colors -> abilities -> P/T.
 import { abilityList } from './cards.js';
+import { paramAbilitiesLayer, paramFinalLayer } from './mech-params.js';
 import { parseAbility } from './forge.js';
 import { cmc } from './mana.js';
 import { BASIC_LAND_TYPES, NAME_TO_COLOR, COLORS } from './util.js';
 import { matchValid, resolveDefined, calcCtx, checkPresence, zoneMap } from './filters.js';
-import { addKeywordList, paramAbilitiesLayer, paramFinalLayer } from './mech-params.js';
 
 const FACE_DOWN = { name: '', manaCost: null, supertypes: [], types: ['Creature'], subtypes: [], colors: [], power: '2', toughness: '2', loyalty: null, keywords: [], abilities: [], triggers: [], statics: [], replacements: [], svars: {}, oracle: '' };
 
@@ -339,7 +339,7 @@ export function computeAll(game) {
       if (p.RemoveAllAbilities) { ch.abilities = []; ch.triggers = []; ch.statics = []; ch.replacements = []; ch.keywords = []; }
       // a spell that was cast keeps what it was given as it was cast (castGrants, below), not what's true now
       const locked = toSpells && c.zone === 'stack' && c.castGrants;
-      if (p.AddKeyword && !locked) for (const k of addKeywordList(game, st, ctx, p.AddKeyword)) ch.keywords.push(k.replace('ChosenColor', (st.host.chosen && st.host.chosen.colors || ['W']).map(x => ({ W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' })[x]).join('')));
+      if (p.AddKeyword && !locked) for (const k of p.SharedKeywordsZone ? sharedKeywords(game, p, ctx, map) : p.AddKeyword.split(' & ')) ch.keywords.push(k.replace('ChosenColor', (st.host.chosen && st.host.chosen.colors || ['W']).map(x => ({ W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' })[x]).join('')));
       if (p.AddHiddenKeyword) for (const k of p.AddHiddenKeyword.split(' & ')) ch.keywords.push(k);
       if (p.RemoveKeyword) { const rm = p.RemoveKeyword.split(' & '); ch.keywords = ch.keywords.filter(k => !rm.includes(k)); }
       if (p.AddAbility) grantAbilities(ch, p.AddAbility, st.svars, st.host, 'A', 's' + st.host.id + st.key);
@@ -359,7 +359,6 @@ export function computeAll(game) {
       }
     }
   }
-  paramAbilitiesLayer(game, active, map, (st, ctx) => affectedCards(game, st, ctx, map), c => map.get(c.id) || lazy(game, c)); // gained from other cards, Blood Sun (mech-params.js)
   // continuous statics granted in layer 6 (AddStaticAbility, granted by other statics) apply from layer 7 on
   const known = new Set(statics.map(st => st.raw + '|' + st.host.id));
   for (const c of bf) {
@@ -383,9 +382,11 @@ export function computeAll(game) {
     if (ch.keywords.includes('Changeling')) ch.allCreatureTypes = true;
     if (ch.keywords.includes('Devoid')) ch.colors = new Set();
   }
-  paramFinalLayer(game, active, map, (st, ctx) => affectedCards(game, st, ctx, map), c => map.get(c.id) || lazy(game, c)); // can't-have keywords, names (mech-params.js)
   // layer 7a/7b: base & set P/T
   for (const c of all) { const ch = map.get(c.id); applyOwnMods(game, c, ch, 7); }
+  // card-script params (mech-params.js): abilities gained from other cards, Blood Sun, can't-have keywords, names
+  paramAbilitiesLayer(game, active, map, (st, ctx) => affectedCards(game, st, ctx, map), c => map.get(c.id) || lazy(game, c));
+  paramFinalLayer(game, active, map, (st, ctx) => affectedCards(game, st, ctx, map), c => map.get(c.id) || lazy(game, c));
   for (const { st, ctx } of active) {
     const p = st.parsed.p;
     if (!(p.SetPower || p.SetToughness)) continue;
@@ -451,6 +452,20 @@ export function computeAll(game) {
   game._playerChars = pchars;
   game._activeStatics = active;
   return map;
+}
+
+// "it has flying as long as an exiled card used to craft it has flying; the same is true for first strike, ..."
+// (SharedKeywordsZone): the listed keywords that cards there have, as they have them ("protection from red")
+function sharedKeywords(game, p, ctx, map) {
+  const zones = p.SharedKeywordsZone.split(',').map(z => zoneMap[z] || z.toLowerCase());
+  const pool = zones.flatMap(z => z === 'battlefield' ? game.battlefield : game.cardsInZone(z)).filter(c => matchValid(game, c, p.SharedRestrictions || 'Card', ctx));
+  const have = pool.flatMap(c => (map.get(c.id) || game.chars(c)).keywords);
+  const out = [];
+  for (const k of p.AddKeyword.split(' & ')) {
+    const kl = k.toLowerCase();
+    for (const x of have) { const l = x.toLowerCase(); if ((l === kl || l.startsWith(kl + ':') || l.startsWith(kl + ' ')) && !out.includes(x)) out.push(x); }
+  }
+  return out;
 }
 
 function lazy(game, c) {

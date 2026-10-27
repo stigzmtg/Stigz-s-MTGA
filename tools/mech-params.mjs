@@ -786,4 +786,38 @@ test('RememberSVarAmount from a roll: Ancient Brass Dragon\'s d20 sets the total
   expect(+rolled >= 5 ? angel.zone === 'battlefield' : angel.zone === 'graveyard', `rolled ${rolled}: the Angel (mana value 5) ${angel.zone}`);
 });
 
+test('Trigger conditions: Fastbond (not the first land), The Lost and the Damned (not from hand), Karmic Justice (an opponent\'s destroy)', async T => {
+  const g = T.game;
+  await T.put(0, 'Fastbond');
+  const { playLand } = await import('../src/engine/abilities.js');
+  const life = T.A.life;
+  const f1 = await T.put(0, 'Forest', 'hand'), f2 = await T.put(0, 'Forest', 'hand');
+  T.A.landsPlayed = 0;
+  await g.performAction(0, getActions(g, 0).find(a => a.cardId === f1.id)); await T.resolve();
+  expect(T.A.life === life, `the first land: no damage (${life - T.A.life})`);
+  await g.performAction(0, getActions(g, 0).find(a => a.cardId === f2.id)); await T.resolve();
+  expect(T.A.life === life - 1, `the second land: 1 damage (${life - T.A.life})`);
+  await T.put(0, 'The Lost and the Damned');
+  const tokens = T.tokens(0).length;
+  const f3 = await T.put(0, 'Island', 'hand');
+  T.A.landsPlayed = 0;
+  await g.performAction(0, getActions(g, 0).find(a => a.cardId === f3.id)); await T.resolve();
+  expect(T.tokens(0).length === tokens, 'a land from hand makes no Spawn');
+  const f4 = await T.put(0, 'Swamp', 'graveyard');
+  await g.moveCard(f4, 'battlefield', { controller: 0 }); await T.resolve();
+  expect(T.tokens(0).length === tokens + 1, 'a land from the graveyard does');
+  const kj = await T.put(0, 'Karmic Justice');
+  const ring = await T.put(0, 'Mind Stone');
+  const ench = await T.put(1, 'Glorious Anthem');
+  T.a.on('optionalTrigger', () => true).on('targets', req => req.cands.includes(refOf(ench)) ? [refOf(ench)] : undefined);
+  await g.destroy(ring, null);
+  await T.resolve();
+  expect(ench.zone === 'battlefield', 'destroyed by no one\'s spell: no trigger');
+  const ring2 = await T.put(0, 'Mind Stone');
+  T.b.on('targets', () => [refOf(ring2)]);
+  g.activePlayer = 1;
+  await T.cast('Shatter', 1);
+  expect(ench.zone === 'graveyard', `an opponent's Shatter: Karmic Justice destroys their Glorious Anthem (${ench.zone})`);
+});
+
 process.exit(await run(tests) ? 1 : 0);

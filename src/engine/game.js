@@ -1,5 +1,6 @@
 // Core game state and flow: zones, turns, priority, the stack, state-based actions and triggers.
 import { Card, Player, newTimestamp } from './cards.js';
+import { untapPrevented as paramUntapPrevented, noteTurnEnd, noteTargeted, applyStaticEffect, heldPersistentMana, damageRedirect, dealRedirected, loseManaColor, triggerController, replacementPhaseOk } from './mech-params.js';
 import { RNG, COLORS, BASIC_LAND_TYPES, NAME_TO_COLOR, sleep, compare } from './util.js';
 import { computeAll, charsOutside, isRoom } from './chars.js';
 import { matchValid, resolveDefined, calcCtx, checkPresence, ctrlOf, zoneMap, findTargets } from './filters.js';
@@ -8,7 +9,6 @@ import { SA, castSpell, activateAbility, resolveStackItem, chooseTargetsForSA, g
 import { triggerMatches } from './triggers.js';
 import * as combat from './combat.js';
 import { parseAbility } from './forge.js';
-import { untapPrevented as paramUntapPrevented, noteTurnEnd, noteTargeted, applyStaticEffect, heldPersistentMana, damageRedirect, dealRedirected, loseManaColor, triggerController, replacementPhaseOk } from './mech-params.js';
 
 export const STEPS = ['untap', 'upkeep', 'draw', 'main1', 'beginCombat', 'declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage', 'endCombat', 'main2', 'end', 'cleanup'];
 export const STEP_NAMES = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main 1', beginCombat: 'Beginning of Combat', declareAttackers: 'Declare Attackers', declareBlockers: 'Declare Blockers', firstStrikeDamage: 'First-Strike Damage', combatDamage: 'Combat Damage', endCombat: 'End of Combat', main2: 'Main 2', end: 'End Step', cleanup: 'Cleanup' };

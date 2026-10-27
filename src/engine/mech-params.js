@@ -1,14 +1,16 @@
 // Card-script parameters that cards rely on but the rest of the engine did not read (see tools/paramaudit.mjs).
 // Each section is called from a small hook in the module that owns the event (game.js, triggers.js, effects.js,
-// chars.js, abilities.js). This module imports only leaf modules statically: it is loaded from chars.js before
-// abilities.js / effects.js exist, so those are reached with import() inside async functions (already loaded by then).
-import { matchValid, resolveDefined, calcCtx, compareSpec, ctxOf, zoneMap, matchCastSA } from './filters.js';
+// chars.js, abilities.js). This module imports only leaf modules: chars.js loads it before abilities.js / effects.js
+// exist, so abilities.js hands over the few functions used here as it loads (bindEngine), as mech-unsets.js does.
+import { matchValid, resolveDefined, calcCtx, compareSpec, ctxOf, zoneMap, matchCastSA, unknownDefined } from './filters.js';
 import { parseMana, cloneCost, addCosts, cmc } from './mana.js';
 import { parseAbility } from './forge.js';
 import { abilityList } from './cards.js';
 
-const engine = () => import('./abilities.js');
-const effectsModule = () => import('./effects.js');
+// SA, makeSA, resolveChain, parseCost, canPayNonMana, Cancelled, runEffect: from abilities.js (bindEngine)
+const AB = {};
+export function bindEngine(fns) { Object.assign(AB, fns); }
+const engine = () => AB;
 
 // ---------------------------------------------------------------- untapping
 // "doesn't untap during its controller's untap step": Event$ Untap replacements apply to whatever ValidCard names
@@ -42,7 +44,7 @@ export async function untapPrevented(game, card, stepPlayer) {
   const { h, r, p } = reps[0];
   const raw = r.svars[p.ReplaceWith];
   if (!raw) return false;
-  const { SA } = await engine();
+  const { SA } = engine();
   const s = new SA(game, { raw, parsed: parseAbility(raw), svars: r.svars, src: h, key: r.key }, h, h.controller, { trig: { Card: card, Affected: card } });
   await game.resolveSAChain(s);
   return true;
@@ -84,6 +86,14 @@ export function triggerParamsOk(game, p, host, rp, ctx) {
     const t = rp.Target;
     if (!t || !t.isCard || t.controller !== rp.Player || timesTargetedBy(game, t, rp.Player) > 0) return false;
   }
+  // "if it wasn't the first land you played this turn" (Fastbond)
+  if (p.NotFirstLand && rp.Mode === 'LandPlayed' && (game.players[rp.Player] || {}).landsPlayed <= 1) return false;
+  // "enters from anywhere other than a hand" (The Lost and the Damned)
+  if (p.ExcludedOrigins && rp.Mode === 'ChangesZone' && p.ExcludedOrigins.split(',').map(z => z.trim()).includes(rp.Origin)) return false;
+  // "if it wasn't put onto the battlefield with this ability" (Kodama of the East Tree: no chain of triggers)
+  if (p.NotThisAbility && rp.Cause && rp.Cause.host && (rp.Cause.host === host || rp.Cause.host.id === host.id)) return false;
+  // "a spell or ability an opponent controls destroys" (Karmic Justice, Cobra Trap)
+  if (p.ValidCauser && rp.Mode === 'Destroyed' && !(rp.Cause && rp.Cause.controller != null && matchValid(game, game.players[rp.Cause.controller], p.ValidCauser, ctx))) return false;
   // "a spell that targets only a single creature" (Zada, Leyline of Resonance, Ivy)
   if (p.IsSingleTarget && /^(SpellCast|SpellCastOrCopy|SpellCopy|SpellAbilityCast|AbilityCast)$/.test(rp.Mode)) {
     const seen = new Set();
@@ -226,10 +236,9 @@ async function replaceDying(game, sa) {
 
 // an Effect object made the way the Effect API makes one (it goes to game.effects); returns it
 async function makeEffect(game, sa, raw, svars) {
-  const { makeSA } = await engine();
-  const { E } = await effectsModule();
+  const { makeSA, runEffect } = engine();
   const before = game.effects.length;
-  await E.Effect(game, makeSA(game, raw, svars, sa.host, sa.controller, { key: (sa.key || '') + '>pa' }));
+  await runEffect(game, makeSA(game, raw, svars, sa.host, sa.controller, { key: (sa.key || '') + '>pa' }));
   return game.effects.length > before ? game.effects[game.effects.length - 1] : null;
 }
 
@@ -268,7 +277,7 @@ export const PARAMS_EFFECTS = {
     const p = sa.p;
     const host = sa.host;
     const ctx = ctxOf(game, sa);
-    const { makeSA, resolveChain } = await engine();
+    const { makeSA, resolveChain } = engine();
     const tgtPlayers = p.ValidTgts ? playersIn(sa.targets || []) : playersIn(resolveDefined(game, p.Defined || 'You', ctx));
     const pickPlayer = async (spec, fallback, what) => {
       if (!spec) return fallback;
@@ -345,7 +354,7 @@ export const PARAMS_EFFECTS = {
         const cb = p.ControlledByPlayer;
         let ids;
         if (cb === 'Chooser') ids = [pl.id];
-        else if (cb === 'Left' || cb === 'Right') { const { playerInDirection } = await import('./combat.js'); const q = playerInDirection(game, pl.id, cb); ids = q == null ? [] : [typeof q === 'object' ? q.id : q]; }
+        else if (cb === 'Left' || cb === 'Right') { const n = game.players.length, step = cb === 'Right' ? -1 : 1; ids = []; for (let k = 1; k < n && !ids.length; k++) { const q = game.players[(pl.id + step * k + n * 4) % n]; if (!q.lost && q.id !== pl.id) ids = [q.id]; } }
         else ids = playersIn(resolveDefined(game, cb, ctx)).map(q => q.id);
         pool = pool.filter(c => ids.includes(c.controller));
       }
@@ -646,7 +655,7 @@ export function paramAbilityCost(game, sa, mana) {
 export async function paramCostAfterTargets(game, kind, pid, card, opt, sa, mana, extra) {
   const applied = sa._paCostApplied;
   if (!applied) return { mana, extra };
-  const { parseCost, canPayNonMana, Cancelled } = await engine();
+  const { parseCost, canPayNonMana, Cancelled } = engine();
   const st = opt && opt.mayPlay && opt.mayPlay.st;
   if (kind === 'spell' && st && st.parsed.p.ValidAfterStack && !validAfterStack(game, sa, card, st)) {
     game.log(`${game.name(card)} can't be cast this way with that X (${game.name(st.host)}).`, { type: 'info' });
@@ -692,7 +701,7 @@ function costStaticsMention(card, name) {
 // "As an additional cost to cast green permanent spells, you may pay 2 life. Those spells cost {G} less" (the Defiler
 // cycle): OptionalCost statics on other permanents, offered as the spell is cast. Returns the new { mana, extra }.
 export async function otherOptionalCosts(game, pid, card, sa, mana, extra) {
-  const { parseCost, canPayNonMana } = await engine();
+  const { parseCost, canPayNonMana } = engine();
   let m = mana, ex = extra;
   for (const s of game.activeStatics('OptionalCost')) {
     const p = s.p;
@@ -779,26 +788,6 @@ export function mayPlayOptions(game, pid, card, opts, mayPlay) {
 }
 
 // ---------------------------------------------------------------- characteristics (chars.js computeAll)
-// AddKeyword lists: SharedKeywordsZone$ keeps only the keywords cards there have (Soulflayer, Cairn Wanderer, Eater of
-// Virtue, Urborg Scavengers), CalcKeywordN$ fills in N (Kodama of the Center Tree), KeywordDefined$ for "protection
-// from each mana value among" (Rebbec)
-export function addKeywordList(game, st, ctx, addKeyword) {
-  let list = String(addKeyword).split(' & ');
-  const p = st.parsed ? st.parsed.p : st.p;
-  if (p.CalcKeywordN) { const n = calcCtx(game, p.CalcKeywordN, ctx); list = list.map(k => k.replace(/\bN\b/, String(n))); }
-  if (p.KeywordDefined) {
-    const out = [];
-    for (const k of list) {
-      if (!/EachCMCAmongDefined/.test(k)) { out.push(k); continue; }
-      const mvs = new Set(game.battlefield.filter(c => matchValid(game, c, p.KeywordDefined, ctx)).map(c => game.chars(c).cmc));
-      for (const mv of mvs) out.push(`Protection:Card.cmcEQ${mv}:Protection from mana value ${mv}`);
-    }
-    list = out;
-  }
-  if (p.SharedKeywordsZone) list = sharedKeywords(game, list, p.SharedKeywordsZone, p.SharedRestrictions, ctx);
-  return list;
-}
-
 // the keywords in a list that cards in those zones (matching the restrictions) have (CardFactoryUtil.sharedKeywords)
 function sharedKeywords(game, list, zonesSpec, restrictions, ctx) {
   const zones = zonesSpec.split(',').map(Z);
@@ -853,9 +842,22 @@ function entryIs(entry, spec) {
 export function paramAbilitiesLayer(game, active, map, affected, chOf) {
   for (const { st, ctx } of active) {
     const p = st.parsed.p;
-    if (!(p.GainsAbilitiesOf || p.GainsAbilitiesOfDefined || p.GainsTriggerAbsOf || p.AddReplacementEffect || p.RemoveNonManaAbilities)) continue;
+    if (!(p.GainsAbilitiesOf || p.GainsAbilitiesOfDefined || p.GainsTriggerAbsOf || p.AddReplacementEffect || p.RemoveNonManaAbilities || p.CalcKeywordN || p.KeywordDefined)) continue;
     const targets = affected(st, ctx);
     if (!targets.length) continue;
+    // keywords the static added with a number or a list still to fill in: CalcKeywordN$ (Kodama of the Center Tree's
+    // "soulshift N"), KeywordDefined$ (Rebbec: "protection from each mana value among artifacts you control")
+    if ((p.CalcKeywordN || p.KeywordDefined) && p.AddKeyword) {
+      const fill = k => {
+        if (p.CalcKeywordN && /\bN\b/.test(k)) return [k.replace(/\bN\b/, String(calcCtx(game, p.CalcKeywordN, ctx)))];
+        if (p.KeywordDefined && /EachCMCAmongDefined/.test(k)) return [...new Set(game.battlefield.filter(c => matchValid(game, c, p.KeywordDefined, ctx)).map(c => game.chars(c).cmc))].map(mv => `Protection:Card.cmcEQ${mv}:Protection from mana value ${mv}`);
+        return [k];
+      };
+      for (const c of targets) {
+        const ch = chOf(c);
+        for (const k of p.AddKeyword.split(' & ')) { const i = ch.keywords.indexOf(k); if (i >= 0 && fill(k)[0] !== k) ch.keywords.splice(i, 1, ...fill(k)); }
+      }
+    }
     const sources = spec => {
       if (!spec) return [];
       if (spec === p.GainsAbilitiesOfDefined) return resolveDefined(game, spec, ctx).map(o => (o && o.lki ? game.cardById(o.id) || o : o)).filter(o => o && (o.isCard || o.lki));
@@ -985,7 +987,16 @@ export function paramTargetFilter(game, sa, cands) {
   const ctx = ctxOf(game, sa);
   let out = cands;
   if (p.TargetsWithDefinedController) {
-    const ids = new Set(resolveDefined(game, p.TargetsWithDefinedController, ctx).map(o => (!o ? null : o.isPlayer ? o.id : o.stackItem ? o.controller : o.zone === 'battlefield' || o.lki ? o.controller : o.owner)).filter(x => x != null));
+    // ("TriggeredCauser": whoever controlled what destroyed it — Karmic Justice)
+    const trig = ctx.trig || sa.trig || {};
+    const spec = p.TargetsWithDefinedController;
+    const defined = spec === 'TriggeredCauser' ? (trig.Cause && trig.Cause.controller != null ? [game.players[trig.Cause.controller]] : [])
+      // (the attacked player, or the controller of the attacked planeswalker or battle: Karazikar, Firkraag)
+      : spec === 'TriggeredAttackedTarget' ? (trig.DefenderCard ? [trig.DefenderCard] : trig.DefendingPlayer != null ? [game.players[trig.DefendingPlayer]] : [])
+      : resolveDefined(game, spec, ctx);
+    // (a reference this engine doesn't know restricts nothing, rather than leaving no legal target)
+    if (!defined.length && unknownDefined.has(spec)) return out;
+    const ids = new Set(defined.map(o => (!o ? null : o.isPlayer ? o.id : o.stackItem ? o.controller : o.zone === 'battlefield' || o.lki ? o.controller : o.owner)).filter(x => x != null));
     out = out.filter(o => !o || o.isPlayer || o.stackItem || ids.has(o.zone === 'battlefield' ? o.controller : o.owner));
   }
   if (p.TargetValidTargeting) {

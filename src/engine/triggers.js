@@ -1,7 +1,7 @@
 // Mode-specific trigger matching against event run-params.
 import { matchValid, ctrlOf, resolveDefined, matchCastSA } from './filters.js';
-import { normalizeCounter } from './game.js';
 import { triggerParamsOk } from './mech-params.js';
+import { normalizeCounter } from './game.js';
 
 function vc(game, obj, valid, ctx) {
   if (!valid) return true;
