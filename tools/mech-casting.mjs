@@ -226,7 +226,25 @@ test('Prepare: leaving the battlefield or becoming unprepared removes the copy; 
   await g.performAction(0, getActions(g, 0).find(a => a.cardId === c2.id));
   await T.resolve();
   expect(e2.counters.P1P1 === 2, `Codie copied the prepared spell (${e2.counters.P1P1})`);
-  expect(!analyzeCard(db.raw['Adventurous Eater']).includes('Prepare') && analyzeCard(db.raw['Dirgur Focusmage']).includes('Prepare'), 'support flags prepare cards without their spell');
+  expect(!analyzeCard(db.raw['Adventurous Eater']).includes('Prepare') && !analyzeCard(db.raw['Dirgur Focusmage']).includes('Prepare'), 'prepare cards have their spell (Dirgur Focusmage\'s is copied from Braingeyser)');
+});
+test('Prepare from a copied face: Dirgur Focusmage prepares Braingeyser after a big spell from hand', async T => {
+  const g = T.game;
+  const mage = await T.put(0, 'Dirgur Focusmage');
+  expect(!T.A.exile.some(c => c.preparedFrom), 'not prepared yet');
+  await T.cast('Overwhelming Stampede');
+  const copy = T.A.exile.find(c => c.preparedFrom);
+  expect(copy && g.name(copy) === 'Braingeyser', `a mana value 5 sorcery from hand prepares it: Braingeyser waits in exile (${copy && g.name(copy)})`);
+  T.mana(0);
+  const act = getActions(g, 0).find(a => a.cardId === copy.id);
+  expect(act, 'the copy can be cast');
+  const hand = T.A.hand.length;
+  T.a.on('targets', req => req.cands.includes('p0') ? ['p0'] : undefined);
+  T.a.on('number', () => 2);
+  await g.performAction(0, act);
+  await T.resolve();
+  expect(T.A.hand.length >= hand + 2, `Braingeyser drew cards (${hand} -> ${T.A.hand.length})`);
+  expect(!matchValid(g, mage, 'Card.prepared', { you: 0 }), 'the mage is unprepared');
 });
 
 // ------------------------------------------------------------ splice

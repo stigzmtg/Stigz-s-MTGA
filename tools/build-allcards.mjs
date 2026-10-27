@@ -25,8 +25,13 @@ const walk = (dir, out = []) => { for (const e of fs.readdirSync(dir, { withFile
 // ---- Forge: every card script, by name (its first face, and "Front // Back" for split and double-faced cards)
 const forge = new Map();     // normName -> canonical name
 const scripts = {};          // canonical name -> compact script
-for (const file of walk(path.join(FORGE_RES, 'cardsfolder'))) {
-  const text = fs.readFileSync(file, 'utf8');
+const files = walk(path.join(FORGE_RES, 'cardsfolder'));
+// a face written "CopyFaceFrom:Braingeyser" (Prepare cards' spells) is that card's script: filled in here
+const firstFaces = new Map();
+for (const file of files) { const t = fs.readFileSync(file, 'utf8'); if (/^CopyFaceFrom:/m.test(t.split(/^ALTERNATE\s*$/m)[0])) continue; const n = /^Name:(.+)$/m.exec(t); if (n && !firstFaces.has(n[1].trim())) firstFaces.set(n[1].trim(), t.split(/^ALTERNATE\s*$/m)[0].trim()); }
+const copyFaces = text => text.replace(/^CopyFaceFrom:(.+)$/gm, (line, n) => firstFaces.get(n.trim()) || line);
+for (const file of files) {
+  const text = copyFaces(fs.readFileSync(file, 'utf8'));
   const parsed = parseCardScript(text);
   const names = parsed.faces.map(f => f.name).filter(Boolean);
   if (!names.length) continue;
