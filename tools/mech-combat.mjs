@@ -768,4 +768,50 @@ test('Dealt damage by: Vampiric Dragon grows when a creature it damaged dies', a
   expect((dragon.counters.P1P1 || 0) === 1, `a counter (${dragon.counters.P1P1})`);
 });
 
+test('Chaos Lord attacks as though it had haste unless it entered this turn', async T => {
+  const lord = await T.put(0, 'Chaos Lord');
+  lord.sick = true; lord.enteredTurn = T.game.turnNumber - 1; T.game.touch();
+  expect(combat.canAttack(T.game, lord), 'came under your control this turn without entering: it can attack');
+  lord.enteredTurn = T.game.turnNumber; T.game.touch();
+  expect(!combat.canAttack(T.game, lord), 'entered this turn: it can’t');
+});
+test('The AI saddles a Mount before combat with a creature that can’t attack anyway', async T => {
+  const jag = await T.put(0, 'Alacrian Jaguar');
+  const elf = await T.put(0, 'Llanowar Elves'); elf.sick = true;
+  for (const c of T.game.battlefield) if (c.controller === 0 && T.isLand(c)) c.tapped = true;
+  T.noMana(0);
+  const act = await T.a.ai.priority(T.game, 0);
+  const ab = act && act.type === 'activate' ? activatedAbilities(T.game, 0, jag).find(a => a.key === act.abilityKey) : null;
+  expect(ab && ab.parsed.p.Saddle === 'True', `it saddles (${JSON.stringify(act)})`);
+  elf.sick = false; T.game.touch();
+  const act2 = await T.a.ai.priority(T.game, 0);
+  const ab2 = act2 && act2.type === 'activate' ? activatedAbilities(T.game, 0, jag).find(a => a.key === act2.abilityKey) : null;
+  expect(!(ab2 && ab2.parsed.p.Saddle === 'True'), 'not with a creature that could attack itself');
+});
+test('The AI bands when a blocker could kill one of the band', async T => {
+  const hero = await T.put(0, 'Benalish Hero'), bears = await T.put(0, 'Grizzly Bears');
+  await T.put(1, 'Serra Angel');
+  await attack(T, [[hero, 1], [bears, 1]]);
+  const r = T.game.combat.attackers;
+  expect(r[0].band != null && r[0].band === r[1].band, 'banded');
+});
+
+test('Creatures that saddled it this turn: Giant Beaver targets one, Rambling Possum returns them', async T => {
+  const beaver = await T.put(0, 'Giant Beaver'), bears = await T.put(0, 'Grizzly Bears'), elf = await T.put(0, 'Llanowar Elves');
+  T.a.on('crew', () => [bears.id, elf.id]);
+  await T.activate(beaver, 0, saddleAbility);
+  let cands = null;
+  T.a.on('targets', req => { cands = req.cands; return [refOf(elf)]; });
+  await attack(T, [[beaver, 1]]);
+  expect(cands && cands.length === 2 && cands.includes(refOf(bears)) && cands.includes(refOf(elf)), `only the saddlers are targets (${cands})`);
+  expect((elf.counters.P1P1 || 0) === 1, 'the elf got the counter');
+  const possum = await T.put(0, 'Rambling Possum'), wall = await T.put(0, 'Grizzly Bears');
+  T.game.combat = null; T.game.step = 'main1';   // (saddle only as a sorcery)
+  T.a.on('crew', () => [wall.id]);
+  await T.activate(possum, 0, saddleAbility);
+  T.a.on('cards', req => req.cards.slice());
+  await attack(T, [[possum, 1]]);
+  expect(wall.zone === 'hand', `the bears that saddled it went back to hand (${wall.zone})`);
+});
+
 process.exit(await run(tests) ? 1 : 0);
