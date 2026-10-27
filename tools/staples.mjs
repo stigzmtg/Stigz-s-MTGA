@@ -1,11 +1,12 @@
 // Behavioural tests for the most-played Commander staples: set up a board, cast the card, assert the outcome.
 import fs from 'node:fs';
+import { allCardScripts } from './lib/allcards.mjs';
 import { CardDB } from '../src/engine/cards.js';
 import { Game } from '../src/engine/game.js';
 import { AIAgent } from '../src/ai/ai.js';
 import { castSpell, activateAbility, activatedAbilities, activateManaAbility, manaAbilitiesOf, refOf, getActions } from '../src/engine/abilities.js';
 
-const db = new CardDB(JSON.parse(fs.readFileSync('data/cards.json', 'utf8')), JSON.parse(fs.readFileSync('data/tokens.json', 'utf8')));
+const db = new CardDB(allCardScripts(), JSON.parse(fs.readFileSync('data/tokens.json', 'utf8')));
 const basics = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
 const deck = (name, cmd) => ({ name, commanders: [cmd], cards: basics.map(b => [b, 12]).concat([['Llanowar Elves', 4], ['Serra Angel', 4], ['Wall of Omens', 4]]) });
 

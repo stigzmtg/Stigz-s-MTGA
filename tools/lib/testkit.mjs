@@ -1,12 +1,13 @@
 // Shared harness for behavioural engine tests (same board setup as tools/staples.mjs):
 // a two-player game frozen in A's first main phase, scripted answers per prompt type/purpose, AI for the rest.
 import fs from 'node:fs';
+import { allCardScripts } from './allcards.mjs';
 import { CardDB } from '../../src/engine/cards.js';
 import { Game } from '../../src/engine/game.js';
 import { AIAgent } from '../../src/ai/ai.js';
 import { castSpell, activateAbility, activatedAbilities } from '../../src/engine/abilities.js';
 
-export const db = new CardDB(JSON.parse(fs.readFileSync('data/cards.json', 'utf8')), JSON.parse(fs.readFileSync('data/tokens.json', 'utf8')));
+export const db = new CardDB(allCardScripts(), JSON.parse(fs.readFileSync('data/tokens.json', 'utf8')));
 const basics = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
 const deck = (name, cmd) => ({ name, commanders: [cmd], cards: basics.map(b => [b, 12]).concat([['Llanowar Elves', 4], ['Serra Angel', 4], ['Wall of Omens', 4]]) });
 
