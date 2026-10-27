@@ -463,7 +463,9 @@ export class PokemonGame {
         this.event('mulligan', { pid: p.id });
         p.deck.push(...p.hand.splice(0));
         this.shuffle(p.id);
-        if (p.mulligans > 30) throw new Error('deck without Basic Pokémon');
+        // (a deck with no Basic Pokémon would mulligan forever; a deck you build may have just one Basic, which takes
+        // over 30 mulligans in about 1 game in 40)
+        if (p.mulligans > 400) throw new Error('deck without Basic Pokémon');
       }
     }
     // coin flip for the first turn

@@ -1,5 +1,6 @@
 // Pokémon "Play with friends": make or join a room, send the invite link, the friend takes the second seat, each
-// player brings the deck picked on the left, and the host starts the battle. Others in the room watch.
+// player brings the deck picked on the left (a deck of their own travels with them), and the host starts the battle
+// once everyone's deck has arrived. Others in the room watch.
 import { CopyLink } from '../../ui/online.jsx';
 import { isRoomCode, onClaude } from '../../net/roomclient.js';
 import { Energy } from './energy.jsx';
@@ -7,20 +8,23 @@ import { AnimalAvatar, Lineup, Watchers, MyAvatarRow, AvatarButton, myAvatar } f
 import { VerifiedMark } from '../../ui/badge.jsx';
 import { currentLogin, subscribeAccount } from '../../ui/account.js';
 import { DeckBox, defaultBox } from '../../ui/deckstyle.jsx';
+import { findDeck, deckLook } from '../customdecks.js';
 
 const { useState } = React;
 
 // the code from whatever was typed or pasted: "abc123", "pk-abc123" or a whole invite link
 export const codeFromInput = v => v.toLowerCase().trim().replace(/^.*#/, '').replace(/^pk-/, '').replace(/[^a-z0-9]/g, '').slice(0, 6);
 
-function SeatDeck({ decks, id, bx }) {
-  const d = decks.find(x => x.id === id);
-  if (!d) return <span className="seat-deck muted">Choosing a deck…</span>;
-  return <span className="seat-deck"><DeckBox code={bx || defaultBox(d.id, d.energy)} size={22} />{d.energy.map(t => <Energy key={t} type={t} size={13} />)} {d.name}</span>;
+function SeatDeck({ data, id, bx, who }) {
+  if (!id) return <span className="seat-deck muted">Choosing a deck…</span>;
+  const d = findDeck(data.decks, id);
+  if (!d) return <span className="seat-deck muted">Getting {who ? `${who}’s` : 'their'} deck…</span>;
+  const energy = d.energy || deckLook(d, data.cards).energy;
+  return <span className="seat-deck"><DeckBox code={bx || defaultBox(d.id, energy)} size={22} />{energy.map(t => <Energy key={t} type={t} size={13} />)} {d.name}{d.custom ? <span className="mine-mark" title="Their own deck"> ★</span> : null}</span>;
 }
 
-export function PkFriendsPanel({ data, online, deck }) {
-  const { api, room, onCreate, onJoin, onLeave, onStart, onWatch, invite } = online;
+export function PkFriendsPanel({ data, online, deck, problems = [] }) {
+  const { api, room, onCreate, onJoin, onLeave, onStart, onWatch, invite, decksKnown } = online;
   const [code, setCode] = useState(invite || '');
   const [nick, setNick] = useState(room ? room.nick : online.nick || '');
   // logged in: you play under your account name, which friends see verified
@@ -89,7 +93,7 @@ export function PkFriendsPanel({ data, online, deck }) {
   const mySeat = room.mySeat();
   const seated = new Set(cfg.seats.filter(s => s.c).map(s => s.c));
   const watchers = [...members.values()].filter(m => !seated.has(m.cid));
-  const ready = cfg.seats.every(s => s.c && members.has(s.c) && s.d);
+  const ready = cfg.seats.every(s => s.c && members.has(s.c) && s.d) && decksKnown;
   const hostNick = (members.get(cfg.host) || {}).nick || 'the host';
   const inGame = cfg.started;
   const friend = cfg.seats[1];
@@ -113,7 +117,7 @@ export function PkFriendsPanel({ data, online, deck }) {
               {s.c ? <AnimalAvatar code={s.a} size={34} /> : <span className="seat-no">{i + 1}</span>}
               <span className="seat-who">
                 {s.c ? <b>{s.n || 'Player'}<VerifiedMark badge={s.vb} room={room.key} cid={s.c} name={s.n} />{s.c === cfg.host ? ' (host)' : ''}{mine ? ' · you' : ''}</b> : <b className="muted">Open seat</b>}
-                {s.c ? <SeatDeck decks={data.decks} id={s.d} bx={s.bx} /> : <span className="seat-deck muted">Waiting for a friend</span>}
+                {s.c ? <SeatDeck data={data} id={s.d} bx={s.bx} who={mine ? null : s.n} /> : <span className="seat-deck muted">Waiting for a friend</span>}
               </span>
               <span className="seat-act">
                 {s.c && !m ? <span className="chip">away</span> : null}
@@ -128,12 +132,14 @@ export function PkFriendsPanel({ data, online, deck }) {
       <Watchers list={watchers} room={room.key} />
       <MyAvatarRow code={av} onChange={changeAv} />
       {mySeat >= 0 || (!inGame && !isHost) ? <p className="note">Your deck: <b>{deck.name}</b>. Tap another deck to switch{inGame ? ' for the next battle' : ''}.</p> : null}
+      {deck.custom && problems.length ? <p className="note warnline">{deck.name} isn’t finished, so it can’t come to the battle: {problems[0]}</p>
+        : deck.custom && onClaude() ? <p className="note warnline">Decks you build can only be played in rooms on the website, not on claude.ai. Pick a tournament deck here.</p> : null}
       <div className="dlg-actions">
         <button className="btn ghost" onClick={onLeave}>Leave room</button>
         {inGame ? (
-          <button className="btn primary" onClick={onWatch}>{mySeat >= 0 ? 'Rejoin the battle' : 'Watch the battle'}</button>
+          <button className="btn primary" onClick={onWatch} disabled={!decksKnown} title={decksKnown ? '' : 'Getting the players’ decks…'}>{mySeat >= 0 ? 'Rejoin the battle' : 'Watch the battle'}</button>
         ) : isHost ? (
-          <button className="btn primary" disabled={!ready} onClick={onStart} title={ready ? '' : 'Your friend needs to take seat 2'}>{ready ? 'Start battle' : friend.c ? `Waiting for ${friend.n || 'your friend'}…` : 'Waiting for a friend…'}</button>
+          <button className="btn primary" disabled={!ready} onClick={onStart} title={ready ? '' : 'Your friend needs to take seat 2'}>{ready ? 'Start battle' : !cfg.seats[0].d ? 'Pick a deck to start' : !friend.c ? 'Waiting for a friend…' : friend.d && !decksKnown ? `Getting ${friend.n || 'your friend'}’s deck…` : `Waiting for ${friend.n || 'your friend'}…`}</button>
         ) : (
           <span className="note">{mySeat >= 0 ? `Waiting for ${hostNick} to start…` : friend.c ? 'Both seats are taken. Stay to watch the battle.' : 'Take the open seat to play, or stay to watch.'}</span>
         )}
