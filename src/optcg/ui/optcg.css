@@ -110,7 +110,7 @@
 .op-dons { position: absolute; right: -6px; top: 8%; z-index: 3; display: grid; place-items: center; min-width: 26px; height: 22px; padding: 0 6px; border-radius: 999px; font: 900 11.5px/1 var(--font-ui); color: #f3d68f; background: #121216; box-shadow: 0 0 0 1.5px rgba(243, 214, 143, 0.75), 0 2px 6px rgba(0, 0, 0, 0.6); }
 .op-tags { position: absolute; left: -4px; top: 6%; z-index: 3; display: grid; gap: 2px; justify-items: start; }
 .op-tags span { font: 800 11px/1 var(--font-ui); letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 5px; border-radius: 4px; color: #fff; background: #3b4a63; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6); }
-.op-tags .blocker { background: #2f6aa8; } .op-tags .rush { background: #b8402a; } .op-tags .double { background: #8b4bb6; } .op-tags .banish { background: #34343c; }
+.op-tags .blocker { background: #2f6aa8; } .op-tags .rush { background: #b8402a; } .op-tags .double { background: #8b4bb6; } .op-tags .banish { background: #34343c; } .op-tags .unblockable { background: #2d7a55; }
 /* the DON!! cost area */
 .op-cost { display: flex; align-items: center; gap: 4px; min-width: 0; flex-wrap: wrap; padding: 6px 8px; border-radius: 12px; background: rgba(0, 0, 0, 0.26); border: 1px solid var(--line); min-height: calc(var(--op-don) * 1.4 + 14px); }
 .op-cost .label { margin-right: 6px; }

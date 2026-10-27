@@ -107,15 +107,17 @@ function useFx(game, me, watching) {
 
 // ---------------------------------------------------------------- one card in play
 function InPlay({ game, card, lead, state = '', fx, onClick, onHover, me }) {
-  const pw = game.power ? game.power(card) : card.def.power;
+  // only Leaders and Characters have power (a Stage has none)
+  const fights = card.def.cat === 'L' || card.def.cat === 'C';
+  const pw = !fights ? null : game.power ? game.power(card) : card.def.power;
   const base = card.def.power;
   const kws = game.keywords ? [...game.keywords(card)] : [];
   const lunge = fx.lunge && fx.lunge.card === card.uid ? (game.ownerOf ? game.ownerOf(card.uid) : card.owner) === me ? 'lunge-up' : 'lunge-down' : '';
   const cls = ['op-slot', lead ? 'lead' : '', card.rested ? 'rested' : '', state, lunge, fx.hits.has(card.uid) ? 'hit' : ''].filter(Boolean).join(' ');
-  const tag = k => ({ Blocker: 'blocker', Rush: 'rush', 'Double Attack': 'double', Banish: 'banish' }[k]);
+  const tag = k => ({ Blocker: 'blocker', Rush: 'rush', 'Rush: Character': 'rush', 'Double Attack': 'double', Banish: 'banish', Unblockable: 'unblockable' }[k]);
   return (
     <div className={cls} data-fly={card.uid} data-ref={'c' + card.uid}>
-      <OpCard card={card} onClick={onClick} onEnter={() => onHover(card.uid)} onLeave={() => onHover(null)} title={`${card.def.name} · ${pw} power${card.don ? ` · ${card.don} DON!!` : ''}${card.rested ? ' · rested' : ''}`} />
+      <OpCard card={card} onClick={onClick} onEnter={() => onHover(card.uid)} onLeave={() => onHover(null)} title={`${card.def.name}${pw != null ? ` · ${pw} power` : ''}${card.don ? ` · ${card.don} DON!!` : ''}${card.rested ? ' · rested' : ''}`} />
       {pw != null ? <span key={pw} className={`op-pow ${pw > base ? 'up' : pw < base ? 'down' : ''}`}>{pw}</span> : null}
       {card.don ? <span key={'d' + card.don} className="op-dons" title={`${card.don} DON!! given`}>+{card.don}</span> : null}
       {kws.some(tag) ? <span className="op-tags">{kws.filter(tag).map(k => <span key={k} className={tag(k)}>{k}</span>)}</span> : null}
@@ -249,6 +251,10 @@ function Preview({ game, uid, me }) {
   const img = opImage(d.id) || opThumb(d.id);
   const inPlay = c.rested !== undefined && game.players.some(p => p.leader === c || p.characters.includes(c) || p.stage === c);
   const pw = inPlay && game.power ? game.power(c) : d.power;
+  // a Character's cost as effects change it (what "cost of 3 or less" effects look at)
+  const cost = inPlay && d.cat === 'C' && game.cost ? game.cost(c) : d.cost;
+  const state = inPlay ? [d.cat !== 'S' ? `${pw} power now` : '', cost !== d.cost ? `cost ${cost} now` : '', c.don ? `${c.don} DON!! given` : '', c.rested ? 'rested' : '',
+    ...(game.modsOf ? game.modsOf(c) : []).filter(m => !/^DON!!/.test(m.text)).map(m => m.text)].filter(Boolean).join(' · ') : '';
   return (
     <div className="op-preview">
       {img ? <img src={img} alt={d.name} /> : <OpCard card={c} />}
@@ -258,7 +264,7 @@ function Preview({ game, uid, me }) {
         {d.traits && d.traits.length ? <p>{d.traits.join(' / ')}{d.attr && d.attr.length ? ` · ${d.attr.join(' / ')}` : ''}</p> : null}
         {d.text ? <p><EffectText text={d.text} /></p> : null}
         {d.trigger ? <p><Kw label="Trigger" cls="trigger">Trigger</Kw> {d.trigger}</p> : null}
-        {inPlay ? <p className="state">{pw} power now{c.don ? ` · ${c.don} DON!! given` : ''}{c.rested ? ' · rested' : ''}{(game.modsOf ? game.modsOf(c) : []).filter(m => !/^DON!!/.test(m.text)).map(m => ` · ${m.text}`).join('')}</p> : null}
+        {state ? <p className="state">{state}</p> : null}
       </div>
     </div>
   );
