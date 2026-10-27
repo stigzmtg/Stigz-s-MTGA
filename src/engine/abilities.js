@@ -4,6 +4,8 @@ import { parseMana, emptyCost, addCosts, cmc, isManaToken, planPayment, payFromP
 import { matchValid, resolveDefined, calcCtx, checkConditions, checkPresence, ctxOf, findTargets, zoneMap, ctrlOf } from './filters.js';
 import { COLORS } from './util.js';
 import { runEffect } from './effects.js';
+import { payLifeReplaced, mustTargetCands, mustTargetFix, noteActivation, activationsUsed, spellResolved } from './mech-classic.js';
+import { cantPlayLand, cantAttach, cantPayLife, lifeForMana, ignoresHexproof, activationLimit } from './mech-classic-rules.js';
 
 export class Cancelled extends Error { constructor() { super('cancelled'); this.cancelled = true; } }
 
@@ -191,7 +193,7 @@ export function canPayNonMana(game, sa, cost, exclude = new Set()) {
   for (const part of cost.parts) {
     const n = part.amount === 'X' ? (sa.root().x || 0) : amountOf(game, sa, part.amount);
     switch (part.type) {
-      case 'PayLife': if (p.life < n) return false; break;
+      case 'PayLife': if (p.life < n || cantPayLife(game, pid, sa)) return false; break; // (mech-classic: Angel of Jubilation, Karn's Sylex)
       case 'PayEnergy': if ((p.counters.ENERGY || 0) < n) return false; break;
       case 'SubCounter': {
         const ctr = normalizeCounterName(part.counter);
@@ -477,6 +479,7 @@ async function applyCostParts(game, sa, cost, choices) {
   const p = game.players[pid];
   const host = sa.host;
   const paid = sa.root().paid;
+  sa.payingCost = true; // (what it costs, not what it does: "can't cause you to discard / sacrifice" leaves costs alone)
   if (cost.tap) { await game.tap(host); }
   if (cost.untap) { await game.untap(host); }
   for (const ch of choices) {
@@ -514,7 +517,7 @@ async function applyCostParts(game, sa, cost, choices) {
         break;
       }
       case 'AddCounter': { const n = ch.n; await game.addCounters(host, normalizeCounterName(part.counter), n, sa); if (normalizeCounterName(part.counter) === 'LOYALTY') sa.root().loyaltyCost = n; break; }
-      case 'PayLife': { const n = ch.n; p.life -= n; p.lifeLostThisTurn += n; game.touch(); game.log(`${p.name} pays ${n} life.`); game.fire('LifeLost', { Player: pid, LifeAmount: n }); paid.LifePaid = n; break; }
+      case 'PayLife': { const n = ch.n; if (await payLifeReplaced(game, sa, pid, n)) { paid.LifePaid = n; break; } p.life -= n; p.lifeLostThisTurn += n; game.touch(); game.log(`${p.name} pays ${n} life.`); game.fire('LifeLost', { Player: pid, LifeAmount: n }); paid.LifePaid = n; break; }
       case 'PayEnergy': p.counters.ENERGY = Math.max(0, (p.counters.ENERGY || 0) - ch.n); game.touch(); break;
       case 'Mill': await game.mill(p, ch.n, sa); break;
       case 'Draw': await game.drawCards(p, ch.n, sa); break;
@@ -523,6 +526,7 @@ async function applyCostParts(game, sa, cost, choices) {
       default: break;
     }
   }
+  sa.payingCost = false;
 }
 
 // ---------------------------------------------------------------- mana sources & payment
@@ -830,7 +834,7 @@ export async function payManaCost(game, pid, manaCost, { exclude = new Set(), sp
   if (cmc(manaCost) === 0 && !manaCost.x) return true;
   let sources = manaSourcesFor(game, pid, { exclude, spellCard, abilityHost, costHasX }).filter(s => !s.manualOnly);
   if (spellCard) sources = sources.concat(alternativeSources(game, pid, spellCard, exclude, sa && spellCard.def.faces[sa.face || 0]));
-  const plan = planPayment(manaCost, p.pool, sources, { lifeAvailable: p.life - 1 });
+  const plan = planPayment(manaCost, p.pool, sources, { lifeAvailable: lifeForMana(game, pid) });
   if (!plan) return false;
   if (dryRun) return true;
   const byKey = new Map(sources.map(s => [s.key, s]));
@@ -847,7 +851,7 @@ export async function payManaCost(game, pid, manaCost, { exclude = new Set(), sp
         if (s.extraCost) { const np = surplusPay(pool, s.extraCost, reserveFor(manaCost, seq, i), a.colors); if (!np) return false; pool = np; }
         for (const c of a.colors) pool[c] = (pool[c] || 0) + 1;
       }
-      return !!payFromPool(manaCost, pool, { lifeAvailable: p.life - 1 });
+      return !!payFromPool(manaCost, pool, { lifeAvailable: lifeForMana(game, pid) });
     };
     const perms = [];
     const permute = (rest, pre) => { if (perms.length > 120) return; if (!rest.length) { perms.push(pre); return; } rest.forEach((x, i) => permute([...rest.slice(0, i), ...rest.slice(i + 1)], [...pre, x])); };
@@ -875,7 +879,7 @@ export async function payManaCost(game, pid, manaCost, { exclude = new Set(), sp
     // the table can pace a computer player's taps one at a time (never changes the game)
     if (game.pace) await game.pace('tap', pid);
   }
-  const r = payFromPool(manaCost, p.pool, { lifeAvailable: p.life - 1 });
+  const r = payFromPool(manaCost, p.pool, { lifeAvailable: lifeForMana(game, pid) });
   if (!r) {
     // should not happen; leave mana floating
     game.log('Mana payment failed unexpectedly; mana left in pool.', { type: 'error', detail: JSON.stringify({ cost: manaCost, pool: p.pool, acts: acts.map(x => [x.s.card.def.name, x.a.colors]) }) });
@@ -897,7 +901,7 @@ export function canAfford(game, pid, manaCost, opts = {}) {
   if (cmc(manaCost) === 0) return true;
   let sources = manaSourcesFor(game, pid, opts).filter(s => !s.manualOnly);
   if (opts.spellCard) sources = sources.concat(alternativeSources(game, pid, opts.spellCard, opts.exclude || new Set()));
-  return !!planPayment(manaCost, p.pool, sources, { lifeAvailable: p.life - 1, maxNodes: 8000 });
+  return !!planPayment(manaCost, p.pool, sources, { lifeAvailable: lifeForMana(game, pid), maxNodes: 8000 });
 }
 
 export function availableManaCount(game, pid, spellCard = null, opts = {}) {
@@ -951,16 +955,17 @@ export function canBeTargetedBy(game, obj, sa) {
   if (obj.isPlayer) {
     if (obj.lost) return false;
     const pc = game.playerChars(obj.id);
-    if (pc.keywords.includes('Shroud')) return false;
-    if (pc.keywords.includes('Hexproof') && obj.id !== you) return false;
+    if (pc.keywords.includes('Shroud') && !ignoresHexproof(game, obj, sa, 'IgnoreShroud')) return false;
+    if (pc.keywords.includes('Hexproof') && obj.id !== you && !ignoresHexproof(game, obj, sa)) return false; // (mech-classic: Kaya, Detection Tower)
     if (sa.host && obj.id !== you && game.playerProtectedFrom(obj, sa.host)) return false;
     return true;
   }
   if (obj.stackItem) return true;
   if (obj.zone !== 'battlefield') return true;
   const ch = game.chars(obj);
-  if (game.hasKeywordIn(ch, 'Shroud')) return false;
-  if (obj.controller !== you) {
+  if (game.hasKeywordIn(ch, 'Shroud') && !ignoresHexproof(game, obj, sa, 'IgnoreShroud')) return false; // (mech-classic: Autumn Willow)
+  if (sa.api === 'Attach' && sa.host && cantAttach(game, sa.host.lki ? sa.host.card : sa.host, obj)) return false; // (mech-classic: Gate Smasher, Anti-Magic Aura)
+  if (obj.controller !== you && !ignoresHexproof(game, obj, sa)) { // (mech-classic: Glaring Spotlight)
     for (const k of ch.keywords) {
       if (k === 'Hexproof') return false;
       if (k.startsWith('Hexproof:')) {
@@ -1018,6 +1023,8 @@ export async function chooseTargetsForSA(game, root, { optional = false, aiHint 
     if (!spec) continue;
     let cands = targetCandidates(game, sa, spec);
     if (spec.unique) cands = cands.filter(c => !chosenAll.includes(c));
+    const must = mustTargetCands(game, root, cands, chosenAll, spec.max); // (mech-classic: "must choose a Flagbearer")
+    cands = must.cands;
     if (cands.length < spec.min) {
       if (spec.min === 0) { sa.targets = []; continue; }
       return false;
@@ -1031,6 +1038,7 @@ export async function chooseTargetsForSA(game, root, { optional = false, aiHint 
     const ans = await game.ask(sa.controller, { type: 'targets', prompt: (spec.prompt || '').replace(/CARDNAME/g, game.name(sa.host)), cands: cands.map(refOf), min: spec.min, max, sa, spec, cancellable });
     if (ans == null) { if (cancellable) throw new Cancelled(); if (spec.min > 0) return false; sa.targets = []; continue; }
     let objs = ans.map(r => fromRef(game, r)).filter(o => o && cands.includes(o)).filter((o, i, a) => a.indexOf(o) === i).slice(0, max);
+    if (must.need.length) objs = mustTargetFix(game, objs, cands, must.need, max);
     if (objs.length < spec.min) { if (!cancellable) return false; throw new Cancelled(); }
     if (spec.differentControllers) {
       const seen = new Set(); objs = objs.filter(o => { const c = o.isPlayer ? o.id : ctrlOf(game, o); if (seen.has(c)) return false; seen.add(c); return true; });
@@ -1402,7 +1410,7 @@ export function castableOptions(game, pid, card, { ignoreTiming = false, freeCas
   if (game.priority !== pid && !ignoreTiming) return out;
   for (const opt of spellOptions(game, pid, card)) {
     if (opt.land) {
-      if (!ignoreTiming && !canPlayLandNow(game, pid)) continue;
+      if (!ignoreTiming && !canPlayLandNow(game, pid, card)) continue;
       out.push(opt);
       continue;
     }
@@ -1464,6 +1472,7 @@ export function whyCantPlay(game, pid, card) {
       if (game.activePlayer !== pid) why.push('Lands can only be played on your own turn.');
       else if (!game.isMainPhase() || game.stack.length) why.push('Lands go down in your main phase, while nothing is waiting to resolve.');
       else if (p.landsPlayed >= 1 + game.playerChars(pid).extraLands) why.push('You’ve already played a land this turn.');
+      else { const st = cantPlayLand(game, pid, card); if (st) { const src = st.host.hostCard || st.host; why.push(`${game.name(src)} stops you playing ${name} right now${st.p.Description ? `: “${st.p.Description.replace(/CARDNAME/g, game.name(src))}”` : '.'}`); } }
       continue;
     }
     if (!timingOk(game, pid, card, opt)) {
@@ -1525,14 +1534,15 @@ function targetsPossible(game, root) {
   return fill(0, 0);
 }
 
-function canPlayLandNow(game, pid) {
+function canPlayLandNow(game, pid, card = null) {
   if (!game.canSorcery(pid)) return false;
+  if (card && cantPlayLand(game, pid, card)) return false; // (mech-classic: Aggressive Mining, Moonhold)
   const p = game.players[pid];
   return p.landsPlayed < 1 + game.playerChars(pid).extraLands;
 }
 
 export async function playLand(game, pid, card, action) {
-  if (!card || !canPlayLandNow(game, pid)) return false;
+  if (!card || !canPlayLandNow(game, pid, card)) return false;
   const opts = spellOptions(game, pid, card).filter(o => o.land);
   const opt = opts.find(o => o.key === action.optionKey) || opts[0];
   if (!opt) return false;
@@ -2144,6 +2154,9 @@ export function canActivate(game, pid, card, abil, { ignoreTiming = false } = {}
   }
   if (p.ActivationLimit && (card.abilityUses[abil.key] || 0) >= calcCtx(game, p.ActivationLimit, { host: card, you: pid })) return false;
   if (p.GameActivationLimit && (card.gameUses && card.gameUses[abil.key] || 0) >= +p.GameActivationLimit) return false;
+  // (mech-classic: boast only after it attacked, once a turn; exhaust and power-up once; Birgi and Wonder Man allow more)
+  if (p.Boast && !(game.turnState.attackedWith || []).includes(card.id)) return false;
+  { const lim = activationLimit(game, pid, card, abil); if (lim != null && activationsUsed(game, card, abil) >= lim) return false; }
   if (p.PlayerTurn === 'True' && game.activePlayer !== pid) return false;
   if (p.OpponentTurn === 'True' && game.activePlayer === pid) return false;
   if (p.ActivationPhases && !phaseOk(game, p.ActivationPhases)) return false;
@@ -2226,6 +2239,7 @@ export async function activateAbility(game, pid, card, abilityKey, action = {}) 
   if (cost.hasMana) { const paidOk = await payManaCost(game, pid, mana, { exclude, sa, ...payOpts }); if (!paidOk) return false; }
   await applyCostParts(game, sa, cost, choices);
   card.abilityUses[abil.key] = (card.abilityUses[abil.key] || 0) + 1;
+  noteActivation(game, card, abil, pid); // (mech-classic)
   if (p.Planeswalker === 'True') card.abilityUses.__pw = (card.abilityUses.__pw || 0) + 1;
   if (p.GameActivationLimit) { card.gameUses = card.gameUses || {}; card.gameUses[abil.key] = (card.gameUses[abil.key] || 0) + 1; }
   const desc = (p.SpellDescription || p.StackDescription || abil.parsed.api || '').replace(/CARDNAME|NICKNAME/g, game.name(card));
@@ -2292,7 +2306,7 @@ export async function resolveStackItem(game, item) {
       if (sa.opt && sa.opt.adventure) { await game.moveCard(card, 'exile', { silent: true }); card.onAdventure = true; game.log(`${game.name(card)} goes on an adventure.`); }
       else if (card.reboundPending) { await game.moveCard(card, 'exile'); }
       else if (sa.buyback && !card.mustBeExiled) { await game.moveCard(card, 'hand', { silent: true }); game.log(`${game.name(card)} returns to its owner's hand (buyback).`); }
-      else await game.moveCard(card, 'graveyard', { silent: true });
+      else { await game.moveCard(card, 'graveyard', { silent: true }); spellResolved(game, card, item.controller); } // (mech-classic: haunt)
     }
     return;
   }

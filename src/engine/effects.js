@@ -7,6 +7,8 @@ const counterLabel = k => `${counterName(k)} counter`;
 import { COLORS, COLOR_NAMES, NAME_TO_COLOR, BASIC_LAND_TYPES } from './util.js';
 import { cmc, parseMana, addCosts } from './mana.js';
 import { canAttack, defendersFor, playerInDirection } from './combat.js';
+import { CLASSIC_EFFECTS } from './mech-classic.js';
+import { cantAttach, cantGainControl, cantTransform, cantBeSuspected, cantBecomeMonarch } from './mech-classic-rules.js';
 
 const Z = z => (z ? (zoneMap[z] || z.toLowerCase()) : z);
 
@@ -1085,6 +1087,7 @@ export const E = {
     const list = cardsOf(objs(game, sa, 'Self'));
     for (const c of list) {
       if (c.zone !== 'battlefield') continue;
+      if (cantGainControl(game, c)) continue; // (mech-classic: Guardian Beast)
       const prev = c.controller;
       if (prev === newCtrl.id) continue;
       c.controller = newCtrl.id;
@@ -1108,6 +1111,7 @@ export const E = {
     if (sa.p.Defined && hasTgtSpec(sa)) { a = cardsOf(resolveDefined(game, sa.p.Defined, ctxOf(game, sa)))[0]; b = sa.targets[0]; }
     else [a, b] = list;
     if (!a || !b || a.zone !== 'battlefield' || b.zone !== 'battlefield') return;
+    if (cantGainControl(game, a) || cantGainControl(game, b)) return; // (mech-classic)
     [a.controller, b.controller] = [b.controller, a.controller];
     a.sick = b.sick = true;
     game.touch();
@@ -1252,6 +1256,7 @@ export const E = {
         if (target.zone !== 'battlefield' || target === a) continue;
         if (game.chars(a).subtypes.has('Equipment') && (!game.chars(target).types.has('Creature'))) continue;
         if (game.chars(a).subtypes.has('Fortification') && (!game.chars(target).types.has('Land'))) continue;
+        if (cantAttach(game, a, target)) continue; // (mech-classic: "can't be enchanted / equipped")
         for (const r of game.chars(a).replacements) {
           const rp = r.parsed.p;
           if (rp.Event !== 'Attached' || !r.svars[rp.ReplaceWith]) continue;
@@ -1288,7 +1293,7 @@ export const E = {
 
   async BecomeMonarch(game, sa) {
     const pl = playersOf(objs(game, sa, 'You'))[0];
-    if (!pl) return;
+    if (!pl || cantBecomeMonarch(game, pl.id)) return; // (mech-classic: Jared Carthalion)
     game.monarch = pl.id;
     game.touch();
     game.log(`${pl.name} becomes the monarch.`);
@@ -1451,7 +1456,7 @@ export const E = {
         game.touch();
         game.log(`${game.players[c.controller].name} turns ${game.name(c)} face down.`);
       } else if (mode === 'Transform' || mode === 'Flip') {
-        if (c.def.faces.length < 2) continue;
+        if (c.def.faces.length < 2 || (mode === 'Transform' && cantTransform(game, c))) continue; // (mech-classic: Immerwolf)
         c.face = c.face ? 0 : 1;
         c.transformed = !!c.face;
         game.touch();
@@ -1777,7 +1782,9 @@ export const E = {
     const attrs = (sa.p.Attributes || '').split(',');
     for (const c of cardsOf(objs(game, sa, 'Self'))) {
       for (const a of attrs) {
-        if (a === 'Suspected') { c.suspected = true; c.temp.push({ keywords: ['Menace', "CARDNAME can't block."], until: 'Permanent', suspect: true }); }
+        // (mech-classic: "Activate$ False" ends it; Airtight Alibi's creature can't become suspected)
+        if (a === 'Suspected' && sa.p.Activate === 'False') { c.suspected = false; c.temp = c.temp.filter(t => !t.suspect); }
+        else if (a === 'Suspected' && !c.suspected && !cantBeSuspected(game, c)) { c.suspected = true; c.temp.push({ keywords: ['Menace', "CARDNAME can't block."], until: 'Permanent', suspect: true }); }
         if (a === 'Solved') c.solved = true;
         if (a === 'Renowned') c.renowned = true;
         if (a === 'Harnessed') c.harnessed = true;
@@ -2593,6 +2600,7 @@ async function copyStackItem(game, item, controller, mayChooseTargets) {
   if (card) game.fire('SpellCopy', { Card: card, Player: controller, IsSpell: true, StackItem: copy });
 }
 
+Object.assign(E, CLASSIC_EFFECTS);
 export const SUPPORTED_APIS = new Set(Object.keys(E).concat(['Charm']));
 
 export async function runEffect(game, sa) {

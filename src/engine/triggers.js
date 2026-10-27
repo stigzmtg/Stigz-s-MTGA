@@ -1,6 +1,7 @@
 // Mode-specific trigger matching against event run-params.
 import { matchValid, ctrlOf, resolveDefined, matchCastSA } from './filters.js';
 import { normalizeCounter } from './game.js';
+import { classicTriggerMatches, CLASSIC_TRIGGER_MODES } from './mech-classic-rules.js';
 
 function vc(game, obj, valid, ctx) {
   if (!valid) return true;
@@ -17,6 +18,8 @@ function playerObj(game, id) { return id == null ? null : (typeof id === 'object
 
 export const SUPPORTED_TRIGGER_MODES = new Set(['ChangesZone', 'ChangesZoneAll', 'Phase', 'Attacks', 'AttackersDeclared', 'AttackersDeclaredOneTarget', 'SpellCast', 'SpellCastOrCopy', 'AbilityCast', 'SpellAbilityCast', 'DamageDone', 'DamageDoneOnce', 'DamageDealtOnce', 'DamageAll', 'Drawn', 'Sacrificed', 'Destroyed', 'LifeGained', 'LifeLost', 'LifeLostAll', 'TapsForMana', 'Cycled', 'Discarded', 'DiscardedAll', 'BecomesTarget', 'BecomesTargetOnce', 'Taps', 'Untaps', 'Blocks', 'AttackerBlocked', 'AttackerBlockedByCreature', 'AttackerUnblocked', 'AttackerUnblockedOnce', 'CounterAdded', 'CounterAddedOnce', 'CounterRemoved', 'LandPlayed', 'Always', 'TokenCreated', 'TokenCreatedOnce', 'TurnBegin', 'Milled', 'MilledAll', 'Exiled', 'LosesGame', 'BecomeMonarch', 'TakesInitiative', 'RoomEntered', 'DungeonCompleted', 'Explores', 'Connives', 'Surveil', 'Scry', 'Investigated', 'Fight', 'Attached', 'Unattached', 'ChangesController', 'Transformed', 'SpellCopy', 'BecomesCrewed', 'TurnFaceUp', 'Mutates', 'BecomeMonstrous', 'Evolved', 'CommitCrime', 'FlippedCoin', 'RolledDie', 'RolledDieOnce', 'Exploited', 'AbilityTriggered', 'AbilityResolves', 'CounterPlayerAddedAll', 'ManaAdded',
   'ClassLevelGained', 'Clashed', 'DamagePrevented', 'DamagePreventedOnce', 'GiveGift', 'UnlockDoor', 'FullyUnlock', 'ManaExpend', 'Exerted', 'Vote', 'BecomeRenowned', 'MilledOnce', 'Shuffled', 'CounterTypeAddedAll', 'CounterRemovedOnce', 'SearchedLibrary', 'PhaseOutAll']);
+// classic (mech-classic.js): phasing in and out, cumulative upkeep and echo paid or not
+for (const m of CLASSIC_TRIGGER_MODES) SUPPORTED_TRIGGER_MODES.add(m);
 
 export function triggerMatches(game, p, host, rp, ctx) {
   const mode = rp.Mode;
@@ -245,6 +248,7 @@ export function triggerMatches(game, p, host, rp, ctx) {
     }
     case 'AbilityTriggered': case 'AbilityResolves': return false;
     case 'ManaAdded': return false;
+    case 'PhaseIn': case 'PhaseOut': case 'PayCumulativeUpkeep': case 'PayEcho': return classicTriggerMatches(game, p, rp, (o, v) => vc(game, o, v, ctx)); // (mech-classic)
     default: return false;
   }
 }

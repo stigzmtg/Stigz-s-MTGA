@@ -3,9 +3,13 @@ import { parseCardScript, parseAbility } from './forge.js';
 import { SUPPORTED_APIS } from './effects.js';
 import { SUPPORTED_TRIGGER_MODES } from './triggers.js';
 import { SUPPORTED_KEYWORDS } from './keywords.js';
+import { CLASSIC_STATIC_MODES, CLASSIC_REPLACEMENT_EVENTS } from './mech-classic-rules.js';
 
 export const STATIC_MODES = new Set(['Continuous', 'ReduceCost', 'RaiseCost', 'CantBlockBy', 'CantAttack', 'CantAttackUnless', 'CastWithFlash', 'CantBlock', 'Panharmonicon', 'CantBeCast', 'CantSacrifice', 'MinMaxBlocker', 'CantGainLife', 'IgnoreLegendRule', 'CanAttackDefender', 'CombatDamageToughness', 'CantTarget', 'ActivateAbilityAsIfHaste', 'CantPreventDamage', 'CantBeActivated', 'AssignCombatDamageAsUnblocked', 'CantPutCounter', 'NumLoyaltyAct', 'CantBeCountered', 'MustAttack', 'AlternativeCost', 'UntapOtherPlayer', 'CantChangeLife', 'WitherDamage', 'MustBlock', 'AttackRestrict', 'BlockRestrict', 'CantBlockUnless', 'OptionalCost', 'OptionalAttackCost', 'UnspentMana', 'PlayerMustAttack', 'CountersRemain', 'Devotion', 'SurveilNum', 'DisableTriggers', 'FlipCoinDoubler', 'CantDraw', 'GainLifeRadiation', 'CantLoseLife', 'DrawFromBottom', 'CantExile', 'CantPhaseIn', 'ManaConvert']);
 export const REPLACEMENT_EVENTS = new Set(['Moved', 'DamageDone', 'AddCounter', 'CreateToken', 'Draw', 'GainLife', 'Counter', 'Untap', 'GameLoss', 'GameWin', 'BeginPhase', 'BeginTurn', 'TurnFaceUp', 'LoseMana', 'ProduceMana', 'CopySpell', 'DrawCards', 'LifeReduced', 'RollDice', 'Transform', 'Attached', 'Proliferate', 'Explore', 'RollPlanarDice', 'RemoveCounter', 'Planeswalk']);
+// classic (mech-classic.js): "can't" and "ignore" statics, destroy and pay-life replacements
+for (const m of CLASSIC_STATIC_MODES) STATIC_MODES.add(m);
+for (const e of CLASSIC_REPLACEMENT_EVENTS) REPLACEMENT_EVENTS.add(e);
 const COSTS = new Set(['T', 'Q', 'Sac', 'SubCounter', 'AddCounter', 'PayLife', 'Discard', 'Exile', 'ExileFromGrave', 'ExileFromHand', 'tapXType', 'untapYType', 'Return', 'PayEnergy', 'RemoveAnyCounter', 'Mill', 'Reveal', 'Draw', 'Exert', 'Unattach', 'Crew', 'ExileAnyGrave', 'Blight', 'RevealChosen', 'ExiledMoveToGrave', 'ExileSameGrave', 'RollDice', 'Behold', 'PutCardToLibFromBattlefield', 'Mana']);
 
 const PRETTY = { Mode: '', api: '' };
@@ -25,7 +29,7 @@ export function analyzeCard(text) {
       if (p.p.Cost) for (const tok of p.p.Cost.match(/\w+<[^>]*>|\S+/g) || []) { const t = tok.replace(/<.*/, ''); if (/^[\dWUBRGCXSP\/]+$/.test(t) || t === 'XMin1' || t === 'Mandatory') continue; if (!COSTS.has(t)) issues.add(t + ' cost'); }
     }
     for (const t of [...f.T, ...Object.values(f.svars).filter(v => /^Mode\$/.test(v) && /Execute\$/.test(v))]) { const p = parseAbility(t); if (!SUPPORTED_TRIGGER_MODES.has(p.p.Mode)) issues.add(p.p.Mode + ' trigger'); }
-    const delayedNames = new Set(Object.values(f.svars).flatMap(v => [...String(v).matchAll(/ExtraPhaseDelayedTrigger\$ (\w+)/g)].map(m => m[1])));
+    const delayedNames = new Set([...f.A, ...Object.values(f.svars)].flatMap(v => [...String(v).matchAll(/ExtraPhaseDelayedTrigger\$ (\w+)/g)].map(m => m[1])));
     for (const s of [...f.S, ...Object.entries(f.svars).filter(([n, v]) => /^Mode\$/.test(v) && !/Execute\$/.test(v) && !delayedNames.has(n)).map(([, v]) => v)]) { const p = parseAbility(s); for (const m of (p.p.Mode || '').split(',')) if (!STATIC_MODES.has(m)) issues.add(m); }
     for (const r of [...f.R, ...Object.values(f.svars).filter(v => /^Event\$/.test(v))]) { const p = parseAbility(r); if (!REPLACEMENT_EVENTS.has(p.p.Event)) issues.add(p.p.Event + ' replacement'); }
   }

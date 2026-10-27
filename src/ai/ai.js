@@ -25,6 +25,9 @@ export class AIAgent {
 
   async ask(game, pid, req) {
     this.game = game; this.pid = pid;
+    // (mech-classic) deciding for a player whose turn this seat controls (Mindslaver): spend nothing of theirs, attack
+    // with nothing; other choices are made the usual way
+    if (req.decider != null && req.decider !== pid) { if (req.type === 'priority') return { type: 'pass' }; if (req.type === 'attackers') return []; }
     try {
       switch (req.type) {
         case 'priority': return await this.priority(game, pid);
@@ -846,6 +849,8 @@ export class AIAgent {
         return !!c && (game.battlefield.some(x => x.tempControl && x.tempControl.untilUntapOf === c.id) || game.effects.some(e => e.endsWhenHostUntaps === c.id));
       }
       case 'cumulativeUpkeep': return (req.age || 1) <= 4;
+      // (mech-classic) bidding life: top a bid only up to the card's limit and while plenty of life is left
+      case 'bidLife': return req.winner !== pid && req.bid + 1 <= (req.aiMax || 8) && game.players[pid].life - req.bid - 1 >= 15;
       case 'optionalCost': {
         const c = String(req.cost || '');
         if (/^Blight/.test(c)) return game.battlefield.some(x => x.controller === pid && game.chars(x).types.has('Creature') && (x.token || game.chars(x).toughness > 1));
@@ -908,6 +913,7 @@ export class AIAgent {
 
   number(game, pid, req) {
     if (req.purpose === 'readAhead') return req.min;
+    if (req.purpose === 'bidRaise' || req.purpose === 'bidStart') return req.min; // (mech-classic: bid life)
     if (req.purpose === 'divide') return Math.max(req.min, Math.min(req.max, Math.floor((req.left || req.max) / (req.targetsLeft || 1))));
     if (req.purpose === 'chorus') return Math.min(req.max, game.step === 'main2' ? req.max : Math.floor(req.max / 2));
     if (req.purpose === 'xValue' && req.xCost === 'PayLife') {
