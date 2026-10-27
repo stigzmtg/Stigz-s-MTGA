@@ -584,6 +584,12 @@ export function producedUnits(game, card, abil, noReflect = false) {
     for (const c of game.battlefield) if (matchValid(game, c, each[1], { host: card, you: pid })) for (const x of game.chars(c).colors) cols.add(x);
     return COLORS.filter(x => cols.has(x)).map(x => [x]);
   }
+  // "for each color among the exiled cards used to craft it" (Sunbird Effigy)
+  if (produced === 'Special EachColorAmong_ExiledWith') {
+    const cols = new Set();
+    for (const c of resolveDefined(game, 'ExiledWith', { host: card, you: pid })) for (const x of game.chars(c).colors) cols.add(x);
+    return COLORS.filter(x => cols.has(x)).map(x => [x]);
+  }
   let units = manaColorsFromProduced(produced);
   if (p.Amount) {
     const ctx = { host: card, you: pid, svars: abil.svars, sa: { svars: abil.svars, host: card, controller: pid, root() { return { x: 0, paid: {} }; } } };
@@ -1252,7 +1258,8 @@ export function spellOptions(game, pid, card, { anyZone = false } = {}) {
   if (from === 'hand' || from === 'command') {
     const f = faces[0];
     const seenAlt = new Set();
-    for (const k of castKeywords(game, pid, card, f, from)) {
+    const kwsHere = castKeywords(game, pid, card, f, from);
+    for (const k of kwsHere) {
       let m;
       // (the same cost twice, printed and granted, is one way to cast it)
       if (seenAlt.has(k)) continue;
@@ -1283,7 +1290,7 @@ export function spellOptions(game, pid, card, { anyZone = false } = {}) {
       if (!checkPresence(game, sp, ctx)) continue;
       pushFace(0, { altCost: 'Alternative', altManaStr: sp.Cost, label: `Cast ${f.name} (${(sp.Description || 'alternative cost').slice(0, 50)})` });
     }
-    castingAltOptions(game, pid, card, from, pushFace); // warp, sneak, web-slinging, freerunning, converted, prototype
+    castingAltOptions(game, pid, card, from, pushFace, kwsHere); // warp, sneak, web-slinging, freerunning, converted, prototype
   }
   // aftermath half from the graveyard
   if (zone === 'graveyard' && card.owner === pid && def.altMode === 'Split' && faces[1] && faces[1].keywords.includes('Aftermath')) {

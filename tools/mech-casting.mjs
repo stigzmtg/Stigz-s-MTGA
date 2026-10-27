@@ -279,6 +279,29 @@ test('Craft with X: Altar of the Wretched exiles one or more creatures; nothing 
   expect(altar.face === 1 && a.zone === 'exile' && b.zone === 'exile', 'crafted with two creature cards');
   const ch = g.chars(altar);
   expect(ch.power === 5, `power is the total power of the exiled cards (${ch.power})`);
+  expect(!g.hasKeyword(altar, 'Flying') && !g.hasKeyword(altar, 'Double Strike'), 'only the keywords the exiled cards have');
+});
+test('Craft: Wretched Bonemass shares the exiled cards’ keywords; Sunbird Effigy makes their colors', async T => {
+  const g = T.game;
+  const altar = await T.put(0, 'Altar of the Wretched');
+  T.a.on('optionalTrigger', () => false); T.a.on('triggerCost', () => false);
+  await T.resolve();
+  for (const c of [...T.A.graveyard]) await g.moveCard(c, 'exile', { silent: true });
+  await T.put(0, 'Serra Angel', 'graveyard');
+  T.a.on('xValue', () => 1);
+  await T.activate(altar, 0, x => x.parsed.p.Craft);
+  expect(g.hasKeyword(altar, 'Flying') && g.hasKeyword(altar, 'Vigilance') && !g.hasKeyword(altar, 'Trample'), `flying and vigilance from Serra Angel (${g.chars(altar).keywords})`);
+  const sb = await T.put(0, 'Sunbird Standard');
+  await T.put(0, 'Llanowar Elves');
+  for (const c of [...T.A.graveyard]) await g.moveCard(c, 'exile', { silent: true });
+  await T.put(0, 'Goblin Guide', 'graveyard'); await T.put(0, 'Wall of Omens', 'graveyard');
+  T.a.on('xValue', () => 2);
+  T.a.on('costExileCtrlOrGrave', req => req.cards.filter(id => g.cardById(id).zone === 'graveyard').slice(0, 2));
+  await T.activate(sb, 0, x => x.parsed.p.Craft);
+  const { producedUnits, manaAbilitiesOf } = await import('../src/engine/abilities.js');
+  const ab = manaAbilitiesOf(g, sb)[0];
+  const units = producedUnits(g, sb, ab).map(u => u.join('')).sort().join(',');
+  expect(units === 'R,W', `red and white mana from the exiled Goblin Guide and Wall of Omens (${units})`);
 });
 
 // ------------------------------------------------------------ assist, conspire, ripple, epic, paradigm

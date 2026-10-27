@@ -142,11 +142,11 @@ const teamworkCost = n => `tapXType<Any/Creature.YouCtrl+withTotalPowerGE${n}>`;
 
 // Options from the hand (and the command zone) for the alternative costs this module adds: spellOptions calls it
 // with its pushFace(face, extra).
-export function castingAltOptions(game, pid, card, from, pushFace) {
+export function castingAltOptions(game, pid, card, from, pushFace, kws = null) {
   const faces = card.def.faces;
   const f = faces[0];
   const seen = new Set();
-  for (const k of castKeywords(game, pid, card, f, from)) {
+  for (const k of kws || castKeywords(game, pid, card, f, from)) {
     if (seen.has(k)) continue;
     seen.add(k);
     const parts = k.split(':');
