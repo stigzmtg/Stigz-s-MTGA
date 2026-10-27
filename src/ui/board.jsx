@@ -1,6 +1,7 @@
 // The table: player mats (plate + battlefield rows), the table center (stack, recent plays, prompt),
 // the arrow layer (targets, attacks, blocks), the hand fan and small motion cues (enter, damage, life change).
 import { CardFace, CardBack, viewOf, ManaCost, Pip, RulesText } from './cardview.jsx';
+import { UnsetsSlot } from './unsets.jsx';
 import { imageOf } from './images.js';
 import { EmoteBubble } from './emotes.jsx';
 import { AnimalAvatar } from './avatar.jsx';
@@ -361,6 +362,7 @@ export function Mat({ game, pid, ctx, side, compact }) {
   const back = (
     <div className="row back">
       <CommandSlot game={game} pid={pid} ctx={ctx} />
+      <UnsetsSlot game={game} pid={pid} ctx={ctx} />
       {other.map(g => <CardSlot key={g.cards[0].id} card={g.cards[0]} count={g.cards.length} ids={g.cards.map(c => c.id)} ctx={ctx} />)}
       {other.length && lands.length ? <span className="divider" /> : null}
       <div className="lands">{lands.map(g => <CardSlot key={g.cards[0].id} card={g.cards[0]} count={g.cards.length} ids={g.cards.map(c => c.id)} ctx={ctx} />)}</div>

@@ -414,7 +414,7 @@ export async function rollDice(game, pid, amount, sides, ignore = 0, sa = null, 
   const toVisit = !!(opts.toVisit || (sa && sa.p.ToVisitYourAttractions === 'True'));
   await adjustDiceRolls(game, pid, rolls, sides, sa, toVisit);
   const total = rolls.reduce((a, b) => a + b, 0);
-  game.log(`${game.players[pid].name} rolls ${rolls.length > 1 ? rolls.length : 'a'} d${sides}${toVisit ? ' to visit their Attractions' : ''}: ${total}.`);
+  game.log(`${game.players[pid].name} rolls ${rolls.length > 1 ? rolls.length : 'a'} d${sides}${toVisit ? ' to visit Attractions' : ''}: ${total}.`);
   // "whenever you roll a 6": each die
   for (const r of rolls) game.fire('RolledDie', { Player: pid, Result: r, Sides: sides, ToVisit: toVisit });
   game.fire('RolledDieOnce', { Player: pid, Result: total, Sides: sides, ToVisit: toVisit });

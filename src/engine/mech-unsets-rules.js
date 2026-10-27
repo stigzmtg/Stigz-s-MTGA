@@ -197,7 +197,7 @@ export function attractionDestination(game, card, dest) {
   if (!card.attraction || dest === 'battlefield' || dest === 'exile' || dest === 'command' || dest === 'Junkyard' || dest === 'stack' || dest === 'gone') return dest;
   const owner = game.players[card.owner];
   if (!owner.Junkyard) owner.Junkyard = [];
-  game.log(`${game.name(card)} goes to ${owner.name}'s junkyard.`, { cardId: card.id, type: 'move' });
+  game.log(`${game.name(card)} is put into its owner's junkyard.`, { cardId: card.id, type: 'move' });
   return 'Junkyard';
 }
 

@@ -4,6 +4,7 @@ import { counterName } from '../engine/game.js';
 import { KEYWORD_COUNTERS } from '../engine/chars.js';
 import { imageOf, cardImage, imageFailed, imageBroken } from './images.js';
 import { Sleeve } from './deckstyle.jsx';
+import { unsetsCardInfo } from '../engine/mech-unsets-rules.js';
 
 const HYBRID = ['wu', 'wb', 'ub', 'ur', 'br', 'bg', 'rw', 'rg', 'gw', 'gu'];
 function msClass(sym) {
@@ -94,6 +95,9 @@ export function viewOf(game, card) {
   const bp = /^\d+$/.test(face.power || '') ? +face.power : null, bt = /^\d+$/.test(face.toughness || '') ? +face.toughness : null;
   const kws = kwAbbrs(ch.keywords);
   const printed = kwAbbrs(face.keywords || []);
+  // Un-sets: stickers on it, an Attraction's lights
+  const unsets = card.faceDown ? null : unsetsCardInfo(game, card);
+  if (unsets) oracle = oracle ? `${oracle}\n${unsets.text}` : unsets.text;
   return {
     id: card.id, name: game.name(card) || 'Face-down card', cost: card.faceDown ? null : ch.manaCost, typeLine, types, colors: [...ch.colors],
     oracle, power: isCreature ? ch.power : null, toughness: isCreature ? ch.toughness : null,
@@ -106,7 +110,7 @@ export function viewOf(game, card) {
     sick: isCreature && card.zone === 'battlefield' && card.sick && !game.hasKeywordIn(ch, 'Haste'),
     produces: types.includes('Land') && !isCreature ? landColors(ch, game, card) : null,
     isCommander: !!card.isCommander, xPaid: card.xPaid, onField: card.zone === 'battlefield',
-    img: imageOf(game, card),
+    img: imageOf(game, card), unsets,
   };
 }
 
@@ -188,6 +192,8 @@ export function CardFace({ v, size = 'mini', cls = '', onClick, onContextMenu, o
       <div className="badges">
         {v.counters && v.counters.map(([k, n]) => <span key={`${k}${n}`} className={`badge ${k === 'M1M1' ? 'minus' : k === 'P1P1' ? 'plus' : 'ctr'}`} title={`${n} ${counterName(k)} counter(s)`}>{k === 'P1P1' ? `+${n}` : k === 'M1M1' ? `−${n}` : KEYWORD_COUNTERS[k] ? (KW_ABBR[KEYWORD_COUNTERS[k]] || counterName(k)) : `${n} ${counterName(k).slice(0, 6)}`}</span>)}
         {v.damage ? <span key={`dmg${v.damage}`} className="badge dmg" title={`${v.damage} damage`}>{v.damage} dmg</span> : null}
+        {v.unsets && v.unsets.lights ? <span className="badge ctr" title={`Lit: ${v.unsets.lights.join(', ')}. Rolling one of these to visit Attractions visits it.`}>◉ {v.unsets.lights.join('·')}</span> : null}
+        {v.unsets && v.unsets.stickers.length ? <span className="badge ctr" title={v.unsets.text}>★ {v.unsets.stickers.length}</span> : null}
         {badges}
       </div>
     </div>

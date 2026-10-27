@@ -394,7 +394,7 @@ test('Line Cutter rolls to visit; Motion Sickness moves when you visit', async T
   rig(T.game, 2);
   const hand = T.A.hand.length;
   await T.cast('Line Cutter');
-  expect(T.logged(/rolls a d6 to visit their Attractions: 2/), 'rolled to visit');
+  expect(T.logged(/rolls a d6 to visit Attractions: 2/), 'rolled to visit');
   expect(T.A.hand.length === hand + 1, 'visited Information Booth');
   expect(ms.attachedTo === opp2.id, `Motion Sickness moved to the tapped wall (${ms.attachedTo})`);
 });

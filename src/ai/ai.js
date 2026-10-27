@@ -5,7 +5,7 @@ import { matchValid, calc, ctxOf, ctrlOf } from '../engine/filters.js';
 import { parseAbility } from '../engine/forge.js';
 import { sleep, COLORS, BASIC_LAND_TYPES } from '../engine/util.js';
 import { addCosts } from '../engine/mana.js';
-import { unsetsAI } from '../engine/mech-unsets.js';
+import { unsetsAI, availableStickers } from '../engine/mech-unsets.js';
 
 const HARMFUL = new Set(['Destroy', 'DestroyAll', 'DealDamage', 'DamageAll', 'Counter', 'Sacrifice', 'SacrificeAll', 'Discard', 'LoseLife', 'Mill', 'GainControl', 'Tap', 'TapAll', 'Goad', 'Fight', 'Phases', 'ExchangeControl', 'RemoveCounter']);
 const BENEFICIAL = new Set(['Pump', 'PumpAll', 'PutCounter', 'PutCounterAll', 'GainLife', 'Draw', 'Untap', 'UntapAll', 'Attach', 'Regenerate', 'Animate', 'Token', 'CopyPermanent', 'Clone', 'Investigate', 'Scry', 'Surveil', 'Proliferate', 'Dig', 'BecomeMonarch', 'Explore', 'Connive', 'Amass', 'MultiplyCounter', 'Mana']);
@@ -425,6 +425,7 @@ export class AIAgent {
       case 'EndCombatPhase': return game.combat && game.activePlayer !== pid && game.combat.attackers.some(a => a.defenderPlayer === pid) ? 3 : -5;
       case 'BlankLine': return 0;
       case 'Meld': return 4;
+      case 'PutSticker': return availableStickers(game, pid, { kind: p.Kind }).length ? 2 : 0; // Un-sets: only with a sticker to put
       case 'UnlockDoor': { const f = sa.host && sa.host.def && sa.host.def.faces[+p.Door || 0]; return f ? 3 + f.cmc * 0.6 + f.triggers.length + f.statics.length : 2; }
       default: return 1;
     }
