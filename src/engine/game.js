@@ -424,7 +424,7 @@ export class Game {
       case 'untap': {
         for (const c of [...this.battlefield]) {
           if (c.phasedOut && c.controller === ap) {
-            if (!this.activeStatics('CantPhaseIn').some(s => matchValid(this, c, s.p.ValidCard || 'Card', s.ctx))) { c.phasedOut = false; this.touch(); }
+            if (!c.wontPhaseIn && !this.activeStatics('CantPhaseIn').some(s => matchValid(this, c, s.p.ValidCard || 'Card', s.ctx))) { c.phasedOut = false; this.touch(); }
             continue;
           }
           if (c.controller === ap) {

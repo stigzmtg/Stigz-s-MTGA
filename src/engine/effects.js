@@ -1619,12 +1619,16 @@ export const E = {
 
   async Phases(game, sa) {
     const out = [];
-    for (const c of cardsOf(objs(game, sa, 'Self'))) {
+    // "phase out all creatures" (AllValid$, Out of Time)
+    const list = sa.p.AllValid ? game.battlefield.filter(c => !c.phasedOut && matchValid(game, c, sa.p.AllValid, ctxOf(game, sa))) : cardsOf(objs(game, sa, 'Self'));
+    for (const c of list) {
       if (c.zone !== 'battlefield') continue;
-      if (c.phasedOut) { if (sa.p.PhaseInOrOut === 'True') { c.phasedOut = false; game.log(`${game.name(c)} phases in.`); } continue; }
-      c.phasedOut = true; out.push(c);
+      if (c.phasedOut) { if (sa.p.PhaseInOrOut === 'True') { c.phasedOut = false; c.wontPhaseIn = false; game.log(`${game.name(c)} phases in.`); } continue; }
+      // "phases out until ..." (Ferris Wheel, Oubliette): not back in at its controller's untap step
+      c.phasedOut = true; c.wontPhaseIn = sa.p.WontPhaseInNormal === 'True'; out.push(c);
       game.log(`${game.name(c)} phases out.`);
     }
+    if (sa.p.RememberAffected === 'True') remember(sa, out);
     game.touch();
     if (out.length) game.fire('PhaseOutAll', { Cards: out, Amount: out.length });
   },

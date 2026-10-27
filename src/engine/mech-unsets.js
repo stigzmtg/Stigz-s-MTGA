@@ -18,7 +18,7 @@ import { matchValid, resolveDefined, calc, ctxOf, zoneMap } from './filters.js';
 import { parseAbility } from './forge.js';
 import {
   STICKER_SHEETS, ATTRACTION_LIGHTS, ATTRACTIONS, isSheetDef, isAttractionDef, usesStickers, usesAttractions, sheetStickers,
-  usedStickerIds, uniqueVowels, stickerLetters, stickerText, stickerKindWord, addStickerWord, hasNameBlank, lightsOf,
+  usedStickerIds, uniqueVowels, stickerLetters, stickerKindWord, addStickerWord, hasNameBlank, lightsOf,
 } from './mech-unsets-rules.js';
 
 export const UNSETS_KEYWORDS = ['StickerSheet', 'Visit', 'Prize'];
@@ -52,24 +52,33 @@ export function setupUnsets(game) {
     }
     for (const c of brought.sheets) { c.zone = 'gone'; game.cards.delete(c.id); }
     const own = [...p.library, ...p.command];
-    if (brought.sheets.length || own.some(c => usesStickers(c.def))) {
-      const rng = setupRng(game, p.id, 0x57C1);
-      let names = [...new Set(brought.sheets.map(c => c.def.name))];
-      if (names.length > SHEETS_PER_PLAYER) names = rng.shuffle(names).slice(0, SHEETS_PER_PLAYER);
-      const pool = STICKER_SHEETS.filter(n => !names.includes(n) && game.db.has(n));
-      while (names.length < SHEETS_PER_PLAYER && pool.length) names.push(pool.splice(rng.int(pool.length), 1)[0]);
-      giveStickerSheets(game, p.id, names);
-    }
-    if (brought.attractions.length || own.some(c => usesAttractions(c.def))) {
-      const rng = setupRng(game, p.id, 0xA77A);
-      const have = new Set(brought.attractions.map(c => c.def.name));
-      const pool = ATTRACTIONS.filter(n => !have.has(n) && game.db.has(n));
-      const extra = [];
-      while (have.size + extra.length < ATTRACTION_DECK_SIZE && pool.length) extra.push(pool.splice(rng.int(pool.length), 1)[0]);
-      const lit = name => { const v = ATTRACTION_LIGHTS[name] || ['6']; return v[rng.int(v.length)]; };
-      giveAttractionDeck(game, p.id, [...brought.attractions.map(c => [c, lit(c.def.name)]), ...extra.map(n => [n, lit(n)])], { rng });
-    }
+    if (brought.sheets.length || own.some(c => usesStickers(c.def))) ensureStickerSheets(game, p.id, brought.sheets.map(c => c.def.name));
+    if (brought.attractions.length || own.some(c => usesAttractions(c.def))) ensureAttractionDeck(game, p.id, brought.attractions);
   }
+}
+
+// A player who comes to put a sticker or open an Attraction without having any (a card they took control of, or
+// put onto the battlefield some other way) gets them then, chosen the same way.
+export function ensureStickerSheets(game, pid, brought = []) {
+  const p = game.players[pid];
+  if (p.stickerSheets) return;
+  const rng = setupRng(game, pid, 0x57C1);
+  let names = [...new Set(brought)];
+  if (names.length > SHEETS_PER_PLAYER) names = rng.shuffle(names).slice(0, SHEETS_PER_PLAYER);
+  const pool = STICKER_SHEETS.filter(n => !names.includes(n) && game.db.has(n));
+  while (names.length < SHEETS_PER_PLAYER && pool.length) names.push(pool.splice(rng.int(pool.length), 1)[0]);
+  giveStickerSheets(game, pid, names);
+}
+export function ensureAttractionDeck(game, pid, brought = []) {
+  const p = game.players[pid];
+  if (p.AttractionDeck) return;
+  const rng = setupRng(game, pid, 0xA77A);
+  const have = new Set(brought.map(c => c.def.name));
+  const pool = ATTRACTIONS.filter(n => !have.has(n) && game.db.has(n));
+  const extra = [];
+  while (have.size + extra.length < ATTRACTION_DECK_SIZE && pool.length) extra.push(pool.splice(rng.int(pool.length), 1)[0]);
+  const lit = name => { const v = ATTRACTION_LIGHTS[name] || ['6']; return v[rng.int(v.length)]; };
+  giveAttractionDeck(game, pid, [...brought.map(c => [c, lit(c.def.name)]), ...extra.map(n => [n, lit(n)])], { rng });
 }
 
 // (tests and setup) the player's sticker sheets, by name
@@ -165,7 +174,7 @@ async function putSticker(game, sa, card, opts, optional) {
   const before = game.name(card);
   card.stickers = [...(card.stickers || []), { sid: s.sid, sheet: s.sheet, slot: s.slot, kind: s.kind, word: s.word, text: s.text, power: s.power, toughness: s.toughness, keywords: s.keywords, ability: s.ability, triggers: s.triggers, statics: s.statics, tickets: s.tickets, ts: game.uid++, pos, owner: pid }];
   game.touch();
-  const what = s.kind === 'Name' ? `the name sticker “${s.word}”` : s.kind === 'Art' ? 'an art sticker' : `the ${stickerKindWord(s.kind)} sticker ${stickerText(s)}`;
+  const what = s.kind === 'Name' ? `the name sticker “${s.word}”` : s.kind === 'Art' ? 'an art sticker' : s.kind === 'PT' ? `a ${s.power}/${s.toughness} sticker` : `an ability sticker (“${s.text}”)`;
   game.log(`${me.name} puts ${what} on ${before}${s.kind === 'Name' ? ` (now ${game.name(card)})` : ''}${s.tickets && opts.noTicketCost !== true ? ` for ${s.tickets} ticket${s.tickets > 1 ? 's' : ''}` : ''}.`, { cardId: card.id });
   game.fire('StickerPlaced', { Card: card, Player: pid, StickerKind: s.kind });
   return s;
@@ -177,6 +186,7 @@ export const isAttraction = (game, c) => !!c && game.chars(c).subtypes.has('Attr
 // open the top card of a player's Attraction deck: it goes onto the battlefield
 async function openAttraction(game, pid, sa) {
   const pl = game.players[pid];
+  ensureAttractionDeck(game, pid);
   const deck = pl.AttractionDeck || [];
   if (!deck.length) { game.log(`${pl.name} has no Attraction to open.`); return null; }
   const c = deck[0];
@@ -277,8 +287,8 @@ export const UNSETS_EFFECTS = {
     const optional = p.Optional === 'True';
     const opts = { kind: p.Kind || null, noTicketCost: p.NoTicketCost === 'True', maxTickets: p.MaxTickets ? calc(game, p.MaxTickets, sa) : Infinity };
     setStickerSVars(sa, 0, 0);
-    if (!me.stickerSheets || !me.stickerSheets.length) { game.log(`${me.name} has no sticker sheets.`); return; }
-    if (!availableStickers(game, pid, opts).length) { game.log(`${me.name} has no ${opts.kind ? stickerKindWord(opts.kind) + ' ' : ''}sticker they can put on anything${opts.noTicketCost ? '' : ' (tickets: ' + (me.counters.TICKET || 0) + ')'}.`); return; }
+    ensureStickerSheets(game, pid);
+    if (!availableStickers(game, pid, opts).length) { game.log(`${me.name} has no ${opts.kind ? stickerKindWord(opts.kind) + ' ' : ''}sticker to put on anything${opts.noTicketCost ? '' : ` (${me.counters.TICKET || 0} ticket${me.counters.TICKET === 1 ? '' : 's'})`}.`); return; }
     let objects;
     if (p.Choices) {
       const zone = Z(p.ChoiceZone || 'Battlefield');

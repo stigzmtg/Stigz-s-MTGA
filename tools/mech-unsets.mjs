@@ -363,14 +363,17 @@ test('Visited this turn: Soul Swindler indestructible, Squirrel Squatters\' squi
 });
 test('Rolled to visit: "Lifetime" Pass Holder returns on a 6 (and only then); Complaints Clerk only on a 1', async T => {
   const pass = await T.put(0, '"Lifetime" Pass Holder', 'graveyard');
+  attractions(T, 0, [['Information Booth', '2 6']]);
   const clerk = await T.put(0, 'Complaints Clerk');
+  await T.resolve(); // it opens an Attraction as it enters
   T.a.on('optionalTrigger', () => true);
   const { rollDice } = await import('../src/engine/abilities.js');
+  const robots = () => T.tokens(0).filter(c => T.game.chars(c).subtypes.has('Robot')).length;
   rig(T.game, 6);
   await rollDice(T.game, 0, 1, 6, 0, null);
   await T.resolve();
   expect(pass.zone === 'graveyard', 'a 6 that isn\'t a roll to visit');
-  expect(!T.tokens(0).length, 'Complaints Clerk: no token on a 6');
+  expect(!robots(), 'Complaints Clerk: no token on a 6');
   rig(T.game, 6);
   await rollDice(T.game, 0, 1, 6, 0, null, { toVisit: true });
   await T.resolve();
@@ -378,7 +381,7 @@ test('Rolled to visit: "Lifetime" Pass Holder returns on a 6 (and only then); Co
   rig(T.game, 1);
   await rollDice(T.game, 0, 1, 6, 0, null);
   await T.resolve();
-  expect(T.tokens(0).length === 1, 'a Clown Robot on a 1');
+  expect(robots() === 1, `a Clown Robot on a 1 (${robots()})`);
   expect(clerk.zone === 'battlefield', 'clerk');
 });
 test('Line Cutter rolls to visit; Motion Sickness moves when you visit', async T => {
@@ -397,6 +400,38 @@ test('Line Cutter rolls to visit; Motion Sickness moves when you visit', async T
   expect(T.logged(/rolls a d6 to visit Attractions: 2/), 'rolled to visit');
   expect(T.A.hand.length === hand + 1, 'visited Information Booth');
   expect(ms.attachedTo === opp2.id, `Motion Sickness moved to the tapped wall (${ms.attachedTo})`);
+});
+
+test('Ferris Wheel: the creature stays phased out through untap steps, until you roll 3 or less to visit', async T => {
+  attractions(T, 0, [['Ferris Wheel', '4 5 6']]);
+  await T.cast('Step Right Up');
+  const angel = await T.put(1, 'Serra Angel');
+  T.a.on('targets', req => (req.cands.includes('c' + angel.id) ? ['c' + angel.id] : undefined));
+  await visitAttractions(T.game, 0, 4);
+  await T.resolve();
+  expect(angel.phasedOut, 'phased out');
+  T.game.activePlayer = 1;
+  await T.game.runStep('untap');
+  expect(angel.phasedOut, 'still out after its controller\'s untap step');
+  T.game.activePlayer = 0;
+  const { rollDice } = await import('../src/engine/abilities.js');
+  rig(T.game, 5);
+  await rollDice(T.game, 0, 1, 6, 0, null, { toVisit: true });
+  await T.resolve();
+  expect(angel.phasedOut, 'a 5 doesn\'t bring it back');
+  rig(T.game, 2);
+  await rollDice(T.game, 0, 1, 6, 0, null, { toVisit: true });
+  await T.resolve();
+  expect(!angel.phasedOut, 'a 2 rolled to visit brings it back');
+});
+test('A player with no sticker sheets or Attraction deck who comes to use one gets them then (from the seed)', async T => {
+  expect(!T.B.stickerSheets && !T.B.AttractionDeck, 'none at first');
+  T.b.on('optionalTrigger', () => true);
+  T.game.activePlayer = 1;
+  await T.cast('Glitterflitter', 1);
+  expect(T.B.stickerSheets && T.B.stickerSheets.length === 3, `three sheets (${(T.B.stickerSheets || []).map(s => s.name)})`);
+  await T.cast('Rad Rascal', 1);
+  expect(T.B.AttractionDeck && T.B.AttractionDeck.length === 9 && T.game.battlefield.some(c => c.attraction && c.controller === 1), 'an Attraction deck, one opened');
 });
 
 // ------------------------------------------------------------ dice
