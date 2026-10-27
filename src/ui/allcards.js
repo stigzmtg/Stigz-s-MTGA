@@ -1,7 +1,7 @@
 // The whole card pool. The page loads the precons' and community decks' cards (data/cards.json); the other ~25,000
 // cards (data/more/cards-N.json) load when the deck builder opens or a game's decks need them, along with every
 // card's picture id on Scryfall, its EDHREC rank and whether it's banned (data/cardmeta.json). Once loaded they stay.
-import { fetchJSON } from './common.js';
+import { fetchJSON, onClaudePage } from './common.js';
 import { setCardMeta } from './images.js';
 
 const st = { meta: null, metaPromise: null, all: null, allPromise: null, done: 0, total: 0, version: 0, listeners: new Set() };
@@ -11,9 +11,12 @@ export const allCardsVersion = () => st.version;
 export const allCardsLoaded = () => !!st.all;
 export const allCardsProgress = () => (st.total ? st.done / st.total : 0);
 export const cardMeta = name => (st.meta && st.meta[name]) || null;
+// (the claude.ai page holds only the cards the precons and community decks play: the whole pool is on the website)
+export const fullPoolHere = () => !onClaudePage();
 
 // pictures, ranks and the banned list (about 2 MB)
 export function loadCardMeta() {
+  if (!fullPoolHere()) return Promise.resolve({});
   if (!st.metaPromise) {
     st.metaPromise = fetchJSON('data/cardmeta.json').then(m => { st.meta = m; setCardMeta(m); bump(); return m; }, e => { st.metaPromise = null; throw e; });
   }
@@ -22,6 +25,7 @@ export function loadCardMeta() {
 
 // every card (resolves when they're in db)
 export function loadAllCards(db) {
+  if (!fullPoolHere()) return Promise.resolve(db);
   if (!st.allPromise) {
     st.allPromise = (async () => {
       const m = await fetchJSON('data/more.json');

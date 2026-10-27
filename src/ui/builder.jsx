@@ -10,7 +10,7 @@ import { Modal } from './dialogs.jsx';
 import { onClaude } from '../net/roomclient.js';
 import { createDeckGuide } from './deckguide.js';
 import { parseDeckText, countCards, deckToText } from './decktext.js';
-import { loadAllCards, subscribeAllCards, allCardsVersion, allCardsLoaded, allCardsProgress, cardMeta } from './allcards.js';
+import { loadAllCards, subscribeAllCards, allCardsVersion, allCardsLoaded, allCardsProgress, cardMeta, fullPoolHere } from './allcards.js';
 import { CardSheet, HoverCard, useHoverPreview, CardTile } from './buildercard.jsx';
 import { CardSearch, CommanderPicker, PreconPicker } from './builderfind.jsx';
 import { Checklist, DeckList, DeckStats, TestHand, QuickAdd } from './builderdeck.jsx';
@@ -343,7 +343,7 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
       </div>
       <div className={`b-grid pane-${pane}`}>
         <section className="panel b-left" aria-label="Find cards">
-          {!full ? <div className="b-loading" role="status">{loadError ? <>Couldn’t load the rest of the cards ({loadError}). The precons’ cards are all here. <button className="linkish" onClick={() => { setLoadError(null); loadAllCards(data.db).catch(e => setLoadError(e.message)); }}>Try again</button></> : <><span>Loading every Magic card… the precons’ cards are ready now.</span><i className="bar"><b style={{ width: `${Math.round(allCardsProgress() * 100)}%` }} /></i></>}</div> : null}
+          {!fullPoolHere() ? <div className="b-loading" role="note">Here you can build with the 7,000 cards the precons and community decks play. Every Commander card (over 32,000) is in the deck builder at lotusgoats.com.</div> : !full ? <div className="b-loading" role="status">{loadError ? <>Couldn’t load the rest of the cards ({loadError}). The precons’ cards are all here. <button className="linkish" onClick={() => { setLoadError(null); loadAllCards(data.db).catch(e => setLoadError(e.message)); }}>Try again</button></> : <><span>Loading every Magic card… the precons’ cards are ready now.</span><i className="bar"><b style={{ width: `${Math.round(allCardsProgress() * 100)}%` }} /></i></>}</div> : null}
           <div className="builder-tabs" role="tablist">
             {commanders.length ? <button role="tab" aria-selected={left === 'search'} className={left === 'search' ? 'on' : ''} onClick={() => setLeft('search')}>{ICONS.search}Find cards</button> : null}
             <button role="tab" aria-selected={left === 'commander'} className={left === 'commander' ? 'on' : ''} onClick={() => { setLeft('commander'); setPartnerMode(false); }}>{ICONS.crown}{commanders.length ? 'Commanders' : 'Choose a commander'}</button>
