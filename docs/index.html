@@ -1565,6 +1565,11 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 .daily-foot .note { flex: 1 1 calc(280px * var(--s)); }
 .daily-foot .w { color: #a9e3ab; }
 
+/* favorite decks: a star on the selected deck, and their own group at the top of the list */
+.fav-mark { color: var(--brass-hi); font-size: calc(15px * var(--s)); }
+.fav-btn.on { color: var(--brass-hi); border-color: rgba(243, 212, 136, 0.55); }
+.panel-head .spacer { flex: 1; }
+
 /* ================================================================ Pokémon: shared */
 .app.pk {
   --pk-grass: #4fae4a; --pk-fire: #e8572c; --pk-water: #2b8fd6; --pk-lightning: #f3c21b; --pk-psychic: #9c5bbd; --pk-fighting: #c0652d;
@@ -2907,6 +2912,6 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 <div id="root"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
-<script src="app.js?v=7adaa86b9c"></script>
+<script src="app.js?v=dc6db57301"></script>
 </body>
 </html>
