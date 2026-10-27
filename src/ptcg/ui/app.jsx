@@ -175,7 +175,8 @@ export function PokemonApp({ onHome }) {
 
   // start, follow and end online battles as the host's config changes
   const cfg = room && room.cfg;
-  if (typeof window !== 'undefined' && window.__pkAutoplay) window.__pkDebug = { room, session }; // browser tests only
+  // browser tests only (__pkAutoplay = 0: the battle without a computer player in your seat)
+  if (typeof window !== 'undefined' && window.__pkAutoplay != null) window.__pkDebug = { room, session };
   useEffect(() => {
     if (!data || !room || !cfg) return;
     const cur = session && session.online;

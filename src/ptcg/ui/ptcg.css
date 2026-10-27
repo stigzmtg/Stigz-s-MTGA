@@ -123,6 +123,7 @@
 .pk-conds .burned { background: #c4471d; }
 .pk-conds .asleep { background: #3d5f9e; }
 .pk-conds .paralyzed { background: #b39314; color: #1f1a05; }
+.pk-conds .fx { background: #26303f; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(243, 212, 136, 0.45); }
 .pk-conds .confused { background: #a33a78; }
 .pk-hp { position: relative; height: 15px; border-radius: 7px; background: rgba(0, 0, 0, 0.55); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12); overflow: hidden; }
 .pk-hp i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(180deg, #5fc35b, #2e8a2b); transition: width 0.5s ease; }

@@ -32,6 +32,25 @@ function cardZones(game) {
   return z;
 }
 const COND_LABEL = { asleep: 'Asleep', confused: 'Confused', paralyzed: 'Paralyzed' };
+// effects of attacks that stay on a Pokémon for this turn or the next ("during your opponent's next turn, ..."):
+// [short label, what it does]
+const FX_LABEL = {
+  cantAttack: ['No attack', "can't attack"], cantRetreat: ['No retreat', "can't retreat"], charm: ['−20 attacks', 'its attacks do 20 less damage'],
+  protect: ['−30 damage', 'takes 30 less damage from attacks'], dig: ['Dig', 'no damage or effects from attacks'], noWeakness: ['No Weakness', 'has no Weakness'],
+  crownOpal: ['Crown Opal', 'no damage from Basic Pokémon (other than {C})'], readyToRam: ['Ready to Ram', '6 damage counters on a Pokémon that damages it'],
+};
+function monEffects(game, mon) {
+  const out = new Map();
+  for (const e of game.effects || []) {
+    if (e.mon !== mon.id || e.turn < game.turn) continue;
+    const [label, text] = e.kind === 'guard' ? [`−${e.n} damage`, `takes ${e.n} less damage from attacks`] : e.kind === 'cantUse' ? [`No ${e.name}`, `can't use ${e.name}`] : FX_LABEL[e.kind] || [];
+    // the turn it applies to: this one, or a coming turn of the Pokémon's owner or of their opponent
+    const ownersTurn = ((e.turn - game.turn) % 2 === 0) === (game.current === mon.owner);
+    const when = e.turn === game.turn ? 'this turn' : ownersTurn ? 'during its next turn' : 'during the opponent’s next turn';
+    if (label && !out.has(label)) out.set(label, `${mon.name} ${text} ${when}`);
+  }
+  return [...out].map(([label, title]) => ({ label, title }));
+}
 
 // ---------------------------------------------------------------- a card picture (with a drawn fallback)
 function CardArt({ def, cls = '', onClick, onEnter, onLeave, title, fly }) {
@@ -63,6 +82,7 @@ function MonView({ game, mon, big, state, fx, onClick, onHover }) {
   const heal = fx.heals.get(mon.id);
   const cls = ['pk-mon', big ? 'big' : '', state || '', hit ? 'hit' : '', fx.lunge === mon.id ? (mon.owner === fx.me ? 'lunge-up' : 'lunge-down') : '', fx.entered.has(mon.id) ? 'enter' : '', fx.evolved.has(mon.id) ? 'evolving' : ''].filter(Boolean).join(' ');
   const conds = [mon.special && COND_LABEL[mon.special], mon.poisoned && 'Poisoned', mon.burned && 'Burned'].filter(Boolean);
+  const effects = monEffects(game, mon);
   return (
     <div className={cls} data-mon={mon.id} data-fly={mon.card.id}>
       <CardArt def={mon.def} onClick={onClick} onEnter={() => onHover({ mon: mon.id })} onLeave={() => onHover(null)} title={`${mon.name} · ${left}/${max} HP`} />
@@ -70,7 +90,7 @@ function MonView({ game, mon, big, state, fx, onClick, onHover }) {
       {hit ? <span key={hit.key} className="pk-float">−{hit.amount}</span> : null}
       {hit && hit.amount ? <span key={'b' + hit.key} className={`pk-burst ${hit.amount >= 120 ? 'big' : ''}`} style={{ '--burst': hit.color || '#ffd75e' }} aria-hidden="true" /> : null}
       {heal ? <span key={heal.key} className="pk-float heal">+{heal.amount}</span> : null}
-      {conds.length ? <span className="pk-conds">{conds.map(c => <span key={c} className={`c ${c.toLowerCase()}`}>{c}</span>)}</span> : null}
+      {conds.length || effects.length ? <span className="pk-conds">{conds.map(c => <span key={c} className={`c ${c.toLowerCase()}`}>{c}</span>)}{effects.map(f => <span key={f.label} className="c fx" title={f.title}>{f.label}</span>)}</span> : null}
       <div className="pk-hp" title={`${left} / ${max} HP`}><i style={{ width: pct + '%' }} className={pct <= 30 ? 'low' : pct <= 60 ? 'mid' : ''} /><span>{left}</span></div>
       <div className="pk-attached">
         {/* one symbol per Energy the card provides here, as the engine counts it (Team Rocket's Energy: two {P}/{D};
@@ -239,6 +259,7 @@ function Preview({ game, hover }) {
           <p className="wr">{def.weak ? <>Weakness <Energy type={def.weak} size={13} /> ×2 · </> : null}{def.resist ? <>Resistance <Energy type={def.resist} size={13} /> −30 · </> : null}Retreat {def.retreat}{def.ex ? ` · Knocked Out: opponent takes ${def.mega ? 3 : 2} Prizes` : ''}</p>
         </> : <p>{def.text || (def.cat === 'E' ? (def.anyType ? 'Provides Energy of every type.' : `Provides ${def.provides} Energy.`) : '')}</p>}
         {mon ? <p className="state">{game.hpLeft(mon)}/{game.maxHp(mon)} HP{mon.energy.length ? ` · ${mon.energy.length} Energy` : ''}{mon.tool ? ` · ${mon.tool.name}` : ''}</p> : null}
+        {mon ? monEffects(game, mon).map(f => <p key={f.label} className="state">{f.title}.</p>) : null}
       </div>
     </div>
   );
@@ -337,6 +358,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
     }
     if (mode && targets.has(mon.id)) {
       if (mode.kind === 'retreat') return respond({ t: 'retreat', to: mon.id });
+      if (mode.kind === 'ability') return respond(actions.find(a => a.t === 'ability' && a.name === mode.name && a.mon === mon.id));
       return respond(actions.find(a => a.t === mode.kind && a.card === mode.card && a.target === mon.id));
     }
     setHover({ mon: mon.id });
@@ -352,7 +374,7 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
         : d.cat === 'P' && d.stage !== 'Basic' && P.turns === 1 ? "You can't evolve on your first turn."
         : d.cat === 'P' && d.stage !== 'Basic' ? `Needs a ${d.from} that has been in play since before this turn.`
         : d.cat === 'P' ? 'Your Bench is full.'
-        : game.hasEffect('itemLock', { pid: me }) && d.trainer === 'Item' ? "You can't play Item cards this turn."
+        : (game.hasEffect('itemLock', { pid: me }) || game.oceanicCurse(me)) && (d.trainer === 'Item' || d.trainer === 'Tool') ? "You can't play Item cards this turn."
         : TRAINERS[d.name] && TRAINERS[d.name].needsDeck && !P.deck.length ? 'Your deck is empty, so it would do nothing.'
         : d.cat === 'T' ? 'It would do nothing right now.'
         : "You can't play that right now.";
@@ -421,12 +443,20 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
       <div className="acts">{monReq.max > 1 || monReq.min === 0 ? <button className="btn primary" disabled={sel.length < monReq.min} onClick={() => respond(sel)}>Done{sel.length ? ` (${sel.length})` : ''}</button> : null}</div></>;
   } else if (mode) {
     const c = P.hand.find(x => x.id === mode.card);
-    bar = <><div className="msg"><div className="step">{mode.kind === 'retreat' ? 'Retreat' : c ? c.name : ''}</div><div className="txt">{mode.kind === 'retreat' ? 'Choose the Benched Pokémon to switch in.' : mode.kind === 'evolve' ? 'Choose the Pokémon to evolve.' : mode.kind === 'tool' ? 'Choose the Pokémon to attach the Tool to.' : 'Choose the Pokémon to attach the Energy to.'}</div></div>
+    bar = <><div className="msg"><div className="step">{mode.kind === 'retreat' ? 'Retreat' : mode.kind === 'ability' ? mode.name : c ? c.name : ''}</div><div className="txt">{mode.kind === 'retreat' ? 'Choose the Benched Pokémon to switch in.' : mode.kind === 'ability' ? 'Choose the Pokémon that uses it.' : mode.kind === 'evolve' ? 'Choose the Pokémon to evolve.' : mode.kind === 'tool' ? 'Choose the Pokémon to attach the Tool to.' : 'Choose the Pokémon to attach the Energy to.'}</div></div>
       <div className="acts"><button className="btn" onClick={() => setMode(null)}>Cancel</button></div></>;
   } else if (req && req.type === 'main') {
+    // what's left of the turn: the player going first plays no Supporter (and doesn't attack) on their first turn
+    // (Carmine excepted); an opponent's attack or Ability can lock Items
+    const firstOfGame = game.turn === 1 && game.first === me;
+    const supporterOk = actions.some(a => a.t === 'trainer' && P.hand.some(c => c.id === a.card && c.def.trainer === 'Supporter'));
+    const items = !(game.hasEffect('itemLock', { pid: me }) || game.oceanicCurse(me));
+    const left = [P.energyDone ? 'Energy attached.' : 'Attach one Energy.',
+      P.supporter ? 'Supporter played.' : firstOfGame && !supporterOk ? (items ? 'Play any Items (no Supporter on the first turn).' : 'No Supporter on the first turn.') : items ? 'Play one Supporter, any Items.' : 'Play one Supporter.',
+      items ? '' : 'No Items this turn.'].filter(Boolean).join(' ');
     bar = <>
-      <div className="msg"><div className="step">Your turn · {P.turns === 1 && game.first === me ? 'first turn: no attack' : 'play cards, then attack'}</div>
-        <div className="txt">{flash || (P.energyDone ? 'Energy attached. ' : 'Attach one Energy, ') + (P.supporter ? 'Supporter played.' : 'play one Supporter, any Items.')}</div></div>
+      <div className="msg"><div className="step">Your turn · {req.again ? 'Festival Lead' : firstOfGame ? 'first turn: no attack' : 'play cards, then attack'}</div>
+        <div className="txt">{flash || (req.again ? `${active ? active.name : 'Your Active Pokémon'} may attack a second time.` : left)}</div></div>
       <div className="acts pk-acts">
         {attackRows.map(r => (
           <button key={r.atk.name + r.atk.src} className={`btn atk ${r.act ? 'primary' : ''}`} disabled={!r.act} title={r.why || r.atk.text || r.atk.name} onClick={() => respond(r.act)}>
@@ -436,8 +466,10 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
         {retreatActs.length ? <button className="btn" onClick={() => setMode({ kind: 'retreat', options: retreatActs.map(a => a.to) })} title="Discard Energy equal to the Retreat Cost">Retreat <Cost cost={Array(game.retreatCost(active)).fill('Colorless')} size={13} /></button> : null}
         {[...new Map(abilityActs.map(a => [a.name, a])).values()].map(a => {
           const m = game.monById(a.mon);
-          const n = abilityActs.filter(x => x.name === a.name).length;
-          return <button key={a.name} className="btn ability" onClick={() => respond(a)} title={(m.def.abilities.find(x => x.name === a.name) || {}).text}>{a.name} <small>{m.name}{n > 1 ? ` ×${n}` : ''}</small></button>;
+          const users = abilityActs.filter(x => x.name === a.name);
+          // several Pokémon can use it: pick which one (Teal Dance attaches to that one, Cursed Blast Knocks it Out)
+          const use = () => (users.length > 1 ? setMode({ kind: 'ability', name: a.name, options: users.map(x => x.mon) }) : respond(a));
+          return <button key={a.name} className="btn ability" onClick={use} title={(m.def.abilities.find(x => x.name === a.name) || {}).text}>{a.name} <small>{m.name}{users.length > 1 ? ` ×${users.length}` : ''}</small></button>;
         })}
         {stadiumAct ? <button className="btn" onClick={() => respond(stadiumAct)}>Use {stadiumAct.name}</button> : null}
         <button className={`btn ${confirmEnd ? 'danger' : ''}`} onClick={() => { if (canAttack && !confirmEnd) return setConfirmEnd(true); respond({ t: 'end' }); }}>{confirmEnd ? 'End without attacking?' : 'End turn'}</button>

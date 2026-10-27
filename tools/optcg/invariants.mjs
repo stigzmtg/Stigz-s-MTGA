@@ -7,7 +7,9 @@
 //  - at most 5 Characters and 1 Stage; nothing in limbo, no battle and no pending effects between actions
 //  - the turn's rules hold as offered: no attack on a player's first turn (6-5-6-1), attackers active and allowed
 //    (Rush for Characters played this turn), targets the opponent's Leader or rested Characters (or what an effect
-//    allows), plays only within the active DON!!, [Activate: Main] effects within [Once Per Turn]
+//    allows), plays only within the active DON!!, [Activate: Main] effects within [Once Per Turn]; blockers offered
+//    only in a battle against that player: active [Blocker] Characters other than the attacked card, none against
+//    [Unblockable] or "cannot activate [Blocker]", none an effect stops from blocking
 //  - every question a player is asked can be answered: options exist and are real cards, no duplicates,
 //    0 <= min <= max <= options, cards offered from the area the question names
 //  - every game ends (a win, a draw or the turn cap) without hanging, the loser is marked, and replaying the same
@@ -107,6 +109,8 @@ class Checker {
             if (g.turn === (pid === g.first ? 1 : 2)) this.fail('an attack offered on the player\'s first turn (6-5-6-1)');
             if (!at || at.owner !== pid || !g.onField(at) || at.rested) this.fail('an attack by a card that can\'t attack');
             if (at.cat === 'C' && at.playedTurn === g.turn && !g.has(at, 'Rush') && !g.has(at, 'Rush: Character')) this.fail(`${at.name} attacks the turn it was played without [Rush]`);
+            if (at.cat === 'C' && at.playedTurn === g.turn && !g.has(at, 'Rush') && tg && tg.cat === 'L') this.fail(`${at.name} attacks a Leader the turn it was played with only [Rush: Character]`);
+            if (g.flag(at, 'cantAttack') || g.flag(at, 'cantRest')) this.fail(`${at.name} offered an attack it can't make`);
             if (!tg || tg.owner === pid || !g.onField(tg) || (tg.cat === 'C' && !tg.rested && !g.flag(at, 'canAttackActive')) || tg.cat === 'S') this.fail(`${at.name} offered an attack on ${tg && tg.name}`);
           }
           if (a.t === 'activate') {
@@ -137,11 +141,20 @@ class Checker {
       case 'number': if (!(req.min <= req.max) || req.min < 0) this.fail(`a number from ${req.min} to ${req.max}`); break;
       case 'blocker': {
         if (!opts.length) this.fail('a blocker question with no blockers');
-        for (const id of opts) { const c = g.cardByUid(id); if (!c || c.owner !== pid || c.rested || !g.has(c, 'Blocker')) this.fail(`${c && c.name} offered as a blocker`); }
+        const f = g.fight;
+        if (!f || f.dpid !== pid) { this.fail('a blocker question outside a battle against this player'); break; }
+        // 10-1-4: an active [Blocker] Character other than the attacked card, unless the attack can't be blocked
+        if (g.has(f.attacker, 'Unblockable') || f.noBlockerAll || g.liveEffects('noBlockerWhenAttacking', f.attacker).length) this.fail(`${f.attacker.name} can't be blocked, but blockers are offered`);
+        for (const id of opts) {
+          const c = g.cardByUid(id);
+          if (!c || c.owner !== pid || c.cat !== 'C' || !g.onField(c) || c.rested || !g.has(c, 'Blocker')) this.fail(`${c && c.name} offered as a blocker`);
+          else if (c === f.target || g.flag(c, 'cantBlock') || g.flag(c, 'cantRest') || f.noBlocker.some(fl => g.matches(c, { f: fl }, { pid: f.pid, src: f.attacker, vars: {} }))) this.fail(`${c.name} offered as a blocker against ${f.attacker.name}, which it can't block`);
+        }
         break;
       }
       case 'counter': {
         if (!opts.length) this.fail('a counter question with no options');
+        if (!g.fight || g.fight.dpid !== pid) this.fail('a counter question outside a battle against this player');
         const p = g.players[pid];
         for (const o of opts) {
           const c = p.hand.find(x => x.uid === o.card);
@@ -218,6 +231,7 @@ if (flags.selftest) {
     'a card in the wrong area': g => { const p = g.players[g.current]; if (p.hand.length) p.hand[0].zone = 'trash'; },
     'an attack on the first turn': (g, req) => { if (g.turn <= 2) { g.players[g.current].turns = 5; return undefined; } },
     'a [Once Per Turn] effect twice': (g, req) => { for (const c of g.field(g.current)) c.used = {}; const a = req.actions.find(x => x.t === 'activate' && g.abilities(g.cardByUid(x.card)).find(b => b.idx === x.ability).once); if (a) { const c = g.cardByUid(a.card); const ab = g.abilities(c).find(b => b.idx === a.ability); c.used[ab.idx] = g.turn; } },
+    'a blocker that can\'t block': g => { g.blockersFor = f => [...g.players[f.dpid].characters]; },
     'a play without the DON!!': g => { const p = g.players[g.current]; p.donRested += p.donActive; p.donActive = 0; p.hand.forEach(c => { c.def = { ...c.def, cost: 0 }; }); setTimeout(() => p.hand.forEach(c => { c.def = g.db[c.id]; }), 0); },
     'a game that never ends': g => { g.maxTurns = 1e9; g.endGame = () => {}; g.ruleCheck = () => {}; },
   };

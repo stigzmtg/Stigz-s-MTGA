@@ -1,6 +1,7 @@
 // Play a One Piece battle through the screen like a person: answer the opening questions, play cards, give DON!!,
-// attack, block and Counter when attacked, use Triggers, end turns. Fails on any page error or if the game stops moving.
-// Usage: node tools/optcg/uitest.mjs [out dir] [turns=12] [width=1440] [height=900]   (serve dist/ on :8765 first)
+// attack, block and Counter when attacked, use Triggers, end turns. Fails on any page error, if the game stops moving, or
+// if the board doesn't show what the engine holds (Life, piles, DON!!, cards in play with their power, DON!! and keywords).
+// Usage: node tools/optcg/uitest.mjs [out dir] [turns=12] [width=1440] [height=900]   (serve dist/ on :8765 first, or BASE=http://localhost:8775/)
 // DECK=st01 OPP=st02 pick the decks (st13@ST13-001: an Ultra Deck with another of its Leaders). MOBILE=1 plays on a touch screen (taps open menus). REPLAY=1 also checks the replay.
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -11,12 +12,51 @@ const page = await browser.newPage({ viewport: { width: +w, height: +h }, ...(pr
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|ERR_TUNNEL/.test(m.text())) errors.push(m.text()); });
-await page.addInitScript(([deck, opp]) => { try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'instant' })); localStorage.setItem('pa-tips', JSON.stringify({ op: { off: true } })); const [m, l] = deck.split('@'); localStorage.setItem('op-lobby', JSON.stringify({ mine: m, opp, leads: l ? { [m]: l } : {} })); } catch {} }, [process.env.DECK || 'st01', process.env.OPP || 'random']);
-await page.goto('http://localhost:8765/#onepiece');
+await page.addInitScript(([deck, opp]) => { window.__opAutoplay = 0; try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'instant' })); localStorage.setItem('pa-tips', JSON.stringify({ op: { off: true } })); const [m, l] = deck.split('@'); localStorage.setItem('op-lobby', JSON.stringify({ mine: m, opp, leads: l ? { [m]: l } : {} })); } catch {} }, [process.env.DECK || 'st01', process.env.OPP || 'random']);
+await page.goto((process.env.BASE || 'http://localhost:8765/') + '#onepiece');
 await page.waitForSelector('.op-decks');
 await page.click('button:has-text("Battle!")');
 await page.waitForSelector('.op-board');
+// long tasks (50 ms or more on the main thread) while the battle is played: a person feels them as lag
+await page.evaluate(() => { window.__long = []; try { new PerformanceObserver(l => { for (const e of l.getEntries()) window.__long.push(Math.round(e.duration)); }).observe({ type: 'longtask' }); } catch {} });
 const turnNow = () => page.evaluate(() => +(document.querySelector('.topbar .turninfo b') || {}).textContent || 0);
+// the board against the engine's state (window.__opDebug): what's on screen must be what's in the game
+const boardDiff = () => page.evaluate(() => {
+  const s = window.__opDebug && window.__opDebug.session;
+  if (!s) return ['no game to compare with'];
+  const g = s.game, me = s.me || 0, out = [];
+  const num = el => (el ? +el.textContent.replace(/[^\d-]/g, '') : null);
+  for (const p of g.players) {
+    const side = document.querySelector(`.op-side.${p.id === me ? 'me' : 'opp'}`), say = (what, shown, is) => { if (shown !== is) out.push(`${p.name}: ${what} shown ${shown}, is ${is}`); };
+    if (g.turn) say('Life', num(side.querySelector('.op-life .cap b')), p.life.length);
+    say('face-up Life', side.querySelectorAll('.op-life .stack .op-card:not(.back)').length, p.life.filter(c => c.faceUp).length);
+    say('deck', num(side.querySelector(`[data-pile="${p.id}:deck"] b`)), p.deck.length);
+    say('trash', num(side.querySelector(`[data-pile="${p.id}:trash"] b`)), p.trash.length);
+    say('DON!! deck', num(side.querySelector(`[data-pile="${p.id}:dondeck"] b`)), p.donDeck);
+    say('active DON!!', side.querySelectorAll('.op-cost .op-don:not(.rested)').length, p.donActive);
+    say('rested DON!!', side.querySelectorAll('.op-cost .op-don.rested').length, p.donRested);
+    say('hand', p.id === me ? document.querySelectorAll('.op-hand .op-handslot').length : num(side.querySelector(`[data-pile="${p.id}:hand"] b`)), p.hand.length);
+    say('Characters', side.querySelectorAll('.op-chars .op-slot:not(.empty)').length, p.characters.length);
+    for (const c of [p.leader, ...p.characters, ...(p.stage ? [p.stage] : [])]) {
+      const el = side.querySelector(`[data-ref="c${c.uid}"]`);
+      if (!el) { out.push(`${p.name}: ${c.name} isn't on the board`); continue; }
+      say(`${c.name} rested`, el.classList.contains('rested'), !!c.rested);
+      say(`${c.name}'s power`, num(el.querySelector('.op-pow')), c.cat === 'S' ? null : g.power(c));
+      say(`${c.name}'s DON!!`, num(el.querySelector('.op-dons')) || 0, c.don);
+      const tags = [...el.querySelectorAll('.op-tags span')].map(x => x.textContent);
+      for (const k of g.keywords(c)) if (!tags.includes(k)) out.push(`${p.name}: ${c.name}'s [${k}] isn't shown`);
+    }
+  }
+  // a [Blocker] question: exactly the blockers offered glow
+  const req = s.human.pending && s.human.pending.req;
+  if (req && req.type === 'blocker') {
+    const glow = [...document.querySelectorAll('.op-slot.targetable')].map(e => +e.dataset.ref.slice(1)).sort().join();
+    if (glow !== [...req.options].sort().join()) out.push(`blockers glowing ${glow}, offered ${req.options}`);
+  }
+  if (g.battle && !g.over && !document.querySelector('.op-fight')) out.push('a battle without the fight panel');
+  return out;
+});
+const boardErrors = new Set();
 const rnd = a => a[Math.floor(Math.random() * a.length)];
 // a card a person can't click (covered by something) is a bug: report what covers it, with a screenshot
 let covered = 0;
@@ -36,6 +76,8 @@ for (let i = 0; i < 4000 && Date.now() - t0 < 300000; i++) {
   if (await page.$('.dialog[aria-label="Game over"]')) { console.log('game over'); break; }
   const state = await page.evaluate(() => (document.querySelector('.op-prompt') || {}).textContent + '|' + document.querySelectorAll('.dialog').length + '|' + document.querySelector('.op-board').innerText.length + '|' + document.querySelectorAll('.op-handslot').length);
   if (state === last) stuck++; else { stuck = 0; last = state; }
+  // (looked at again a moment later before it counts: a check can fall between two updates)
+  if (i % 3 === 0 && (await boardDiff()).length) { await page.waitForTimeout(400); for (const d of await boardDiff()) if (!boardErrors.has(d)) { boardErrors.add(d); errors.push(`turn ${t}: board: ${d}`); } }
   if (stuck > 150) { console.log('STUCK at turn', t, state.slice(0, 200)); break; }
   if (await page.$('.menu')) { const items = await page.$$('.menu .mi'); if (items.length) { await rnd(items).click(); clicks++; continue; } }
   if (process.env.SHOTS) {
@@ -124,6 +166,8 @@ if (process.env.REPLAY && await page.$('.dialog[aria-label="Game over"]')) {
   if (before !== after) errors.push('replay differs');
 }
 if (replayNote) console.log(replayNote);
+const long = await page.evaluate(() => window.__long || []);
+console.log(`long tasks: ${long.length}${long.length ? `, longest ${Math.max(...long)} ms` : ''}`);
 console.log(`reached turn ${t}, ${clicks} clicks (${plays} plays, ${dons} DON!!, ${attacks} attacks, ${counters} counters), ${((Date.now() - t0) / 1000).toFixed(0)}s`, errors.length ? 'ERRORS:\n' + errors.slice(0, 8).join('\n') : 'no page errors');
 await browser.close();
 process.exit(errors.length ? 1 : 0);

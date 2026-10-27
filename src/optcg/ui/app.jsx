@@ -157,7 +157,8 @@ export function OnePieceApp({ onHome }) {
 
   // start, follow and end online battles as the host's config changes
   const cfg = room && room.cfg;
-  if (typeof window !== 'undefined' && window.__opAutoplay) window.__opDebug = { room, session }; // browser tests only
+  // browser tests only (__opAutoplay = 0: the battle without a computer player in your seat)
+  if (typeof window !== 'undefined' && window.__opAutoplay != null) window.__opDebug = { room, session };
   useEffect(() => {
     if (!data || !room || !cfg) return;
     const cur = session && session.online;

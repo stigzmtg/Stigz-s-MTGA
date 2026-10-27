@@ -16,7 +16,9 @@
 //  - every game ends (a win, a draw or the turn cap) without hanging, and replaying the same seed gives the same game
 // and, for the choices people make (most of all with --chaos):
 //  - every question fits its limits: options exist, no duplicates, 1 <= max, min <= max <= options, cards offered
-//    from the zone the question names, and the main phase never offers what the turn's limits have used up
+//    from the zone the question names, and the main phase never offers what the turn's limits have used up, an
+//    attack or retreat by an Asleep or Paralyzed Pokémon (or one an effect stops), an attack by a Benched Pokémon,
+//    a Supporter on the first turn of the player going first, or a second Tool on a Pokémon
 //  - a Trainer, Ability or Stadium action that does nothing at all (no question, no coin flip, no change) isn't
 //    playable: it would use up the card or the once-per-turn use for nothing
 //  - nothing is done without limit in one turn: at most 120 main-phase actions, 30 of the same kind (not counting
@@ -188,6 +190,14 @@ class Checker {
           if (a.t === 'ability' && !MULTI_USE.has(a.name)) { const m = g.monById(a.mon); if (m && m.used[a.name] === g.turn) this.fail(`${a.name} offered again on the same Pokémon this turn`); }
           if (a.t === 'attack' && g.turn === 1 && pid === g.first) this.fail('an attack offered on the first turn of the player going first');
           if (a.t === 'retreat' && !p.bench.some(m => m.id === a.to)) this.fail('a retreat offered to a Pokémon not on the Bench');
+          // an Asleep or Paralyzed Active Pokémon can't attack or retreat; only the Active Pokémon attacks
+          const act = p.active;
+          if ((a.t === 'attack' || a.t === 'retreat') && act && (act.special === 'asleep' || act.special === 'paralyzed')) this.fail(`a ${a.t} offered while ${act.name} is ${act.special}`);
+          if (a.t === 'attack' && (!act || a.mon !== act.id)) this.fail('an attack offered for a Pokémon that isn\'t Active');
+          if (a.t === 'attack' && act && g.hasEffect('cantAttack', { mon: act })) this.fail(`an attack offered while ${act.name} can't attack`);
+          if (a.t === 'retreat' && act && g.hasEffect('cantRetreat', { mon: act })) this.fail(`a retreat offered while ${act.name} can't retreat`);
+          if (a.t === 'trainer' && c && c.def.trainer === 'Supporter' && g.turn === 1 && pid === g.first && c.name !== 'Carmine' && c.name !== "Team Rocket's Proton") this.fail(`${c.name} offered on the first turn of the player going first`);
+          if (a.t === 'tool' && g.monById(a.target) && g.monById(a.target).tool) this.fail('a Tool offered for a Pokémon that has one');
         }
         break;
       }
@@ -396,6 +406,7 @@ if (flags.selftest) {
     'a second Stadium': (g, req) => { g.players[g.current].stadiumDone = false; return req.actions.find(x => x.t === 'trainer' && (g.cardById(x.card) || {}).def?.trainer === 'Stadium'); },
     'a second use of a once-per-turn Ability': (g, req) => { for (const m of g.inPlay(g.current)) m.used = {}; return req.actions.find(x => x.t === 'ability' && !MULTI_USE.has(x.name)); },
     'an Energy attachment offered after the one this turn': (g, req) => { if (req.actions.some(x => x.t === 'energy')) g.players[g.current].energyDone = true; },
+    'an attack or retreat offered while Asleep': (g, req) => { const a = g.players[g.current].active; if (a && req.actions.some(x => x.t === 'attack' || x.t === 'retreat')) a.special = 'asleep'; },
     'a game that never ends': g => { g.maxTurns = 1e9; g.endGame = () => {}; },
   };
   let caught = 0;
