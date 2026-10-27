@@ -3,7 +3,7 @@
 import { setup, expect, run, db } from './lib/testkit.mjs';
 import { castSpell, getActions, refOf, activatedAbilities, castableOptions, activateAbility, playLand, spellOptions } from '../src/engine/abilities.js';
 import * as combat from '../src/engine/combat.js';
-import { calcCtx } from '../src/engine/filters.js';
+import { calcCtx, matchValid, resolveDefined } from '../src/engine/filters.js';
 import { sanitizeAnswer } from '../src/engine/game.js';
 
 const tests = [];
@@ -1848,5 +1848,477 @@ test('Jarad: a Swamp Forest pays for the Swamp or the Forest, not both', async T
   const ok = await activateAbility(T.game, 0, jarad, act.abilityKey); await T.resolve();
   expect(ok && jarad.zone === 'hand' && sw.zone === 'graveyard' && tomb.zone === 'graveyard', `returned with both lands sacrificed (${ok}, ${jarad.zone}, asked ${JSON.stringify(asked)})`);
 });
+
+// ------------------------------------------------------------ filter properties and references from the whole card pool
+test('sameName, relative to a remembered card: Bile Blight shrinks the target and every creature with its name', async T => {
+  const b1 = await T.put(1, 'Grizzly Bears'), b2 = await T.put(1, 'Grizzly Bears'), angel = await T.put(1, 'Serra Angel');
+  T.a.on('targets', () => [refOf(b1)]);
+  await T.cast('Bile Blight');
+  expect(b1.zone === 'graveyard' && b2.zone === 'graveyard' && angel.zone === 'battlefield', `both Bears die, the Angel doesn't (${b1.zone}, ${b2.zone}, ${angel.zone})`);
+});
+test('Targeted.Self,Targeted.sameName: Detention Sphere exiles the target and each permanent with its name', async T => {
+  const e1 = await T.put(1, 'Llanowar Elves'), e2 = await T.put(1, 'Llanowar Elves'), wall = await T.put(1, 'Wall of Omens');
+  T.a.on('targets', req => req.cands.includes(refOf(e1)) ? [refOf(e1)] : req.cands.slice(0, req.min));
+  T.a.on('confirm', () => true);
+  await T.cast('Detention Sphere');
+  expect(e1.zone === 'exile' && e2.zone === 'exile' && wall.zone === 'battlefield', `both Elves exiled, the Wall stays (${e1.zone}, ${e2.zone}, ${wall.zone})`);
+});
+test('blockingSource: Knight of Dusk can destroy only a creature blocking it', async T => {
+  const knight = await T.put(0, 'Knight of Dusk');
+  const blocker = await T.put(1, 'Grizzly Bears'), other = await T.put(1, 'Grizzly Bears');
+  T.combatWith([[knight, 1]], [[blocker, knight]]);
+  let cands = null;
+  T.a.on('targets', req => { cands = req.cands; return req.cands.slice(0, 1); });
+  await T.activate(knight);
+  expect(JSON.stringify(cands) === JSON.stringify([refOf(blocker)]) && blocker.zone === 'graveyard' && other.zone === 'battlefield', `only the blocker (${JSON.stringify(cands)}, ${blocker.zone})`);
+});
+test('blockedBySourceLKI: a sacrificed Tinder Wall deals 2 damage to the creature it was blocking', async T => {
+  const giant = await T.put(0, 'Hill Giant'), bystander = await T.put(0, 'Grizzly Bears');
+  const wall = await T.put(1, 'Tinder Wall');
+  T.combatWith([[giant, 1], [bystander, 1]], [[wall, giant]]);
+  let cands = null;
+  T.b.on('targets', req => { cands = req.cands; return req.cands.slice(0, 1); });
+  await T.activate(wall, 1, a => a.parsed.api === 'DealDamage');
+  expect(wall.zone === 'graveyard' && JSON.stringify(cands) === JSON.stringify([refOf(giant)]) && giant.damage === 2, `the Giant takes 2 (${wall.zone}, ${JSON.stringify(cands)}, ${giant.damage})`);
+});
+test('attackedThisCombat / blockedThisCombat: Clockwork Avians that attacked or blocked lose a +1/+0 counter', async T => {
+  const att = await T.put(0, 'Clockwork Avian'), idle = await T.put(0, 'Clockwork Avian'), blk = await T.put(1, 'Clockwork Avian');
+  await attackAndBlock(T, [[att, 1]], [[blk, att]]);
+  T.game.step = 'endCombat';
+  T.game.fire('Phase', { Phase: 'EndCombat', Player: 0 }); await T.resolve();
+  expect(att.counters.P1P0 === 3 && blk.counters.P1P0 === 3 && idle.counters.P1P0 === 4, `counters ${att.counters.P1P0} / ${blk.counters.P1P0} / ${idle.counters.P1P0}`);
+});
+test('blockedThisTurn / blockedByThisTurn: Heat Stroke destroys each creature that blocked or was blocked', async T => {
+  await T.put(0, 'Heat Stroke');
+  const blockedOne = await T.put(0, 'Grizzly Bears'), unblocked = await T.put(0, 'Hill Giant');
+  const wall = await T.put(1, 'Wall of Omens'), idle = await T.put(1, 'Llanowar Elves');
+  await attackAndBlock(T, [[blockedOne, 1], [unblocked, 1]], [[wall, blockedOne]]);
+  T.game.step = 'endCombat';
+  T.game.fire('Phase', { Phase: 'EndCombat', Player: 0 }); await T.resolve();
+  expect(blockedOne.zone === 'graveyard' && wall.zone === 'graveyard' && unblocked.zone === 'battlefield' && idle.zone === 'battlefield', `${blockedOne.zone}, ${wall.zone}, ${unblocked.zone}, ${idle.zone}`);
+});
+test('blockedValidThisTurn / blockedByValidThisTurn: You Cannot Pass! hits only a creature that fought a legendary one', async T => {
+  const lego = await T.put(0, 'Isamaru, Hound of Konda'), bear = await T.put(0, 'Grizzly Bears');
+  const wall = await T.put(1, 'Wall of Omens'), wall2 = await T.put(1, 'Wall of Omens');
+  await attackAndBlock(T, [[lego, 1], [bear, 1]], [[wall, lego], [wall2, bear]]);
+  T.game.combat = null; T.game.step = 'main2';
+  let cands = null;
+  T.a.on('targets', req => { cands = req.cands; return req.cands.slice(0, 1); });
+  await T.cast('You Cannot Pass!');
+  expect(JSON.stringify(cands) === JSON.stringify([refOf(wall)]) && wall.zone === 'graveyard', `only the Wall that blocked Isamaru (${JSON.stringify(cands)})`);
+});
+test("attackedYouThisTurn: Jabari's Influence steals a creature that attacked you", async T => {
+  const attacker = await T.put(0, 'Grizzly Bears'), stayedHome = await T.put(0, 'Hill Giant');
+  await attackAndBlock(T, [[attacker, 1]]);
+  T.game.combat = null; T.game.step = 'main2';
+  let cands = null;
+  T.b.on('targets', req => { cands = req.cands; return req.cands.slice(0, 1); });
+  await T.cast("Jabari's Influence", 1);
+  expect(JSON.stringify(cands) === JSON.stringify([refOf(attacker)]) && attacker.controller === 1 && stayedHome.controller === 0, `${JSON.stringify(cands)}, controller ${attacker.controller}`);
+});
+test("attackedLastTurn: Giant Turtle can't attack if it attacked during your last turn", async T => {
+  const turtle = await T.put(0, 'Giant Turtle');
+  T.A.turns = [3];
+  await attackAndBlock(T, [[turtle, 1]]);
+  T.game.combat = null; turtle.tapped = false;
+  T.game.turnNumber = 5; T.A.turns = [3, 5];
+  expect(!combat.canAttack(T.game, turtle), 'not the turn after it attacked');
+  T.game.turnNumber = 7; T.A.turns = [3, 5, 7];
+  expect(combat.canAttack(T.game, turtle), 'again the turn after that');
+});
+test('startedTheTurnUntapped: Rasputin Dreamweaver gets a dream counter only if it began the turn untapped', async T => {
+  const rasp = await T.put(0, 'Rasputin Dreamweaver');
+  rasp.counters.DREAM = 3;
+  T.a.on('priority', () => ({ type: 'pass' })).on('attackers', () => []);
+  await T.put(0, 'Island', 'library');
+  await T.game.takeTurn();
+  const after1 = rasp.counters.DREAM;
+  rasp.tapped = true;
+  T.game.activePlayer = 0;
+  await T.put(0, 'Island', 'library');
+  await T.game.takeTurn();
+  expect(after1 === 4 && rasp.counters.DREAM === 4, `untapped: ${after1}, then tapped: ${rasp.counters.DREAM}`);
+});
+test("firstTurnControlled: Rocket Launcher works only once you've controlled it since your turn began", async T => {
+  const rl = await T.put(0, 'Rocket Launcher');
+  T.mana(0); T.game.priority = 0;
+  const offered = () => getActions(T.game, 0).some(a => a.cardId === rl.id && a.type === 'activate');
+  rl.sick = true;
+  const fresh = offered();
+  rl.sick = false;
+  expect(!fresh && offered(), `not the turn it arrived (${fresh}), later yes`);
+});
+test('dealtDamageToOppThisTurn: Dunerider Outlaw grows at the end step after it damaged an opponent', async T => {
+  const hit = await T.put(0, 'Dunerider Outlaw'), idle = await T.put(0, 'Dunerider Outlaw');
+  await T.game.dealDamage(hit, T.B, 1, { combat: true });
+  T.game.fire('Phase', { Phase: 'End of Turn', Player: 0 }); await T.resolve();
+  expect(hit.counters.P1P1 === 1 && !idle.counters.P1P1, `${hit.counters.P1P1} / ${idle.counters.P1P1}`);
+});
+test("equalPT: Gilt-Leaf Winnower can destroy only a creature whose power and toughness differ", async T => {
+  const bear = await T.put(1, 'Grizzly Bears'), wall = await T.put(1, 'Wall of Omens');
+  let cands = null;
+  T.a.on('targets', req => { cands = req.cands; return req.cands.slice(0, 1); });
+  T.a.on('confirm', () => true);
+  await T.cast('Gilt-Leaf Winnower');
+  expect(JSON.stringify(cands) === JSON.stringify([refOf(wall)]) && wall.zone === 'graveyard' && bear.zone === 'battlefield', `${JSON.stringify(cands)}`);
+});
+test('Bargain: High Fae Negotiator sacrifices a token as it is cast, and is "bargained"', async T => {
+  await T.game.createToken(db.token('c_a_treasure_sac'), 0, null);
+  const tr = T.tokens(0)[0];
+  T.a.on('optionalCost', () => true);
+  await T.cast('High Fae Negotiator');
+  expect(tr.zone === 'gone' && T.B.life === 37 && T.A.life === 43, `token ${tr.zone}, life ${T.A.life} / ${T.B.life}`);
+});
+test('surged: Tyrant of Valakut deals 3 damage only when cast for its surge cost', async T => {
+  await T.cast('Sol Ring');
+  const ty = await T.put(0, 'Tyrant of Valakut', 'hand');
+  T.mana(0);
+  const opt = spellOptions(T.game, 0, ty).find(o => o.altCost === 'Surge');
+  T.a.on('targets', () => ['p1']);
+  const ok = await castSpell(T.game, 0, ty, { optionKey: opt && opt.key }); await T.resolve();
+  expect(ok && opt && T.B.life === 37, `surged and B took 3 (${ok}, ${T.B.life})`);
+});
+test('wasCastFromYourGraveyardByYou: Devoted Grafkeeper taps a creature when you cast a spell from your graveyard', async T => {
+  const keeper = await T.put(0, 'Devoted Grafkeeper');
+  const bear = await T.put(1, 'Grizzly Bears');
+  const tt = await T.put(0, 'Think Twice', 'graveyard');
+  T.mana(0); T.game.priority = 0;
+  const opt = spellOptions(T.game, 0, tt, { anyZone: false }).find(o => o.altCost === 'Flashback') || castableOptions(T.game, 0, tt)[0];
+  T.a.on('targets', req => req.cands.includes(refOf(bear)) ? [refOf(bear)] : req.cands.slice(0, req.min));
+  const ok = await castSpell(T.game, 0, tt, { optionKey: opt && opt.key }); await T.resolve();
+  expect(ok && keeper.zone === 'battlefield' && bear.tapped, `cast from the graveyard (${ok}), Bears tapped (${bear.tapped})`);
+});
+test('attackingAlone: Viper, Cruel Conspirator pumps only a creature attacking alone', async T => {
+  const viper = await T.put(0, 'Viper, Cruel Conspirator');
+  const bear = await T.put(0, 'Grizzly Bears'), bear2 = await T.put(0, 'Grizzly Bears');
+  T.combatWith([[bear, 1], [bear2, 1]]);
+  let failed = false;
+  try { await T.activate(viper, 0, 0); } catch (e) { failed = true; }
+  T.combatWith([[bear, 1]]);
+  T.a.on('targets', req => req.cands.slice(0, 1));
+  await T.activate(viper, 0, 0);
+  expect(failed && T.game.chars(bear).power === 3, `no target with two attackers (${failed}), +1/+1 alone (${T.game.chars(bear).power})`);
+});
+test('canProduceManaColor: Break the Ice can destroy a land that could make {C}, not a basic Forest', async T => {
+  const forest = await T.put(1, 'Forest'), vault = await T.put(1, 'Mutavault');
+  let cands = null;
+  T.a.on('targets', req => { cands = req.cands; return req.cands.slice(0, 1); });
+  await T.cast('Break the Ice');
+  expect(cands && cands.includes(refOf(vault)) && !cands.includes(refOf(forest)) && vault.zone === 'graveyard', `${JSON.stringify(cands)}`);
+});
+test('totalPT: Cut Down targets only a creature with total power and toughness 5 or less', async T => {
+  const bear = await T.put(1, 'Grizzly Bears'), angel = await T.put(1, 'Serra Angel');
+  let cands = null;
+  T.a.on('targets', req => { cands = req.cands; return req.cands.slice(0, 1); });
+  await T.cast('Cut Down');
+  expect(JSON.stringify(cands) === JSON.stringify([refOf(bear)]) && bear.zone === 'graveyard' && angel.zone === 'battlefield', `${JSON.stringify(cands)}`);
+});
+test('numColors: Invasion of Ravnica exiles a permanent that is not exactly two colors', async T => {
+  const bear = await T.put(1, 'Grizzly Bears'), wolf = await T.put(1, 'Watchwolf');
+  let cands = null;
+  T.a.on('targets', req => { if (req.cands.includes(refOf(bear)) || req.cands.includes(refOf(wolf))) cands = req.cands; return req.cands.slice(0, 1); });
+  await T.cast('Invasion of Ravnica');
+  expect(cands && cands.includes(refOf(bear)) && !cands.includes(refOf(wolf)), `${JSON.stringify(cands)}`);
+});
+test('cmcM21: Obosh doubles damage from your sources with odd mana value', async T => {
+  await T.put(0, 'Obosh, the Preypiercer');
+  const elf = await T.put(0, 'Llanowar Elves'), bear = await T.put(0, 'Grizzly Bears');
+  await T.game.dealDamage(elf, T.B, 1, {});
+  const afterOdd = T.B.life;
+  await T.game.dealDamage(bear, T.B, 2, {});
+  expect(afterOdd === 38 && T.B.life === 36, `odd: ${40 - afterOdd}, even: ${afterOdd - T.B.life}`);
+});
+test('MostProminentColor: Goham Djinn gets -2/-2 while black is the most common color', async T => {
+  const djinn = await T.put(0, 'Goham Djinn');
+  const p0 = T.game.chars(djinn).power;
+  await T.put(1, 'Llanowar Elves'); await T.put(1, 'Grizzly Bears');
+  expect(p0 === 3 && T.game.chars(djinn).power === 5, `${p0} alone, ${T.game.chars(djinn).power} with two green creatures around`);
+});
+test('SharesColorWith Valid: Jaded Response counters a spell that shares a color with a creature you control', async T => {
+  await T.put(0, 'Hill Giant');
+  const bolt = await T.cast('Lightning Bolt', 1, { resolve: false });
+  const item = T.game.stack.find(s => s.card === bolt);
+  T.a.on('targets', req => req.cands.includes(refOf(item)) ? [refOf(item)] : req.cands.slice(0, req.min));
+  await T.cast('Jaded Response');
+  expect(bolt.zone === 'graveyard' && T.A.life === 40, `the red Bolt is countered (${bolt.zone}, life ${T.A.life})`);
+});
+test("hasAbility Activated.hasTapCost: Magewright's Stone untaps only a creature with a {T} ability", async T => {
+  const stone = await T.put(0, "Magewright's Stone");
+  const elf = await T.put(0, 'Llanowar Elves'), bear = await T.put(0, 'Grizzly Bears');
+  elf.tapped = bear.tapped = true;
+  let cands = null;
+  T.a.on('targets', req => { cands = req.cands; return req.cands.slice(0, 1); });
+  await T.activate(stone);
+  expect(JSON.stringify(cands) === JSON.stringify([refOf(elf)]) && !elf.tapped && bear.tapped, `${JSON.stringify(cands)}`);
+});
+test('leastToughness: Purging Scythe damages the creature with the least toughness', async T => {
+  await T.put(0, 'Purging Scythe');
+  const elf = await T.put(1, 'Llanowar Elves'), angel = await T.put(0, 'Serra Angel');
+  T.game.fire('Phase', { Phase: 'Upkeep', Player: 0 }); await T.resolve();
+  expect(elf.zone === 'graveyard' && angel.damage === 0, `${elf.zone}, ${angel.damage}`);
+});
+test('ControllerControls: Seasinger can take only a creature whose controller controls an Island', async T => {
+  const singer = await T.put(0, 'Seasinger'); await T.put(0, 'Island');
+  const bBear = await T.put(1, 'Grizzly Bears'); await T.put(1, 'Island');
+  const cBear = await T.put(2, 'Grizzly Bears'); await T.put(2, 'Forest');
+  let cands = null;
+  T.a.on('targets', req => { cands = req.cands; return req.cands.includes(refOf(bBear)) ? [refOf(bBear)] : req.cands.slice(0, 1); });
+  await T.activate(singer);
+  expect(cands && cands.includes(refOf(bBear)) && !cands.includes(refOf(cBear)) && bBear.controller === 0, `${JSON.stringify(cands)}, ${bBear.controller}`);
+}, { players: 3 });
+test('YourTeamCtrl: Combo Attack targets only creatures your team controls', async T => {
+  const mine = [await T.put(0, 'Grizzly Bears'), await T.put(0, 'Serra Angel')];
+  const theirs = await T.put(1, 'Hill Giant');
+  let first = null;
+  T.a.on('targets', req => { if (!first) { first = req.cands; return mine.map(refOf); } return [refOf(theirs)]; });
+  await T.cast('Combo Attack');
+  expect(first && first.length === 2 && mine.every(c => first.includes(refOf(c))) && theirs.zone === 'graveyard', `${JSON.stringify(first)}, ${theirs.zone}`);
+});
+test('CastSa Spell.ManaFromArtifact: Shadow the Hedgehog gives split second to a spell paid with artifact mana', async T => {
+  await T.put(0, 'Shadow the Hedgehog');
+  await T.put(0, 'Sol Ring');
+  T.noMana(0);
+  const stone = await T.cast('Mind Stone', 0, { mana: false, resolve: false });
+  const fromRing = T.game.hasKeyword(stone, 'Split second');
+  await T.resolve();
+  T.mana(0);
+  const stone2 = await T.cast('Mind Stone', 0, { mana: false, resolve: false });
+  expect(fromRing && !T.game.hasKeyword(stone2, 'Split second'), `with Sol Ring mana: ${fromRing}; with floating mana: ${T.game.hasKeyword(stone2, 'Split second')}`);
+});
+test('ExiledCards: Jhoira of the Ghitu puts time counters on the card exiled to pay for it, and gives it suspend', async T => {
+  const jhoira = await T.put(0, 'Jhoira of the Ghitu');
+  const angel = await T.put(0, 'Serra Angel', 'hand');
+  T.a.on('costExileFromHand', req => [angel.id]);
+  await T.activate(jhoira);
+  expect(angel.zone === 'exile' && angel.counters.TIME === 4 && T.game.hasKeyword(angel, 'Suspend'), `${angel.zone}, ${JSON.stringify(angel.counters)}`);
+});
+test('ThisTargetedController: Reasonable Doubt asks the spell\'s controller to pay', async T => {
+  T.game.activePlayer = 1;
+  const ring = await T.cast('Sol Ring', 1, { resolve: false });
+  const item = T.game.stack.find(s => s.card === ring);
+  T.mana(1);
+  let asked = false;
+  T.b.on('unlessCost', () => { asked = true; return true; });
+  T.a.on('targets', req => req.cands.includes(refOf(item)) ? [refOf(item)] : req.cands.slice(0, req.min));
+  await T.cast('Reasonable Doubt');
+  expect(asked && ring.zone === 'battlefield', `B was asked (${asked}) and paid: Sol Ring ${ring.zone}`);
+});
+test('NonTriggeredCardController: Zenith Chronicler makes each other player draw', async T => {
+  await T.put(0, 'Zenith Chronicler');
+  const a0 = T.A.hand.length, b0 = T.B.hand.length;
+  T.a.on('targets', () => ['p1']);
+  await T.cast('Lightning Helix');
+  expect(T.A.hand.length === a0 && T.B.hand.length === b0 + 1, `A ${T.A.hand.length - a0}, B ${T.B.hand.length - b0}`);
+});
+test('FlippedTails: Goblin Assassin makes each player whose coin came up tails sacrifice a creature', async T => {
+  const a0 = await T.put(0, 'Grizzly Bears'), b0 = await T.put(1, 'Grizzly Bears');
+  await T.cast('Goblin Assassin');
+  const tails = pid => T.logged(new RegExp(`^${T.game.players[pid].name} flips a coin: tails`));
+  const creatures = pid => T.count(pid, 'battlefield', T.isCreature);
+  expect(T.logged(/flips a coin: (heads|tails)/) && creatures(1) === (tails(1) ? 0 : 1) && creatures(0) === (tails(0) ? 1 : 2), `A tails ${tails(0)} → ${creatures(0)}, B tails ${tails(1)} → ${creatures(1)}`);
+});
+test('ChoosingPlayer: Fatal Lore — an opponent chooses the mode, and "that opponent" is them', async T => {
+  await T.put(0, 'Serra Angel');
+  const b1 = await T.put(1, 'Grizzly Bears'), b2 = await T.put(1, 'Hill Giant');
+  let chooser = null, cands = null;
+  T.b.on('modes', () => { chooser = 1; return ['DestroyAndDraw']; });
+  T.a.on('targets', req => { cands = req.cands; return req.cands; });
+  const h0 = T.B.hand.length;
+  await T.cast('Fatal Lore');
+  expect(chooser === 1 && cands && cands.length === 2 && b1.zone === 'graveyard' && b2.zone === 'graveyard', `B chose (${chooser}); targets ${JSON.stringify(cands)}; B drew ${T.B.hand.length - h0}`);
+});
+test('NextOpponentToYourLeft: Barroom Brawl fights a creature of the opponent to your left', async T => {
+  const mine = await T.put(0, 'Serra Angel');
+  const left = await T.put(1, 'Grizzly Bears'), other = await T.put(2, 'Grizzly Bears');
+  let second = null;
+  T.a.on('targets', req => { if (req.cands.includes(refOf(mine))) return [refOf(mine)]; second = req.cands; return req.cands.slice(0, 1); });
+  T.b.on('confirm', () => false);
+  await T.cast('Barroom Brawl');
+  expect(second && second.includes(refOf(left)) && !second.includes(refOf(other)) && left.zone === 'graveyard', `${JSON.stringify(second)}`);
+}, { players: 3 });
+test('DefinedKW ChosenColor: Sungold Sentinel gains hexproof from the chosen color', async T => {
+  const sentinel = await T.put(0, 'Sungold Sentinel');
+  await T.put(0, 'Llanowar Elves'); await T.put(0, 'Grizzly Bears');
+  T.a.on('color', () => 'R');
+  await T.activate(sentinel);
+  let cands = null;
+  T.b.on('targets', req => { cands = req.cands; return req.cands.includes('p0') ? ['p0'] : req.cands.slice(0, 1); });
+  await T.cast('Lightning Bolt', 1);
+  expect(cands && !cands.includes(refOf(sentinel)) && sentinel.zone === 'battlefield', `${JSON.stringify(cands)}`);
+});
+test('DefinedName: Mutable Explorer makes a Mutavault token, not a copy of itself', async T => {
+  const before = T.game.battlefield.length;
+  await T.cast('Mutable Explorer');
+  const toks = T.tokens(0);
+  expect(toks.length === 1 && T.game.name(toks[0]) === 'Mutavault' && toks[0].tapped && T.game.battlefield.length === before + 2, `${toks.map(t => T.game.name(t))}`);
+});
+test("Transcendence: you lose at 20 or more life, but not for having 0 or less", async T => {
+  await T.put(0, 'Transcendence');
+  T.A.life = 0;
+  await T.game.processTriggersAndSBA(); await T.resolve();
+  const at0 = T.A.lost;
+  T.A.life = 25;
+  await T.game.processTriggersAndSBA(); await T.resolve();
+  expect(!at0 && T.A.lost, `at 0 life: lost ${at0}; at 25: lost ${T.A.lost}`);
+});
+test('Spell.ManaSpent EQ0: Lavinia counters an opponent\'s spell cast without spending mana', async T => {
+  await T.put(0, 'Lavinia, Azorius Renegade');
+  T.game.activePlayer = 1;
+  const paid = await T.cast('Llanowar Elves', 1);
+  const free = await T.put(1, 'Grizzly Bears', 'hand');
+  T.game.priority = 1;
+  await castSpell(T.game, 1, free, {}, { free: true }); await T.resolve();
+  expect(paid.zone === 'battlefield' && free.zone === 'graveyard', `paid ${paid.zone}, free ${free.zone}`);
+});
+test('count expressions: card types among permanents, two-color pairs, least power, spells cast this turn', async T => {
+  for (const n of ['Sol Ring', 'Grizzly Bears', 'Lightning Bolt']) await T.put(0, n, 'graveyard');
+  await T.put(0, 'Watchwolf');
+  await T.put(0, 'Llanowar Elves');
+  await T.cast('Mind Stone');
+  const ctx = { you: 0, host: null };
+  const v = e => calcCtx(T.game, e, ctx);
+  expect(v('Count$ValidGraveyard Card.YouOwn$CardTypesPermanent') === 2, 'artifact and creature among Sol Ring, Bears and Bolt');
+  expect(v('Count$ValidBattlefield,Graveyard Card.YouCtrl$CardTypes') === 3, 'types across battlefield and graveyard');
+  expect(v('Count$Valid Card.YouCtrl$DifferentColorPair') === 1, 'one two-color pair (Watchwolf)');
+  expect(v('Count$Valid Creature.YouCtrl$LeastCardPower') === 1, 'least power among your creatures');
+  expect(v('Count$ThisTurnCast_Card.YouCtrl$CardManaCost') === 2, 'mana value of the spells you cast this turn');
+});
+test('Spawner>TriggeredCard: Halana deals damage from the creature that entered', async T => {
+  await T.put(0, 'Halana, Kessig Ranger');
+  const giant = await T.put(1, 'Hill Giant');
+  T.mana(0);
+  T.a.on('confirm', () => true);
+  T.a.on('targets', req => req.cands.includes(refOf(giant)) ? [refOf(giant)] : req.cands.slice(0, req.min));
+  await T.put(0, 'Serra Angel');
+  await T.resolve();
+  expect(giant.zone === 'graveyard', `the Angel dealt 4 to the Giant (${giant.zone}, damage ${giant.damage})`);
+});
+test('damage history: dealt damage this game, noncombat damage this turn, combat damage to a creature', async T => {
+  const bear = await T.put(0, 'Grizzly Bears'), elf = await T.put(1, 'Llanowar Elves'), wall = await T.put(1, 'Wall of Omens');
+  await T.game.dealDamage(bear, T.B, 2, { combat: true });
+  await T.game.dealDamage(bear, wall, 2, { combat: true });
+  await T.game.dealDamage(elf, wall, 1, {});
+  const ctx = { you: 0, host: bear };
+  expect(matchValid(T.game, T.B, 'Player.wasDealtDamageThisGameBy Self', ctx) && !matchValid(T.game, T.A, 'Player.wasDealtDamageThisGameBy Self', ctx), 'who the Bears damaged');
+  expect(matchValid(T.game, bear, 'Creature.dealtCombatDamagetoAny', ctx) && !matchValid(T.game, elf, 'Creature.dealtCombatDamagetoAny', ctx), 'combat damage dealt by it');
+  expect(matchValid(T.game, bear, 'Creature.dealtCombatDamageThisTurn Creature', ctx), 'combat damage to a creature this turn');
+  expect(matchValid(T.game, wall, 'Creature.wasDealtNonCombatDamageThisTurn', ctx) && !matchValid(T.game, bear, 'Creature.wasDealtNonCombatDamageThisTurn', ctx), 'noncombat damage taken this turn');
+  expect(matchValid(T.game, T.A, 'Player.damageDoneSingleSource GE4', ctx) && !matchValid(T.game, T.A, 'Player.damageDoneSingleSource GE5', ctx), 'most damage from one source you controlled');
+});
+test('player comparisons: more life / cards than the active player, lost life this turn, your team', async T => {
+  T.A.life = 30; T.B.life = 35; T.game.activePlayer = 0;
+  await T.game.loseLife(T.B, 3, null);
+  const ctx = { you: 0, host: null };
+  expect(matchValid(T.game, T.B, 'Player.hasMoreLifeThanActive', ctx) && !matchValid(T.game, T.A, 'Player.hasMoreLifeThanActive', ctx), 'more life than the active player');
+  expect(matchValid(T.game, T.B, 'Player.LostLifeThisTurn GE3', ctx) && !matchValid(T.game, T.A, 'Player.LostLifeThisTurn GE3', ctx), 'lost 3 life this turn');
+  expect(matchValid(T.game, T.A, 'Player.YourTeam', ctx) && !matchValid(T.game, T.B, 'Player.YourTeam', ctx), 'your team is you');
+});
+
+test('isCastFaceDown: a creature spell cast face down for its morph cost', async T => {
+  const angel = await T.put(0, 'Exalted Angel', 'hand');
+  T.mana(0); T.game.priority = 0;
+  const opt = spellOptions(T.game, 0, angel).find(o => o.faceDown);
+  await castSpell(T.game, 0, angel, { optionKey: opt.key });
+  const faceDown = matchValid(T.game, angel, 'Card.isCastFaceDown', { you: 0 });
+  await T.resolve();
+  const bear = await T.cast('Grizzly Bears', 0, { resolve: false });
+  expect(faceDown && !matchValid(T.game, bear, 'Card.isCastFaceDown', { you: 0 }), `face down ${faceDown}`);
+});
+test('lowestRememberedCMC / lowestCMC: the card with the lowest mana value', async T => {
+  const host = await T.put(0, 'Sol Ring');
+  const cards = [await T.put(0, 'Serra Angel', 'hand'), await T.put(0, 'Grizzly Bears', 'hand'), await T.put(0, 'Llanowar Elves', 'hand')];
+  host.remembered = cards.slice(0, 2);
+  const ctx = { you: 0, host };
+  expect(matchValid(T.game, cards[1], 'Card.lowestRememberedCMC', ctx) && !matchValid(T.game, cards[0], 'Card.lowestRememberedCMC', ctx) && !matchValid(T.game, cards[2], 'Card.lowestRememberedCMC', ctx), 'the Bears, among the remembered cards');
+  const ring = host, bear = await T.put(1, 'Grizzly Bears');
+  expect(matchValid(T.game, ring, 'Card.lowestCMC', ctx) && !matchValid(T.game, bear, 'Card.lowestCMC', ctx), 'Sol Ring has the lowest mana value among nonland permanents');
+});
+test('ValidSAonCard: Blazing Bomb grows only when four or more mana was spent on a noncreature spell', async T => {
+  const bomb = await T.put(0, 'Blazing Bomb');
+  await T.cast('Mind Stone');
+  const after2 = bomb.counters.P1P1 || 0;
+  await T.cast('Hedron Archive');
+  expect(after2 === 0 && bomb.counters.P1P1 === 1, `after a 2-mana spell ${after2}, after a 4-mana one ${bomb.counters.P1P1}`);
+});
+test('ValidSA SpellAbility.!ManaAbility: Harsh Mentor punishes an opponent activating a non-mana ability', async T => {
+  await T.put(0, 'Harsh Mentor');
+  const sorcerer = await T.put(1, 'Prodigal Sorcerer');
+  T.b.on('targets', () => ['p0']);
+  await T.activate(sorcerer, 1, a => a.parsed.api === 'DealDamage');
+  expect(T.B.life === 38, `B took 2 (${T.B.life})`);
+});
+test('SharesColorWith LastCastThisTurn: under Mana Maze a spell sharing a color with the last one can\'t be cast', async T => {
+  await T.put(0, 'Mana Maze');
+  T.a.on('targets', () => ['p1']);
+  await T.cast('Lightning Bolt');
+  const red = await T.put(0, 'Lightning Bolt', 'hand'), green = await T.put(0, 'Harmonize', 'hand');
+  T.mana(0); T.game.priority = 0;
+  expect(castableOptions(T.game, 0, red).length === 0, 'another red spell is locked');
+  expect(castableOptions(T.game, 0, green).length > 0, 'a green one is not');
+});
+test('Remembered.Creature: Provoke the Trolls pumps the creature it damaged', async T => {
+  const angel = await T.put(1, 'Serra Angel');
+  T.a.on('targets', () => [refOf(angel)]);
+  await T.cast('Provoke the Trolls');
+  expect(angel.zone === 'battlefield' && angel.damage === 3 && T.game.chars(angel).power === 9, `power ${T.game.chars(angel).power}`);
+});
+test('AttachedTo Targeted.Aura,Equipment: Fumble takes the Equipment of the creature it bounced', async T => {
+  const bear = await T.put(1, 'Grizzly Bears');
+  const axe = await T.put(1, 'Bonesplitter'); axe.attachedTo = bear.id;
+  const angel = await T.put(0, 'Serra Angel');
+  T.a.on('targets', () => [refOf(bear)]);
+  await T.cast('Fumble');
+  expect(bear.zone === 'hand' && axe.controller === 0 && axe.attachedTo === angel.id, `${bear.zone}, controller ${axe.controller}, attached to ${axe.attachedTo}`);
+});
+test('SacEachValid: Perilous Predicament makes each opponent sacrifice an artifact creature and a nonartifact one', async T => {
+  const avian = await T.put(1, 'Clockwork Avian'), bear = await T.put(1, 'Grizzly Bears'), giant = await T.put(1, 'Hill Giant');
+  await T.cast('Perilous Predicament');
+  expect(avian.zone === 'graveyard' && [bear, giant].filter(c => c.zone === 'graveyard').length === 1, `${avian.zone}, ${bear.zone}, ${giant.zone}`);
+});
+test('Remembered.ExiledWithSource: Spell Queller lets the owner cast the exiled spell when it leaves', async T => {
+  T.game.activePlayer = 1;
+  T.b.on('targets', req => req.cands.includes('p0') ? ['p0'] : req.cands.slice(0, req.min));
+  const bolt = await T.cast('Lightning Bolt', 1, { resolve: false });
+  T.a.on('targets', req => req.cands.slice(0, req.min));
+  const queller = await T.cast('Spell Queller');
+  const exiled = bolt.zone;
+  T.b.on('confirm', () => true);
+  await T.game.destroy(queller, null); await T.resolve();
+  expect(exiled === 'exile' && bolt.zone === 'graveyard' && T.A.life === 37, `exiled (${exiled}), then cast for free (${bolt.zone}, A at ${T.A.life})`);
+});
+test('sharesNameWith YourGraveyard / Battlefield / NonToken', async T => {
+  await T.put(0, 'Lightning Bolt', 'graveyard');
+  const bolt = await T.put(0, 'Lightning Bolt', 'hand'), bear = await T.put(0, 'Grizzly Bears', 'hand');
+  await T.put(1, 'Grizzly Bears');
+  const ctx = { you: 0, host: null };
+  expect(matchValid(T.game, bolt, 'Card.sharesNameWith YourGraveyard', ctx) && !matchValid(T.game, bear, 'Card.sharesNameWith YourGraveyard', ctx), 'your graveyard');
+  expect(matchValid(T.game, bear, 'Card.sharesNameWith Battlefield', ctx) && matchValid(T.game, bear, 'Card.sharesNameWith NonToken', ctx) && !matchValid(T.game, bolt, 'Card.sharesNameWith Battlefield', ctx), 'the battlefield');
+});
+test('more card properties: top of graveyard, equipped by, blocking enchanted, shares controller / permanent type, colors you control', async T => {
+  const gy = [await T.put(0, 'Lightning Bolt', 'graveyard'), await T.put(0, 'Divination', 'graveyard'), await T.put(0, 'Grizzly Bears', 'graveyard')];
+  const ctx = { you: 0, host: null };
+  expect(!matchValid(T.game, gy[0], 'Card.TopGraveyard2', ctx) && gy.slice(1).every(c => matchValid(T.game, c, 'Card.TopGraveyard2', ctx)), 'the top two of the graveyard');
+  const bear = await T.put(0, 'Grizzly Bears'), axe = await T.put(0, 'Bonesplitter'); axe.attachedTo = bear.id;
+  expect(matchValid(T.game, bear, 'Creature.EquippedByValid Equipment.nonLegendary', ctx) && !matchValid(T.game, bear, 'Creature.EquippedByValid Equipment.Legendary', ctx), 'equipped by a nonlegendary Equipment');
+  const aura = await T.put(0, 'Rancor'); aura.attachedTo = bear.id;
+  const wall = await T.put(1, 'Wall of Omens');
+  T.combatWith([[bear, 1]], [[wall, bear]]);
+  expect(matchValid(T.game, wall, 'Creature.blockingEnchanted', { you: 0, host: aura }), 'blocking the enchanted creature');
+  expect(matchValid(T.game, axe, 'Card.sharesControllerWith', { you: 0, host: bear }) && !matchValid(T.game, wall, 'Card.sharesControllerWith', { you: 0, host: bear }), 'shares a controller');
+  expect(matchValid(T.game, wall, 'Card.sharesPermanentTypeWith', { you: 0, host: bear }) && !matchValid(T.game, axe, 'Card.sharesPermanentTypeWith', { you: 0, host: bear }), 'shares a permanent type');
+  expect(matchValid(T.game, gy[2], 'Card.ColorsYouCtrl', ctx) && !matchValid(T.game, gy[0], 'Card.ColorsYouCtrl', ctx), 'shares a color with a permanent you control');
+});
+
+test('blockingValid, OppNon..., Top_N_OfLibrary: Sting, Shredder and Sauron\'s Ransom references', async T => {
+  const goblin = await T.put(0, 'Goblin Guide'), wall = await T.put(1, 'Wall of Omens'), elf = await T.put(1, 'Llanowar Elves');
+  T.combatWith([[goblin, 1]], [[wall, goblin]]);
+  const ctx = { you: 1, host: null };
+  expect(matchValid(T.game, wall, 'Creature.blockingValid Goblin', ctx) && !matchValid(T.game, elf, 'Creature.blockingValid Goblin', ctx), 'blocking a Goblin');
+  const tctx = { you: 0, host: null, trig: { DefendingPlayer: 1 } };
+  const opps = resolveDefined(T.game, 'OppNonTriggeredDefender', tctx).map(p => p.id);
+  expect(JSON.stringify(opps) === '[2]', `the opponents other than the defending player (${JSON.stringify(opps)})`);
+  const top = resolveDefined(T.game, 'Top_4_OfLibrary', { you: 0, host: null });
+  expect(top.length === 4 && top.every((c, i) => c === T.A.library[i]), 'the top four cards of your library');
+}, { players: 3 });
 
 process.exit(await run(tests) ? 1 : 0);

@@ -1,6 +1,6 @@
 // Forge "Valid" filters, "Defined" references, numeric expressions and conditions.
-import { compare, CAP_COLOR, COLORS, BASIC_LAND_TYPES } from './util.js';
-import { cmc } from './mana.js';
+import { compare, CAP_COLOR, COLORS, BASIC_LAND_TYPES, NAME_TO_COLOR, PERMANENT_TYPES } from './util.js';
+import { cmc, manaColorsFromProduced } from './mana.js';
 
 export const unknownProps = new Set(); // collected for coverage diagnostics
 
@@ -184,12 +184,43 @@ function playerProp(game, p, prop, ctx) {
     return compare(list.filter(x => matchValid(game, x.lki && x.card && x.card.zcc === x.zcc ? x.card : x, valid, ctx) || (valid.split(',').includes('Card.Self') && ctx.host && x.id === ctx.host.id)).length, m[2], +m[3]);
   }
   if (prop === 'attackedYouTheirLastTurn') return (p.attackedPlayers || []).includes(you);
+  // (no teams here: your team is you, and you have no allies)
+  if (prop === 'YourTeam') return p.id === you;
+  if (prop === 'Allies') return false;
+  if (prop === 'MaxSpeed') return (p.speed || 0) >= 4;
+  if ((m = prop.match(/^LostLifeThisTurn (EQ|NE|LT|LE|GT|GE)(.+)$/))) return compare(p.lifeLostThisTurn, m[1], calcCtx(game, m[2], ctx));
+  // compared with the active player (the Oaths)
+  if (prop === 'hasMoreLifeThanActive') return p.life > game.players[game.activePlayer].life;
+  if (prop === 'hasMoreCardsInHandThanActive') return p.hand.length > game.players[game.activePlayer].hand.length;
+  if (prop === 'hasFewerCreaturesInYardThanActive') { const n = q => q.graveyard.filter(c => game.chars(c).types.has('Creature')).length; return n(p) < n(game.players[game.activePlayer]); }
+  if (prop === 'CardsInHandAtBeginningOfTurn') return (p.handAtTurnStart || 0) > 0;
+  if (prop === 'TappedLandForManaThisTurn') return p.landManaTurn === game.turnNumber;
+  // damage history: "a player this creature has dealt damage to this game", "a source you controlled dealt 5 or more damage this turn"
+  if (prop === 'wasDealtDamageThisGameBy Self') return !!ctx.host && !!ctx.host.damageHistory && ctx.host.damageHistory.players.includes(p.id);
+  if (prop === 'wasDealtDamageThisTurnBySource') return !!ctx.host && game.turnState.damageLog.some(e => e.player === p.id && e.source === ctx.host.id);
+  if ((m = prop.match(/^wasDealtCombatDamageThisTurnBySourceTimes (EQ|NE|LT|LE|GT|GE)(\d+)$/))) return !!ctx.host && compare(game.turnState.damageLog.filter(e => e.combat && e.player === p.id && e.source === ctx.host.id).length, m[1], +m[2]);
+  if ((m = prop.match(/^damageDoneSingleSource (EQ|NE|LT|LE|GT|GE)(.+)$/))) {
+    const by = {};
+    for (const e of game.turnState.damageLog) if (e.source != null && e.controller === p.id) by[e.source] = (by[e.source] || 0) + e.amount;
+    return compare(Math.max(0, ...Object.values(by)), m[1], calcCtx(game, m[2], ctx));
+  }
+  if (/^Triggered\w+$/.test(prop)) return resolveDefined(game, prop, ctx).some(x => x && x.isPlayer && x.id === p.id);
   if (prop === 'attackedBySourceThisTurn') { const rec = ctx.host && ctx.host.attackedPlayers; return !!rec && rec.turn === game.turnNumber && rec.pids.includes(p.id); }
   unknownProps.add('player:' + prop);
   return false;
 }
 
+// "Targeted.sameName", "Remembered.Creature+Other", "Triggered.YouOwn+sameName": a filter relative to the
+// card that names it (the first one targeted / remembered, the triggering one) instead of the source;
+// a bare "TriggeredCard" is that card itself
+const RELATIVE_TO = { Targeted: 'Targeted', TargetedCard: 'Targeted', Remembered: 'Remembered', Triggered: 'TriggeredCard', TriggeredCard: 'TriggeredCard', TriggeredObject: 'TriggeredCard', TriggeredAttacker: 'TriggeredAttacker', TriggeredBlocker: 'TriggeredBlocker' };
+
 function matchCard(game, card, typePart, props, ctx) {
+  if (RELATIVE_TO[typePart] && (props.length || typePart.startsWith('Triggered'))) {
+    const ref = resolveDefined(game, RELATIVE_TO[typePart], ctx).map(x => x && x.stackItem ? x.card : x).find(x => x && !x.isPlayer);
+    if (!ref) return false;
+    return matchCard(game, card, 'Card', props.length ? props : ['Self'], { ...ctx, host: ref });
+  }
   const ch = charsOf(game, card);
   if (!ch) return false;
   if (typePart !== 'Card' && typePart !== 'Any') {
@@ -359,6 +390,57 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'canReceiveCounters P1P1': return !card.lki && card.zone === 'battlefield';
     case 'canBeTurnedFaceUp': return !!card.faceDown && card.faceDef && card.def.faces[0].types.includes('Creature');
     case 'targetedBy': return false;
+    case 'sameName': return !!host && namesMatch(ch, charsOf(game, host));
+    // combat history: this combat, this turn, its controller's last turn
+    case 'blockingSource': return !!host && blockedAttacker(game, card) === host.id;
+    case 'blockedBySourceLKI': { const src = host && !host.lki && host.zone !== 'battlefield' ? sourceLKI(game, host, ctx) : host; return !!src && blockedAttacker(game, src) === card.id; }
+    case 'attackedThisCombat': return !!game.combat && (game.combat.attackedIds || []).includes(card.id);
+    case 'blockedThisCombat': return !!game.combat && (game.combat.blockedIds || []).includes(card.id);
+    case 'blockedThisTurn': return blocksThisTurn(game, card, 'blocker').length > 0;
+    case 'blockedByThisTurn': case 'gotBlockedThisTurn': return blocksThisTurn(game, card, 'attacker').length > 0;
+    case 'attackingAlone': return card.lki ? !!card.attackingAlone : game.isAttacking(card) && game.combat.attackers.length === 1;
+    case 'blockingAlone': return card.lki ? !!card.blockingAlone : game.isBlocking(card) && game.combat.blockers.size === 1;
+    case 'attackedYouThisTurn': return !!card.attackedPlayers && card.attackedPlayers.turn === game.turnNumber && card.attackedPlayers.pids.includes(you);
+    case 'attackedLastTurn': {
+      const turns = game.players[ctrl] ? game.players[ctrl].turns : [];
+      const last = turns[turns.length - (game.activePlayer === ctrl ? 2 : 1)];
+      return last != null && (card.attackTurns || []).includes(last);
+    }
+    case 'startedTheTurnUntapped': return card.untappedTurn === game.turnNumber;
+    // hasn't been under its controller's control continuously since their most recent turn began
+    case 'firstTurnControlled': return !!card.sick;
+    case 'dealtDamageToOppThisTurn': return game.turnState.damageLog.some(e => e.source === card.id && e.player != null && game.isOpponent(e.player, ctrl));
+    case 'wasDealtNonCombatDamageThisTurn': return game.turnState.damageLog.some(e => e.card === card.id && !e.combat);
+    case 'dealtDamagetoAny': return !!card.damageHistory;
+    case 'dealtCombatDamagetoAny': return !!card.damageHistory && card.damageHistory.combat;
+    case 'attackedBattleThisTurn': return game.turnState.attackedBattles.includes(card.id);
+    case 'equalPT': return ch.power === ch.toughness;
+    case 'noName': return !ch.name;
+    case 'sharesPermanentTypeWith': return !!host && [...ch.types].some(t => PERMANENT_TYPES.includes(t) && charsOf(game, host).types.has(t));
+    // "lands that could produce the same type of mana as it" (Mana Web)
+    case 'canProduceSameManaTypeWith': { const made = c => new Set(c.abilities.filter(a => a.parsed.api === 'Mana').flatMap(a => manaColorsFromProduced(a.parsed.p.Produced).flat())); const theirs = host ? made(charsOf(game, host)) : new Set(); return [...made(ch)].some(x => theirs.has(x)); }
+    // "protection from the colors of permanents you control" (Pledge of Loyalty)
+    case 'ColorsYouCtrl': return game.battlefield.some(c => c.controller === you && [...game.chars(c).colors].some(x => ch.colors.has(x)));
+    // how it was cast
+    case 'bargained': return !!(card.castSA && card.castSA.bargained);
+    case 'surged': return castAltCost(card) === 'Surge';
+    case 'spectacle': return castAltCost(card) === 'Spectacle';
+    // (casting for sneak / web-slinging isn't implemented yet: these hold once it is)
+    case 'sneaked': return castAltCost(card) === 'Sneak';
+    case 'webSlinged': return castAltCost(card) === 'Web-slinging';
+    case 'isCastFaceDown': return !!(card.castSA && card.castSA.faceDown);
+    case 'wasCastFromYourGraveyardByYou': case 'wasCastFromGraveyardByYou': return card.castFrom === 'graveyard' && (prop === 'wasCastFromGraveyardByYou' || card.owner === you) && (card.castSA ? card.castSA.controller : ctrl) === you;
+    case 'leastToughness': return game.battlefield.filter(c => game.chars(c).types.has('Creature')).every(c => game.chars(c).toughness >= ch.toughness);
+    case 'leastToughnessControlledByOpponent': {
+      const pool = game.battlefield.filter(c => game.isOpponent(c.controller, you) && game.chars(c).types.has('Creature'));
+      return pool.some(c => c.id === card.id) && pool.every(c => game.chars(c).toughness >= ch.toughness);
+    }
+    case 'lowestRememberedCMC': {
+      const rem = refList(game, ctx, 'Remembered').filter(x => x && !x.isPlayer);
+      return rem.some(x => x.id === card.id) && rem.every(x => charsOf(game, x).cmc >= ch.cmc);
+    }
+    case 'lowestCMC': return game.battlefield.every(c => game.chars(c).types.has('Land') || game.chars(c).cmc >= ch.cmc);
+    case 'cmcNotChosenEvenOdd': return !!host && !!host.chosen && !!host.chosen.evenOdd && (ch.cmc % 2 === 0) !== (host.chosen.evenOdd === 'Even');
   }
   if (CAP_COLOR[prop]) return ch.colors.has(CAP_COLOR[prop]);
   let m;
@@ -367,6 +449,40 @@ function cardProp(game, card, ch, prop, ctx) {
     const v = m[1] === 'power' ? ch.power : m[1] === 'toughness' ? ch.toughness : ch.cmc;
     return compare(v, m[2], calcCtx(game, m[3], ctx));
   }
+  // "cmcM20" / "cmcM21": an even / odd mana value
+  if ((m = prop.match(/^(cmc|power|toughness)M2(\d)$/))) return Math.abs(m[1] === 'power' ? ch.power : m[1] === 'toughness' ? ch.toughness : ch.cmc) % 2 === +m[2];
+  if ((m = prop.match(/^totalPT_?(EQ|NE|LT|LE|GT|GE)(.+)$/))) return compare(ch.power + ch.toughness, m[1], calcCtx(game, m[2], ctx));
+  if ((m = prop.match(/^numColors(EQ|NE|LT|LE|GT|GE)(.+)$/))) return compare(ch.colors.size, m[1], calcCtx(game, m[2], ctx));
+  // "blocked or was blocked by a legendary creature this turn", "creatures blocked by target Wall this turn"
+  if ((m = prop.match(/^(blockedValidThisTurn|blockedByValidThisTurn) (.+)$/))) {
+    const [side, other] = m[1] === 'blockedValidThisTurn' ? ['blocker', 'attacker'] : ['attacker', 'blocker'];
+    const refs = lookupDefined(game, m[2], ctx) || [];
+    return blocksThisTurn(game, card, side).some(b => { const o = blockPartner(game, b, other); return !!o && (refs.some(r => r && r.id === o.id) || matchValid(game, o, m[2], ctx)); });
+  }
+  // "if no mana was spent to cast it" (Nix, Satoru), "cast using its warp ability" (Full Bore)
+  if ((m = prop.match(/^ManaSpent (EQ|NE|LT|LE|GT|GE)(.+)$/))) return card.castSA ? castSAProp(game, card.castSA, card, prop, ctx) : compare(0, m[1], calcCtx(game, m[2], ctx));
+  if ((m = prop.match(/^CastSa (.+)$/))) return !!card.castSA && matchCastSA(game, card.castSA, card, m[1], ctx);
+  if ((m = prop.match(/^canProduceManaColor (\w+)$/))) {
+    const col = NAME_TO_COLOR[m[1].toLowerCase()];
+    return ch.abilities.some(a => a.parsed.api === 'Mana' && manaColorsFromProduced(a.parsed.p.Produced).some(u => u.includes(col)));
+  }
+  // "as long as black is the most common color among all permanents or is tied for most common" (Goham Djinn)
+  if ((m = prop.match(/^MostProminentColor (\w+)$/))) return mostProminentColors(game).includes(NAME_TO_COLOR[m[1].toLowerCase()]);
+  // "whose controller controls an Island", "if that player controls more lands than you"
+  if ((m = prop.match(/^ControllerControls(More|AtLeastAsMany)?([A-Za-z]+)(?:_(EQ|NE|LT|LE|GT|GE)(\w+))?$/))) {
+    const count = pid => game.battlefield.filter(c => c.controller === pid && hasType(game, game.chars(c), m[2], c)).length;
+    const n = count(ctrl);
+    if (m[1] === 'More') return n > count(you);
+    if (m[1] === 'AtLeastAsMany') return n >= count(you);
+    return m[3] ? compare(n, m[3], calcCtx(game, m[4], ctx)) : n > 0;
+  }
+  // "a creature that has an activated ability with {T} in its cost" (Magewright's Stone)
+  if ((m = prop.match(/^hasAbility (.+)$/))) return ch.abilities.some(a => abilityMatches(a, m[1], ctx));
+  // "if equipped creature didn't deal combat damage to a creature this turn" (Thirsting Axe)
+  if ((m = prop.match(/^dealtCombatDamageThisTurn (.+)$/))) return game.turnState.damageLog.some(e => e.combat && e.source === card.id && matchValid(game, e.player != null ? game.players[e.player] : game.cardById(e.card), m[1], ctx));
+  // "one of the top two cards of its owner's graveyard"
+  if ((m = prop.match(/^TopGraveyard(\d+)$/))) { const gy = game.players[card.owner].graveyard; return gy.slice(-+m[1]).includes(card); }
+  if ((m = prop.match(/^EquippedByValid (.+)$/))) return game.attachmentsOf(card).some(a => game.chars(a).subtypes.has('Equipment') && matchValid(game, a, m[1], ctx));
   if ((m = prop.match(/^counters_(EQ|NE|LT|LE|GT|GE)(\w+?)_(\w+)$/))) {
     const n = m[3] === 'ANY' ? Object.values(card.counters || {}).reduce((a, b) => a + b, 0) : ((card.counters || {})[m[3]] || 0);
     return compare(n, m[1], calcCtx(game, m[2], ctx));
@@ -391,12 +507,16 @@ function cardProp(game, card, ch, prop, ctx) {
     const produced = String((ctx.trig && ctx.trig.Produced) || (ctx.sa && ctx.sa.trig && ctx.sa.trig.Produced) || '').split(/\s+/);
     return produced.some(c => ch.colors.has(c));
   }
-  if ((m = prop.match(/^(sharesCreatureTypeWith|sharesColorWith|sharesCardTypeWith|sharesNameWith|sharesLandTypeWith) ?(.*)$/))) {
-    const others = m[2] === 'Commander' || m[2] === 'YourCommander'
-      ? game.players[you].commanders.map(id => game.cardById(id)).filter(Boolean)
-      : m[2] ? resolveDefined(game, m[2], ctx).filter(x => !x.isPlayer) : [host];
-    return others.some(o => o && shares(game, ch, charsOf(game, o), m[1]));
+  // "sharesNameWith YourGraveyard", "SharesColorWith MostProminentColor", "sharesCreatureTypeWithAll Tapped" (with each
+  // of them), "sharesCardTypeWithOther Remembered" (with another one of them)
+  if ((m = prop.match(/^[sS]hares(CreatureType|Color|CardType|Name|LandType)With(All|Other)? ?(.*)$/))) {
+    const kind = `shares${m[1]}With`;
+    if (m[3] === 'MostProminentColor') return mostProminentColors(game).some(c => ch.colors.has(c));
+    const others = sharesPool(game, m[3], ctx).filter(o => o && !o.isPlayer && !(m[2] === 'Other' && o.id === card.id));
+    const test = o => shares(game, ch, charsOf(game, o), kind);
+    return m[2] === 'All' ? others.length > 0 && others.every(test) : others.some(test);
   }
+  if ((m = prop.match(/^sharesControllerWith ?(.*)$/))) return (m[1] ? resolveDefined(game, m[1], ctx) : [host]).some(o => o && !o.isPlayer && ctrlOf(game, o) === ctrl);
   // "two cards that share all their card types" (Demonic Covenant): same set of card types as another one
   if ((m = prop.match(/^sharesAllCardTypesWith(Other)? ?(.*)$/))) {
     const key = c => [...c.types].sort().join(',');
@@ -419,9 +539,6 @@ function cardProp(game, card, ch, prop, ctx) {
   if ((m = prop.match(/^ExiledWith(Source|Effect)?$/))) return !!host && card.exiledWith === host.id;
   // exiled by an effect of a permanent / spell you controlled (Haldan, Avid Arcanist)
   if (prop === 'ExiledByYou') { const h = card.zone === 'exile' && card.exiledWith != null ? game.cardById(card.exiledWith) : null; return !!h && (h.zone === 'battlefield' ? h.controller : h.owner) === you; }
-  if (prop === 'CastSa Spell.ManaFromTreasure') return !!(card.castSA && card.castSA.manaFromTreasure);
-  // "Card.CastSa Spell.MayPlaySource": cast thanks to this source's may-play permission (Jaya's emblem, Edgar)
-  if (prop === 'CastSa Spell.MayPlaySource') return card.castMayPlayHost != null && (!host || card.castMayPlayHost === host.id);
   // "Card.TriggeredNewCard", "Card.TriggeredSources": the object(s) the trigger refers to
   if (/^Triggered\w+$/.test(prop)) return resolveDefined(game, prop, ctx).some(x => x && !x.isPlayer && x.id === card.id);
   if ((m = prop.match(/^(\w+)Ctrl$/))) {
@@ -455,12 +572,16 @@ function cardProp(game, card, ch, prop, ctx) {
     const pool = m[1] === 'YourGraveyard' ? game.players[you].graveyard : game.battlefield.filter(x => x.controller === you && (m[1] !== 'OtherYourBattlefield' || x.id !== card.id));
     return !pool.some(x => x.id !== card.id && charsOf(game, x).name === nm);
   }
+  // "if there are no tokens with the same name as it" (The Apprentice's Folly), "... as a remembered card"
+  if ((m = prop.match(/^doesNotShareNameWith (.+)$/))) {
+    const pool = /^(Remembered|Imprinted)/.test(m[1]) ? resolveDefined(game, m[1], ctx) : game.battlefield.filter(x => matchValid(game, x, m[1], ctx));
+    return !pool.some(x => x && !x.isPlayer && namesMatch(ch, charsOf(game, x)));
+  }
   // "if it and at least two other creatures attacked this combat"
   if ((m = prop.match(/^attackedThisCombat (EQ|GE|LE|GT|LT|NE)(\d+)$/))) {
     const att = game.turnState.attackedWith || [];
     return att.includes(card.id) && compare(att.length, m[1], +m[2]);
   }
-  if (prop === 'blockingEquipped') return !!game.combat && !!host && host.attachedTo != null && game.combat.blockers.get(card.id) === host.attachedTo;
   if (prop === 'EnteredUnder You') return (card.enteredController != null ? card.enteredController : ctrl) === you;
   if (prop === 'surveilledThisTurn') return card.zone === 'graveyard' && card.surveilledTurn === game.turnNumber;
   if (prop === 'hadToAttackThisCombat') { const c0 = card.lki ? card.card : card; const h = c0 && c0.hadToAttack; return !!h && h.turn === game.turnNumber && h.combat === (game.combatsThisTurn || 0); }
@@ -471,6 +592,13 @@ function cardProp(game, card, ch, prop, ctx) {
     const t = ctx.trig || (ctx.sa && ctx.sa.trig) || {};
     const a = t.Attacker || t.Card;
     return !!game.combat && !!a && game.combat.blockers.get(card.id) === a.id;
+  }
+  // "blocking equipped creature", "blocking enchanted creature", "blocking a creature you control", "blocking a Goblin"
+  if ((m = prop.match(/^blocking([A-Z].*)$/))) {
+    const att = blockedAttacker(game, card);
+    if (att == null) return false;
+    if (m[1] === 'CreatureYouCtrl') { const a = game.cardById(att); return !!a && a.controller === you; }
+    return resolveDefined(game, m[1], ctx).some(o => o && !o.isPlayer && o.id === att);
   }
   if (prop === 'otherAbility') { const r = ctx.sa && (ctx.sa.root ? ctx.sa.root() : ctx.sa); return !(r && r.stackItem === card); }
   // two-word creature types ("Time Lord")
@@ -488,9 +616,120 @@ function shares(game, a, b, kind) {
   }
   if (kind === 'sharesColorWith') { for (const c of a.colors) if (b.colors.has(c)) return true; return false; }
   if (kind === 'sharesCardTypeWith') { for (const t of a.types) if (b.types.has(t)) return true; return false; }
-  if (kind === 'sharesNameWith') return a.name === b.name;
+  if (kind === 'sharesNameWith') return namesMatch(a, b);
   if (kind === 'sharesLandTypeWith') { for (const t of a.subtypes) if (BASIC_LAND_TYPES[t] && b.subtypes.has(t)) return true; return false; }
   return false;
+}
+
+// (a face-down card has no name to share)
+function namesMatch(a, b) { return !!a.name && a.name === b.name; }
+
+// what "shares a name / color / type with <restriction>" compares against
+function sharesPool(game, restriction, ctx) {
+  const you = game.players[ctx.you];
+  switch (restriction) {
+    case '': return [ctx.host];
+    case 'Commander': case 'YourCommander': return you.commanders.map(id => game.cardById(id)).filter(Boolean);
+    case 'YourGraveyard': return you.graveyard;
+    case 'Graveyard': return game.cardsInZone('graveyard');
+    case 'Battlefield': return game.battlefield;
+    case 'NonToken': return game.battlefield.filter(c => !c.token);
+    case 'ThisTurnCast': return game.turnState.spellsCast.map(s => s.lki);
+    case 'LastCastThisTurn': return game.turnState.spellsCast.slice(-1).map(s => s.lki);
+  }
+  return resolveDefined(game, restriction, ctx);
+}
+
+// the most common color(s) among all permanents, ties included
+function mostProminentColors(game) {
+  const n = {};
+  for (const c of game.battlefield) for (const col of game.chars(c).colors) n[col] = (n[col] || 0) + 1;
+  const max = Math.max(0, ...Object.values(n));
+  return max ? COLORS.filter(col => n[col] === max) : [];
+}
+
+// combat history. The attacker a creature is blocking (as it last was in combat, for one that has left the battlefield)
+function blockedAttacker(game, card) {
+  if (card.lki) return card.blocking;
+  return game.combat && game.combat.blockers.has(card.id) ? game.combat.blockers.get(card.id) : null;
+}
+// blocks declared this turn with this object as the blocker or as the attacker that was blocked
+function blocksThisTurn(game, card, side) {
+  return game.turnState.blocks.filter(b => b[side] === card.id && b[side + 'Zcc'] === card.zcc);
+}
+// the other side of a block: the card while it's still the same object, otherwise how it was when it blocked
+function blockPartner(game, b, side) {
+  const c = game.cardById(b[side]);
+  return c && c.zcc === b[side + 'Zcc'] ? c : b[side + 'LKI'];
+}
+// how the source was as it left the battlefield (sacrificed to pay for this ability: Tinder Wall)
+function sourceLKI(game, host, ctx) {
+  const paid = ctx.sa && ctx.sa.root ? ctx.sa.root().paid : null;
+  const sac = paid && (paid.Sacrificed || []).find(l => l.lki && l.id === host.id);
+  if (sac) return sac;
+  for (let i = game.lookback.length - 1; i >= 0; i--) if (game.lookback[i].id === host.id) return game.lookback[i];
+  return null;
+}
+
+// how a spell was cast: its alternative cost, the mana spent on it, where that mana came from
+function castAltCost(card) { return (card.castSA && card.castSA.altCost) || card.altCost || null; }
+function manaTotal(spent) { return spent ? Object.values(spent).reduce((a, b) => a + b, 0) : 0; }
+const ALT_COSTS = new Set(['Blitz', 'Dash', 'Disturb', 'Emerge', 'Escape', 'Evoke', 'Flashback', 'Foretell', 'Harmonize', 'Impending', 'Mayhem', 'Offering', 'Overload', 'Plot', 'Prowl', 'Retrace', 'Spectacle', 'Surge', 'Warp', 'Sneak', 'Web-slinging']);
+
+// "Spell.ManaSpent EQ0", "Spell.Warp", "SpellAbility.!ManaAbility+ManaSpent GE4": a spell or ability as it was cast or
+// activated; properties that aren't about the casting are the card's
+export function matchCastSA(game, sa, card, spec, ctx) {
+  return splitTop(String(spec), ',').some(alt => {
+    alt = alt.trim();
+    const dot = alt.indexOf('.');
+    const type = dot < 0 ? alt : alt.slice(0, dot);
+    const props = dot < 0 ? [] : splitTop(alt.slice(dot + 1), '+');
+    if (!['Spell', 'SpellAbility', 'Card'].includes(type) && !matchValid(game, card, type, ctx)) return false;
+    return props.every(pr => { const r = castSAProp(game, sa, card, pr, ctx); return r === undefined ? cardProp(game, card, charsOf(game, card), pr, ctx) : r; });
+  });
+}
+
+function castSAProp(game, sa, card, prop, ctx) {
+  if (prop.startsWith('!')) { const r = castSAProp(game, sa, card, prop.slice(1), ctx); return r === undefined ? undefined : !r; }
+  const root = sa.root ? sa.root() : sa;
+  const from = root.manaFrom || [];
+  let m;
+  if ((m = prop.match(/^ManaSpent (EQ|NE|LT|LE|GT|GE)(.+)$/))) return compare(manaTotal(root.manaSpent), m[1], calcCtx(game, m[2], ctx));
+  if ((m = prop.match(/^ManaFromCreature_(\d+)$/))) return from.filter(x => x.creature).reduce((a, x) => a + x.n, 0) >= +m[1];
+  if (ALT_COSTS.has(prop)) return root.altCost === prop;
+  switch (prop) {
+    case 'ManaFromTreasure': return !!root.manaFromTreasure;
+    case 'ManaFromArtifact': return from.some(x => x.artifact);
+    case 'ManaFromCard.StrictlySelf': return !!ctx.host && from.some(x => x.id === ctx.host.id);
+    // cast thanks to this source's may-play permission (Jaya's emblem, Edgar, Serra Paragon)
+    case 'MayPlaySource': return card.castMayPlayHost != null && (!ctx.host || card.castMayPlayHost === ctx.host.id);
+    case 'Bargain': case 'Bargained': return !!root.bargained;
+    case 'Kicked': return (root.kicked || 0) > 0;
+    case 'ManaAbility': return root.api === 'Mana';
+    case 'hasTapCost': return /(^|\s)T(\s|$)/.test((root.p && root.p.Cost) || '');
+    case 'Modal': return root.api === 'Charm';
+    case 'singleTarget': return root.chain().flatMap(s => s.targets || []).length === 1;
+  }
+  if ((m = prop.match(/^numTargets (EQ|NE|LT|LE|GT|GE)(\d+)$/))) return compare(root.chain().flatMap(s => s.targets || []).length, m[1], +m[2]);
+  if ((m = prop.match(/^IsTargeting (?:Valid )?(.+)$/))) return root.chain().flatMap(s => s.targets || []).some(t => matchValid(game, t, m[1], ctx));
+  return undefined;
+}
+
+// "hasAbility Activated.hasTapCost": one of a card's abilities ("otherAbility": not the one being checked for)
+function abilityMatches(a, spec, ctx) {
+  const [type, ...props] = spec.split('.');
+  const kind = a.parsed.kind;
+  if (type === 'Activated' && kind !== 'AB') return false;
+  if (type === 'Static' && kind !== 'S') return false;
+  return props.join('.').split('+').filter(Boolean).every(pr => {
+    const neg = pr.startsWith('!'); const p0 = neg ? pr.slice(1) : pr;
+    let r;
+    if (p0 === 'hasTapCost') r = /(^|\s)T(\s|$)/.test(a.parsed.p.Cost || '');
+    else if (p0 === 'ManaAbility') r = a.parsed.api === 'Mana';
+    else if (p0 === 'otherAbility') r = !(ctx.sa && ctx.sa.key === a.key);
+    else r = false;
+    return neg ? !r : r;
+  });
 }
 
 function defendingPlayer(game, ctx) {
@@ -530,6 +769,15 @@ export function liveOrLki(game, o) {
 }
 
 export function resolveDefined(game, defined, ctx) {
+  const r = lookupDefined(game, defined, ctx);
+  if (r) return r;
+  unknownDefined.add(defined);
+  return [];
+}
+export const unknownDefined = new Set();
+
+// what a reference names, or null when it isn't one this engine knows
+function lookupDefined(game, defined, ctx) {
   if (!defined) return [];
   if (defined.includes(' & ')) {
     const out = [];
@@ -540,7 +788,9 @@ export function resolveDefined(game, defined, ctx) {
   if (defined.startsWith('.')) defined = 'Player' + defined;
   if (/^[^\s$]+,[^\s$]+$/.test(defined) && !/^(Valid|Remembered\$)/.test(defined)) {
     const out = [];
-    for (const part of defined.split(',')) for (const x of resolveDefined(game, part.startsWith('.') ? 'Player' + part : part, ctx)) if (!out.includes(x)) out.push(x);
+    // ("Player.controlsEnchantment,controlsArtifact": the later parts are more player properties)
+    const player = defined.startsWith('Player.');
+    for (const part of defined.split(',')) for (const x of resolveDefined(game, part.startsWith('.') ? 'Player' + part : player && /^[a-z]/.test(part) ? 'Player.' + part : part, ctx)) if (!out.includes(x)) out.push(x);
     return out;
   }
   const { host, sa } = ctx;
@@ -566,7 +816,7 @@ export function resolveDefined(game, defined, ctx) {
     case 'TargetedController': return flat(uniqP(sa ? findTargets(sa).map(x => x.isPlayer ? x : (x.stackItem ? P(x.stackItem.controller) : ctrlP(x))) : []));
     case 'TargetedOwner': return flat(uniqP(sa ? findTargets(sa).map(x => ownerP(x.stackItem ? x.card || x : x)) : []));
     case 'TargetedAndYou': return [...(sa ? findTargets(sa) : []), you];
-    case 'ParentTarget': return sa && sa.parent ? findTargets(sa.parent) : [];
+    case 'ParentTarget': case 'ParentTargeted': return sa && sa.parent ? findTargets(sa.parent) : [];
     case 'ParentTargetedController': return sa && sa.parent ? flat(findTargets(sa.parent).map(ctrlP)) : [];
     case 'Remembered': case 'RememberedCard': case 'RememberedLKI': case 'RememberedObjects': case 'DirectRemembered': case 'RememberedCards': return refList(game, ctx, 'Remembered').map(x => x && x.isPlayer ? x : liveOrLki(game, x)).filter(Boolean);
     case 'RememberedPlayer': return refList(game, ctx, 'Remembered').filter(isPlayer);
@@ -593,11 +843,13 @@ export function resolveDefined(game, defined, ctx) {
     case 'ChosenPlayer': return host && host.chosen && host.chosen.player != null ? [P(host.chosen.player)] : [];
     case 'ChosenAndYou': return [...(host && host.chosen && host.chosen.player != null ? [P(host.chosen.player)] : []), you];
     case 'Sacrificed': case 'SacrificedCards': return (sa && sa.root().paid.Sacrificed) || [];
-    case 'Discarded': return (sa && sa.root().paid.Discarded) || [];
-    case 'Exiled': return (sa && sa.root().paid.Exiled) || [];
+    case 'Discarded': case 'DiscardedCards': return (sa && sa.root().paid.Discarded) || [];
+    case 'Exiled': case 'ExiledCards': return (sa && sa.root().paid.Exiled) || [];
     case 'Tapped': case 'TappedCards': return (sa && sa.root().paid.Tapped) || [];
-    case 'Revealed': return (sa && sa.root().paid.Revealed) || [];
-    case 'ExiledWith': return host ? game.allCards().filter(c => c.zone === 'exile' && c.exiledWith === host.id) : [];
+    case 'Revealed': case 'RevealedCards': return (sa && sa.root().paid.Revealed) || [];
+    // evidence collected as a cost (none unless it was)
+    case 'Collected': return (sa && sa.root().paid.Collected) || [];
+    case 'ExiledWith': case 'ExiledWithSource': case 'ExiledWithEffect': return host ? game.allCards().filter(c => c.zone === 'exile' && c.exiledWith === host.id) : [];
     case 'DelayTriggerRemembered': case 'DelayTriggerRememberedLKI': return (sa && sa.delayRemembered || []).map(x => x.isPlayer ? x : liveOrLki(game, x));
     case 'DelayTriggerRememberedController': return flat((sa && sa.delayRemembered || []).map(x => x.isPlayer ? x : ctrlP(x)));
     case 'ReplacedCard': case 'ReplacedNewCard': return trig.Card ? [trig.Card] : [];
@@ -630,10 +882,35 @@ export function resolveDefined(game, defined, ctx) {
     case 'Monarch': return game.monarch != null ? [P(game.monarch)] : [];
     case 'NextPlayerToYourLeft': case 'PlayerToYourLeft': return [P(game.nextPlayer(ctx.you))];
     case 'PlayerToYourRight': return [P(game.prevPlayer(ctx.you))];
+    // (no teams here: every other player is an opponent, your team is you)
+    case 'NextOpponentToYourLeft': { const p = game.nextPlayer(ctx.you); return p != null && p !== ctx.you ? [P(p)] : []; }
+    case 'YourTeam': return you ? [you] : [];
+    case 'SourceController': return host ? [P(ctrlOf(game, host))] : [];
+    case 'ThisTargetedController': return flat(uniqP(sa ? (sa.targets || []).filter(x => !x.isPlayer).map(x => x.stackItem ? P(x.controller) : ctrlP(x)) : []));
+    case 'ReplacedSource': return trig.Source || trig.DamageSource ? [trig.Source || trig.DamageSource] : [];
+    // the player who chose the modes ("an opponent chooses one": Fatal Lore)
+    case 'ChoosingPlayer': { const r = sa && sa.root ? sa.root() : null; return [P(r && r.choosingPlayer != null ? r.choosingPlayer : ctx.you)]; }
+    // each player whose coin came up tails / heads (Goblin Assassin, Mana Clash)
+    case 'FlippedTails': case 'FlippedHeads': { const fr = (host && host.flipResults) || {}; return game.livingPlayers().filter(p => fr[p.id] === defined.slice(7)); }
   }
+  // "Spawner>TriggeredCard": as the ability that set up this delayed trigger saw it; "CastSA>Collected": as the spell
+  // this permanent was cast as saw it
+  if ((m = defined.match(/^(Spawner|CastSA)>(.+)$/))) return lookupDefined(game, m[2], shiftedContext(m[1], ctx));
   if ((m = defined.match(/^Triggered(\w+?)(LKICopy)?$/))) {
     return triggeredRef(game, m[1], trig, !!m[2], ctx);
   }
+  // "AttachedTo Targeted.Aura,Equipment": what's attached to them (of those types)
+  if ((m = defined.match(/^AttachedTo (\S+?)(?:\.(.+))?$/))) {
+    const atts = resolveDefined(game, m[1], ctx).flatMap(o => attachedTo(game, o));
+    return m[2] ? atts.filter(a => matchValid(game, a, m[2].split(',').map(v => 'Card.' + v).join(','), ctx)) : atts;
+  }
+  // "NonTriggeredCardController", "NonReplacedPlayer": every player but those ("OppNon...": every opponent but those)
+  if ((m = defined.match(/^(Opp)?Non([A-Z]\w+)$/))) {
+    const not = lookupDefined(game, m[2], ctx);
+    if (not) { const ids = not.map(x => x.isPlayer ? x.id : null); return game.livingPlayers().filter(p => !ids.includes(p.id) && (!m[1] || game.isOpponent(p.id, ctx.you))); }
+  }
+  // "Top_4_OfLibrary": the top cards of your library
+  if ((m = defined.match(/^Top_(\w+)_OfLibrary$/))) return you ? you.library.slice(0, calcCtx(game, m[1], ctx)) : [];
   if ((m = defined.match(/^(Valid|ValidAll|ValidGraveyard|ValidHand|ValidExile|ValidLibrary|ValidStack|ValidCommand) (.+)$/))) {
     const zone = { Valid: 'battlefield', ValidAll: 'all', ValidGraveyard: 'graveyard', ValidHand: 'hand', ValidExile: 'exile', ValidLibrary: 'library', ValidStack: 'stack', ValidCommand: 'command' }[m[1]];
     if (/^(Player|Opponent|You)/.test(m[2])) return game.livingPlayers().filter(p => matchValid(game, p, m[2], ctx));
@@ -647,16 +924,27 @@ export function resolveDefined(game, defined, ctx) {
   if ((m = defined.match(/^(AttachedBy|EnchantedBy|EquippedBy) (.+)$/))) {
     return resolveDefined(game, m[2], ctx).filter(o => o && o.isCard && o.attachedTo != null).map(o => typeof o.attachedTo === 'string' && o.attachedTo.startsWith('p') ? game.players[+o.attachedTo.slice(1)] : game.cardById(o.attachedTo)).filter(Boolean);
   }
-  if (defined === 'OppNonRememberedOwner') { const owners = refList(game, ctx, 'Remembered').map(x => x && (x.isPlayer ? x.id : x.owner)); return game.livingPlayers().filter(p => game.isOpponent(p.id, ctx.you) && !owners.includes(p.id)); }
-  if (defined === 'NonTriggeredCardOwner') { const c = trig.Card; return c ? game.livingPlayers().filter(p => p.id !== c.owner) : []; }
   if ((m = defined.match(/^(\w+)\.(.+)$/)) && !/^(Player|Opponent|Valid)/.test(m[1])) {
-    const base = resolveDefined(game, m[1], ctx);
-    if (base.length) return base.filter(o => o.isPlayer ? matchValid(game, o, 'Player.' + m[2], ctx) : matchValid(game, o, 'Card.' + m[2], ctx));
+    const base = lookupDefined(game, m[1], ctx);
+    if (base) return base.filter(o => o.isPlayer ? matchValid(game, o, 'Player.' + m[2], ctx) : matchValid(game, o, 'Card.' + m[2], ctx));
   }
-  unknownDefined.add(defined);
-  return [];
+  return null;
 }
-export const unknownDefined = new Set();
+
+// what's attached to a player or permanent; to one that has left the battlefield, what was as it left (Fumble)
+function attachedTo(game, o) {
+  if (!o || o.stackItem) return [];
+  if (o.isPlayer) return game.battlefield.filter(a => a.attachedTo === 'p' + o.id);
+  let lki = o.lki ? o : null;
+  if (!lki && o.zone !== 'battlefield') for (let i = game.turnState.moves.length - 1; i >= 0 && !lki; i--) { const mv = game.turnState.moves[i]; if (mv.card === o && mv.from === 'battlefield') lki = mv.lki; }
+  return lki ? (lki.attachments || []).map(id => game.cardById(id)).filter(a => a && a.zone === 'battlefield') : game.attachmentsOf(o);
+}
+
+function shiftedContext(kind, ctx) {
+  const r = ctx.sa && ctx.sa.root ? ctx.sa.root() : ctx.sa;
+  const other = kind === 'Spawner' ? r && r.spawner : ctx.host && ctx.host.castSA;
+  return other ? { ...ctx, sa: other, trig: other.trig } : ctx;
+}
 
 function uniqP(arr) {
   const out = [];
@@ -825,6 +1113,7 @@ export function evalExpr(game, expr, ctx, depth) {
     return 0;
   }
   const head = expr.slice(0, d);
+  if ((m = head.match(/^(Spawner|CastSA)>(.+)$/))) return evalExpr(game, m[2] + expr.slice(d), shiftedContext(m[1], ctx || {}), depth + 1);
   let rest = expr.slice(d + 1);
   // math suffix: last "/Op" segments (only when they look like math ops)
   let math = '';
@@ -1026,13 +1315,17 @@ function countExpr(game, rest, ctx, depth) {
     return calcCtx(game, flag ? m[3] : m[4], ctx);
   }
   if ((m = rest.match(/^AltCost\.(\d+)\.(\d+)$/))) { const r = sa && sa.root(); return (r && r.altCost) || (host && host.altCost) ? +m[1] : +m[2]; }
-  if ((m = rest.match(/^(Valid|ValidHand|ValidGraveyard|ValidExile|ValidLibrary) (.+?)\$(Colors|CardTypes|DifferentCardNames|DifferentCardPower|DifferentCardManaCost|CreatureType|GreatestCardManaCost|CardToughness|CardPower|CardManaCost|SumCMC)$/))) {
-    const zone = { Valid: 'battlefield', ValidHand: 'hand', ValidGraveyard: 'graveyard', ValidExile: 'exile', ValidLibrary: 'library' }[m[1]];
-    const list = game.cardsInZone(zone).filter(c => matchValid(game, c, m[2], ctx));
-    const chs = list.map(c => game.chars(c));
+  // "ValidGraveyard Card.YouOwn$CardTypes", "ValidBattlefield,Graveyard Card.YouCtrl$CardTypes", "ThisTurnCast_Card.YouCtrl$CardTypes"
+  if ((m = rest.match(/^(?:Valid(Hand|Graveyard|Exile|Library|Battlefield(?:,Graveyard)?)? |ThisTurnCast_)(.+?)\$(Colors|CardTypes|CardTypesPermanent|DifferentColorPair|DifferentCardNames|DifferentCardPower|DifferentCardManaCost|CreatureType|GreatestCardManaCost|LeastCardPower|CardToughness|CardPower|CardManaCost|SumCMC)$/))) {
+    const pool = rest.startsWith('ThisTurnCast_') ? game.turnState.spellsCast.map(s => s.lki) : (m[1] || 'Battlefield').split(',').flatMap(z => game.cardsInZone(zoneMap[z]));
+    const chs = pool.filter(c => matchValid(game, c, m[2], ctx)).map(c => charsOf(game, c));
     switch (m[3]) {
       case 'Colors': { const s = new Set(); chs.forEach(c => c.colors.forEach(x => s.add(x))); return s.size; }
       case 'CardTypes': { const s = new Set(); chs.forEach(c => c.types.forEach(x => s.add(x))); return s.size; }
+      case 'CardTypesPermanent': { const s = new Set(); chs.forEach(c => c.types.forEach(x => { if (PERMANENT_TYPES.includes(x)) s.add(x); })); return s.size; }
+      // "the number of different two-color combinations among permanents you control" (Niv-Mizzet, Guildpact)
+      case 'DifferentColorPair': { const s = new Set(); chs.forEach(c => { const cs = COLORS.filter(x => c.colors.has(x)); cs.forEach((a, i) => cs.slice(i + 1).forEach(b => s.add(a + b))); }); return s.size; }
+      case 'LeastCardPower': return chs.length ? Math.min(...chs.map(c => c.power)) : 0;
       case 'DifferentCardNames': return new Set(chs.map(c => c.name)).size;
       case 'DifferentCardPower': return new Set(chs.map(c => c.power)).size;
       case 'DifferentCardManaCost': return new Set(chs.map(c => c.cmc)).size;

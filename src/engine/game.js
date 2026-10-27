@@ -97,7 +97,7 @@ export class Game {
   }
 
   freshTurnState() {
-    return { spellsCast: [], moves: [], damagedPlayers: {}, combatDamagedPlayers: {}, combatDamageSources: {}, damagedCards: {}, dealtDamage: {}, creaturesDied: 0, permanentLeft: {}, attackedWith: [], turnsTaken: this.turnState ? this.turnState.turnsTaken : {}, landsEntered: {}, abilityResolved: {}, triggerCounts: {}, tokenBatches: {}, loopCounts: {}, resolutions: 0 };
+    return { spellsCast: [], moves: [], damagedPlayers: {}, combatDamagedPlayers: {}, combatDamageSources: {}, damagedCards: {}, dealtDamage: {}, creaturesDied: 0, permanentLeft: {}, attackedWith: [], turnsTaken: this.turnState ? this.turnState.turnsTaken : {}, landsEntered: {}, abilityResolved: {}, triggerCounts: {}, tokenBatches: {}, loopCounts: {}, resolutions: 0, blocks: [], damageLog: [], attackedBattles: [] };
   }
 
   // ---------------------------------------------------------------- queries
@@ -326,9 +326,10 @@ export class Game {
     this.lastActive = ap;
     this.turnState = this.freshTurnState();
     this.turnState.turnsTaken[ap] = (this.turnState.turnsTaken[ap] || 0) + 1;
-    for (const pl of this.players) { pl.landsPlayed = 0; pl.lifeGainedThisTurn = 0; pl.lifeLostThisTurn = 0; pl.cardsDrawnThisTurn = 0; pl.spellsCastThisTurn = []; pl.manaExpended = 0; }
+    for (const pl of this.players) { pl.landsPlayed = 0; pl.lifeGainedThisTurn = 0; pl.lifeLostThisTurn = 0; pl.cardsDrawnThisTurn = 0; pl.spellsCastThisTurn = []; pl.manaExpended = 0; pl.handAtTurnStart = pl.hand.length; }
     p.attackedPlayers = []; p.attackedPlayersTurn = this.turnNumber;
-    for (const c of this.battlefield) c.abilityUses = {};
+    p.turns = [...p.turns.slice(-2), this.turnNumber];
+    for (const c of this.battlefield) { c.abilityUses = {}; if (!c.tapped) c.untappedTurn = this.turnNumber; }
     this.log(`Turn ${this.turnNumber}: ${p.name}`, { type: 'turn' });
     // effects lasting "until your next turn"
     await this.expireDurations('UntilYourNextTurn', ap);
@@ -855,6 +856,7 @@ export class Game {
     sa.triggerParams = p;
     if (pt.delayed) { sa.delayRemembered = pt.delayed.remembered || []; }
     if (t.delayed && t.delayed.remembered) sa.delayRemembered = t.delayed.remembered;
+    if ((pt.delayed || t.delayed) && (pt.delayed || t.delayed).spawner) sa.spawner = (pt.delayed || t.delayed).spawner;
     sa.description = this.describeTrigger(host, p, sa);
     if (p.Static === 'True') {
       await this.resolveSAChain(sa);
@@ -978,8 +980,8 @@ export class Game {
           }
         }
       }
-      // "Always" state triggers
-      if (!acted) {
+      // "Always" state triggers (not once the loop breaker has cleared the stack this turn: one that keeps triggering would never end)
+      if (!acted && this.turnState.resolutions <= 600) {
         for (const c of this.battlefield) for (const t of this.chars(c).triggers) {
           if (t.parsed.p.Mode !== 'Always') continue;
           if (this.stack.some(s => s.sa && s.sa.host && s.sa.host.id === c.id && s.sa.key === t.key) || this.pendingTriggers.some(x => x.host.id === c.id && x.t.key === t.key)) continue;
@@ -993,7 +995,9 @@ export class Game {
 
   playerLoses(p, reason) {
     if (p.lost) return;
-    if (reason !== 'conceded' && (this.cantHappen('GameLoss', p) || this.opponents(p.id).every(o => this.cantHappen('GameWin', o)) && this.opponents(p.id).length === 1 && this.cantHappen('GameWin', this.opponents(p.id)[0]))) {
+    // "you don't lose the game for having 0 or less life" (Transcendence) still loses to an effect
+    const why = { 'life total reached 0': 'LifeReachedZero', '10 poison counters': 'Poisoned', 'drew from an empty library': 'Milled' }[reason] || (/^21 combat damage/.test(reason) ? 'CommanderDamage' : 'SpellEffect');
+    if (reason !== 'conceded' && (this.cantHappen('GameLoss', p, why) || this.opponents(p.id).every(o => this.cantHappen('GameWin', o)) && this.opponents(p.id).length === 1 && this.cantHappen('GameWin', this.opponents(p.id)[0]))) {
       if (!this._cantLoseLogged || this._cantLoseLogged !== this.turnNumber) { this.log(`${p.name} can't lose the game right now.`); this._cantLoseLogged = this.turnNumber; }
       return;
     }
@@ -1059,7 +1063,8 @@ export class Game {
       remembered: [...card.remembered], imprinted: [...card.imprinted], chosen: { ...card.chosen }, attachedTo: card.attachedTo,
       zone: card.zone, zcc: card.zcc, damage: card.damage, timestamp: card.timestamp, xPaid: card.xPaid, kicked: card.kicked, faceDown: card.faceDown,
       castFrom: card.castFrom, castMayPlayHost: card.castMayPlayHost, castSA: card.castSA, exiledWith: card.exiledWith, face: card.face, faceDef: card.faceDef, goadedBy: [...(card.goadedBy || [])],
-      wasAttacking: this.isAttacking(card), wasBlocking: this.isBlocking(card),
+      wasAttacking: this.isAttacking(card), wasBlocking: this.isBlocking(card), blocking: this.combat && this.combat.blockers.has(card.id) ? this.combat.blockers.get(card.id) : null, attackTurns: card.attackTurns,
+      attackingAlone: this.isAttacking(card) && this.combat.attackers.length === 1, blockingAlone: this.isBlocking(card) && this.combat.blockers.size === 1,
       attachments: this.battlefield.filter(a => a.attachedTo === card.id).map(a => a.id),
       blitzed: card.blitzed, evoked: card.evoked, squad: card.squad, renowned: card.renowned, monstrous: card.monstrous, championed: card.championed,
     };
@@ -1491,7 +1496,7 @@ export class Game {
   }
 
   // "can't lose / can't win" style replacements (Platinum Angel, Abyssal Persecutor)
-  cantHappen(event, player) {
+  cantHappen(event, player, loseReason) {
     for (const h of [...this.battlefield, ...this.effects]) {
       const ch = h.isEffect ? h.effectChars : this.chars(h);
       for (const r of ch.replacements) {
@@ -1499,6 +1504,7 @@ export class Game {
         if (p.Event !== event || p.Layer !== 'CantHappen') continue;
         const ctx = { host: h, you: h.controller };
         if (p.ValidPlayer && !matchValid(this, player, p.ValidPlayer, ctx)) continue;
+        if (p.ValidLoseReason && !p.ValidLoseReason.split(',').includes(loseReason)) continue;
         if (!checkPresence(this, p, ctx)) continue;
         return true;
       }
@@ -1738,6 +1744,14 @@ export class Game {
       this.log(`${source ? this.name(source) : 'Damage'} deals ${amount} damage to ${this.name(target)}.`, { type: 'damage' });
     }
     if (source) this.turnState.dealtDamage[source.id] = true;
+    // what dealt damage to what this turn ("if it dealt damage to an opponent this turn")
+    this.turnState.damageLog.push({ source: source ? source.id : null, controller: srcCtrl, player: target.isPlayer ? target.id : null, card: target.isPlayer ? null : target.id, amount, combat: !!opts.combat });
+    // and over the game, for as long as the source stays the same object ("a player it has dealt damage to this game")
+    if (source && source.isCard && !source.lki) {
+      const h = source.damageHistory || (source.damageHistory = { players: [], combat: false });
+      if (target.isPlayer && !h.players.includes(target.id)) h.players.push(target.id);
+      if (opts.combat) h.combat = true;
+    }
     this.touch();
     if (lifelink && srcCtrl != null) await this.gainLife(this.players[srcCtrl], amount, null);
     const drp = { Source: source, DamageSource: source, Target: target, DamageTarget: target, DamageAmount: amount, IsCombatDamage: !!opts.combat, CombatDamage: !!opts.combat };

@@ -158,6 +158,13 @@ export async function declareAttackers(game) {
   const names = decl.map(({ c, d }) => `${game.name(c)} → ${d.card ? game.name(game.cardById(d.card)) : game.players[d.player].name}`);
   game.log(`${game.players[ap].name} attacks: ${names.join(', ')}`, { type: 'attack' });
   game.turnState.attackedWith = decl.map(x => x.c.id);
+  // "attacked this combat" holds even after it's removed from combat; "attacked during its controller's last turn",
+  // "attacked a battle this turn"
+  game.combat.attackedIds = decl.map(x => x.c.id);
+  for (const { c, d } of decl) {
+    c.attackTurns = [...c.attackTurns.slice(-2), game.turnNumber];
+    if (d.card && game.chars(game.cardById(d.card)).types.has('Battle')) game.turnState.attackedBattles.push(c.id);
+  }
   // who attacked whom: "attacked you during their last turn", "a player it has already attacked this turn"
   const apP = game.players[ap];
   if (apP.attackedPlayersTurn !== game.turnNumber) { apP.attackedPlayers = []; apP.attackedPlayersTurn = game.turnNumber; }
@@ -353,6 +360,9 @@ export async function declareBlockers(game) {
       const rec = combat.attackers.find(x => x.card === a.id);
       rec.blockers.push(b.id);
       rec.blocked = true;
+      // block history: "blocked this combat", "blocked or was blocked by a legendary creature this turn"
+      combat.blockedIds = [...(combat.blockedIds || []), b.id];
+      game.turnState.blocks.push({ blocker: b.id, blockerZcc: b.zcc, blockerLKI: game.makeLKI(b), attacker: a.id, attackerZcc: a.zcc, attackerLKI: game.makeLKI(a) });
     }
     if (pairs.length) game.log(`${game.players[dp].name} blocks: ${pairs.map(p => `${game.name(p.b)} blocks ${game.name(p.a)}`).join(', ')}`, { type: 'block' });
   }
