@@ -40,6 +40,8 @@ const PURPOSE_TITLES = {
   digHand: 'Look at the top of your library', dig: 'Look at the top of your library', digBattlefield: 'Look at the top of your library', chooseCard: 'Choose', clone: 'Choose a card to copy',
   casualty: 'Casualty', emerge: 'Emerge', enlist: 'Enlist', exert: 'Exert', costExile: 'Exile', costExileSameGrave: 'Exile', cipher: 'Cipher', clashBottom: 'Clash',
   exploreGrave: 'Explore', pile: 'Make two piles', choosePile: 'Choose a pile', openingHand: 'Opening hand', blight: 'Blight', dredge: 'Dredge', cumulativeUpkeepGrave: 'Cumulative upkeep',
+  // (mech-classic)
+  phaseChoice: 'Phase out', reorder: 'Reorder', auraSwap: 'Aura swap', exchangeChoice: 'Exchange control',
 };
 
 export function CardsDialog({ game, req, respond, onHover }) {
@@ -140,7 +142,7 @@ export function ConfirmDialog({ game, req, respond, onHover }) {
 }
 
 export function NumberDialog({ game, req, respond, onHover }) {
-  const [n, setN] = useState(req.max);
+  const [n, setN] = useState(req.default != null ? req.default : req.max);
   // dividing damage or counters: show which target this amount is for
   const target = req.purpose === 'divide' && req.target != null ? fromRef(game, req.target) : null;
   return (

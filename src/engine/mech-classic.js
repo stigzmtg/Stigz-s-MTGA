@@ -533,7 +533,7 @@ export const CLASSIC_EFFECTS = {
     const host = sa.host;
     const me = game.players[sa.controller];
     let bid = 0;
-    if (p.StartBidding === 'Any') bid = await game.ask(me.id, { type: 'number', prompt: `${game.name(host)}: start the bidding at how much life?`, min: 0, max: Math.max(0, me.life), purpose: 'bidStart', sa, aiMax: +(p.AIBidMax || 8) });
+    if (p.StartBidding === 'Any') bid = await game.ask(me.id, { type: 'number', prompt: `${game.name(host)}: start the bidding at how much life?`, min: 0, max: Math.max(0, me.life), default: 0, purpose: 'bidStart', sa, aiMax: +(p.AIBidMax || 8) });
     else if (p.StartBidding) bid = calc(game, p.StartBidding, sa);
     let bidders;
     if (p.OtherBidder) bidders = [me, ...playersOf(resolveDefined(game, p.OtherBidder, ctxOf(game, sa))).filter(x => x.id !== me.id)];
@@ -547,7 +547,7 @@ export const CLASSIC_EFFECTS = {
         if (pl === winner && bidders.length > 1) continue;
         const top = await game.ask(pl.id, { type: 'confirm', prompt: `${game.name(host)}: the high bid is ${bid} life (${winner.name}). Top it?`, purpose: 'bidLife', sa, bid, winner: winner.id, aiMax: +(p.AIBidMax || 8) });
         if (!top) continue;
-        const raise = await game.ask(pl.id, { type: 'number', prompt: `${game.name(host)}: raise the bid of ${bid} by how much life?`, min: 1, max: Math.max(1, pl.life), purpose: 'bidRaise', sa, bid });
+        const raise = await game.ask(pl.id, { type: 'number', prompt: `${game.name(host)}: raise the bid of ${bid} by how much life?`, min: 1, max: Math.max(1, pl.life), default: 1, purpose: 'bidRaise', sa, bid });
         bid += Math.max(1, raise || 1);
         winner = pl; more = true;
         game.log(`${pl.name} bids ${bid} life.`);
