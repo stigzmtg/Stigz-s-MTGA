@@ -1,21 +1,23 @@
-// The Pokémon side of the site: load the card pool and decks, then lobby <-> battle.
+// The Pokémon side of the site: load the card pool and decks, then lobby <-> battle (and the deck builder).
 import { PokemonGame } from '../game.js';
 import { PokemonAI } from '../ai.js';
 import { PtcgHuman } from './human.js';
 import { PkLobby } from './lobby.jsx';
 import { Battle } from './battle.jsx';
+import { PkDeckBuilder } from './builder.jsx';
 import { initPkImages, preloadPk } from './images.js';
 import { createStore, loadSettings, fetchJSON, safeStorage } from '../../ui/common.js';
 import { makePace } from '../../ui/pacing.js';
 import { Modal } from '../../ui/dialogs.jsx';
 import { Lockstep, LocalSeatAgent, RemoteSeatAgent } from '../../net/lockstep.js';
-import { RoomClient, roomApi, isRoomCode } from '../../net/roomclient.js';
+import { RoomClient, roomApi, isRoomCode, onClaude } from '../../net/roomclient.js';
 import { Recorder, ReplayControl, ReplayAgent, pkDelay, loadReplay } from '../../ui/records.js';
 import { resetTips } from '../../ui/coach.jsx';
 import { myAvatar } from '../../ui/avatar.jsx';
 import { savedStyle } from '../../ui/deckstyle.jsx';
+import { loadCustomDecks, deleteCustomDeck, deckLook, deckReady, findDeck, registerPacked, packDeck, unpackDeck, deckRef } from '../customdecks.js';
 
-const { useState, useEffect, useSyncExternalStore } = React;
+const { useState, useEffect, useMemo, useSyncExternalStore } = React;
 
 // a Pokémon room invite in the address: #pk-abc123
 export const pkRoomFromHash = () => { const m = /^pk-([a-z0-9]{6})$/.exec(location.hash.slice(1)); return m ? m[1] : null; };
@@ -46,19 +48,20 @@ function newBattle(data, cfg) {
   const recorder = new Recorder();
   game.agents = game.agents.map(a => recorder.wrap(a));
   game.start().then(() => store.bump(), e => { console.error(e); store.bump(); });
-  return { game, human, ai, store, settings, cfg, me: 0, recorder };
+  return { game, human, ai, store, settings, cfg, me: 0, recorder, decks: [cfg.mine, cfg.opp] };
 }
 
-// watching a replay: the same seed and decks, both seats answering from the recorded decisions
+// watching a replay: the same seed and decks, both seats answering from the recorded decisions (a deck of your own
+// travels in the replay, as it was when the battle was played)
 function newReplayBattle(data, rep) {
   const store = createStore();
   const human = new PtcgHuman(() => store.bump());
   const ctl = new ReplayControl(rep.log.length, () => store.bump());
   const agent = new ReplayAgent(rep.log, ctl, null, pkDelay);
-  const byId = Object.fromEntries(data.decks.map(d => [d.id, d]));
+  const deckOf = p => (p.deck && unpackDeck(p.deck, data.cards)) || findDeck(data.decks, p.deckId) || data.decks[0];
   const game = new PokemonGame({
     db: data.cards, seed: rep.seed, onUpdate: () => store.bump(), maxTurns: rep.maxTurns || 120,
-    players: rep.players.map(p => ({ name: p.name, deck: byId[p.deckId] || data.decks[0], agent, human: p.human })),
+    players: rep.players.map(p => ({ name: p.name, deck: deckOf(p), agent, human: p.human })),
   });
   game.start().then(() => { ctl.end(); store.bump(); }, e => { console.error(e); store.bump(); });
   return { game, human, store, settings: loadSettings(), cfg: null, me: rep.seat || 0, replay: ctl, replayId: rep.id };
@@ -82,12 +85,14 @@ function newOnlineBattle(data, room, cfg) {
   }
   // the host's computer player stands in for a friend who left, once the host asks it to
   const agents = cfg.seats.map((s, pid) => pid === me ? new LocalSeatAgent(net, inner, null, null) : new RemoteSeatAgent(net, null, isHost ? new PokemonAI({ pace: makePace(settings) }) : null));
-  const byId = Object.fromEntries(data.decks.map(d => [d.id, d]));
+  // (a seat's own deck is named with a fingerprint of its cards: the battle only starts here once this browser has
+  // exactly that deck, see decksKnown below)
+  const decks = cfg.seats.map(s => findDeck(data.decks, s.d) || data.decks[0]);
   // player names only appear in text, so each browser can call its own player "You"
-  const players = cfg.seats.map((s, pid) => ({ name: pid === me ? 'You' : s.n || `Player ${pid + 1}`, deck: byId[s.d] || data.decks[0], agent: agents[pid], human: true }));
+  const players = cfg.seats.map((s, pid) => ({ name: pid === me ? 'You' : s.n || `Player ${pid + 1}`, deck: decks[pid], agent: agents[pid], human: true }));
   const game = new PokemonGame({ db: data.cards, seed: cfg.seed, players, onUpdate: () => store.bump() });
   game.start().then(() => store.bump(), e => { console.error(e); store.bump(); });
-  return { game, human, store, settings, cfg, me: me == null ? 0 : me, spectator: me == null, online: { net, code: cfg.code, game: cfg.game } };
+  return { game, human, store, settings, cfg, me: me == null ? 0 : me, spectator: me == null, online: { net, code: cfg.code, game: cfg.game }, decks };
 }
 
 function endBattle(session) {
@@ -106,6 +111,7 @@ export function HowToPlayPk({ onClose }) {
         <section><h3>Your turn</h3><p>Draw, then in any order: put Basic Pokémon on your Bench, evolve, attach <b>one</b> Energy, play any Items, <b>one</b> Supporter and one Stadium, use Abilities and Retreat once. Then attack, which ends your turn. The player who goes first can't attack or play a Supporter on their first turn.</p></section>
         <section><h3>Playing cards</h3><p>Glowing cards in your hand can be played: click them. Energy, Tools and Evolutions then ask which Pokémon to put them on. Attacks, Retreat and Abilities are buttons in the bar across the middle of the table. Point at any card to read it in the side panel.</p></section>
         <section><h3>Playing a friend</h3><p>Pick your deck, choose <b>Play with friends</b>, make a room and send your friend the invite link. They pick their own deck and take the second seat, then you start the battle. Anyone else who opens the link can watch. If a connection drops, opening the link again puts that player back in their seat where the battle left off.</p></section>
+        <section><h3>Your own decks</h3><p>Choose <b>+ Build a deck</b> to make your own, or <b>Edit a copy</b> of any tournament deck, or paste a list from Pokémon TCG Live or Limitless. A deck has exactly 60 cards, up to 4 cards with the same name (basic Energy as many as you like) and at least one Basic Pokémon. Your decks save on this device and play against the computer and with friends.</p></section>
         <section><h3>Damage</h3><p>Weakness doubles damage and Resistance takes 30 off, for the Active Pokémon only. Asleep and Paralyzed Pokémon can't attack or retreat, Confused ones may hurt themselves, and Poison and Burns add damage between turns.</p></section>
       </div>
       <div className="row"><button className="btn ghost" onClick={() => { resetTips('pk'); onClose(); }}>Show tips again</button><button className="btn primary" onClick={onClose}>Got it</button></div>
@@ -123,6 +129,8 @@ export function PokemonApp({ onHome }) {
   const [invite] = useState(pkRoomFromHash);
   const [mode, setMode] = useState(() => invite ? 'friends' : (safeStorage.getItem('pk-mode') || 'solo'));
   const [toast, setToast] = useState(null);
+  const [builder, setBuilder] = useState(null);     // { id, from } while the deck builder is open
+  const [mineVersion, setMineVersion] = useState(0);
   useEffect(() => {
     (async () => {
       try {
@@ -134,13 +142,19 @@ export function PokemonApp({ onHome }) {
     roomApi().then(a => setApi(a || null));
   }, []);
   useEffect(() => { safeStorage.setItem('pk-mode', mode); }, [mode]);
+  // your own decks join the tournament decks everywhere decks are listed or looked up
+  const all = useMemo(() => {
+    if (!data) return null;
+    const mine = loadCustomDecks().map(d => ({ ...d, ...deckLook(d, data.cards), ready: deckReady(d, data.cards) }));
+    return { ...data, decks: [...mine, ...data.decks] };
+  }, [data, mineVersion]);
   // a replay picked on the home screen
   useEffect(() => {
-    if (!data) return;
+    if (!all) return;
     let id = null;
     try { id = sessionStorage.getItem('pa-open-replay'); sessionStorage.removeItem('pa-open-replay'); } catch { /* storage blocked */ }
     const rep = id && loadReplay(id);
-    if (rep && rep.kind === 'pk') setSession(newReplayBattle(data, { ...rep, id }));
+    if (rep && rep.kind === 'pk') setSession(newReplayBattle(all, { ...rep, id }));
   }, [data]);
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 4000); return () => clearTimeout(t); }, [toast]);
   useSyncExternalStore(room ? room.subscribe : (() => () => {}), room ? room.getVersion : (() => 0));
@@ -173,12 +187,16 @@ export function PokemonApp({ onHome }) {
     if (nick) onJoin(invite, nick);
   }, [data, api]);
 
-  // start, follow and end online battles as the host's config changes
+  // decks of their own other people brought to the room (each checked: cards this browser has, by the rules)
+  if (room && data) for (const m of room.members().values()) if (m.presence.dk) registerPacked(m.presence.dk, data.cards);
+
+  // start, follow and end online battles as the host's config changes (once this browser holds every seat's deck)
   const cfg = room && room.cfg;
+  const decksKnown = !!(all && cfg && cfg.seats.every(s => !s.c || (s.d && findDeck(all.decks, s.d))));
   // browser tests only (__pkAutoplay = 0: the battle without a computer player in your seat)
   if (typeof window !== 'undefined' && window.__pkAutoplay != null) window.__pkDebug = { room, session };
   useEffect(() => {
-    if (!data || !room || !cfg) return;
+    if (!all || !room || !cfg) return;
     const cur = session && session.online;
     if (session && !cur) return; // playing the computer: the lobby offers "Rejoin" afterwards
     if (cur && cur.game === cfg.game && cfg.started) return;
@@ -190,26 +208,40 @@ export function PokemonApp({ onHome }) {
       endBattle(session); setSession(null);
       if (!cfg.started) { if (unfinished) setToast('The host ended the battle.'); return; }
     }
-    if (cfg.started && (room.mySeat() >= 0 || cur) && (cfg.game !== room.lastAutoStart || cur)) { room.lastAutoStart = cfg.game; setSession(newOnlineBattle(data, room, cfg)); }
-  }, [data, room, cfg && cfg.game, cfg && cfg.started]);
+    if (cfg.started && decksKnown && (room.mySeat() >= 0 || cur) && (cfg.game !== room.lastAutoStart || cur)) { room.lastAutoStart = cfg.game; setBuilder(null); setSession(newOnlineBattle(all, room, cfg)); }
+  }, [all, room, cfg && cfg.game, cfg && cfg.started, decksKnown]);
 
   if (error) return <div className="app pk"><div className="loading"><h2>Couldn't load the Pokémon cards</h2><p>{error}</p><button className="btn" onClick={onHome}>Back</button></div></div>;
   if (!data) return <div className="app pk"><div className="loading"><div className="label">Shuffling decks</div><div className="bar"><i style={{ width: '60%' }} /></div></div></div>;
 
   const online = {
-    api, room, mode, setMode, invite, nick: safeStorage.getItem('pa-nick') || '',
+    api, room, mode, setMode, invite, nick: safeStorage.getItem('pa-nick') || '', decksKnown,
     onCreate, onJoin, onLeave,
     onStart: () => {
       // names are made unique so the log reads clearly
       const seats = room.cfg.seats.map((s, i) => ({ ...s, n: i && s.n === room.cfg.seats[0].n ? s.n + ' II' : s.n }));
       room.start({ seed: (Math.random() * 2 ** 32) >>> 0, seats });
     },
-    onWatch: () => { room.lastAutoStart = room.cfg.game; setSession(newOnlineBattle(data, room, room.cfg)); },
-    onDeck: id => { if (!room) return; room.setDeck(id); const st = savedStyle('pk', id); room.setExtra({ sl: st.s, bx: st.b }); },
+    onWatch: () => { if (!decksKnown) return; room.lastAutoStart = room.cfg.game; setSession(newOnlineBattle(all, room, room.cfg)); },
+    onDeck: id => {
+      if (!room) return;
+      // your own deck travels with you, its seat naming exactly this version of it (not on claude.ai, whose room
+      // messages are too small for a decklist); one that isn't finished stays home
+      const d = findDeck(all.decks, id);
+      const ok = !!d && (!d.custom || (deckReady(d, data.cards) && !onClaude()));
+      const st = savedStyle('pk', id);
+      room.setExtra({ dk: ok && d.custom ? packDeck(d) : null, sl: st.s, bx: st.b });
+      room.setDeck(ok ? deckRef(d) : null);
+    },
   };
   const toastEl = toast ? <div className="toast" role="status">{toast}</div> : null;
+  const mineChanged = () => setMineVersion(v => v + 1);
+  if (builder && !session) return <PkDeckBuilder data={all} editId={builder.id} fromId={builder.from} onHome={onHome}
+    onDone={() => { setBuilder(null); mineChanged(); }}
+    onPlay={deck => { try { const s = JSON.parse(safeStorage.getItem('pk-lobby') || '{}'); safeStorage.setItem('pk-lobby', JSON.stringify({ ...s, mine: deck.id })); } catch { /* storage blocked */ } setBuilder(null); mineChanged(); }} />;
   if (!session) return <>
-    <PkLobby data={data} online={online} onStart={cfg => setSession(newBattle(data, cfg))} onHome={onHome} onHelp={() => setHelp(true)} />
+    <PkLobby key={mineVersion} data={all} online={online} onStart={cfg => setSession(newBattle(all, cfg))} onHome={onHome} onHelp={() => setHelp(true)}
+      onBuild={(id, from) => setBuilder({ id, from })} onDelete={id => { deleteCustomDeck(id); mineChanged(); }} />
     {help ? <HowToPlayPk onClose={() => setHelp(false)} /> : null}
     {toastEl}
   </>;
@@ -222,10 +254,10 @@ export function PokemonApp({ onHome }) {
   return <>
     <Battle key={`${session.game.seed}:${session.online ? session.online.game : ''}`} session={session} host={host}
       onExit={back} onLobby={back}
-      onReplay={id => { const rep = loadReplay(id); if (!rep) return; endBattle(session); setSession(newReplayBattle(data, { ...rep, id })); }}
+      onReplay={id => { const rep = loadReplay(id); if (!rep) return; endBattle(session); setSession(newReplayBattle(all, { ...rep, id })); }}
       onRematch={() => {
         if (session.online) { if (host) online.onStart(); return; }
-        endBattle(session); setSession(newBattle(data, session.cfg));
+        endBattle(session); setSession(newBattle(all, session.cfg));
       }} />
     {toastEl}
   </>;

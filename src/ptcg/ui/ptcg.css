@@ -289,3 +289,86 @@
 @keyframes kojolt { 0% { transform: translate(-50%, -50%) scale(1.4); } 100% { transform: translate(-50%, -50%) scale(1); } }
 .pk-handslot.playable .pk-card { animation: pkhandglow 1.6s ease-in-out infinite; }
 @keyframes pkhandglow { 50% { box-shadow: 0 0 0 2px var(--brass-hi), 0 0 22px rgba(243, 214, 143, 0.85); } }
+
+/* ================================================================ Pokémon lobby: your decks */
+.pk-group { display: flex; align-items: center; gap: 6px; margin: 4px 0 8px; font: 800 12px/1 var(--font-ui); letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass); }
+.pk-decks + .pk-group { margin-top: 16px; }
+.pk-deck.mine { border-style: dashed; }
+.pk-deck.mine.sel { border-style: solid; }
+.pk-deck .art { position: relative; }
+.pk-unfinished { position: absolute; right: 5px; bottom: 5px; padding: 3px 6px; border-radius: 999px; background: rgba(12, 18, 14, 0.85); border: 1px solid rgba(240, 207, 132, 0.6); color: #f0cf84; font: 800 11.5px/1 var(--font-ui); font-variant-numeric: tabular-nums; }
+.pk-chosen .panel-head h2 { margin: 0; }
+.pk-deckacts { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.pk-start .warnline { font-size: 14px; }
+
+/* ================================================================ Pokémon deck builder (laid out like the Commander one) */
+/* cards as pictures */
+.pkb .pk-card { display: block; }
+.pkb-tile .tile-card { position: relative; border-radius: 5.5% / 4%; }
+.pkb-tile .pk-card { transition: transform 0.15s, box-shadow 0.15s; }
+.pkb-tile .tile-card:hover .pk-card, .pkb-tile .tile-card:focus-visible .pk-card { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.6), 0 0 0 2px var(--brass-hi); }
+.pkb-tile.in .pk-card { box-shadow: 0 0 0 2px var(--good), 0 4px 12px rgba(0, 0, 0, 0.5); }
+.pkb-count { position: absolute; top: -6px; right: -6px; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 13px; display: grid; place-items: center; background: linear-gradient(180deg, #a4dca6, #5aa65e); color: #0d1f10; font: 800 13px/1 var(--font-ui); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6); }
+.pkb-hover .pk-card { width: 100%; border-radius: 4.5% / 3.2%; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7); }
+.b-cmdart .pkb-tile { width: 76px; }
+.th-card.drawn .pk-card { box-shadow: 0 0 0 2px var(--info), 0 4px 12px rgba(0, 0, 0, 0.5); }
+/* a count to step up or down */
+.pkb-step { display: inline-flex; align-items: center; gap: 4px; }
+.pkb-step .btn { padding: 2px 9px; min-width: 30px; justify-content: center; }
+.pkb-step b { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums; }
+.pkb-step b.over { color: var(--danger); }
+.tile-foot .pkb-step { flex: 1; justify-content: center; }
+.tile-foot .pkb-step .btn { flex: 1; }
+/* the print, and rule marks */
+.pkb-set { font: 700 11.5px/1 var(--font-ui); letter-spacing: 0.04em; color: var(--ink-faint); white-space: nowrap; }
+.pkb-tag { margin-left: 6px; padding: 2px 6px; border-radius: 999px; border: 1px solid rgba(243, 212, 136, 0.45); color: var(--brass-hi); font: 800 10.5px/1 var(--font-ui); letter-spacing: 0.06em; vertical-align: 1px; white-space: nowrap; }
+.pkb-res { grid-template-columns: minmax(0, 1fr) auto auto auto; }
+/* the card sheet */
+.pkb-big { --cw: 270px; }
+.pkb-big .pk-card { width: var(--cw); border-radius: 4.5% / 3.2%; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6); }
+.pkb-sheet .cs-type { gap: 8px; }
+.pkb-facts { display: grid; gap: 8px; }
+.pkb-text { margin: 0; line-height: 1.45; color: var(--ink-dim); font-size: 15px; }
+.pkb-text b { color: var(--ink); }
+.pkb-text .ab { color: #ffb8a8; }
+.pkb-text .dmg { color: #ffc8b8; }
+.pkb-text .pk-cost { margin-right: 2px; vertical-align: -3px; }
+.pkb-wr { margin: 0; font-size: 13.5px; color: var(--ink-faint); display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.pkb-plays { margin: 0; font-size: 14px; color: var(--brass-hi); }
+.pkb-note { margin: 0; font-size: 14px; color: var(--ink-faint); }
+/* a tournament deck to start from */
+.pkb-pick .pp-list { gap: 4px; }
+.pkb-pp { grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.pkb-pp-art { display: block; width: 64px; aspect-ratio: 5 / 4; border-radius: 6px; overflow: hidden; background: var(--t); }
+.pkb-pp-art img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 22%; }
+.pkb-pp-name { display: grid; gap: 2px; min-width: 0; }
+.pkb-pp-name small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pkb-pp-en { display: inline-flex; gap: 2px; }
+/* your deck: the rules, the kinds, the tips */
+.pkb-rules .ck-grid { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); }
+.pkb-rules .ckp { grid-template-columns: minmax(0, 1fr); align-content: start; }
+.pkb-rules .ckp-top { align-items: flex-start; }
+.pkb-rules .ckp-label { white-space: normal; }
+.pkb-rules .ck-num { font-size: 12.5px; }
+.pkb-kinds { display: flex; flex-wrap: wrap; gap: 6px; }
+.pkb-tips { margin: 0; padding: 8px 12px 8px 28px; border-radius: 10px; border: 1px solid rgba(240, 207, 132, 0.3); background: rgba(214, 170, 85, 0.07); display: grid; gap: 4px; font-size: 14px; line-height: 1.4; color: #f0cf84; }
+.pkb-energy { display: inline-flex; gap: 3px; }
+.pkb-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 3px 4px; border-radius: 6px; font-size: 14.5px; }
+.pkb-row:hover { background: rgba(255, 255, 255, 0.04); }
+.pkb-row .pkb-set { margin-left: 4px; }
+.pkb-needs { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: #f0cf84; white-space: nowrap; }
+.pkb-crow { grid-template-columns: auto minmax(0, 1fr); }
+.pkb-crow.short .ctext { color: #f2c38a; }
+.pkb-imp-kinds { font-size: 14px; }
+@media (max-width: 900px) {
+  .b-cmdart .pkb-tile { width: 58px; }
+  .pkb-res .pkb-set { display: none; }
+}
+@media (max-width: 560px) {
+  .pkb-big { --cw: min(200px, 54vw); justify-self: center; }
+  .pkb-row { gap: 6px; }
+  .pkb-needs { display: none; }
+  .pkb-pp { grid-template-columns: 52px minmax(0, 1fr); }
+  .pkb-pp-art { width: 52px; }
+  .pkb-pp-en { display: none; }
+}

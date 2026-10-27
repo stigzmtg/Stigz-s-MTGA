@@ -10,6 +10,7 @@ import { RoomStatus } from '../../ui/online.jsx';
 import { SoundToggle, SizeButton, Confetti } from '../../ui/dialogs.jsx';
 import { useGameSounds } from '../../ui/sound.js';
 import { recordGame } from '../../ui/records.js';
+import { keepDecksInReplay } from '../customdecks.js';
 import { ReplayBar } from '../../ui/replaybar.jsx';
 import { useEmotes, EmoteButton, EmoteBubble, WatcherEmotes } from '../../ui/emotes.jsx';
 import { Coach } from '../../ui/coach.jsx';
@@ -325,8 +326,12 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
   });
   useEffect(() => { if (fx.shake && motionOn()) shake(boardRef.current, fx.shake.strength); }, [fx.shake && fx.shake.key]);
   useGameSounds(game, { kind: 'pk', me, watching });
-  // a finished battle goes into your record (with a replay)
-  useEffect(() => { if (game.over && !session.record) session.record = recordGame(session, 'pk'); }, [game.over]);
+  // a finished battle goes into your record (with a replay, which keeps any deck of your own as it was played)
+  useEffect(() => {
+    if (!game.over || session.record) return;
+    session.record = recordGame(session, 'pk');
+    if (session.record && session.record.replay && session.decks) keepDecksInReplay(session.record.id, session.decks);
+  }, [game.over]);
   const replay = session.replay;
   const emotes = useEmotes(session);
   // friends' avatars (online battles)
