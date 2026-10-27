@@ -96,6 +96,9 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
   const [level, setLevel] = useState(saved.level === 'easy' ? 'easy' : 'normal');
   const [opps, setOpps] = useState(saved.opps || ['random', 'random', 'random']);
   const [help, setHelp] = useState(false);
+  // decks you starred: listed first
+  const [favs, setFavs] = useState(() => { const f = storageGet('pa-favs', []); return Array.isArray(f) ? f : []; });
+  const toggleFav = id => setFavs(f => { const n = f.includes(id) ? f.filter(x => x !== id) : [...f, id]; storageSet('pa-favs', n); return n; });
   const identities = useMemo(() => Object.fromEntries(decks.map(d => [d.id, deckIdentity(db, d)])), [decks]);
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
@@ -113,8 +116,10 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
       const last = out[out.length - 1];
       if (last && last.set === d.setName) last.decks.push(d); else out.push({ set: d.setName, year: (d.date || '').slice(0, 4), decks: [d] });
     }
+    const starred = filtered.filter(d => favs.includes(d.id));
+    if (starred.length) out.unshift({ set: 'Your favorites', fav: true, year: '', decks: starred });
     return out;
-  }, [filtered]);
+  }, [filtered, favs]);
   const deck = decks.find(d => d.id === mine) || decks[0];
   const stats = useMemo(() => deckStats(db, deck, support), [deck]);
   const sortedDecks = useMemo(() => decks.slice().sort((a, b) => a.name.localeCompare(b.name)), [decks]);
@@ -155,7 +160,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
           <div className="decklist">
             {groups.map(g => (
               <div key={g.set + g.decks[0].id}>
-                <div className="setgroup"><SetMark set={g.decks[0].set} name={g.set} /> {g.set} {g.year ? `· ${g.year}` : ''}</div>
+                <div className="setgroup">{g.fav ? <span className="fav-mark" aria-hidden="true">★</span> : <SetMark set={g.decks[0].set} name={g.set} />} {g.set} {g.year ? `· ${g.year}` : ''}</div>
                 {g.decks.map(d => (
                   <button key={d.id} className={`deckrow ${d.id === mine ? 'sel' : ''}`} onClick={() => setMine(d.id)} style={identityStyle(identities[d.id] || [])}>
                     <DeckArt deck={d} imagesOk={imagesOk} />
@@ -201,7 +206,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
           </section>
           )}
           <section className="panel" aria-label="Selected deck">
-            <div className="panel-head"><h2>{deck.name}</h2>{onBuild ? (deck.custom ? <button className="btn sm" onClick={() => onBuild(deck.id)}>Edit this deck</button> : <button className="btn sm" onClick={() => onBuild(null, deck.id)} title="Open a copy of this precon in the deck builder to change it">Edit a copy</button>) : null}</div>
+            <div className="panel-head"><h2>{deck.name}</h2><span className="spacer" /><button className={`btn sm fav-btn ${favs.includes(deck.id) ? 'on' : ''}`} aria-pressed={favs.includes(deck.id)} onClick={() => toggleFav(deck.id)} title={favs.includes(deck.id) ? 'Take it off your favorites' : 'Star it: your favorites are listed first'}>{favs.includes(deck.id) ? '★ Favorite' : '☆ Favorite'}</button>{onBuild ? (deck.custom ? <button className="btn sm" onClick={() => onBuild(deck.id)}>Edit this deck</button> : <button className="btn sm" onClick={() => onBuild(null, deck.id)} title="Open a copy of this precon in the deck builder to change it">Edit a copy</button>) : null}</div>
             <div className="commander-showcase bigcard" style={{ '--cw': deck.commanders.length > 1 ? 'calc(190px * var(--s))' : 'calc(250px * var(--s))' }}>
               {(() => {
                 const imgs = deck.community ? (deck.art || []).map(scryfallCard) : imagesOk ? (deck.custom ? deck.commanders.map(n => cardImage(n)) : lobbyImages(deck.id)) : [];

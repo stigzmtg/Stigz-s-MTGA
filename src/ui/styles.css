@@ -1343,3 +1343,8 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 .daily-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .daily-foot .note { flex: 1 1 280px; }
 .daily-foot .w { color: #a9e3ab; }
+
+/* favorite decks: a star on the selected deck, and their own group at the top of the list */
+.fav-mark { color: var(--brass-hi); font-size: 15px; }
+.fav-btn.on { color: var(--brass-hi); border-color: rgba(243, 212, 136, 0.55); }
+.panel-head .spacer { flex: 1; }

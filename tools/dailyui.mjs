@@ -1,6 +1,6 @@
 // The daily challenge in a real browser: the lobby shows today's game; two separate profiles get the same decks and
 // the same shuffle (opening hands, libraries); a finished game is remembered with today's date, a win counts and the
-// streak goes up; on a phone it fits. Usage: node tools/dailyui.mjs [out dir] [site]   (serve dist/ on :8765 first)
+// streak goes up; favorite decks list first; on a phone it fits. Usage: node tools/dailyui.mjs [out dir] [site]   (serve dist/ on :8765 first)
 import fs from 'node:fs';
 import { chromium } from 'playwright';
 
@@ -81,6 +81,21 @@ ok(/You won today/.test(after) && /2 days in a row/.test(after), `the lobby says
 ok(/Play it again/.test(after), 'and offers to play it again');
 await A.screenshot({ path: `${OUT}/3-won.png` });
 await A.close();
+
+// ---- favorite decks: starred ones are listed first, and stay starred
+const F = await profile(null);
+await F.click('.deckrow:has-text("Dance of the Elements")').catch(() => F.click('.deckrow >> nth=5'));
+const favName = await F.textContent('.deckrow.sel .dn');
+await F.click('.fav-btn');
+const first = await F.$$eval('.decklist > div', gs => ({ head: gs[0].querySelector('.setgroup').textContent, names: [...gs[0].querySelectorAll('.dn')].map(e => e.textContent) }));
+ok(/Your favorites/.test(first.head) && first.names.includes(favName), `a starred deck heads the list (${JSON.stringify(first)})`);
+await F.reload();
+await F.waitForSelector('text=Pick a deck, take a seat', { timeout: 60000 });
+ok(/Your favorites/.test(await F.textContent('.decklist .setgroup')), 'and stays starred after a reload');
+await F.click('.decklist > div:first-child .deckrow');
+await F.click('.fav-btn.on');
+ok(!/Your favorites/.test(await F.textContent('.decklist .setgroup')), 'unstarring takes it off');
+await F.close();
 
 // ---- on a phone
 const P = await profile(null, { width: 390, height: 844 });
