@@ -1835,6 +1835,8 @@ export class Game {
           await this.resolveSAChain(s);
           return null;
         }
+        // "instead that damage is dealt, but all other damage already dealt to him is healed" (Wolverine: HealDamage)
+        if (p.ReplacementResult === 'Updated') { await this.resolveSAChain(new SA(this, { raw, parsed, svars: r.svars, src: h, key: r.key }, h, you, { trig: rp })); continue; }
       }
     }
     return rp;

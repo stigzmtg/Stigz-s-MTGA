@@ -339,6 +339,16 @@ test('Heal damage, speed, and the max counter static (Rasputin Dreamweaver)', as
   await g.addCounters(r, 'DREAM', 1, null);
   expect(r.counters.DREAM === 7, 'never more than seven');
 });
+test('Heal damage as a replacement (Wolverine, Fierce Fighter): new damage is dealt, the old damage healed', async T => {
+  const g = T.game;
+  T.a.on('targets', () => []);
+  const w = await T.put(0, 'Wolverine, Fierce Fighter'); // 3/5
+  const bolt = await T.put(1, 'Hill Giant');
+  await g.dealDamage(bolt, w, 3, {}); await T.resolve();
+  expect(w.damage === 3, `three damage marked (${w.damage})`);
+  await g.dealDamage(bolt, w, 3, {}); await T.resolve();
+  expect(w.zone === 'battlefield' && w.damage === 3, `survives a second 3: the first was healed (${w.zone}, ${w.damage})`);
+});
 test('Tap or untap all (Turnabout): the player chooses which', async T => {
   const g = T.game;
   const opp = [await T.put(1, 'Grizzly Bears'), await T.put(1, 'Llanowar Elves')];
