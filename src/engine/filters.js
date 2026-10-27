@@ -192,6 +192,12 @@ function playerProp(game, p, prop, ctx) {
   // compared with the active player (the Oaths)
   if (prop === 'hasMoreLifeThanActive') return p.life > game.players[game.activePlayer].life;
   if (prop === 'hasMoreCardsInHandThanActive') return p.hand.length > game.players[game.activePlayer].hand.length;
+  // compared with you (Goblin Goon: "can't attack unless you control more creatures than defending player")
+  if ((m = prop.match(/^has(Fewer|More)(Creatures|Lands)InPlayThanYou$/))) {
+    const t = m[2] === 'Creatures' ? 'Creature' : 'Land';
+    const n = pid => game.battlefield.filter(c => c.controller === pid && game.chars(c).types.has(t)).length;
+    return m[1] === 'Fewer' ? n(p.id) < n(ctx.you) : n(p.id) > n(ctx.you);
+  }
   if (prop === 'hasFewerCreaturesInYardThanActive') { const n = q => q.graveyard.filter(c => game.chars(c).types.has('Creature')).length; return n(p) < n(game.players[game.activePlayer]); }
   if (prop === 'CardsInHandAtBeginningOfTurn') return (p.handAtTurnStart || 0) > 0;
   if (prop === 'TappedLandForManaThisTurn') return p.landManaTurn === game.turnNumber;

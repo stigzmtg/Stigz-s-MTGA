@@ -73,6 +73,23 @@ test('Spell limits: Teferi (sorcery speed), Rule of Law and Canonist (one a turn
   await T.cast('Llanowar Elves'); await T.cast('Llanowar Elves');
   expect(/Fires of Invention/.test(await can(0, 'Lightning Bolt') || ''), 'not a third spell');
 });
+test('Can’t attack unless the defending player…: Slipstream Eel, Goblin Goon, Branded Brawlers, per defender', async T => {
+  const { canAttack, canAttackDefender } = await import('../src/engine/combat.js');
+  const g = T.game;
+  const eel = await T.put(0, 'Slipstream Eel'); eel.sick = false;
+  expect(canAttack(g, eel) && !canAttackDefender(g, eel, 1, null), 'the Eel is a creature that could attack, but not a player with no Island');
+  await T.put(1, 'Island');
+  expect(canAttackDefender(g, eel, 1, null), 'it attacks a player who controls an Island');
+  const goon = await T.put(0, 'Goblin Goon'); goon.sick = false;
+  await T.put(1, 'Grizzly Bears'); await T.put(1, 'Grizzly Bears');
+  expect(!canAttackDefender(g, goon, 1, null), 'Goblin Goon: not while they have as many creatures (2 v 2)');
+  await T.put(0, 'Llanowar Elves');
+  expect(canAttackDefender(g, goon, 1, null), 'and attacks once you have more (3 v 2)');
+  const brawler = await T.put(0, 'Branded Brawlers'); brawler.sick = false;
+  expect(!canAttackDefender(g, brawler, 1, null), 'Branded Brawlers: not into an untapped land');
+  for (const c of g.battlefield) if (c.controller === 1 && g.chars(c).types.has('Land')) c.tapped = true;
+  expect(canAttackDefender(g, brawler, 1, null), 'but once their lands are tapped');
+});
 test('Graft: enters with counters, may move one onto another creature you control', async T => {
   const spider = await T.cast('Aquastrand Spider');
   expect(spider.counters.P1P1 === 2, `two counters (${spider.counters.P1P1})`);

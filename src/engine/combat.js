@@ -17,7 +17,8 @@ export function canAttack(game, c, { ignoreTapped = false } = {}) {
   if (kw(game, c, 'Defender') && !game.activeStatics('CanAttackDefender').some(s => matchValid(game, c, s.p.ValidCard || 'Card.Self', s.ctx))) return false;
   if (hidden(game, c, "CARDNAME can't attack.") || hidden(game, c, "CARDNAME can't attack or block.")) return false;
   for (const s of game.activeStatics('CantAttack')) {
-    if (s.p.ValidCard && matchValid(game, c, s.p.ValidCard, s.ctx) && !s.p.Target) return false;
+    // (one that names whom it can't attack, or "unless defending player ...", depends on the defender: canAttackDefender)
+    if (s.p.ValidCard && matchValid(game, c, s.p.ValidCard, s.ctx) && !s.p.Target && !s.p.UnlessDefender) return false;
   }
   if (c.suspected === false) return false;
   return true;
@@ -44,12 +45,28 @@ export function canAttackDefender(game, c, defPid, defCard) {
       if (dir && playerInDirection(game, c.controller, dir) !== defPid) return false;
       continue;
     }
+    // "can't attack unless defending player controls an Island" (Slipstream Eel and the like)
+    if (s.p.UnlessDefender) {
+      if (s.p.ValidCard && !matchValid(game, c, s.p.ValidCard, s.ctx)) continue;
+      if (!defenderHas(game, game.players[defPid], s.p.UnlessDefender, s.ctx)) return false;
+      continue;
+    }
     if (!s.p.Target) continue;
     if (s.p.ValidCard && !matchValid(game, c, s.p.ValidCard, s.ctx)) continue;
     const tgt = defCard || game.players[defPid];
     if (matchValid(game, tgt, s.p.Target, s.ctx)) return false;
   }
   return true;
+}
+
+// a player property as Forge's UnlessDefender$ writes it: "controlsIsland", "!controlsLand.untapped", "IsPoisoned",
+// "controlsEnchantment,Permanent.enchanted" (either)
+function defenderHas(game, player, prop, ctx) {
+  if (!player) return false;
+  if (prop.startsWith('!')) return !defenderHas(game, player, prop.slice(1), ctx);
+  const m = /^controls(.+)$/.exec(prop);
+  if (m && m[1].includes(',')) return m[1].split(',').some(t => defenderHas(game, player, 'controls' + t, ctx));
+  return matchValid(game, player, 'Player.' + prop, ctx);
 }
 
 export function attackTax(game, c, defPid) {
