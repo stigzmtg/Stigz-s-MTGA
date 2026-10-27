@@ -40,6 +40,8 @@ const PURPOSE_TITLES = {
   digHand: 'Look at the top of your library', dig: 'Look at the top of your library', digBattlefield: 'Look at the top of your library', chooseCard: 'Choose', clone: 'Choose a card to copy',
   casualty: 'Casualty', emerge: 'Emerge', enlist: 'Enlist', exert: 'Exert', costExile: 'Exile', costExileSameGrave: 'Exile', cipher: 'Cipher', clashBottom: 'Clash',
   exploreGrave: 'Explore', pile: 'Make two piles', choosePile: 'Choose a pile', openingHand: 'Opening hand', blight: 'Blight', dredge: 'Dredge', cumulativeUpkeepGrave: 'Cumulative upkeep',
+  // casting (mech-casting.js)
+  collectEvidence: 'Collect evidence', splice: 'Splice', amplify: 'Amplify', costExileCtrlOrGrave: 'Craft', costPutCardToLibFromHand: 'Put a card on your library', costPutCardToLibFromGrave: 'Put cards on the library', costPutCardToLib: 'Put cards on the library', costExileFromStack: 'Exile a spell', costRevealOrChoose: 'Reveal or choose', costRevealFromExile: 'Reveal', learnDiscard: 'Learn', costReturn: 'Return to hand',
 };
 
 export function CardsDialog({ game, req, respond, onHover }) {
@@ -51,6 +53,8 @@ export function CardsDialog({ game, req, respond, onHover }) {
   const range = req.min === req.max ? `${req.min}` : req.min === 0 ? `up to ${req.max}` : `${req.min}–${req.max}`;
   // crewing: the tapped creatures' power has to add up to the crew number
   const power = req.need ? sel.reduce((a, id) => { const c = game.cardById(id); return a + (c ? Math.max(0, game.chars(c).power || 0) : 0); }, 0) : 0;
+  // collecting evidence: the exiled cards' mana values have to add up to the number
+  const mv = req.needMV ? sel.reduce((a, id) => { const c = game.cardById(id); return a + (c ? game.chars(c).cmc || 0 : 0); }, 0) : 0;
   return (
     <Modal label={title}>
       <h2>{title}</h2>
@@ -59,10 +63,10 @@ export function CardsDialog({ game, req, respond, onHover }) {
         {cards.map(c => <CardPick key={c.id} game={game} card={c} picked={sel.includes(c.id)} order={req.purpose === 'scryBottom' ? null : null} onClick={() => toggle(c.id)} onHover={onHover} />)}
       </div>
       <div className="dlg-actions">
-        <span className="note">{req.need ? <span className={power >= req.need ? 'enough' : ''}>Power {power} of {req.need}</span> : `${sel.length} selected`}</span>
+        <span className="note">{req.need ? <span className={power >= req.need ? 'enough' : ''}>Power {power} of {req.need}</span> : req.needMV ? <span className={mv >= req.needMV ? 'enough' : ''}>Mana value {mv} of {req.needMV}</span> : `${sel.length} selected`}</span>
         {req.cancellable ? <button className="btn ghost" onClick={() => respond(null)}>Cancel</button> : null}
         {req.max > 1 && cards.length <= req.max ? <button className="btn" onClick={() => setSel(cards.map(c => c.id))}>Select all</button> : null}
-        <button className="btn primary" disabled={!ok || power < (req.need || 0)} onClick={() => respond(sel)}>Confirm</button>
+        <button className="btn primary" disabled={!ok || power < (req.need || 0) || mv < (req.needMV || 0)} onClick={() => respond(sel)}>Confirm</button>
       </div>
     </Modal>
   );

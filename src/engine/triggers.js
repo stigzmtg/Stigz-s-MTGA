@@ -2,6 +2,7 @@
 import { matchValid, ctrlOf, resolveDefined, matchCastSA } from './filters.js';
 import { normalizeCounter } from './game.js';
 import { UNSETS_TRIGGER_MODES, unsetsTriggerMatches } from './mech-unsets-rules.js';
+import { triggerExt } from './ext.js';
 
 function vc(game, obj, valid, ctx) {
   if (!valid) return true;
@@ -20,6 +21,8 @@ export const SUPPORTED_TRIGGER_MODES = new Set(['ChangesZone', 'ChangesZoneAll',
   'ClassLevelGained', 'Clashed', 'DamagePrevented', 'DamagePreventedOnce', 'GiveGift', 'UnlockDoor', 'FullyUnlock', 'ManaExpend', 'Exerted', 'Vote', 'BecomeRenowned', 'MilledOnce', 'Shuffled', 'CounterTypeAddedAll', 'CounterRemovedOnce', 'SearchedLibrary', 'PhaseOutAll']);
 // Un-sets (mech-unsets.js): stickers and Attractions
 for (const m of UNSETS_TRIGGER_MODES) SUPPORTED_TRIGGER_MODES.add(m);
+// casting (mech-casting.js): plotting, foretelling, collecting evidence, foraging, adapting, copies of spells and abilities
+for (const m of ['BecomesPlotted', 'Foretell', 'CollectEvidence', 'Forage', 'Adapt', 'SpellAbilityCopy']) SUPPORTED_TRIGGER_MODES.add(m);
 
 export function triggerMatches(game, p, host, rp, ctx) {
   const mode = rp.Mode;
@@ -250,7 +253,7 @@ export function triggerMatches(game, p, host, rp, ctx) {
     case 'StickerPlaced': case 'VisitAttraction': case 'ClaimPrize': return unsetsTriggerMatches(game, p, rp, ctx, vc);
     case 'AbilityTriggered': case 'AbilityResolves': return false;
     case 'ManaAdded': return false;
-    default: return false;
+    default: return triggerExt[mode] ? triggerExt[mode](game, p, host, rp, ctx) : false;
   }
 }
 

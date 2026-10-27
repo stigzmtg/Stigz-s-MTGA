@@ -238,6 +238,14 @@ export class AIAgent {
     const isInstantSpeed = face.types.includes('Instant') || !!opt.mayFlash || hasFlash(game, card, face);
     const sa = buildSpellSA(game, pid, card, opt);
     let s = 0;
+    // sneak: worth it when the creature hits harder than the unblocked attacker it replaces
+    if (opt.altCost === 'Sneak') {
+      if (!sa.permanent || !face.types.includes('Creature') || !game.combat) return 0;
+      const mine = game.combat.attackers.filter(a => !a.blocked).map(a => game.cardById(a.card)).filter(c => c && c.controller === pid);
+      const p = face.power && /^\d+$/.test(face.power) ? +face.power : 2;
+      const least = mine.length ? Math.min(...mine.map(c => Math.max(0, game.chars(c).power))) : 99;
+      return p >= least ? 3 + p + face.triggers.length : 0;
+    }
     if (sa.permanent) {
       if (!ctx.main && !isInstantSpeed) return 0;
       if (!ctx.main && isInstantSpeed) {
@@ -246,8 +254,10 @@ export class AIAgent {
       }
       const types = face.types;
       if (types.includes('Creature')) {
-        const p = face.power && /^\d+$/.test(face.power) ? +face.power : 2;
-        const t = face.toughness && /^\d+$/.test(face.toughness) ? +face.toughness : 2;
+        // (prototyped: its smaller size)
+        const pStr = opt.prototype ? opt.prototype.power : face.power, tStr = opt.prototype ? opt.prototype.toughness : face.toughness;
+        const p = pStr && /^\d+$/.test(pStr) ? +pStr : 2;
+        const t = tStr && /^\d+$/.test(tStr) ? +tStr : 2;
         s = 3 + p * 1.2 + t * 0.8 + face.keywords.length * 0.6 + face.triggers.length + face.statics.length + face.abilities.filter(x => !/Mana/.test(x)).length * 0.7;
         if (opt.altCost === 'Morph') s = 3;
         // blitz: a hasty attack and a card, then it's gone (when the full cost is out of reach, or blitz is cheaper)
@@ -669,6 +679,19 @@ export class AIAgent {
     if (purpose === 'discardOpponent') return pick(cards.slice().sort((a, b) => v(b) - v(a)), max);
     if (purpose === 'costTapXType' || purpose === 'costtapXType') return pick(cards.slice().sort((a, b) => v(a) - v(b)), min);
     if (purpose === 'costRemoveCounter') return pick(cards, min);
+    // craft materials and the like: graveyard cards and tokens first, the least valuable
+    if (purpose === 'costExileCtrlOrGrave' || purpose === 'costPutCardToLibFromGrave' || purpose === 'costPutCardToLib' || purpose === 'costPutCardToLibFromHand') {
+      const score = c => (c.zone === 'battlefield' ? 10 + (c.token ? -5 : 0) : 0) + v(c);
+      return pick(cards.slice().sort((a, b) => score(a) - score(b)), Math.max(min, 1));
+    }
+    // collect evidence N: the fewest cards whose mana values reach N
+    if (purpose === 'collectEvidence') {
+      const out = []; let sum = 0;
+      for (const c of cards.slice().sort((a, b) => game.chars(b).cmc - game.chars(a).cmc)) { if (sum >= (req.needMV || 1)) break; out.push(c.id); sum += game.chars(c).cmc; }
+      return out;
+    }
+    // learn: discard the least useful card when there's one to spare
+    if (purpose === 'learnDiscard') return p.hand.length > 3 ? pick(cards.slice().sort((a, b) => v(a) - v(b)), 1) : [];
     if (purpose === 'ninjutsu') return pick(cards.slice().sort((a, b) => v(a) - v(b)), 1);
     // default: best by value if choosing for self
     const sorted = cards.slice().sort((a, b) => (b.controller === pid ? v(b) : -v(b)) - (a.controller === pid ? v(a) : -v(a)));
@@ -849,6 +872,16 @@ export class AIAgent {
         return !!c && (game.battlefield.some(x => x.tempControl && x.tempControl.untilUntapOf === c.id) || game.effects.some(e => e.endsWhenHostUntaps === c.id));
       }
       case 'cumulativeUpkeep': return (req.age || 1) <= 4;
+      // teamwork taps creatures: not before attacking with them
+      case 'teamwork': return !(game.activePlayer === pid && (game.step === 'main1' || game.step === 'beginCombat'));
+      // tribute: an opponent's creature grows, or its "tribute wasn't paid" ability happens
+      case 'tribute': {
+        const c = req.cardId != null ? game.cardById(req.cardId) : null;
+        const logic = c ? String(c.faceDef.svars.TributeAILogic || '') : '';
+        if (logic === 'Never') return false;
+        if (logic === 'Always') return true;
+        return (req.amount || 1) <= 3;
+      }
       case 'optionalCost': {
         const c = String(req.cost || '');
         if (/^Blight/.test(c)) return game.battlefield.some(x => x.controller === pid && game.chars(x).types.has('Creature') && (x.token || game.chars(x).toughness > 1));
@@ -911,6 +944,7 @@ export class AIAgent {
 
   number(game, pid, req) {
     if (req.purpose === 'readAhead') return req.min;
+    if (req.purpose === 'assist') return 0; // (no teams: never help an opponent pay)
     if (req.purpose === 'divide') return Math.max(req.min, Math.min(req.max, Math.floor((req.left || req.max) / (req.targetsLeft || 1))));
     if (req.purpose === 'chorus') return Math.min(req.max, game.step === 'main2' ? req.max : Math.floor(req.max / 2));
     if (req.purpose === 'xValue' && req.xCost === 'PayLife') {
@@ -985,6 +1019,8 @@ export class AIAgent {
   player(game, pid, req) {
     const sa = req.sa;
     const ids = req.players;
+    // "an opponent gains N life" as a cost: the least threatening one
+    if (req.purpose === 'costGainLife') return ids.filter(id => id !== pid).sort((a, b) => this.threat(a) - this.threat(b))[0] ?? ids[0];
     const harm = !sa || this.sentiment(sa) === 'harm' || /Curse|Opponent|Worst/.test(req.ai || '');
     if (harm) {
       const opp = ids.filter(id => id !== pid).sort((a, b) => this.threat(b) - this.threat(a));

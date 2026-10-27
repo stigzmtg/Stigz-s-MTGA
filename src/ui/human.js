@@ -97,6 +97,8 @@ export class HumanAgent {
     }
     if (myTurn) {
       if (game.step === 'main1' || game.step === 'main2') return false;
+      // (after blocks, a spell to sneak in — returning an unblocked attacker — is worth a stop)
+      if (game.step === 'declareBlockers' && actions.some(a => /^Sneak:/.test(a.optionKey || ''))) return false;
       if (game.step === 'declareBlockers' || game.step === 'beginCombat') return !s.stopOwnCombat;
       return true;
     }
