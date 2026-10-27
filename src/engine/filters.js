@@ -1,6 +1,7 @@
 // Forge "Valid" filters, "Defined" references, numeric expressions and conditions.
 import { compare, CAP_COLOR, COLORS, BASIC_LAND_TYPES, NAME_TO_COLOR, PERMANENT_TYPES } from './util.js';
 import { cmc, manaColorsFromProduced } from './mana.js';
+import { filterExt } from './ext.js';
 
 export const unknownProps = new Set(); // collected for coverage diagnostics
 
@@ -551,6 +552,8 @@ function cardProp(game, card, ch, prop, ctx) {
     const who = resolveDefined(game, m[1], ctx).map(x => x.isPlayer ? x.id : ctrlOf(game, x));
     if (who.length) return who.includes(ctrl);
   }
+  // properties added by mechanics in their own modules (ext.js)
+  for (const f of filterExt.cardProp) { const r = f(game, card, ch, prop, ctx); if (r !== undefined) return r; }
   if (/^[A-Z][a-zA-Z'-]*$/.test(prop)) return hasType(game, ch, prop, card);
   // "the artifact with the highest mana value", "a creature with the highest mana value among those that player controls"
   if ((m = prop.match(/^greatestCMC_(NonLandPermanent|[A-Za-z]+?)(ControlledByRemembered)?$/))) {
@@ -718,6 +721,7 @@ function castSAProp(game, sa, card, prop, ctx) {
   }
   if ((m = prop.match(/^numTargets (EQ|NE|LT|LE|GT|GE)(\d+)$/))) return compare(root.chain().flatMap(s => s.targets || []).length, m[1], +m[2]);
   if ((m = prop.match(/^IsTargeting (?:Valid )?(.+)$/))) return root.chain().flatMap(s => s.targets || []).some(t => matchValid(game, t, m[1], ctx));
+  for (const f of filterExt.castSA) { const r = f(game, sa, card, prop, ctx); if (r !== undefined) return r; }
   return undefined;
 }
 
@@ -1178,7 +1182,7 @@ export function evalExpr(game, expr, ctx, depth) {
     }
     case 'Imprinted': { const list = refList(game, ctx, 'Imprinted'); n = rest === 'Amount' ? list.length : list.reduce((a, c) => a + cardStat(game, c, rest, ctx), 0); break; }
     case 'Emerged': { const r = sa && sa.root ? sa.root() : null; const lki = (r && r.emerged) || (host && host.castSA && host.castSA.emerged); n = lki ? cardStat(game, lki, rest, ctx) : 0; break; }
-    case 'Sacrificed': case 'Discarded': case 'Exiled': case 'Tapped': case 'Revealed': {
+    case 'Sacrificed': case 'Discarded': case 'Exiled': case 'Tapped': case 'Revealed': case 'Returned': {
       const list = sa ? (sa.root().paid[head] || []) : [];
       n = rest === 'Amount' ? list.length : list.reduce((a, c) => a + cardStat(game, c, rest, ctx), 0);
       break;
@@ -1388,6 +1392,7 @@ function countExpr(game, rest, ctx, depth) {
   if ((m = rest.match(/^CardTypes_?(.*)$/))) return graveyardTypes(game, you);
   if ((m = rest.match(/^Valid(Hand|Graveyard|Library|Exile) (.+)$/))) return game.zone(youId, zoneMap[m[1]]).filter(c => matchValid(game, c, m[2], ctx)).length;
   if ((m = rest.match(/^Calculate/))) return 0;
+  for (const f of filterExt.count) { const r = f(game, rest, ctx); if (r !== undefined) return r; }
   if ((m = rest.match(/^(\w+)$/)) && svarLookup(ctx, m[1])) return evalExpr(game, svarLookup(ctx, m[1]), ctx, depth + 1);
   return 0;
 }

@@ -7,12 +7,18 @@ import { SUPPORTED_KEYWORDS } from './keywords.js';
 export const STATIC_MODES = new Set(['Continuous', 'ReduceCost', 'RaiseCost', 'CantBlockBy', 'CantAttack', 'CantAttackUnless', 'CastWithFlash', 'CantBlock', 'Panharmonicon', 'CantBeCast', 'CantSacrifice', 'MinMaxBlocker', 'CantGainLife', 'IgnoreLegendRule', 'CanAttackDefender', 'CombatDamageToughness', 'CantTarget', 'ActivateAbilityAsIfHaste', 'CantPreventDamage', 'CantBeActivated', 'AssignCombatDamageAsUnblocked', 'CantPutCounter', 'NumLoyaltyAct', 'CantBeCountered', 'MustAttack', 'AlternativeCost', 'UntapOtherPlayer', 'CantChangeLife', 'WitherDamage', 'MustBlock', 'AttackRestrict', 'BlockRestrict', 'CantBlockUnless', 'OptionalCost', 'OptionalAttackCost', 'UnspentMana', 'PlayerMustAttack', 'CountersRemain', 'Devotion', 'SurveilNum', 'DisableTriggers', 'FlipCoinDoubler', 'CantDraw', 'GainLifeRadiation', 'CantLoseLife', 'DrawFromBottom', 'CantExile', 'CantPhaseIn', 'ManaConvert']);
 export const REPLACEMENT_EVENTS = new Set(['Moved', 'DamageDone', 'AddCounter', 'CreateToken', 'Draw', 'GainLife', 'Counter', 'Untap', 'GameLoss', 'GameWin', 'BeginPhase', 'BeginTurn', 'TurnFaceUp', 'LoseMana', 'ProduceMana', 'CopySpell', 'DrawCards', 'LifeReduced', 'RollDice', 'Transform', 'Attached', 'Proliferate', 'Explore', 'RollPlanarDice', 'RemoveCounter', 'Planeswalk']);
 const COSTS = new Set(['T', 'Q', 'Sac', 'SubCounter', 'AddCounter', 'PayLife', 'Discard', 'Exile', 'ExileFromGrave', 'ExileFromHand', 'tapXType', 'untapYType', 'Return', 'PayEnergy', 'RemoveAnyCounter', 'Mill', 'Reveal', 'Draw', 'Exert', 'Unattach', 'Crew', 'ExileAnyGrave', 'Blight', 'RevealChosen', 'ExiledMoveToGrave', 'ExileSameGrave', 'RollDice', 'Behold', 'PutCardToLibFromBattlefield', 'Mana']);
+// casting (mech-casting.js): cost types, statics and replacements
+for (const m of ['CanAdapt', 'ManaRestriction', 'SetCost', 'PlotZone', 'CantBeCopied']) STATIC_MODES.add(m);
+for (const e of ['Cascade', 'Learn']) REPLACEMENT_EVENTS.add(e);
+for (const c of ['CollectEvidence', 'Forage', 'ExileFromTop', 'PutCardToLibFromHand', 'PutCardToLibFromGrave', 'PutCardToLibFromSameGrave', 'ExileFromStack', 'RevealFromExile', 'ChooseCreatureType', 'RevealOrChoose', 'ExileCtrlOrGrave', 'GainLife']) COSTS.add(c);
 
 const PRETTY = { Mode: '', api: '' };
 
 export function analyzeCard(text) {
   const issues = new Set();
-  const { faces } = parseCardScript(text);
+  const { faces, altMode } = parseCardScript(text);
+  // prepare: the creature needs its spell face ("while it's prepared, you may cast a copy of its spell")
+  if (altMode === 'Prepare' && !(faces[1] && faces[1].A.some(a => /^SP\$/.test(a)))) issues.add('Prepare');
   for (const f of faces) {
     for (const k of f.K) {
       const kn = k.split(':')[0];

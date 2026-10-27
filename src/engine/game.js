@@ -136,7 +136,12 @@ export class Game {
   }
   cardsInZone(z) {
     if (z === 'battlefield') return this.battlefield;
-    if (z === 'stack') return this.stack.filter(s => s.card && s.kind === 'spell').map(s => s.card);
+    if (z === 'stack') {
+      const list = this.stack.filter(s => s.card && s.kind === 'spell').map(s => s.card);
+      // the spell that's resolving is still on the stack ("if this spell was cast using teamwork")
+      const r = this.resolving && this.resolving.kind === 'spell' && this.resolving.card;
+      return r && r.zone === 'stack' && !list.includes(r) ? [...list, r] : list;
+    }
     if (z === 'all') return [...this.battlefield, ...this.players.flatMap(p => [...p.hand, ...p.graveyard, ...p.exile, ...p.command, ...p.library])];
     if (z === 'any') return this.cardsInZone('all');
     return this.players.flatMap(p => p[z] || []);
@@ -618,6 +623,7 @@ export class Game {
     }
     const item = this.stack.pop();
     this.touch();
+    this.resolving = item;
     try {
       await resolveStackItem(this, item);
     } catch (e) {
@@ -626,7 +632,7 @@ export class Game {
       if (this.throwErrors) throw e;
       console.error(e);
       if (item.card && item.card.zone === 'stack') await this.moveCard(item.card, 'graveyard');
-    }
+    } finally { this.resolving = null; }
     this.touch();
     this.notify();
   }

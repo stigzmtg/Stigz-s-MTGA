@@ -40,6 +40,9 @@ export function baseChars(game, card) {
   if (card.zone === 'battlefield' && card.unlocked && !card.faceDown && !card.copyOf) roomChars(card, ch);
   // impending: not a creature while it has time counters
   if (card.impending && card.zone === 'battlefield' && (card.counters.TIME || 0) > 0) ch.types.delete('Creature');
+  // prototype: cast prototyped, it has the prototype's mana cost, colors, power and toughness on the stack and battlefield
+  const proto = (card.zone === 'stack' || card.zone === 'battlefield') && !card.faceDown && card.castSA && card.castSA.opt && card.castSA.opt.prototype;
+  if (proto) Object.assign(ch, { manaCost: proto.manaCost, cmc: cmc(proto.manaCost), colors: new Set(proto.colors), powerStr: proto.power, toughnessStr: proto.toughness });
   if (card.copyOf && card.copyOf.extra) applyCopyExtras(ch, card.copyOf.extra);
   if (card.textSwap && card.zone === 'battlefield' && !card.faceDown) swapTextBox(game, card, ch);
   if (card.textChanges && card.textChanges.length && !card.faceDown) applyTextChanges(ch, card.textChanges);
@@ -380,6 +383,8 @@ export function computeAll(game) {
     if (c.attachedTo != null && ch.keywords.some(k => k.startsWith('Reconfigure'))) ch.types.delete('Creature');
     if (ch.keywords.includes('Changeling')) ch.allCreatureTypes = true;
     if (ch.keywords.includes('Devoid')) ch.colors = new Set();
+    // living metal: during your turn, this Vehicle is also a creature
+    if (ch.keywords.includes('Living metal') && c.zone === 'battlefield' && game.activePlayer === c.controller) ch.types.add('Creature');
   }
   // layer 7a/7b: base & set P/T
   for (const c of all) { const ch = map.get(c.id); applyOwnMods(game, c, ch, 7); }

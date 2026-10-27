@@ -1,5 +1,6 @@
 // Keywords -> synthesized activated abilities, triggers and replacements (expressed in Forge script syntax).
 import { parseAbility } from './forge.js';
+import { keywordExt } from './ext.js';
 
 const cache = new Map();
 
@@ -311,7 +312,10 @@ function defFor(kw, face) {
       S.KWOffN = 'Count$OffspringPaid';
       S.KWOffspring = 'DB$ CopyPermanent | Defined$ Self | SetPower$ 1 | SetToughness$ 1';
       break;
-    default: return null;
+    default:
+      // keywords defined by mechanics in their own modules (ext.js)
+      if (!keywordExt[name]) return null;
+      keywordExt[name]({ A, T, R, S, a, b, parts, face, kw });
   }
   return { A, T, R, S };
 }
@@ -380,3 +384,5 @@ export function keywordInfo(kw) { return defFor(kw, { svars: {} }); }
 export const SUPPORTED_KEYWORDS = new Set(['Flying', 'Equip', 'Trample', 'ETBReplacement', 'Enchant', 'Cycling', 'Vigilance', 'Flash', 'Haste', 'etbCounter', 'Deathtouch', 'Lifelink', 'Menace', 'First Strike', 'Flashback', 'Reach', 'TypeCycling', 'Indestructible', 'Changeling', 'Crew', 'Chapter', 'Defender', 'Kicker', 'Convoke', 'Ward', 'Double Strike', 'Cascade', 'Partner', 'Partner with', 'Evoke', 'Devoid', 'Multikicker', 'Unearth', 'Hexproof', 'Myriad', 'Ravenous', 'Landwalk', 'Fear', 'Intimidate', 'Shroud', 'Annihilator', 'Prowess', 'Persist', 'Undying', 'Exalted', 'Extort', 'Evolve', 'Living Weapon', 'Job select', 'Fabricate', 'Riot', 'Mentor', 'Training', 'Battle cry', 'Melee', 'Bushido', 'Afflict', 'Storm', 'Demonstrate', 'Backup', 'Squad', 'Blitz', 'Dash', 'Echo', 'Hideaway', 'Devour', 'Exploit', 'Dethrone', 'Renown', 'Toxic', 'Infect', 'Wither', 'Affinity', 'Delve', 'Improvise', 'Escape', 'Retrace', 'Overload', 'Split second', 'Umbra armor', 'Totem armor', 'Morph', 'Megamorph', 'Disguise', 'Encore', 'Embalm', 'Eternalize', 'Outlast', 'Scavenge', 'Transmute', 'Ninjutsu', 'CommanderNinjutsu', 'Decayed', 'Offspring', 'Afterlife', 'Squad', 'Protection', 'Shadow', 'Horsemanship', 'Skulk', 'Jump-start', 'Discover', 'Rebound', 'Choose a Background', 'Friends forever', 'Doctor\'s companion', 'Ascend', 'Reconfigure', 'Level up', 'Foretell', 'Suspend', 'Class', 'Madness', 'Miracle', 'Aftermath', 'Undaunted', 'Spectacle', 'Surge', 'Bargain', 'Mutate', 'Bestow', 'Strive', 'Escalate', 'Fuse',
   'Graft', 'Flanking', 'Sunburst', 'Mayhem', 'All creatures able to block CARDNAME do so.', 'Gift', 'Casualty', 'Replicate', 'AlternateAdditionalCost', 'Emerge', 'Prowl', 'Entwine', 'MayFlashCost', 'Tiered', 'Spree', 'Dredge', 'Cipher', 'Cloak', 'Station', 'Vanishing', 'For Mirrodin', 'Reinforce', 'Plot', 'Gravestorm', 'Champion', 'Cumulative upkeep', 'Bloodthirst', 'Read ahead', 'Harmonize', 'Offering', 'Buyback', 'You may choose not to untap CARDNAME during your untap step.', 'Soulbond', 'Daybound', 'Nightbound', 'Awaken', 'Space sculptor', 'As an additional cost to cast creature spells, you may pay any amount of mana. If you do, that creature enters with that many additional +1/+1 counters on it.', 'Enlist', 'Fortify', 'Disturb', 'Companion', 'MayEffectFromOpeningHand', 'Unleash', 'Compleated', 'Impending', 'Mobilize', 'Start your engines', 'MayFlashSac',
   'Prevent all combat damage that would be dealt to and dealt by CARDNAME.', 'Prevent all combat damage that would be dealt to CARDNAME.', 'Prevent all damage that would be dealt to CARDNAME.', 'Prevent all combat damage that would be dealt by CARDNAME.', 'Prevent all damage that would be dealt to and dealt by CARDNAME.']);
+// casting (mech-casting.js): alternative and additional costs, casting from other zones
+for (const k of ['Warp', 'Sneak', 'Web-slinging', 'Freerunning', 'Teamwork', 'More Than Meets the Eye', 'Living metal', 'Splice', 'Prototype', 'Craft', 'Assist', 'Conspire', 'Ripple', 'Epic', 'Amplify', 'Tribute', 'Recover', 'Paradigm', 'Transfigure', 'Spend only colored mana on X. No more than one mana of each color may be spent this way.']) SUPPORTED_KEYWORDS.add(k);
