@@ -6,6 +6,7 @@ import { FriendsPanel } from './online.jsx';
 import { lobbyImages, subscribeImages, imagesVersion, cardImage, scryfallArt, scryfallCard } from './images.js';
 import { DeckStyleButton, subscribeDeckStyles, deckStylesVersion } from './deckstyle.jsx';
 import { identityStyle } from './board.jsx';
+import { dailyChallenge, dailyStatus, dayKey } from './daily.js';
 
 const { useState, useMemo, useEffect, useSyncExternalStore } = React;
 
@@ -36,6 +37,36 @@ function SetMark({ set, name }) {
 function DeckArt({ deck, imagesOk }) {
   const img = deck.community ? scryfallArt(deck.art && deck.art[0]) : imagesOk ? (deck.custom ? cardImage(deck.commanders[0]) : lobbyImages(deck.id)[0]) : null;
   return <span className={`art ${img ? 'img' : ''}`} style={img ? { backgroundImage: `url(${img})` } : undefined} aria-hidden="true" />;
+}
+
+// one game a day, the same for everyone (daily.js): the decks, how you did and your streak
+function DailyChallenge({ decks, identities, imagesOk, onPlay }) {
+  const key = dayKey();
+  const daily = useMemo(() => dailyChallenge(decks, key), [decks, key]);
+  const st = useMemo(() => dailyStatus(key), [key]);
+  if (!daily) return null;
+  const date = new Date(key + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+  const players = daily.opps.length === 1 ? '1 vs 1' : `${daily.opps.length + 1}-player`;
+  const Seat = ({ d, you }) => (
+    <span className={`dseat ${you ? 'you' : ''}`} style={identityStyle(identities[d.id] || [])}>
+      <DeckArt deck={d} imagesOk={imagesOk} />
+      <span className="dsn"><small>{you ? 'You play' : 'Against'}</small><b>{d.name}</b><span>{d.commanders.join(' & ')}</span></span>
+    </span>
+  );
+  const status = st.today === 'win'
+    ? <><b className="w">You won today’s game</b>{st.streak > 1 ? <>, <b>{st.streak} days in a row</b></> : ''}.</>
+    : st.today ? <>Not won yet ({st.tries} {st.tries === 1 ? 'try' : 'tries'}){st.streak ? <>: win to make it <b>{st.streak + 1} days in a row</b></> : ''}.</>
+    : st.streak ? <>Win to make it <b>{st.streak + 1} days in a row</b>.</> : <>A new one every day.</>;
+  return (
+    <section className="panel daily" aria-label="Daily challenge">
+      <div className="daily-head"><h2>Daily challenge</h2><span className="chip gold">{date}</span><span className="chip">{players}</span></div>
+      <div className="daily-seats"><Seat d={daily.mine} you />{daily.opps.map(d => <Seat key={d.id} d={d} />)}</div>
+      <div className="daily-foot">
+        <span className="note">Everyone gets this same game today: the same decks and the same shuffle. {status}</span>
+        <button className="btn primary" onClick={() => onPlay(daily)}>{st.tries ? 'Play it again' : 'Play today\u2019s game'}</button>
+      </div>
+    </section>
+  );
 }
 
 function deckStats(db, deck, support) {
@@ -111,6 +142,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
           <h1>Pick a deck, take a seat</h1>
           <p>Every Commander precon from Commander 2013 to today, popular decks from EDHREC and Archidekt, and your own, played with full rules automation. Face computer opponents, or open a room and play with friends. Choose your deck and shuffle up.</p>
         </div>
+        {!friends ? <DailyChallenge decks={decks} identities={identities} imagesOk={imagesOk} onPlay={d => onStart({ mine: d.mine, opps: d.opps, level: d.level, seed: d.seed, daily: d.key })} /> : null}
         <section className="panel" aria-label="Your deck">
           <div className="panel-head"><h2>Your deck</h2>{onBuild ? <button className="btn sm" onClick={() => onBuild(null)}>+ Build a deck</button> : null}</div>
           <div className="filters">

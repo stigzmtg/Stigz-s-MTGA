@@ -45,7 +45,7 @@ function newSession(data, cfg, rewind = null) {
     used.add(nm);
     return { name: nm, deck: d, agent: ais[i] };
   })];
-  const game = new Game({ db: data.db, players, onUpdate: () => store.bump(), maxTurns: 400, seed: rewind ? rewind.seed : undefined });
+  const game = new Game({ db: data.db, players, onUpdate: () => store.bump(), maxTurns: 400, seed: rewind ? rewind.seed : cfg.seed });
   game.continueAfterHumanLoss = false;
   human.pid = 0;
   game.pace = gamePacer(game, pace, () => (window.__paAutoplay && game.turnNumber < window.__paAutoplay ? -1 : human.pid));

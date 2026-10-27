@@ -75,6 +75,7 @@ export function recordGame(session, kind) {
     result: resultOf(game, me), turns: side ? game.turn : game.turnNumber,
     reason: side ? game.result || '' : game.resultText || '',
     replay: !!(log && log.length),
+    ...(session.cfg && session.cfg.daily ? { daily: session.cfg.daily } : {}),
   };
   if (rec.replay) {
     const rep = {
