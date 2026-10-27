@@ -274,6 +274,9 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'IsNotRemembered': return !refList(game, ctx, 'Remembered').some(x => x && !x.isPlayer && x.id === card.id);
     case 'IsImprinted': return refList(game, ctx, 'Imprinted').some(x => x && x.id === card.id);
     case 'IsTriggerRemembered': return !!(ctx.sa && ctx.sa.trigRemembered && ctx.sa.trigRemembered.some(x => x.id === card.id));
+    // (mech-newsets.js) your Ring-bearer, while it's the same object; a blocker with greater power than the attacker
+    case 'IsRingbearer': { const c0 = card.lki ? card.card : card, rb = game.players[ctrl] && game.players[ctrl].ringBearer; return !!rb && !!c0 && rb.id === c0.id && rb.zcc === card.zcc; }
+    case 'powerGTAttacker': return !!ctx.attacker && ch.power > charsOf(game, ctx.attacker).power;
     case 'EquippedBy': case 'EnchantedBy': case 'AttachedBy':
       if (!host) return false;
       if (card.lki && card.attachments) return card.attachments.includes(host.id);
@@ -1156,7 +1159,7 @@ export function evalExpr(game, expr, ctx, depth) {
       else n = 0;
       break;
     }
-    case 'TargetedController': { const ts = sa ? findTargets(sa) : []; const p = ts[0] && game.players[ctrlOf(game, ts[0])]; n = p ? (rest === 'LifeTotal' ? p.life : rest === 'CardsInHand' ? p.hand.length : 0) : 0; break; }
+    case 'TargetedController': { const ts = sa ? findTargets(sa) : []; const p = ts[0] && game.players[ctrlOf(game, ts[0])]; n = p ? playerProperty(game, p, rest, ctx) : 0; break; }
     case 'TriggeredCard': case 'TriggeredNewCard': case 'TriggeredCardLKICopy': case 'TriggeredNewCardLKICopy': case 'TriggeredAttacker': case 'TriggeredBlocker': case 'TriggeredSource': case 'TriggeredSpellAbility': case 'TriggeredObject': case 'TriggeredCards': case 'TriggeredSacrificed': {
       const key = { TriggeredAttacker: 'Attacker', TriggeredBlocker: 'Blocker', TriggeredSource: 'Source' }[head] || 'Card';
       let o = trig[key];
@@ -1204,7 +1207,7 @@ export function evalExpr(game, expr, ctx, depth) {
     case 'PlayerCountPropertyYou': n = playerCount(game, [you], rest, ctx); break;
     case 'ChosenNumber': n = host && host.chosen ? (host.chosen.number || 0) : 0; break;
     case 'Defined': case 'DefinedCard': n = 0; break;
-    default: n = 0;
+    default: n = head.startsWith('PlayerCountDefined') ? playerCount(game, resolveDefined(game, head.slice(18), ctx).filter(isPlayer), rest, ctx) : 0;
   }
   return applyMath(n, math, game, ctx);
 }
@@ -1228,6 +1231,8 @@ function playerProperty(game, p, prop, ctx) {
   if (prop === 'CardsInGraveyard') return p.graveyard.length;
   if (prop === 'LifeLostThisTurn') return p.lifeLostThisTurn;
   if (prop === 'LifeGainedThisTurn') return p.lifeGainedThisTurn;
+  if (prop === 'RingTemptedYou') return p.ringTempted || 0;
+  if (prop === 'Speed') return p.speed || 0;
   if ((m = prop.match(/^Valid([\w,]*) (.+)$/))) {
     const zones = m[1] ? m[1].split(',').map(z => zoneMap[z] || 'battlefield') : ['battlefield'];
     let n = 0;
@@ -1314,6 +1319,7 @@ function countExpr(game, rest, ctx, depth) {
   if (/^CardStickers|\$Sticker(Power|Toughness)$/.test(rest)) return stickerCount(game, rest, ctx, matchValid);
   if ((m = rest.match(/^CardCounters\.(\w+)$/))) return host ? ((host.counters || {})[m[1]] || 0) : 0;
   if ((m = rest.match(/^Initiative\.(\d+)\.(\d+)$/))) return game.initiative === youId ? +m[1] : +m[2];
+  if ((m = rest.match(/^(Night|Day|AllFourBend)\.(\d+)\.(\d+)$/))) return (m[1] === 'AllFourBend' ? !!you.bends && you.bends.turn === game.turnNumber && you.bends.kinds.length >= 4 : game.dayNight === m[1]) ? +m[2] : +m[3];
   // Urza's Mine / Power-Plant / Tower: more mana with the full set
   if ((m = rest.match(/^UrzaLands\.(\d+)\.(\d+)$/))) {
     const mine = game.battlefield.filter(c => c.controller === youId && game.chars(c).subtypes.has("Urza's"));
@@ -1435,6 +1441,8 @@ export function checkConditions(game, p, ctx) {
       case 'Delirium': ok = countExpr(game, 'Delirium', ctx, 0) > 0; break;
       case 'Threshold': ok = you.graveyard.length >= 7; break;
       case 'Hellbent': ok = you.hand.length === 0; break;
+      case 'EnduringStory': ok = !!you.enduringStory; break;
+      case 'Day': case 'Night': ok = game.dayNight === c; break;
       case 'Revolt': ok = countExpr(game, 'Revolt', ctx, 0) > 0; break;
       case 'PlayerTurn': ok = game.activePlayer === ctx.you; break;
       case 'NotPlayerTurn': ok = game.activePlayer !== ctx.you; break;
@@ -1505,6 +1513,9 @@ export function checkPresence(game, p, ctx) {
     if (!compareSpec(game, v, p.SecondSVarCompare || 'GE1', ctx)) return false;
   }
   if (p.PlayerTurn === 'True' && game.activePlayer !== ctx.you) return false;
+  // "If it's neither day nor night" (DayTime$ Neither | Day | Night); "EnduringStory$ False" (Storied)
+  if (p.DayTime && (game.dayNight || 'Neither') !== p.DayTime) return false;
+  if (p.EnduringStory && (p.EnduringStory === 'True') !== !!(game.players[ctx.you] && game.players[ctx.you].enduringStory)) return false;
   if (p.OpponentTurn === 'True' && !game.isOpponent(game.activePlayer, ctx.you)) return false;
   // "if you're the monarch" (Faramir, Champions of Minas Tirith)
   if (p.CheckDefinedPlayer && !resolveDefined(game, p.CheckDefinedPlayer, ctx).length) return false;
@@ -1519,6 +1530,8 @@ export function checkPresence(game, p, ctx) {
       case 'Hellbent': if (game.players[ctx.you].hand.length) return false; break;
       case 'Monarch': if (game.monarch !== ctx.you) return false; break;
       case 'MaxSpeed': if (!(game.players[ctx.you].speed >= 4)) return false; break;
+      case 'EnduringStory': if (!game.players[ctx.you].enduringStory) return false; break;
+      case 'Day': case 'Night': if (game.dayNight !== p.Condition) return false; break;
       default: break;
     }
   }

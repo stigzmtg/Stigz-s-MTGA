@@ -5,6 +5,8 @@ import { SUPPORTED_TRIGGER_MODES } from './triggers.js';
 import { SUPPORTED_KEYWORDS } from './keywords.js';
 
 export const STATIC_MODES = new Set(['Continuous', 'ReduceCost', 'RaiseCost', 'CantBlockBy', 'CantAttack', 'CantAttackUnless', 'CastWithFlash', 'CantBlock', 'Panharmonicon', 'CantBeCast', 'CantSacrifice', 'MinMaxBlocker', 'CantGainLife', 'IgnoreLegendRule', 'CanAttackDefender', 'CombatDamageToughness', 'CantTarget', 'ActivateAbilityAsIfHaste', 'CantPreventDamage', 'CantBeActivated', 'AssignCombatDamageAsUnblocked', 'CantPutCounter', 'NumLoyaltyAct', 'CantBeCountered', 'MustAttack', 'AlternativeCost', 'UntapOtherPlayer', 'CantChangeLife', 'WitherDamage', 'MustBlock', 'AttackRestrict', 'BlockRestrict', 'CantBlockUnless', 'OptionalCost', 'OptionalAttackCost', 'UnspentMana', 'PlayerMustAttack', 'CountersRemain', 'Devotion', 'SurveilNum', 'DisableTriggers', 'FlipCoinDoubler', 'CantDraw', 'GainLifeRadiation', 'CantLoseLife', 'DrawFromBottom', 'CantExile', 'CantPhaseIn', 'ManaConvert']);
+// new sets (mech-newsets.js)
+for (const k of ['MaxCounter']) STATIC_MODES.add(k);
 export const REPLACEMENT_EVENTS = new Set(['Moved', 'DamageDone', 'AddCounter', 'CreateToken', 'Draw', 'GainLife', 'Counter', 'Untap', 'GameLoss', 'GameWin', 'BeginPhase', 'BeginTurn', 'TurnFaceUp', 'LoseMana', 'ProduceMana', 'CopySpell', 'DrawCards', 'LifeReduced', 'RollDice', 'Transform', 'Attached', 'Proliferate', 'Explore', 'RollPlanarDice', 'RemoveCounter', 'Planeswalk']);
 // Un-sets (mech-unsets.js): Steamflogger Boss (no Commander-legal card assembles a Contraption)
 REPLACEMENT_EVENTS.add('AssembleContraption');
@@ -13,6 +15,10 @@ const COSTS = new Set(['T', 'Q', 'Sac', 'SubCounter', 'AddCounter', 'PayLife', '
 for (const m of ['CanAdapt', 'ManaRestriction', 'SetCost', 'PlotZone', 'CantBeCopied']) STATIC_MODES.add(m);
 for (const e of ['Cascade', 'Learn']) REPLACEMENT_EVENTS.add(e);
 for (const c of ['CollectEvidence', 'Forage', 'ExileFromTop', 'PutCardToLibFromHand', 'PutCardToLibFromGrave', 'PutCardToLibFromSameGrave', 'ExileFromStack', 'RevealFromExile', 'ChooseCreatureType', 'RevealOrChoose', 'ExileCtrlOrGrave', 'GainLife']) COSTS.add(c);
+// new sets (mech-newsets.js)
+for (const k of ['Connive', 'Mill', 'Scry']) REPLACEMENT_EVENTS.add(k);
+// new sets (mech-newsets.js): waterbend {N}
+for (const k of ['Waterbend']) COSTS.add(k);
 
 const PRETTY = { Mode: '', api: '' };
 

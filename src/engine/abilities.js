@@ -6,6 +6,7 @@ import { COLORS } from './util.js';
 import { runEffect } from './effects.js';
 import { adjustDiceRolls, visitAttractions, bindAbilities } from './mech-unsets.js';
 import { CASTING_COST_TYPES, castingBareCost, castingCanPayPart, castingCostMax, castingChooseCostPart, castingApplyCostPart, castingCostLabel, castingAltOptions, castingExileFrom, castingExileOptions, castingFilterOptions, castingEarlyCosts, castingAdditionalCosts, castingSetCost, castingAssist, castingOnCast, castingPermanentResolved, castingSpellResolved, castingManaRestriction, castingMaxX, castingXCost, castingLibraryActivation } from './mech-casting.js';
+import { waterbendSources, waterbendCount, payWaterbend } from './mech-newsets.js';
 
 export class Cancelled extends Error { constructor() { super('cancelled'); this.cancelled = true; } }
 
@@ -75,6 +76,7 @@ export function parseCost(str) {
     if (m) {
       const args = m[2].split('/');
       const type = m[1];
+      if (type === 'Waterbend') { cost.waterbend = args[0]; manaToks.push(/^\d+$/.test(args[0]) ? args[0] : 'X'); continue; }
       const part = { type, amount: args[0], args };
       switch (type) {
         case 'Sac': part.valid = args[1] || 'CARDNAME'; part.desc = args[2]; break;
@@ -99,7 +101,7 @@ export function parseCost(str) {
     if (/^XMin\d+$/.test(tok)) { cost.xMin = +tok.slice(4); continue; }
     // "Mandatory" and other modifiers are ignored
   }
-  if (manaToks.length) { cost.mana = parseMana(manaToks.join(' ')); cost.hasMana = true; }
+  if (manaToks.length) { cost.mana = parseMana(manaToks.join(' ')); cost.hasMana = true; if (cost.waterbend) cost.mana.waterbend = cost.waterbend; }
   if (cost.xMin) for (const pt of cost.parts) if (pt.amount === 'X') pt.xMin = cost.xMin;
   return cost;
 }
@@ -534,7 +536,7 @@ async function applyCostParts(game, sa, cost, choices) {
         break;
       }
       case 'AddCounter': { const n = ch.n; await game.addCounters(host, normalizeCounterName(part.counter), n, sa); if (normalizeCounterName(part.counter) === 'LOYALTY') sa.root().loyaltyCost = n; break; }
-      case 'PayLife': { const n = ch.n; p.life -= n; p.lifeLostThisTurn += n; game.touch(); game.log(`${p.name} pays ${n} life.`); game.fire('LifeLost', { Player: pid, LifeAmount: n }); paid.LifePaid = n; break; }
+      case 'PayLife': { const n = ch.n; p.life -= n; p.lifeLostThisTurn += n; game.touch(); game.log(`${p.name} pays ${n} life.`); game.fire('LifeLost', { Player: pid, LifeAmount: n }); game.fire('PayLife', { Player: pid, LifeAmount: n }); paid.LifePaid = n; break; }
       case 'PayEnergy': p.counters.ENERGY = Math.max(0, (p.counters.ENERGY || 0) - ch.n); game.touch(); break;
       case 'Mill': await game.mill(p, ch.n, sa); break;
       case 'Draw': await game.drawCards(p, ch.n, sa); break;
@@ -636,6 +638,7 @@ export function manaSourcesFor(game, pid, { exclude = new Set(), spellCard = nul
   const restrict = spellCard ? castingManaRestriction(game, spellCard) : null; // "spend only mana produced by basic lands"
   for (const card of game.battlefield) {
     if (card.controller !== pid || exclude.has(card.id) || card.phasedOut) continue;
+    if (card.mods.some(m => m.detained)) continue; // detained: its mana abilities can't be activated either
     if (restrict && !restrict(card)) continue;
     const ch = game.chars(card);
     const isCreature = ch.types.has('Creature');
@@ -727,7 +730,7 @@ export async function produceMana(game, card, abil, colors, pid, reserve = null,
       if (!part.valid || /^(CARDNAME|Card\.Self)$/.test(part.valid)) await game.sacrifice(card, null);
       else for (const c of sacrifice) await game.sacrifice(c, null);
     }
-    if (part.type === 'PayLife') { const n = +part.amount || 1; player.life -= n; player.lifeLostThisTurn += n; }
+    if (part.type === 'PayLife') { const n = +part.amount || 1; player.life -= n; player.lifeLostThisTurn += n; game.fire('PayLife', { Player: pid, LifeAmount: n }); }
   }
   // "if you tap a permanent for mana, it produces twice as much of that mana instead"
   let mult = 1;
@@ -863,6 +866,8 @@ export async function payManaCost(game, pid, manaCost, opts = {}) {
 async function payManaCostFrom(game, pid, manaCost, { exclude = new Set(), spellCard = null, abilityHost = null, costHasX = false, sa = null, dryRun = false } = {}) {
   const p = game.players[pid];
   if (cmc(manaCost) === 0 && !manaCost.x) return true;
+  // waterbend: first tap artifacts and creatures for part of it (mech-newsets.js), then pay the rest
+  if (manaCost.waterbend && !dryRun) { manaCost = await payWaterbend(game, pid, manaCost, { exclude, spellCard, abilityHost, costHasX, sa }); if (cmc(manaCost) === 0) return true; }
   let sources = manaSourcesFor(game, pid, { exclude, spellCard, abilityHost, costHasX }).filter(s => !s.manualOnly);
   if (spellCard) sources = sources.concat(alternativeSources(game, pid, spellCard, exclude, sa && spellCard.def.faces[sa.face || 0]));
   const plan = planPayment(manaCost, p.pool, sources, { lifeAvailable: p.life - 1 });
@@ -920,7 +925,7 @@ async function payManaCostFrom(game, pid, manaCost, { exclude = new Set(), spell
   const spent = {};
   for (const k of Object.keys(p.pool)) { const d = p.pool[k] - r.pool[k]; if (d > 0) spent[k] = d; }
   p.pool = r.pool;
-  if (r.life) { p.life -= r.life; p.lifeLostThisTurn += r.life; }
+  if (r.life) { p.life -= r.life; p.lifeLostThisTurn += r.life; game.fire('PayLife', { Player: pid, LifeAmount: r.life }); }
   if (sa) { sa.root().manaSpent = spent; if (r.life) sa.root().phyrexianLife = Math.floor(r.life / 2); }
   game.touch();
   if (tapped.length) game.log(`${p.name} taps ${tapped.map(c => game.name(c)).join(', ')}.`, { type: 'mana', quiet: true });
@@ -932,6 +937,7 @@ export function canAfford(game, pid, manaCost, opts = {}) {
   if (cmc(manaCost) === 0) return true;
   let sources = manaSourcesFor(game, pid, opts).filter(s => !s.manualOnly);
   if (opts.spellCard) sources = sources.concat(alternativeSources(game, pid, opts.spellCard, opts.exclude || new Set()));
+  if (manaCost.waterbend || opts.waterbend) sources = sources.concat(waterbendSources(game, pid, manaCost, opts.exclude || new Set(), opts));
   const pool = opts.spellCard && castingManaRestriction(game, opts.spellCard) ? { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 } : p.pool;
   return !!planPayment(manaCost, pool, sources, { lifeAvailable: p.life - 1, maxNodes: 8000 });
 }
@@ -948,6 +954,7 @@ export function availableManaCount(game, pid, spellCard = null, opts = {}) {
   }
   for (const v of best.values()) n += v;
   if (spellCard) n += alternativeSources(game, pid, spellCard, new Set()).length;
+  n += waterbendCount(game, pid, opts);
   return n;
 }
 
@@ -1175,7 +1182,7 @@ export function mayPlayFrom(game, pid, card) {
     const player = st.host.isEffect ? st.host.controller : who;
     if (player !== pid && !/Player|Opponent/.test(p.MayPlayPlayer || '')) continue;
     if (p.MayPlayLimit && (st.host.mayPlayUses || 0) >= +p.MayPlayLimit) continue;
-    return { st, without: p.MayPlayWithoutManaCost === 'True', ignoreType: p.MayPlayIgnoreType === 'True', ignoreColor: p.MayPlayIgnoreColor === 'True' };
+    return { st, without: p.MayPlayWithoutManaCost === 'True', ignoreType: p.MayPlayIgnoreType === 'True', ignoreColor: p.MayPlayIgnoreColor === 'True', altMana: p.MayPlayAltManaCost != null ? String(p.MayPlayAltManaCost).replace(/ConvertedManaCost/g, String(card.faceDef.cmc || 0)) : null };
   }
   return null;
 }
@@ -1307,6 +1314,7 @@ export function spellOptions(game, pid, card, { anyZone = false } = {}) {
   const seenKeys = new Set();
   for (const o of opts) { let k = (o.altCost ? o.altCost + ':' : '') + o.key; while (seenKeys.has(k)) k += "'"; seenKeys.add(k); o.key = k; }
   if (mayPlay && mayPlay.without) for (const o of opts) o.withoutMana = true;
+  if (mayPlay && mayPlay.altMana != null && !mayPlay.without) for (const o of opts) if (o.altManaStr == null && !o.withoutMana) o.altManaStr = mayPlay.altMana;
   for (const o of opts) if (mayPlay) o.mayPlay = mayPlay;
   return opts;
 }
@@ -1411,6 +1419,7 @@ function spellCost(game, pid, card, opt, sa) {
     if (p.Type && !/Spell/.test(p.Type)) continue;
     if (p.ValidCard && !matchValid(game, ctxCard, p.ValidCard, s.ctx)) continue;
     if (p.Activator && !matchValid(game, game.players[pid], p.Activator, s.ctx)) continue;
+    if (p.Cost && /^Waterbend</.test(p.Cost)) { mana = addCosts(mana, parseCost(p.Cost).mana); continue; }
     raise += p.Amount ? calcCtx(game, p.Amount, s.ctx) : 1;
   }
   // affinity, delve, undaunted: printed or given to it (Pearl-Ear's affinity for Auras, Durnan's undaunted)
@@ -2199,7 +2208,7 @@ export function canActivate(game, pid, card, abil, { ignoreTiming = false } = {}
     if ((card.abilityUses.__pw || 0) >= limit) return false;
   }
   if (p.ActivationLimit && (card.abilityUses[abil.key] || 0) >= calcCtx(game, p.ActivationLimit, { host: card, you: pid })) return false;
-  if (p.GameActivationLimit && (card.gameUses && card.gameUses[abil.key] || 0) >= +p.GameActivationLimit) return false;
+  if ((p.GameActivationLimit || p.Exhaust === 'True') && (card.gameUses && card.gameUses[abil.key] || 0) >= +(p.GameActivationLimit || 1)) return false;
   if (p.PlayerTurn === 'True' && game.activePlayer !== pid) return false;
   if (p.OpponentTurn === 'True' && game.activePlayer === pid) return false;
   if (p.ActivationPhases && !phaseOk(game, p.ActivationPhases)) return false;
@@ -2245,7 +2254,7 @@ export async function activateAbility(game, pid, card, abilityKey, action = {}) 
   if (sa.api === 'Charm') { const ok = await chooseModes(game, sa, { cancellable: true }); if (!ok) throw new Cancelled(); }
   const cost = parseCost(p.Cost);
   let mana = manaConverted(game, card, cost.mana);
-  const payOpts = { abilityHost: card, costHasX: !!cost.mana.x };
+  const payOpts = { abilityHost: card, costHasX: !!cost.mana.x, waterbend: cost.mana.waterbend };
   if (mana.x || /\bX\b/.test(p.Cost || '') && cost.parts.some(pt => pt.amount === 'X')) {
     const exclude = new Set(cost.tap ? [card.id] : []);
     let max;
@@ -2283,7 +2292,7 @@ export async function activateAbility(game, pid, card, abilityKey, action = {}) 
   await applyCostParts(game, sa, cost, choices);
   card.abilityUses[abil.key] = (card.abilityUses[abil.key] || 0) + 1;
   if (p.Planeswalker === 'True') card.abilityUses.__pw = (card.abilityUses.__pw || 0) + 1;
-  if (p.GameActivationLimit) { card.gameUses = card.gameUses || {}; card.gameUses[abil.key] = (card.gameUses[abil.key] || 0) + 1; }
+  if (p.GameActivationLimit || p.Exhaust === 'True') { card.gameUses = card.gameUses || {}; card.gameUses[abil.key] = (card.gameUses[abil.key] || 0) + 1; }
   const desc = (p.SpellDescription || p.StackDescription || abil.parsed.api || '').replace(/CARDNAME|NICKNAME/g, game.name(card));
   const tdesc = describeTargets(game, sa);
   game.log(`${game.players[pid].name} activates ${game.name(card)}: ${desc}${tdesc ? ' (targeting ' + tdesc + ')' : ''}`, { type: 'activate', cardId: card.id, player: pid });

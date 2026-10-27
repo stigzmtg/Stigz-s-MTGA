@@ -43,6 +43,8 @@ const PURPOSE_TITLES = {
   // casting (mech-casting.js)
   collectEvidence: 'Collect evidence', splice: 'Splice', amplify: 'Amplify', costExileCtrlOrGrave: 'Craft', costPutCardToLibFromHand: 'Put a card on your library', costPutCardToLibFromGrave: 'Put cards on the library', costPutCardToLib: 'Put cards on the library', costExileFromStack: 'Exile a spell', costRevealOrChoose: 'Reveal or choose', costRevealFromExile: 'Reveal', learnDiscard: 'Learn', costReturn: 'Return to hand',
 };
+// new sets (src/engine/mech-newsets.js)
+Object.assign(PURPOSE_TITLES, { waterbend: 'Waterbend', ringBearer: 'The Ring tempts you' });
 
 export function CardsDialog({ game, req, respond, onHover }) {
   const [sel, setSel] = useState([]);

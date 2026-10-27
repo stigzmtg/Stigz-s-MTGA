@@ -3,6 +3,7 @@ import { matchValid, ctrlOf, resolveDefined, matchCastSA } from './filters.js';
 import { normalizeCounter } from './game.js';
 import { UNSETS_TRIGGER_MODES, unsetsTriggerMatches } from './mech-unsets-rules.js';
 import { triggerExt } from './ext.js';
+import { NEWSETS_TRIGGER_MODES, triggerMatches as newsetsTriggerMatches } from './mech-newsets.js';
 
 function vc(game, obj, valid, ctx) {
   if (!valid) return true;
@@ -23,6 +24,8 @@ export const SUPPORTED_TRIGGER_MODES = new Set(['ChangesZone', 'ChangesZoneAll',
 for (const m of UNSETS_TRIGGER_MODES) SUPPORTED_TRIGGER_MODES.add(m);
 // casting (mech-casting.js): plotting, foretelling, collecting evidence, foraging, adapting, copies of spells and abilities
 for (const m of ['BecomesPlotted', 'Foretell', 'CollectEvidence', 'Forage', 'Adapt', 'SpellAbilityCopy']) SUPPORTED_TRIGGER_MODES.add(m);
+// new sets (mech-newsets.js): bending, day/night, the Ring, and the "one or more" batch triggers
+for (const m of NEWSETS_TRIGGER_MODES) SUPPORTED_TRIGGER_MODES.add(m);
 
 export function triggerMatches(game, p, host, rp, ctx) {
   const mode = rp.Mode;
@@ -253,7 +256,7 @@ export function triggerMatches(game, p, host, rp, ctx) {
     case 'StickerPlaced': case 'VisitAttraction': case 'ClaimPrize': return unsetsTriggerMatches(game, p, rp, ctx, vc);
     case 'AbilityTriggered': case 'AbilityResolves': return false;
     case 'ManaAdded': return false;
-    default: return triggerExt[mode] ? triggerExt[mode](game, p, host, rp, ctx) : false;
+    default: return triggerExt[mode] ? triggerExt[mode](game, p, host, rp, ctx) : newsetsTriggerMatches(game, p, host, rp, ctx);
   }
 }
 

@@ -122,12 +122,14 @@ function defFor(kw, face) {
       break;
     case 'Mentor':
       T.push('Mode$ Attacks | ValidCard$ Card.Self | Execute$ KWMentor | TriggerDescription$ Mentor');
-      S.KWMentor = 'DB$ PutCounter | ValidTgts$ Creature.attacking+powerLTKWMentorX | TgtPrompt$ Select target attacking creature with lesser power | CounterType$ P1P1 | CounterNum$ 1';
+      S.KWMentor = 'DB$ PutCounter | ValidTgts$ Creature.attacking+powerLTKWMentorX | TgtPrompt$ Select target attacking creature with lesser power | CounterType$ P1P1 | CounterNum$ 1 | SubAbility$ KWMentored';
+      S.KWMentored = 'DB$ NewsetsEvent | Event$ Mentored | EventCard$ ParentTarget';
       S.KWMentorX = 'Count$CardPower';
       break;
     case 'Training':
       T.push('Mode$ Attacks | ValidCard$ Card.Self | IsPresent$ Creature.attacking+Other+powerGTKWTrainX | Execute$ KWTrain | TriggerDescription$ Training');
-      S.KWTrain = 'DB$ PutCounter | Defined$ Self | CounterType$ P1P1 | CounterNum$ 1';
+      S.KWTrain = 'DB$ PutCounter | Defined$ Self | CounterType$ P1P1 | CounterNum$ 1 | SubAbility$ KWTrained';
+      S.KWTrained = 'DB$ NewsetsEvent | Event$ Trains';
       S.KWTrainX = 'Count$CardPower';
       break;
     case 'Battle cry':
@@ -159,6 +161,25 @@ function defFor(kw, face) {
     case 'Discover':
       T.push(`Mode$ SpellCast | ValidCard$ Card.Self | Execute$ KWDiscover | TriggerDescription$ Discover ${a}`);
       S.KWDiscover = `DB$ Discover | Num$ ${a}`;
+      break;
+    // new sets (mech-newsets.js): firebending's mana lasts until end of combat
+    case 'Firebending':
+      T.push(`Mode$ Attacks | ValidCard$ Card.Self | Execute$ KWFirebend | TriggerDescription$ Firebending ${a}${b || ''} (whenever it attacks, add ${/^\d+$/.test(a) ? '{R}'.repeat(+a) : 'X {R}'}; this mana lasts until end of combat)`);
+      S.KWFirebend = `DB$ Mana | Produced$ R | Amount$ ${a} | CombatMana$ True | Firebending$ True`;
+      break;
+    // increment: when the mana spent on a spell you cast is greater than its power or toughness
+    case 'Increment':
+      T.push('Mode$ SpellCast | ValidActivatingPlayer$ You | TriggerZones$ Battlefield | IsPresent$ Creature.Self | ValidSA$ Spell.ManaSpent GTKWIncP,Spell.ManaSpent GTKWIncT | Execute$ KWIncrement | TriggerDescription$ Increment (whenever you cast a spell, if the mana you spent is greater than this creature\'s power or toughness, put a +1/+1 counter on it)');
+      S.KWIncP = 'Count$CardPower';
+      S.KWIncT = 'Count$CardToughness';
+      S.KWIncrement = 'DB$ PutCounter | Defined$ Self | CounterType$ P1P1 | CounterNum$ 1';
+      break;
+    // storied: with three or more artifacts, legendaries and/or Sagas, you have an enduring story for the rest of the game
+    case 'Storied':
+      if (['Artifact', 'Creature', 'Enchantment', 'Land', 'Planeswalker', 'Battle'].some(t => (face.types || []).includes(t))) {
+        T.push('Mode$ Always | TriggerZones$ Battlefield | Static$ True | EnduringStory$ False | IsPresent$ Permanent.YouCtrl+Historic | PresentCompare$ GE3 | Execute$ KWStory | TriggerDescription$ Storied (you have an enduring story)');
+        S.KWStory = 'DB$ EnduringStory';
+      }
       break;
     case 'Storm':
       T.push('Mode$ SpellCast | ValidCard$ Card.Self | Execute$ KWStorm | TriggerDescription$ Storm');
@@ -388,3 +409,5 @@ export const SUPPORTED_KEYWORDS = new Set(['Flying', 'Equip', 'Trample', 'ETBRep
 for (const k of ['StickerSheet', 'Visit', 'Prize', 'Once each turn, you may pay {1} to reroll one or more dice you rolled.', 'After you roll a die, you may pay 1 life. If you do, increase or decrease the result by 1. Do this only once each turn.', 'After you roll a die, you may remove a +1/+1 counter from Xenosquirrels. If you do, increase or decrease the result by 1.']) SUPPORTED_KEYWORDS.add(k);
 // casting (mech-casting.js): alternative and additional costs, casting from other zones
 for (const k of ['Warp', 'Sneak', 'Web-slinging', 'Freerunning', 'Teamwork', 'More Than Meets the Eye', 'Living metal', 'Splice', 'Prototype', 'Craft', 'Assist', 'Conspire', 'Ripple', 'Epic', 'Amplify', 'Tribute', 'Recover', 'Paradigm', 'Transfigure', 'Spend only colored mana on X. No more than one mana of each color may be spent this way.', "While you're searching your library, you may cast CARDNAME from your library."]) SUPPORTED_KEYWORDS.add(k);
+// new sets (mech-newsets.js)
+for (const k of ['Firebending', 'Increment', 'Storied']) SUPPORTED_KEYWORDS.add(k);

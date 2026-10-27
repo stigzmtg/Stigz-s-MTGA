@@ -476,7 +476,7 @@ export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, bus
     <div className="app table">
       <header className={`topbar ${session.online ? 'online' : ''}`}>
         <span className="brand">Lotus Goats</span>
-        <span className="turninfo">Turn <b>{game.turnNumber}</b> · <b>{game.players[game.activePlayer].name}</b></span>
+        <span className="turninfo">Turn <b>{game.turnNumber}</b> · <b>{game.players[game.activePlayer].name}</b>{game.dayNight ? <span className="daynight" data-daynight={game.dayNight} title={game.dayNight === 'Day' ? "It's day. If the active player casts no spells this turn, it becomes night next turn." : "It's night. If the active player casts two or more spells this turn, it becomes day next turn."}> · {game.dayNight === 'Day' ? '☀ Day' : '☾ Night'}</span> : null}</span>
         <PhaseTracker game={game} />
         <RoomStatus session={session} />
         {session.replay ? <ReplayBar ctl={session.replay} /> : null}

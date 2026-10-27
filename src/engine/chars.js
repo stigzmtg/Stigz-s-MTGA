@@ -387,6 +387,8 @@ export function computeAll(game) {
     if (c.attachedTo != null && ch.keywords.some(k => k.startsWith('Reconfigure'))) ch.types.delete('Creature');
     if (ch.keywords.includes('Changeling')) ch.allCreatureTypes = true;
     if (ch.keywords.includes('Devoid')) ch.colors = new Set();
+    // "loses flying" (Debuff, mech-newsets.js): also what statics and keyword counters give it
+    for (const t of c.temp) if (t.loseKeywords) ch.keywords = ch.keywords.filter(k => !t.loseKeywords.includes(k));
     // living metal: during your turn, this Vehicle is also a creature
     if (ch.keywords.includes('Living metal') && c.zone === 'battlefield' && game.activePlayer === c.controller) ch.types.add('Creature');
   }

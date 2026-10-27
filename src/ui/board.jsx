@@ -222,6 +222,8 @@ function StatusChips({ game, pid }) {
     <>
       {game.monarch === pid ? <span className="chip gold" title="The monarch draws a card at the end of their turn">♛ Monarch</span> : null}
       {game.initiative === pid ? <span className="chip gold" title="At the beginning of your upkeep, venture into Undercity. Deal combat damage to this player to take the initiative.">⚑ Initiative</span> : null}
+      <NewSetsChips game={game} pid={pid} />
+
       {p.dungeon ? <span className="chip" title={`${p.dungeon.obj.effectName} — ${p.dungeon.roomLabel}: ${p.dungeon.roomDesc}`}>⛫ {p.dungeon.roomLabel}</span> : null}
       {p.dungeonsCompleted.length ? <span className="chip" title={`Completed: ${p.dungeonsCompleted.join(', ')}`}>⛫ ×{p.dungeonsCompleted.length}</span> : null}
       {poison ? <span className="chip poison" title="Poison counters (10 loses)">☣ {poison}</span> : null}
@@ -229,6 +231,21 @@ function StatusChips({ game, pid }) {
       {curses.map(c => <span key={c.id} className="chip" title={`${game.name(c)} (${game.players[c.controller].name}'s) is attached to ${p.name}`}>☍ {game.name(c)}</span>)}
       {cmdDmg.map(([id, d]) => <span key={id} className={`chip ${d >= 15 ? 'danger' : ''}`} title={`Commander damage taken from ${game.name(game.cardById(+id))} (21 loses)`}>⚔ {game.name(game.cardById(+id)).split(',')[0]} {d}/21</span>)}
       {p.lost ? <span className="chip danger">Eliminated</span> : null}
+    </>
+  );
+}
+
+// the Ring that tempted this player and an enduring story (src/engine/mech-newsets.js; day / night is in the top bar)
+const RING_TEXT = ["Your Ring-bearer is legendary and can't be blocked by creatures with greater power.", 'Whenever your Ring-bearer attacks, draw a card, then discard a card.', "Whenever your Ring-bearer becomes blocked by a creature, that creature's controller sacrifices it at end of combat.", 'Whenever your Ring-bearer deals combat damage to a player, each opponent loses 3 life.'];
+function NewSetsChips({ game, pid }) {
+  const p = game.players[pid];
+  const rb = p.ringBearer && game.cardById(p.ringBearer.id);
+  const bearer = rb && rb.zone === 'battlefield' && rb.zcc === p.ringBearer.zcc && rb.controller === pid ? game.name(rb) : null;
+  const level = Math.min(4, p.ringTempted || 0);
+  return (
+    <>
+      {level ? <span className="chip gold" data-ring={level} title={`The Ring has tempted ${p.name} ${p.ringTempted} time${p.ringTempted === 1 ? '' : 's'}. Ring-bearer: ${bearer || 'none'}.\n${RING_TEXT.slice(0, level).join('\n')}`}>◎ Ring {level}{bearer ? ` · ${bearer.split(',')[0]}` : ''}</span> : null}
+      {p.enduringStory ? <span className="chip" title="Enduring story: storied cards' bonuses are on for the rest of the game.">✎ Enduring story</span> : null}
     </>
   );
 }

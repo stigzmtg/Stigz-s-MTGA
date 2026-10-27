@@ -9,6 +9,7 @@ import { cmc, parseMana, addCosts } from './mana.js';
 import { canAttack, defendersFor, playerInDirection } from './combat.js';
 import { UNSETS_EFFECTS } from './mech-unsets.js';
 import { CASTING_EFFECTS, castingAlterAttribute, castingCascadeReplacement, castingCanAdapt, castingCantBeCopied, castingWhileSearching } from './mech-casting.js';
+import { NEWSETS_EFFECTS, afterMana } from './mech-newsets.js';
 
 const Z = z => (z ? (zoneMap[z] || z.toLowerCase()) : z);
 
@@ -172,6 +173,7 @@ export const E = {
     for (const c of colors) p.pool[c] = (p.pool[c] || 0) + 1;
     game.touch();
     if (colors.length) game.log(`${p.name} adds ${colors.map(c => `{${c}}`).join('')}.`, { type: 'mana' });
+    if (sa.p.CombatMana || sa.p.Firebending) await afterMana(game, sa, colors);
   },
   async ManaReflected(game, sa) {
     if (sa.p.ReflectProperty === 'Produced' && sa.trig && sa.trig.Produced) {
@@ -712,7 +714,7 @@ export const E = {
 
   async Scry(game, sa) {
     const n = num(game, sa, 'ScryNum', 1);
-    for (const pl of playersOf(objs(game, sa, 'You'))) await scry(game, pl.id, n, sa);
+    for (const pl of playersOf(objs(game, sa, 'You'))) { const rp = await game.applySimpleReplacement('Scry', { Affected: pl, Player: pl.id, Num: n }, sa); if (rp) await scry(game, pl.id, rp.Num, sa); }
   },
   async Surveil(game, sa) {
     const n = num(game, sa, 'Amount', 1);
@@ -1339,6 +1341,7 @@ export const E = {
 
   async Connive(game, sa) {
     for (const c of cardsOf(objs(game, sa, 'Self'))) {
+      if (!(await game.applySimpleReplacement('Connive', { Affected: c, Card: c, Player: c.controller }, sa))) continue;
       const pl = game.players[c.controller];
       const n = num(game, sa, 'ConniveNum', 1);
       await game.drawCards(pl, n, sa);
@@ -1733,6 +1736,7 @@ export const E = {
     const rest = exiled.filter(c => c.zone === 'exile');
     game.rng.shuffle(rest);
     for (const c of rest) await game.moveCard(c, 'library', { pos: 'bottom', silent: true });
+    game.fire('Discover', { Player: pid, Amount: mv });
   },
 
   async Myriad(game, sa) {
@@ -1787,7 +1791,7 @@ export const E = {
     for (const c of cardsOf(objs(game, sa, 'Self'))) {
       for (const a of attrs) {
         if (a === 'Suspected') { c.suspected = true; c.temp.push({ keywords: ['Menace', "CARDNAME can't block."], until: 'Permanent', suspect: true }); }
-        if (a === 'Solved') c.solved = true;
+        if (a === 'Solved' && !c.solved) { c.solved = true; game.fire('CaseSolved', { Card: c, Player: c.controller }); }
         if (a === 'Renowned') c.renowned = true;
         if (a === 'Harnessed') c.harnessed = true;
         if (a === 'Prepared' || a === 'Plotted') castingAlterAttribute(game, sa, c, a, sa.p.Activate !== 'False');
@@ -2049,6 +2053,7 @@ export const E = {
     if (r && sa.p.RememberManifested === 'True') remember(sa, [r]);
     for (const c of top) if (c !== pick) await game.moveCard(c, 'graveyard', { silent: true });
     game.log(`${pl.name} manifests dread.`);
+    game.fire('ManifestDread', { Player: pl.id, Cards: top.filter(c => c !== pick && c.zone === 'graveyard') });
   },
   async NameCard(game, sa) {
     for (const pl of playersOf(objs(game, sa, 'You'))) {
@@ -2222,7 +2227,7 @@ export const E = {
     const type = sa.p.ChampionType || 'Creature';
     const pool = game.battlefield.filter(c => c !== host && c.controller === sa.controller && matchValid(game, c, type, ctxOf(game, sa)));
     const pick = (await chooseCards(game, sa.controller, pool, 0, 1, `Champion: exile another ${type} you control (or ${game.name(host)} is sacrificed)`, sa, 'champion'))[0];
-    if (pick) { const r = await game.moveCard(pick, 'exile', { cause: sa, exiledWith: host.id }); host.championed = r ? [{ id: r.id, zcc: r.zcc }] : []; return; }
+    if (pick) { const r = await game.moveCard(pick, 'exile', { cause: sa, exiledWith: host.id }); host.championed = r ? [{ id: r.id, zcc: r.zcc }] : []; if (r) game.fire('Championed', { Card: host, Championed: r }); return; }
     await game.sacrifice(host, sa);
   },
 
@@ -2495,6 +2500,7 @@ export const E = {
 };
 
 async function proliferateOnce(game, sa, pid) {
+  game.fire('Proliferate', { Player: pid });
   const cands = [...game.battlefield.filter(c => Object.values(c.counters).some(n => n > 0)), ...game.livingPlayers().filter(p => Object.values(p.counters).some(n => n > 0))];
   if (!cands.length) return;
   const ans = await game.ask(pid, { type: 'targets', prompt: 'Proliferate: choose any number of permanents and/or players', cands: cands.map(refOf), min: 0, max: cands.length, sa, purpose: 'proliferate', notTargeting: true });
@@ -2611,6 +2617,7 @@ export async function copyStackItem(game, item, controller, mayChooseTargets) {
 
 Object.assign(E, UNSETS_EFFECTS);
 Object.assign(E, CASTING_EFFECTS);
+Object.assign(E, NEWSETS_EFFECTS);
 export const SUPPORTED_APIS = new Set(Object.keys(E).concat(['Charm']));
 
 export async function runEffect(game, sa) {
