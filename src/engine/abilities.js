@@ -1135,6 +1135,7 @@ export function mayPlayFrom(game, pid, card) {
     const p = st.parsed.p;
     if (!p.MayPlay) continue;
     if (p.MayPlayDontGrantZonePermissions === 'True') continue; // changes how, not where (As Foretold, Aluren): mech-params.js
+    if (p.MayPlayLimit && mayPlayUsed(game, st) >= +p.MayPlayLimit) continue; // each turn, per static (mech-params.js)
     const zones = (p.AffectedZone || 'Battlefield').split(',').map(z => zoneMap[z] || z.toLowerCase());
     if (!zones.includes(card.zone)) continue;
     const who = ctx.you;
@@ -1142,7 +1143,7 @@ export function mayPlayFrom(game, pid, card) {
     if (p.AffectedDefined && !resolveDefined(game, p.AffectedDefined, ctx).some(x => x && x.id === card.id)) continue;
     const player = st.host.isEffect ? st.host.controller : who;
     if (player !== pid && !/Player|Opponent/.test(p.MayPlayPlayer || '')) continue;
-    if (p.MayPlayLimit && mayPlayUsed(game, st) >= +p.MayPlayLimit) continue; // (each turn, per static)
+    if (p.MayPlayLimit && (st.host.mayPlayUses || 0) >= +p.MayPlayLimit) continue;
     return { st, without: p.MayPlayWithoutManaCost === 'True', ignoreType: p.MayPlayIgnoreType === 'True', ignoreColor: p.MayPlayIgnoreColor === 'True' };
   }
   return null;
@@ -2201,8 +2202,8 @@ export async function activateAbility(game, pid, card, abilityKey, action = {}) 
   sa.isActivated = true;
   if (sa.api === 'Charm') { const ok = await chooseModes(game, sa, { cancellable: true }); if (!ok) throw new Cancelled(); }
   const cost = parseCost(p.Cost);
-  let mana = manaConverted(game, card, cost.mana, sa);
-  if (cmc(mana) > 0) cost.hasMana = true;
+  cost.mana = paramAbilityCost(game, sa, cost.mana); if (cmc(cost.mana) > 0) cost.hasMana = true; // cost statics for abilities (mech-params.js)
+  let mana = manaConverted(game, card, cost.mana);
   const payOpts = { abilityHost: card, costHasX: !!cost.mana.x };
   if (mana.x || /\bX\b/.test(p.Cost || '') && cost.parts.some(pt => pt.amount === 'X')) {
     const exclude = new Set(cost.tap ? [card.id] : []);
