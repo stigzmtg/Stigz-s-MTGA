@@ -367,21 +367,21 @@ export function Home({ onPick, onJoin }) {
             fan={MTG_FAN.map(mtg)} fanLabel="Commanders: Kaalia, Atraxa, The Ur-Dragon, Edgar Markov, Arahbo"
             blurb="Every preconstructed Commander deck from Commander 2013 to today, popular decks from EDHREC and Archidekt, and your own built from every Commander card, played with full rules automation."
             facts={[['234', 'ready-made decks'], ['2–4', 'players a table'], ['32,000+', 'cards to build with']]}
-            points={['1v1 or a 4-player free-for-all', 'Build your own deck, paste a list or a link, share it with a link', 'Commander damage, tax and the command zone tracked', 'Every card’s rules handled, down to the last trigger']}
+            points={['1v1 or a 4-player free-for-all, and a daily challenge', 'Build your own deck, paste a list or a link, share it with a link', 'Commander damage, tax and the command zone tracked', 'Every card’s rules handled, down to the last trigger']}
             onPlay={mode => open('mtg', mode)} />
           <Gate game="pk" title="Pokémon TCG" kind="Tournament decks" keystone={<span className="ball" />}
             pips={PK_TYPES.map(t => <Energy key={t} type={t} size={19} />)}
             fan={PK_FAN.map(pkImage)} fanLabel="Miraidon ex, Gardevoir ex, Charizard ex, Dragapult ex, Raging Bolt ex"
-            blurb="Fifty-four of the most-played decks from top tournaments, card for card as their players built them. One on one, six Prize cards each."
+            blurb="Fifty-four of the most-played decks from top tournaments, card for card as their players built them, and your own built by hand or pasted from Pokémon TCG Live. One on one, six Prize cards each."
             facts={[['54', 'top decks'], ['1v1', 'vs computer or a friend'], ['441', 'cards coded']]}
-            points={['Weakness, Resistance and special conditions', 'Coin flips, Abilities and every Trainer', 'Evolution, Rare Candy and retreat', 'Knock Out an ex for 2 Prizes, a Mega ex for 3']}
+            points={['Build your own 60-card deck or paste a list', 'Weakness, Resistance and special conditions', 'Evolution, Rare Candy and retreat', 'Knock Out an ex for 2 Prizes, a Mega ex for 3']}
             onPlay={mode => open('pokemon', mode)} />
           <Gate game="op" title="One Piece Card Game" kind="Starter decks" keystone={OP_COMPASS}
             pips={OP_COLORS.map(c => <ColorDot key={c} colors={c} size={17} />)}
             fan={OP_FAN.map(opThumb)} fanLabel="Leaders: Eustass Kid, Donquixote Doflamingo, Monkey.D.Luffy, Kaido, Sabo"
-            blurb={`All ${opDecks.length || 36} starter decks, each exactly as it comes in the box: a Leader, 50 cards and 10 DON!!. One on one, Life cards on the line.`}
+            blurb={`All ${opDecks.length || 36} starter decks, each exactly as it comes in the box: a Leader, 50 cards and 10 DON!!. Or build your own from any Leader. One on one, Life cards on the line.`}
             facts={[[String(opDecks.length || 36), 'starter decks'], ['1v1', 'vs computer or a friend'], [opCards ? opCards.toLocaleString('en-US') : '500+', 'cards coded']]}
-            points={['DON!! to power up your Leader and crew', 'Blockers and Counters to defend', 'Life cards with surprise Triggers', 'Every [On Play] and [When Attacking] effect']}
+            points={['Build your own deck or paste a list', 'DON!! to power up your Leader and crew', 'Blockers, Counters and surprise Triggers', 'Every [On Play] and [When Attacking] effect']}
             onPlay={mode => open('onepiece', mode)} />
         </div>
       </section>
