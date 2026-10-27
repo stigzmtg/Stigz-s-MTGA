@@ -1714,6 +1714,7 @@ export class Game {
     const wither = srcCh && (this.hasKeywordIn(srcCh, 'Wither') || this.activeStatics('WitherDamage').some(s => !s.p.ValidCard || (source && matchValid(this, source, s.p.ValidCard, s.ctx))));
     const deathtouch = srcCh && this.hasKeywordIn(srcCh, 'Deathtouch');
     const lifelink = srcCh && this.hasKeywordIn(srcCh, 'Lifelink');
+    let excess = 0;   // (damage beyond lethal: "whenever a creature is dealt excess damage")
     if (target.isPlayer) {
       // "as long as you're the monarch, damage doesn't cause you to lose life"
       const noLoss = this.replacementsFor('LifeReduced').some(({ p, ctx }) => p.Layer === 'CantHappen' && p.IsDamage === 'True' && (p.Monarch !== 'True' || this.monarch === target.id) && (!p.ValidPlayer || matchValid(this, target, p.ValidPlayer, ctx)));
@@ -1733,7 +1734,7 @@ export class Game {
       this.log(`${source ? this.name(source) : 'Damage'} deals ${amount} damage to ${target.name}.`, { type: 'damage' });
     } else {
       const tch = this.chars(target);
-      const excess = excessDamageOf(this, target, tch, amount, deathtouch);
+      excess = excessDamageOf(this, target, tch, amount, deathtouch);
       if (tch.types.has('Planeswalker') && !tch.types.has('Creature')) {
         await this.removeCounters(target, 'LOYALTY', amount);
       } else if (tch.types.has('Battle') && !tch.types.has('Creature')) {
@@ -1746,11 +1747,11 @@ export class Game {
       }
       this.turnState.damagedCards[target.id] = true;
       this.log(`${source ? this.name(source) : 'Damage'} deals ${amount} damage to ${this.name(target)}.`, { type: 'damage' });
-      if (excess > 0) noteExcessDamage(this, source, target, excess, !!opts.combat);
     }
     if (source) this.turnState.dealtDamage[source.id] = true;
     // what dealt damage to what this turn ("if it dealt damage to an opponent this turn")
     this.turnState.damageLog.push({ source: source ? source.id : null, controller: srcCtrl, player: target.isPlayer ? target.id : null, card: target.isPlayer ? null : target.id, amount, combat: !!opts.combat });
+    if (excess > 0) noteExcessDamage(this, source, target, excess, !!opts.combat);
     // and over the game, for as long as the source stays the same object ("a player it has dealt damage to this game")
     if (source && source.isCard && !source.lki) {
       const h = source.damageHistory || (source.damageHistory = { players: [], combat: false });

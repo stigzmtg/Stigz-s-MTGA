@@ -12,6 +12,7 @@ const test = (name, fn, opts) => tests.push({ name, fn, opts });
 
 // declare attackers / blockers the way the turn does, with scripted declarations
 async function attack(T, attacks) {
+  for (const [a] of attacks) a.tapped = false;   // (a test may attack more than once)
   T.game.combat = { attackers: [], blockers: new Map(), firstStrikeDone: new Set() };
   T.game.step = 'declareAttackers';
   T.agents[T.game.activePlayer].on('attackers', () => attacks.map(([a, d]) => ({ attacker: a.id, defender: typeof d === 'number' ? 'p' + d : 'c' + d.id })));
@@ -606,6 +607,165 @@ test('Enlisted: Guardian of New Benalia scries 2 when it enlists', async T => {
   T.a.on('enlist', () => [bears.id]);
   await attack(T, [[g, 1]]);
   expect(T.logged(/scries 2/), 'scried 2');
+});
+
+// ------------------------------------------------------------ more "assigns no combat damage" cards
+test('Carrion Rats: when another player exiles a card from their graveyard, it assigns no combat damage', async T => {
+  const rats = await T.put(0, 'Carrion Rats');
+  await T.put(1, 'Grizzly Bears', 'graveyard');
+  T.b.on('confirm', () => true);
+  await attack(T, [[rats, 1]]);
+  await block(T, []);
+  await damage(T);
+  expect(T.B.life === 40 && T.B.graveyard.length === 0, `B exiled a card, no damage (${T.B.life}, ${T.B.graveyard.length})`);
+});
+test('Gaze of Pain: an unblocked creature may deal its damage to a creature instead', async T => {
+  const bears = await T.put(0, 'Grizzly Bears');
+  const elf = await T.put(1, 'Llanowar Elves');
+  await T.cast('Gaze of Pain', 0);
+  T.a.on('confirm', () => true);
+  T.a.on('targets', req => (req.cands.includes(refOf(elf)) ? [refOf(elf)] : undefined));
+  await attack(T, [[bears, 1]]);
+  await block(T, []);
+  await damage(T);
+  expect(!alive(elf) && T.B.life === 40, `the elf took 2, the player nothing (${T.B.life})`);
+});
+test('Cloak of Confusion: unblocked, it assigns no combat damage and the defending player discards at random', async T => {
+  const bears = await T.put(0, 'Grizzly Bears');
+  const aura = await T.put(0, 'Cloak of Confusion'); aura.attachedTo = bears.id; T.game.touch();
+  await T.put(1, 'Lightning Bolt', 'hand');
+  const hand = T.B.hand.length;
+  T.a.on('confirm', () => true);
+  await attack(T, [[bears, 1]]);
+  await block(T, []);
+  await damage(T);
+  expect(T.B.life === 40 && T.B.hand.length === hand - 1, `no damage, one discard (${T.B.life}, ${hand - T.B.hand.length})`);
+});
+test('Delif’s Cube: this turn, when the creature attacks unblocked, it assigns no combat damage and the Cube gets a counter', async T => {
+  const cube = await T.put(0, "Delif's Cube"), bears = await T.put(0, 'Grizzly Bears');
+  T.a.on('targets', req => (req.cands.includes(refOf(bears)) ? [refOf(bears)] : undefined));
+  await T.activate(cube, 0, a => a.parsed.api === 'Effect');
+  await attack(T, [[bears, 1]]);
+  await block(T, []);
+  await damage(T);
+  expect(T.B.life === 40 && (cube.counters.CUBE || 0) === 1, `no damage, a cube counter (${T.B.life}, ${cube.counters.CUBE})`);
+});
+test('Rysorian Badger: unblocked, exiles creature cards from the defending player’s graveyard instead of dealing damage', async T => {
+  const badger = await T.put(0, 'Rysorian Badger');
+  const g = await T.put(1, 'Grizzly Bears', 'graveyard');
+  T.a.on('confirm', () => true);
+  T.a.on('targets', req => (req.cands.includes(refOf(g)) ? [refOf(g)] : undefined));
+  await attack(T, [[badger, 1]]);
+  await block(T, []);
+  await damage(T);
+  expect(g.zone === 'exile' && T.A.life === 41 && T.B.life === 40, `exiled, +1 life, no damage (${g.zone}, ${T.A.life}, ${T.B.life})`);
+});
+test('Camel: prevents damage Deserts would deal to creatures banded with it', async T => {
+  const camel = await T.put(0, 'Camel'), bears = await T.put(0, 'Grizzly Bears');
+  T.a.on('band', () => [bears.id]);
+  await attack(T, [[camel, 1], [bears, 1]]);
+  const desert = await T.put(1, 'Desert');
+  expect(matchValid(T.game, bears, 'Creature.attackersBandedWith', { you: 0, host: camel }), 'the bears are banded with the camel');
+  await T.game.dealDamage(desert, bears, 1, {});
+  expect(bears.damage === 0, `prevented (${bears.damage})`);
+});
+
+// ------------------------------------------------------------ more attack rules
+test('Okk attacks only with a stronger creature; Orcish Conscripts with two others; Scarred Puma with a black or green one', async T => {
+  const okk = await T.put(0, 'Okk'), elf = await T.put(0, 'Llanowar Elves'), wurm = await T.put(0, 'Craw Wurm');
+  await attack(T, [[okk, 1], [elf, 1]]);
+  expect(!T.game.isAttacking(okk) && T.game.isAttacking(elf), 'Okk with a weaker one: stays home');
+  await attack(T, [[okk, 1], [wurm, 1]]);
+  expect(T.game.isAttacking(okk), 'with the wurm: attacks');
+  const cons = await T.put(0, 'Orcish Conscripts');
+  await attack(T, [[cons, 1], [elf, 1]]);
+  expect(!T.game.isAttacking(cons), 'Conscripts with one other: stays home');
+  await attack(T, [[cons, 1], [elf, 1], [wurm, 1]]);
+  expect(T.game.isAttacking(cons), 'with two others: attacks');
+  const puma = await T.put(0, 'Scarred Puma'), goblin = await T.put(0, 'Goblin Guide');
+  await attack(T, [[puma, 1], [goblin, 1]]);
+  expect(!T.game.isAttacking(puma), 'Puma with a red creature: stays home');
+  await attack(T, [[puma, 1], [elf, 1]]);
+  expect(T.game.isAttacking(puma), 'with a green one: attacks');
+});
+test('War’s Toll: if a creature an opponent controls attacks, all creatures that player controls attack if able', async T => {
+  await T.put(1, "War's Toll");
+  const a = await T.put(0, 'Grizzly Bears'), b = await T.put(0, 'Llanowar Elves');
+  await attack(T, [[a, 1]]);
+  expect(T.game.isAttacking(b), 'the elf attacks too');
+});
+test('Magnetic Web: creatures with magnet counters attack together and are blocked by the others', async T => {
+  const web = await T.put(1, 'Magnetic Web');
+  const a = await T.put(0, 'Grizzly Bears'), b = await T.put(0, 'Llanowar Elves');
+  const w = await T.put(1, 'Wall of Omens');
+  a.counters.MAGNET = 1; b.counters.MAGNET = 1; w.counters.MAGNET = 1; T.game.touch();
+  await attack(T, [[a, 1]]);
+  expect(T.game.isAttacking(b), 'the other magnet creature attacks');
+  await block(T, []);
+  expect(blocking(T, w).length >= 1, 'the magnet wall blocks');
+});
+test('Attacker blocked once: Neyith of the Dire Hunt draws once when several creatures become blocked', async T => {
+  await T.put(0, 'Neyith of the Dire Hunt');
+  const x = await T.put(0, 'Grizzly Bears'), y = await T.put(0, 'Grizzly Bears');
+  const e1 = await T.put(1, 'Wall of Omens'), e2 = await T.put(1, 'Wall of Omens');
+  await T.resolve();
+  const hand = T.A.hand.length;
+  await attack(T, [[x, 1], [y, 1]]);
+  await block(T, [[e1, x], [e2, y]]);
+  expect(T.A.hand.length === hand + 1, `one card (${T.A.hand.length - hand})`);
+});
+test('Trap Runner and Dazzling Beauty: an unblocked attacker becomes blocked after blockers', async T => {
+  const x = await T.put(0, 'Grizzly Bears');
+  const runner = await T.put(1, 'Trap Runner');
+  await attack(T, [[x, 1]]);
+  await block(T, []);
+  T.b.on('targets', () => [refOf(x)]);
+  await T.activate(runner, 1, a => a.parsed.api === 'BecomesBlocked');
+  expect(T.game.isBlocked(x), 'blocked');
+  await damage(T);
+  expect(T.B.life === 40, 'no damage');
+});
+test('Errantry: the enchanted creature can only attack alone', async T => {
+  const x = await T.put(0, 'Grizzly Bears'), y = await T.put(0, 'Llanowar Elves');
+  const aura = await T.put(0, 'Errantry'); aura.attachedTo = x.id; T.game.touch();
+  await attack(T, [[x, 1], [y, 1]]);
+  expect(!T.game.isAttacking(x) && T.game.isAttacking(y), 'not with another attacker');
+  await attack(T, [[x, 1]]);
+  expect(T.game.isAttacking(x), 'alone it attacks');
+});
+test('Blocking several attackers in combat with first strike: each step deals its share once', async T => {
+  const twins = await T.put(1, 'Ghastbark Twins');
+  const fs = await T.put(0, 'White Knight'), b = await T.put(0, 'Grizzly Bears');
+  await attack(T, [[fs, 1], [b, 1]]);
+  await block(T, [[twins, fs], [twins, b]]);
+  const asked = [];
+  T.b.on('divide', req => { asked.push(req.target); return req.target === refOf(fs) ? req.max : 0; });
+  await damage(T);
+  expect(asked.length === 1 && !alive(fs) && alive(b), `the blocker's damage divided once, all to the knight (${asked.length} prompts, knight ${alive(fs)}, bears ${alive(b)})`);
+  expect(twins.damage === 4, `it took 2 + 2 (${twins.damage})`);
+});
+
+test('Excess damage: Aegar draws when a spell you controlled dealt the excess; Fall of Cair Andros amasses the excess', async T => {
+  await T.put(0, 'Aegar, the Freezing Flame');
+  await T.put(0, 'Fall of Cair Andros');
+  const elf = await T.put(1, 'Llanowar Elves');
+  const hand = T.A.hand.length;
+  T.a.on('targets', req => (req.cands.includes(refOf(elf)) ? [refOf(elf)] : undefined));
+  await T.cast('Lightning Bolt', 0);
+  expect(T.A.hand.length === hand + 1, `Aegar drew (${T.A.hand.length - hand})`);
+  const army = T.game.battlefield.find(c => c.controller === 0 && T.game.chars(c).subtypes.has('Army'));
+  expect(army && (army.counters.P1P1 || 0) === 2, `amassed 2 (${army && army.counters.P1P1})`);
+  const bear = await T.put(1, 'Grizzly Bears');
+  const hand2 = T.A.hand.length;
+  await T.game.dealDamage(bear, bear, 5, {});
+  expect(T.A.hand.length === hand2, 'damage from their own creature: no card');
+});
+test('Dealt damage by: Vampiric Dragon grows when a creature it damaged dies', async T => {
+  const dragon = await T.put(0, 'Vampiric Dragon');
+  const elf = await T.put(1, 'Llanowar Elves');
+  await T.game.dealDamage(dragon, elf, 1, {});
+  await T.resolve();
+  expect((dragon.counters.P1P1 || 0) === 1, `a counter (${dragon.counters.P1P1})`);
 });
 
 process.exit(await run(tests) ? 1 : 0);

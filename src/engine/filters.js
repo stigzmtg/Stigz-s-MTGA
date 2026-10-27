@@ -555,6 +555,9 @@ function cardProp(game, card, ch, prop, ctx) {
     const who = resolveDefined(game, m[1], ctx).map(x => x.isPlayer ? x.id : ctrlOf(game, x));
     if (who.length) return who.includes(ctrl);
   }
+  // "dealt damage by CARDNAME this turn", "if a Giant, Wizard, or spell you controlled dealt damage to it this turn"
+  // (DamagedByGiant.YouCtrl;Wizard.YouCtrl;Spell.YouCtrl)
+  if ((m = prop.match(/^DamagedBy(.*)$/))) return damagedBy(game, card, m[1], ctx);
   if (/^[A-Z][a-zA-Z'-]*$/.test(prop)) return hasType(game, ch, prop, card);
   // "the artifact with the highest mana value", "a creature with the highest mana value among those that player controls"
   if ((m = prop.match(/^greatestCMC_(NonLandPermanent|[A-Za-z]+?)(ControlledByRemembered)?$/))) {
@@ -595,9 +598,6 @@ function cardProp(game, card, ch, prop, ctx) {
   if (prop === 'EnteredUnder You') return (card.enteredController != null ? card.enteredController : ctrl) === you;
   if (prop === 'surveilledThisTurn') return card.zone === 'graveyard' && card.surveilledTurn === game.turnNumber;
   if (prop === 'hadToAttackThisCombat') { const c0 = card.lki ? card.card : card; const h = c0 && c0.hadToAttack; return !!h && h.turn === game.turnNumber && h.combat === (game.combatsThisTurn || 0); }
-  // "dealt damage by CARDNAME this turn", "if a Giant, Wizard, or spell you controlled dealt damage to it this turn"
-  // (DamagedByGiant.YouCtrl;Wizard.YouCtrl;Spell.YouCtrl)
-  if ((m = prop.match(/^DamagedBy(.*)$/))) return damagedBy(game, card, m[1], ctx);
   // "Aura.Other.YouOwn": dotted properties
   if (/^[A-Za-z]+(\.[A-Za-z]+)+$/.test(prop)) return prop.split('.').every(pr => cardProp(game, card, ch, pr, ctx));
   if (prop === 'yardGreatestPower') return game.players[card.owner].graveyard.filter(x => charsOf(game, x).types.has('Creature')).every(x => charsOf(game, x).power <= ch.power);

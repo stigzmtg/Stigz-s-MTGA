@@ -96,9 +96,10 @@ export function CardSlot({ card, ctx, size = 'mini', count = 1, ids = null }) {
     else if (ctx.attack.candidates.has(card.id)) cls.push('targetable');
   }
   if (ctx.block) {
+    // (one that can block several attackers stays picked, and shows it, while you add more)
     if (ctx.block.assigned.has(card.id)) { cls.push('blocking'); wrapCls.push('guard'); }
-    else if (ctx.block.picked === card.id) cls.push('selected');
-    else if (ctx.block.candidates.has(card.id)) cls.push('targetable');
+    if (ctx.block.picked === card.id) cls.push('selected');
+    else if (!ctx.block.assigned.has(card.id) && ctx.block.candidates.has(card.id)) cls.push('targetable');
     // with a blocker picked, only the attackers it may block light up
     if (ctx.block.attackers.has(card.id)) cls.push(!ctx.block.picked ? 'attacking' : ctx.block.canBlock(ctx.block.picked, card.id) ? 'attacker-target' : 'attacking no-block');
   }
