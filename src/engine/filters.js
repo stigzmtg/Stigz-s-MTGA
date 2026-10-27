@@ -1140,6 +1140,13 @@ export function evalExpr(game, expr, ctx, depth) {
       else n = ts.reduce((a, t) => a + cardStat(game, t, rest, ctx), 0);
       break;
     }
+    // every target of the spell or ability, over its sub-abilities (Fireball, Hinata: "for each target")
+    case 'TargetedObjects': case 'TargetedObjectsDistinct': {
+      let ts = sa && sa.root ? sa.root().chain().flatMap(s => s.targets || []) : [];
+      if (head === 'TargetedObjectsDistinct') ts = [...new Set(ts)];
+      n = rest === 'Amount' ? ts.length : rest.startsWith('Valid ') ? ts.filter(t => matchValid(game, t, rest.slice(6), ctx)).length : 0;
+      break;
+    }
     case 'TargetedPlayer': {
       const ts = sa ? findTargets(sa).filter(isPlayer) : [];
       const p = ts[0];
@@ -1493,6 +1500,8 @@ export function checkPresence(game, p, ctx) {
     const v = calcCtx(game, p.CheckSecondSVar, ctx);
     if (!compareSpec(game, v, p.SecondSVarCompare || 'GE1', ctx)) return false;
   }
+  // "as long as the top card of your library is black" (Vampire Nocturnus, Conspicuous Snoop)
+  if (p.TopCardOfLibraryIs) { const top = game.players[ctx.you] && game.players[ctx.you].library[0]; if (!top || !matchValid(game, top, p.TopCardOfLibraryIs, ctx)) return false; }
   if (p.PlayerTurn === 'True' && game.activePlayer !== ctx.you) return false;
   if (p.OpponentTurn === 'True' && !game.isOpponent(game.activePlayer, ctx.you)) return false;
   // "if you're the monarch" (Faramir, Champions of Minas Tirith)

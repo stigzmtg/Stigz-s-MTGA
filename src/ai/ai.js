@@ -229,8 +229,13 @@ export class AIAgent {
   scoreCast(game, pid, a, ctx) {
     const card = game.cardById(a.cardId);
     if (!card) return 0;
-    const opt = spellOptions(game, pid, card).find(o => o.key === a.optionKey);
+    const all = spellOptions(game, pid, card);
+    const opt = all.find(o => o.key === a.optionKey);
     if (!opt) return 0;
+    // a cost in life (Bolas's Citadel) only with life to spare; a free way to cast it (Omniscience, Aluren) over paying
+    const lifeCost = /PayLife<(\d+)>/.exec(opt.altManaStr || '');
+    if (lifeCost && game.players[pid].life - +lifeCost[1] < 8) return 0;
+    if (!opt.withoutMana && all.some(o => o.withoutMana && o.face === opt.face && !o.land && o.key !== opt.key)) return 0;
     const face = card.def.faces[opt.face] || card.def.faces[0];
     // (printed flash, or given: Leyline of Anticipation, Yeva's green creatures)
     const isInstantSpeed = face.types.includes('Instant') || !!opt.mayFlash || hasFlash(game, card, face);

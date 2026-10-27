@@ -2,7 +2,8 @@
 // Each section is called from a small hook in the module that owns the event (game.js, triggers.js, effects.js,
 // chars.js, abilities.js). This module imports only leaf modules statically: it is loaded from chars.js before
 // abilities.js / effects.js exist, so those are reached with import() inside async functions (already loaded by then).
-import { matchValid, resolveDefined, calcCtx, compareSpec, ctxOf, zoneMap } from './filters.js';
+import { matchValid, resolveDefined, calcCtx, compareSpec, ctxOf, zoneMap, matchCastSA } from './filters.js';
+import { parseMana, cloneCost, addCosts, cmc } from './mana.js';
 import { parseAbility } from './forge.js';
 
 const engine = () => import('./abilities.js');
@@ -390,4 +391,362 @@ export function charmModeAllowed(game, sa, mode) {
 export function noteCharmModes(game, sa, modes) {
   if (!sa.p.ChoiceRestriction || !modes) return;
   charmRecord(game, sa, true).push(...modes);
+}
+
+// ---------------------------------------------------------------- costs (abilities.js spellCost / castSpell / activation)
+// ReduceCost / RaiseCost statics need things the base cost code doesn't have: the spell's own context (Relative$: its
+// X, its targets, a number announced as it's cast), its targets (ValidTarget$, UnlessValidTarget$), RaiseCost's Cost$
+// (an additional {B}, 3 life, "sacrifice a Swamp", "tap any number of creatures"), ForEachShard$, IgnoreGeneric$ and
+// MinMana$; and Type$ Ability statics change activated abilities (Training Grounds, Zirda, Power Artifact, Kopala).
+// The base loop skips the statics handled here (paramCostStatic). Before targets are chosen the result is an estimate
+// (target-dependent reductions apply, target-dependent raises don't); castSpell / activateAbility settle it after.
+export function paramCostStatic(s, kind) {
+  const p = s.p || s.parsed.p;
+  if (p.Relative || p.ValidTarget || p.IgnoreGeneric || p.MinMana) return true;
+  if (kind === 'raise' && (p.Cost || p.ForEachShard || p.ValidSpell)) return true;
+  return false;
+}
+
+const ANY = ['W', 'U', 'B', 'R', 'G'];
+const isManaStr = s => /^[\dWUBRGCXS/ ]+$/.test(String(s).trim()) && String(s).trim() !== '';
+// what an activated ability is ("Activated.Equip", "Activated.!ManaAbility", "Activated.Loyalty")
+function abilityIs(game, sa, spec, ctx) {
+  return String(spec).split(',').some(alt => {
+    const [type, ...rest] = alt.trim().split('.');
+    if (!['Activated', 'SpellAbility', 'Ability'].includes(type)) return false;
+    if (sa.isTrigger || (sa.def && sa.def.kind && sa.def.kind !== 'AB')) return false;
+    const p = sa.p;
+    return rest.join('.').split('+').filter(Boolean).every(pr => {
+      const neg = pr.startsWith('!'); const q = neg ? pr.slice(1) : pr;
+      let r;
+      switch (q) {
+        case 'ManaAbility': r = sa.api === 'Mana'; break;
+        case 'Equip': r = p.IsEquip === 'True'; break;
+        case 'Loyalty': r = p.Planeswalker === 'True'; break;
+        case 'Ninjutsu': r = sa.api === 'Ninjutsu'; break;
+        case 'Crew': r = p.IsCrew === 'True' || sa.api === 'Crew'; break;
+        case 'Cycling': r = p.IsCycling === 'True'; break;
+        case 'Boast': r = p.Boast === 'True'; break;
+        case 'Exhaust': r = p.Exhaust === 'True'; break;
+        case 'hasTapCost': r = /(^|\s)T(\s|$)/.test(p.Cost || ''); break;
+        default: r = sa.host ? matchValid(game, sa.host, 'Card.' + q, ctx) : false;
+      }
+      return neg ? !r : r;
+    });
+  });
+}
+function spellIs(game, sa, card, opt, spec, ctx) {
+  const root = sa.root ? sa.root() : sa;
+  if (opt && opt.altCost && !root.altCost) root.altCost = opt.altCost;
+  return matchCastSA(game, sa, card, spec, ctx);
+}
+
+function costCtx(s) {
+  return { host: s.host, you: s.ctx.you, svars: s.st.svars, sa: { ...s.ctx.sa, svars: s.st.svars } };
+}
+// Relative$: amounts are worked out for the spell or ability being paid for (its X, targets, announced numbers)
+function relCtx(s, sa, pid) {
+  const svars = { ...(sa.svars || {}), ...s.st.svars };
+  for (const k of Object.keys(sa.svars || {})) if (/^Number\$/.test(sa.svars[k])) svars[k] = sa.svars[k]; // announced values win
+  return { host: s.host, you: pid, svars, sa: Object.assign(Object.create(sa), { svars }), trig: sa.trig };
+}
+
+// does a ReduceCost / RaiseCost static apply to this spell or ability? final: its targets are known
+function costApplies(game, s, { kind, pid, card, sa, opt, final }) {
+  const p = s.p;
+  if (p.Type) {
+    if (p.Type === 'Spell') { if (kind !== 'spell') return false; }
+    else if (p.Type === 'Ability') { if (kind !== 'ability') return false; }
+    else if (p.Type !== 'Any') return false;
+  } else if (kind === 'ability' && !p.ValidSpell) return false;
+  if (p.ValidCard && !matchValid(game, card, p.ValidCard.replace(/CARDNAME/g, 'Card.Self'), { ...s.ctx, host: s.host })) return false;
+  if (p.Activator && !matchValid(game, game.players[pid], p.Activator, s.ctx)) return false;
+  if (p.ValidSpell) {
+    if (kind === 'ability') { if (!abilityIs(game, sa, p.ValidSpell, s.ctx)) return false; }
+    else if (!/^(Spell|SpellAbility|Card)\b/.test(p.ValidSpell) || !spellIs(game, sa, card, opt, p.ValidSpell, s.ctx)) return false;
+  }
+  if (p.OnlyFirstSpell === 'True' && kind === 'spell' && game.players[pid].spellsCastThisTurn.length > 0) return false;
+  if (p.AffectedZone) {
+    const from = kind === 'spell' ? (opt && opt.from) || card.zone : card.zone;
+    if (!p.AffectedZone.split(',').map(Z).includes(from)) return false;
+  }
+  if (p.ValidTarget) {
+    const ts = (sa.chain ? sa.chain() : [sa]).flatMap(x => x.targets || []);
+    if (!final && !ts.length) return p.Mode === 'ReduceCost'; // (an estimate: reductions are hoped for, raises wait)
+    const hit = ts.some(t => t && matchValid(game, t, p.ValidTarget, s.ctx));
+    return p.UnlessValidTarget ? !hit : hit;
+  }
+  return true;
+}
+
+// how many times a static's change applies
+function costAmount(game, s, sa, pid, card) {
+  const p = s.p;
+  let n;
+  if (p.ForEachShard) {
+    const col = { White: 'W', Blue: 'U', Black: 'B', Red: 'R', Green: 'G' }[p.ForEachShard] || p.ForEachShard[0];
+    const m = sa.isSpell ? game.chars(card).manaCost : (sa.p && sa.p.Cost ? parseMana(String(sa.p.Cost).split(/\s+/).filter(isManaStr).join(' ')) : null);
+    n = m ? (m.colored[col] || 0) + m.hybrid.filter(h => h.includes(col)).length + m.twobrid.filter(x => x === col).length + m.phyrexian.filter(x => x === col).length : 0;
+  } else if (p.Amount == null) n = 1;
+  else if (/^\d+$/.test(p.Amount)) n = +p.Amount;
+  else n = calcCtx(game, p.Amount, p.Relative ? relCtx(s, sa, pid) : costCtx(s));
+  if (p.UpTo) { /* "up to {2} less": nobody pays more than they must, so the whole reduction */ }
+  return Math.max(0, n || 0);
+}
+
+// The changes from the statics handled here: { reduce, raise, colorReduce: [{ color, n, strict }], capped, addMana, parts }
+export function paramCostMods(game, { kind, pid, card, sa, opt = null, final = false }) {
+  const out = { reduce: 0, raise: 0, colorReduce: [], capped: [], addMana: null, parts: [] };
+  if (!card || !sa) return out;
+  for (const mode of ['RaiseCost', 'ReduceCost']) {
+    for (const s of game.activeStatics(mode)) {
+      // the base spell code handles the others; abilities have no base code, so all of theirs are applied here
+      if (kind === 'spell' && !paramCostStatic(s, mode === 'RaiseCost' ? 'raise' : 'reduce')) continue;
+      if (!costApplies(game, s, { kind, pid, card, sa, opt, final })) continue;
+      const p = s.p;
+      const n = costAmount(game, s, sa, pid, card);
+      if (!n) continue;
+      if (mode === 'RaiseCost') {
+        const c = p.Cost || '1';
+        if (isManaStr(c)) { const m = parseMana(c); for (let i = 0; i < n; i++) out.addMana = out.addMana ? addCosts(out.addMana, m) : cloneCost(m); }
+        else if (final) out.parts.push(n > 1 ? c.replace(/<(\d+)\//, (_, k) => `<${+k * n}/`) : c);
+      } else if (p.Color) {
+        for (const col of p.Color.split(' ')) {
+          if (/^\d+$/.test(col)) out.reduce += +col * n;
+          else out.colorReduce.push({ color: col, n, strict: p.IgnoreGeneric === 'True' });
+        }
+      } else if (p.MinMana) out.capped.push({ n, min: +p.MinMana });
+      else out.reduce += n;
+    }
+  }
+  return out;
+}
+
+// apply paramCostMods to a mana cost (generic reductions can't go below zero; MinMana keeps that much mana in it).
+// Returns the new cost and what was actually changed, so it can be taken back exactly.
+export function applyCostMods(mana, mods) {
+  let m = cloneCost(mana);
+  const applied = { addMana: mods.addMana, generic: 0, colors: {} };
+  if (mods.addMana) m = addCosts(m, mods.addMana);
+  m.generic += mods.raise;
+  applied.raise = mods.raise;
+  for (const { color, n, strict } of mods.colorReduce) {
+    for (let i = 0; i < n; i++) {
+      if (m.colored[color] > 0) { m.colored[color]--; applied.colors[color] = (applied.colors[color] || 0) + 1; }
+      else if (!strict && m.generic > 0) { m.generic--; applied.generic++; }
+    }
+  }
+  const r = Math.min(m.generic, mods.reduce);
+  m.generic -= r; applied.generic += r;
+  for (const { n, min } of mods.capped) {
+    const can = Math.max(0, Math.min(n, cmc(m) - min, m.generic));
+    m.generic -= can; applied.generic += can;
+  }
+  return { mana: m, applied };
+}
+function undoCostMods(mana, applied) {
+  const m = cloneCost(mana);
+  m.generic += applied.generic;
+  for (const [k, n] of Object.entries(applied.colors)) m.colored[k] += n;
+  m.generic = Math.max(0, m.generic - applied.raise);
+  if (applied.addMana) {
+    m.generic = Math.max(0, m.generic - applied.addMana.generic);
+    for (const k of Object.keys(applied.addMana.colored)) m.colored[k] = Math.max(0, m.colored[k] - applied.addMana.colored[k]);
+  }
+  return m;
+}
+
+// ManaConvert statics and ManaConversion$ on what's paid for: "spend mana as though it were mana of any color / type"
+// (Chromatic Orrery, Mycosynth Lattice, Vizier of the Menagerie, Agatha's Soul Cauldron, Oath of Nissa; white mana as
+// any color: Celestial Dawn, False Dawn; white as red: Sunglasses of Urza)
+export function convertMana(game, mana, { kind, pid, card, opt = null, extra = [] }) {
+  const convs = [...extra];
+  for (const s of game.activeStatics('ManaConvert')) {
+    const p = s.p;
+    if (!p.ManaConversion) continue;
+    if (p.ValidPlayer && !matchValid(game, game.players[pid], p.ValidPlayer, s.ctx)) continue;
+    if (p.ValidCard && !matchValid(game, card, p.ValidCard.replace(/CARDNAME/g, 'Card.Self'), s.ctx)) continue;
+    if (p.ValidSA && !p.ValidSA.split(',').some(v => (kind === 'spell' ? /^Spell/.test(v.trim()) && (!/MayPlaySource/.test(v) || !!(opt && opt.mayPlay)) : /^Activated/.test(v.trim())))) continue;
+    if (p.AffectedZone && kind === 'spell' && !p.AffectedZone.split(',').map(Z).includes((opt && opt.from) || card.zone)) continue;
+    convs.push(p.ManaConversion);
+  }
+  if (!convs.length) return mana;
+  const m = cloneCost(mana);
+  const NAME = { White: 'W', Blue: 'U', Black: 'B', Red: 'R', Green: 'G', C: 'C', Colorless: 'C' };
+  for (const conv of convs) {
+    for (const part of conv.split(/\s+/)) {
+      const mm = part.match(/^(\w+)->(\w+)$/);
+      if (!mm) continue; // "nonWhite<-C": other mana only as though it were colorless (a restriction, not applied)
+      const [, from, to] = mm;
+      if (from === 'AnyType') {
+        // any mana pays colored symbols (and {C} too when it's "as though it were mana of any type")
+        for (const c of ANY) { m.generic += m.colored[c] || 0; m.colored[c] = 0; }
+        if (to === 'AnyType') { m.generic += m.colored.C || 0; m.colored.C = 0; }
+        m.generic += m.hybrid.length; m.hybrid = [];
+        continue;
+      }
+      const src = NAME[from];
+      if (!src) continue;
+      const targets = to === 'AnyColor' ? ANY : [NAME[to]].filter(Boolean);
+      for (const c of targets) {
+        if (c === src) continue;
+        const k = m.colored[c] || 0;
+        m.colored[c] = 0;
+        for (let i = 0; i < k; i++) m.hybrid.push([c, src]);
+      }
+      m.hybrid = m.hybrid.map(h => (h.some(x => targets.includes(x)) && !h.includes(src) ? [...h, src] : h));
+    }
+  }
+  return m;
+}
+
+// spellCost's hook: the handled statics (an estimate before targets) and mana conversion
+export function paramSpellCost(game, pid, card, opt, sa, mana) {
+  if (!sa) return mana;
+  const mods = paramCostMods(game, { kind: 'spell', pid, card, sa, opt, final: false });
+  const { mana: m, applied } = applyCostMods(mana, mods);
+  sa._paCostApplied = applied;
+  return convertMana(game, m, { kind: 'spell', pid, card, opt, extra: opt && opt.manaConversion ? [opt.manaConversion] : [] });
+}
+
+// activated abilities: the cost statics and mana conversion (abilities.js manaConverted)
+export function paramAbilityCost(game, sa, mana) {
+  if (!sa || !sa.host || !sa.host.isCard || !mana) return mana;
+  const mods = paramCostMods(game, { kind: 'ability', pid: sa.controller, card: sa.host, sa, final: false });
+  const { mana: m, applied } = applyCostMods(mana, mods);
+  sa._paCostApplied = applied;
+  return convertMana(game, m, { kind: 'ability', pid: sa.controller, card: sa.host, extra: sa.abil && sa.abil.manaConversion ? [sa.abil.manaConversion] : [] });
+}
+
+// Once targets (and X) are chosen: announce what the cost asks for ("exile any number of blue cards", March of
+// Swirling Mist; "tap any number of creatures", Explosive Singularity), then trade the estimate for the real changes.
+// Returns the new { mana, extra }. kind: 'spell' | 'ability'.
+export async function paramCostAfterTargets(game, kind, pid, card, opt, sa, mana, extra) {
+  const applied = sa._paCostApplied;
+  if (!applied) return { mana, extra };
+  const { parseCost, canPayNonMana, Cancelled } = await engine();
+  // announced numbers the handled cost statics depend on
+  if (kind === 'spell' && sa.p.Announce) {
+    for (const name of sa.p.Announce.split(',').map(s => s.trim()).filter(Boolean)) {
+      if (name === 'X' || !costStaticsMention(card, name)) continue;
+      const setN = n => { const svars = { ...sa.svars, [name]: `Number$${n}` }; for (const s of sa.chain()) s.svars = svars; };
+      let max = 0;
+      for (let n = 1; n <= 20; n++) {
+        setN(n);
+        const m2 = paramCostMods(game, { kind, pid, card, sa, opt, final: true });
+        const parts = m2.parts.flatMap(c => parseCost(c).parts);
+        if (!parts.length && !m2.addMana) break;
+        if (parts.length && !canPayNonMana(game, sa, { ...parseCost(''), parts: [...(extra.parts || []), ...parts] })) break;
+        max = n;
+      }
+      let n = 0;
+      if (max > 0) {
+        n = await game.ask(pid, { type: 'number', prompt: `${game.name(card)}: ${sa.p.AnnounceTitle ? 'choose ' + sa.p.AnnounceTitle : 'how many?'}`, min: 0, max, purpose: 'announce', sa, announce: name, cancellable: true });
+        if (n == null) throw new Cancelled();
+        n = Math.max(0, Math.min(max, n | 0));
+      }
+      setN(n);
+    }
+  }
+  const fin = paramCostMods(game, { kind, pid, card, sa, opt, final: true });
+  const m = applyCostMods(undoCostMods(mana, applied), fin).mana;
+  sa._paCostApplied = null;
+  const ex = fin.parts.length ? { ...extra, parts: [...(extra.parts || []), ...fin.parts.flatMap(c => parseCost(c).parts)] } : extra;
+  return { mana: m, extra: ex };
+}
+
+// does one of the card's own cost statics depend on this announced value?
+function costStaticsMention(card, name) {
+  const f = card.faceDef;
+  const expand = (s, d = 0) => (d > 3 ? s : String(s).replace(/\b[A-Z]\w*\b/g, w => (f.svars[w] && w !== name ? expand(f.svars[w], d + 1) : w)));
+  return f.statics.some(st => { const p = parseAbility(st).p; return /^(RaiseCost|ReduceCost)$/.test(p.Mode) && new RegExp(`\\b${name}\\b`).test(expand(`${p.Cost || ''} ${p.Amount || ''}`)); });
+}
+
+// "As an additional cost to cast green permanent spells, you may pay 2 life. Those spells cost {G} less" (the Defiler
+// cycle): OptionalCost statics on other permanents, offered as the spell is cast. Returns the new { mana, extra }.
+export async function otherOptionalCosts(game, pid, card, sa, mana, extra) {
+  const { parseCost, canPayNonMana } = await engine();
+  let m = mana, ex = extra;
+  for (const s of game.activeStatics('OptionalCost')) {
+    const p = s.p;
+    if (s.host === card || !p.Cost) continue;
+    if (p.ValidCard && !matchValid(game, card, p.ValidCard, s.ctx)) continue;
+    if (p.ValidSA && !/^Spell/.test(p.ValidSA)) continue;
+    if (p.Activator && !matchValid(game, game.players[pid], p.Activator, s.ctx)) continue;
+    const c = parseCost(p.Cost);
+    if (!canPayNonMana(game, sa, { ...parseCost(''), parts: [...(ex.parts || []), ...c.parts] })) continue;
+    const yes = await game.ask(pid, { type: 'confirm', prompt: `${game.name(s.host)}: ${p.Description || 'pay ' + p.Cost + '?'}`, purpose: 'optionalCost', sa, cost: p.Cost, cardId: card.id });
+    if (!yes) continue;
+    ex = { ...ex, parts: [...(ex.parts || []), ...c.parts] };
+    if (c.hasMana) m = addCosts(m, c.mana);
+    if (p.ReduceColor) { m = cloneCost(m); for (const col of p.ReduceColor.split(/\s+/)) if (m.colored[col] > 0) m.colored[col]--; }
+  }
+  return { mana: m, extra: ex };
+}
+
+// ---------------------------------------------------------------- casting permissions (abilities.js mayPlayFrom / spellOptions)
+// MayPlayLimit$ counts per static ability and per turn, as in Forge ("once each turn": As Foretold; Muldrotha's land
+// and each permanent type separately)
+function mayPlayKey(st) { return `${st.host.id}:${st.host.zcc ?? ''}:${st.key}`; }
+export function mayPlayUsed(game, st) { return ((game.turnState.mayPlayUses || {})[mayPlayKey(st)]) || 0; }
+export function noteMayPlayUse(game, st) {
+  const u = game.turnState.mayPlayUses || (game.turnState.mayPlayUses = {});
+  const k = mayPlayKey(st);
+  u[k] = (u[k] || 0) + 1;
+}
+
+// the alternative cost a MayPlay static sets ("pay life equal to its mana value rather than pay its mana cost":
+// Bolas's Citadel; "{0}": As Foretold, Darksteel Monolith), as a cost string for this card
+function altManaFor(game, card, alt) {
+  const mv = game.chars(card).cmc;
+  return String(alt).replace(/ConvertedManaCost/g, String(mv)).replace(/CardManaCost/g, card.faceDef.manaCostStr || '0');
+}
+const costWords = s => String(s).replace(/^PayLife<(\d+)>$/, '$1 life').replace(/^0$/, '{0}').replace(/^(\d+)$/, '{$1}');
+
+// Called at the end of spellOptions. mayPlay: the permission that let this card be cast from its zone, if any.
+// - that permission's own changes: its alternative cost (Citadel), flash (Elsha of the Infinite)
+// - statics that only change how spells you could cast anyway are cast (MayPlayDontGrantZonePermissions: As Foretold,
+//   Aluren, Dracogenesis, One with the Multiverse; and permissions for your hand: Omniscience, Darksteel Monolith):
+//   each adds a way to cast it, next to the usual one
+export function mayPlayOptions(game, pid, card, opts, mayPlay) {
+  if (!opts.length) return opts;
+  if (mayPlay && mayPlay.st) {
+    const p = mayPlay.st.parsed.p;
+    for (const o of opts) {
+      if (p.MayPlayWithFlash === 'True') o.mayFlash = true;
+      if (p.MayPlayAltManaCost != null && !o.land && !o.withoutMana && !o.altCost) {
+        o.altManaStr = altManaFor(game, card, p.MayPlayAltManaCost);
+        o.altCost = 'MayPlay';
+        o.label = `${o.label} (pay ${costWords(o.altManaStr)} — ${game.name(mayPlay.st.host)})`;
+      }
+    }
+  }
+  const base = opts.filter(o => !o.land && !o.altCost && !o.withoutMana && !o.mayPlayExtra);
+  if (!base.length) return opts;
+  game.ensureChars();
+  for (const { st, ctx } of game._activeStatics || []) {
+    const p = st.parsed.p;
+    if (!p.MayPlay || (mayPlay && mayPlay.st === st)) continue;
+    const zones = (p.AffectedZone || 'Battlefield').split(',').map(Z);
+    if (!zones.includes(card.zone)) continue;
+    // a permission for a zone the card can be cast from anyway only changes how (your hand), or says so outright
+    if (p.MayPlayDontGrantZonePermissions !== 'True' && card.zone !== 'hand') continue;
+    if (p.MayPlayWithoutManaCost !== 'True' && p.MayPlayAltManaCost == null && p.MayPlayWithFlash !== 'True') continue;
+    if (p.Affected && !matchValid(game, card, p.Affected, ctx)) continue;
+    const player = st.host.isEffect ? st.host.controller : ctx.you;
+    if (player !== pid && !/Player|Opponent/.test(p.MayPlayPlayer || '')) continue;
+    if (p.MayPlayPlayer && player !== pid && !matchValid(game, game.players[pid], p.MayPlayPlayer, ctx)) continue;
+    if (p.MayPlayLimit && mayPlayUsed(game, st) >= +p.MayPlayLimit) continue;
+    const mp = { st, without: p.MayPlayWithoutManaCost === 'True', ignoreType: p.MayPlayIgnoreType === 'True', ignoreColor: p.MayPlayIgnoreColor === 'True' };
+    for (const o of base) {
+      const extra = { ...o, key: `${o.key}~mp${st.host.id}${st.key}`, mayPlay: mp, mayPlayExtra: true };
+      let how;
+      if (mp.without) { extra.withoutMana = true; how = 'without paying its mana cost'; }
+      else if (p.MayPlayAltManaCost != null) { extra.altManaStr = altManaFor(game, card, p.MayPlayAltManaCost); extra.altCost = 'MayPlay'; how = `paying ${costWords(extra.altManaStr)} instead`; }
+      if (p.MayPlayWithFlash === 'True') { extra.mayFlash = true; how = how ? `${how}, with flash` : 'as though it had flash'; }
+      extra.label = `${o.label} ${how} (${game.name(st.host)})`;
+      opts.push(extra);
+    }
+  }
+  return opts;
 }

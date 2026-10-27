@@ -262,4 +262,224 @@ test('Charm ChoiceRestriction: Monument to Endurance chooses each mode once a tu
   expect(offered.length === 4 && offered[3].length === 3, 'all three again next turn');
 });
 
+// ------------------------------------------------------------ costs
+const poolSum = pl => Object.values(pl.pool).reduce((a, b) => a + b, 0);
+// mana a cast takes out of a full pool
+async function spentOn(T, name, pid = 0, opts = {}) {
+  T.mana(pid);
+  const before = poolSum(T.game.players[pid]);
+  const c = await T.cast(name, pid, { mana: false, ...opts });
+  return { spent: before - poolSum(T.game.players[pid]), card: c };
+}
+test('ValidTarget cost statics: Terror of the Peaks charges 3 life only to spells that target it', async T => {
+  const g = T.game;
+  const bear = await T.put(0, 'Grizzly Bears');
+  const terror = await T.put(0, 'Terror of the Peaks');
+  g.activePlayer = 1; g.priority = 1;
+  T.b.on('targets', () => [refOf(bear)]);
+  let life = T.B.life;
+  const r1 = await spentOn(T, 'Lightning Bolt', 1);
+  expect(r1.spent === 1 && T.B.life === life, `targeting the Bears: just {R} (${r1.spent} mana, ${life - T.B.life} life)`);
+  T.b.on('targets', () => [refOf(terror)]);
+  life = T.B.life;
+  const r2 = await spentOn(T, 'Lightning Bolt', 1);
+  expect(r2.spent === 1 && T.B.life === life - 3, `targeting Terror of the Peaks: {R} and 3 life (${r2.spent} mana, ${life - T.B.life} life)`);
+});
+test('ValidTarget cost statics: Savage Stomp costs {2} less only if it targets a Dinosaur you control', async T => {
+  const g = T.game;
+  const bear = await T.put(0, 'Grizzly Bears');
+  const opp = await T.put(1, 'Llanowar Elves');
+  let k = 0;
+  T.a.on('targets', req => [refOf([bear, opp][k++ % 2])]);
+  const r1 = await spentOn(T, 'Savage Stomp');
+  expect(r1.spent === 3, `a non-Dinosaur: full {2}{G} (${r1.spent})`);
+  const dino = await T.put(0, 'Ghalta, Primal Hunger');
+  const opp2 = await T.put(1, 'Llanowar Elves');
+  k = 0;
+  T.a.on('targets', req => [refOf([dino, opp2][k++ % 2])]);
+  const r2 = await spentOn(T, 'Savage Stomp');
+  expect(r2.spent === 1, `a Dinosaur: just {G} (${r2.spent})`);
+});
+test('Relative cost statics: Fireball costs {1} more per extra target; Damping Sphere counts the caster\'s spells', async T => {
+  const g = T.game;
+  const a = await T.put(1, 'Grizzly Bears'), b = await T.put(1, 'Llanowar Elves');
+  T.a.on('xValue', () => 2).on('targets', () => [refOf(a), refOf(b)]);
+  const r = await spentOn(T, 'Fireball');
+  expect(r.spent === 1 + 2 + 1, `X=2 with two targets: {2}{R} + {1} (${r.spent})`);
+  await T.put(1, 'Damping Sphere');
+  T.A.spellsCastThisTurn = []; g.turnState.spellsCast = [];
+  T.a.on('targets', () => ['p1']);
+  const s1 = await spentOn(T, 'Lightning Bolt');
+  const s2 = await spentOn(T, 'Lightning Bolt');
+  expect(s1.spent === 1 && s2.spent === 2, `the caster's second spell costs {1} more (${s1.spent}, ${s2.spent})`);
+  g.activePlayer = 1; g.priority = 1;
+  T.b.on('targets', () => ['p0']);
+  const s3 = await spentOn(T, 'Lightning Bolt', 1);
+  expect(s3.spent === 1, `another player's first spell isn't taxed by the first player's spells (${s3.spent})`);
+});
+test('Announced additional costs: March of Swirling Mist exiles blue cards to cost {2} less each', async T => {
+  const g = T.game;
+  const bear = await T.put(1, 'Grizzly Bears');
+  const blue1 = await T.put(0, 'Counterspell', 'hand'), blue2 = await T.put(0, 'Brainstorm', 'hand');
+  T.a.on('xValue', () => 1).on('targets', () => [refOf(bear)]).on('announce', req => req.max).on('costExileFromHand', req => req.cards.slice(0, req.max));
+  const r = await spentOn(T, 'March of Swirling Mist');
+  expect(blue1.zone === 'exile' && blue2.zone === 'exile', `both blue cards exiled (${blue1.zone}, ${blue2.zone})`);
+  expect(r.spent === 1, `{X}{U}{U} with X=1 less {4}: just one mana (${r.spent})`);
+  expect(bear.phasedOut, 'the target phased out');
+});
+test('Ability cost statics: Training Grounds makes creatures\' abilities cost {2} less, never below one mana', async T => {
+  const g = T.game;
+  await T.put(0, 'Training Grounds');
+  const spent = async (card, idx = 0) => { T.mana(0); const b = poolSum(T.A); await T.activate(card, 0, idx); card.tapped = false; return b - poolSum(T.A); };
+  const shade = await T.put(0, 'Frozen Shade'); // {B}: +1/+1
+  expect(await spent(shade) === 1, 'Frozen Shade still costs {B}');
+  const cliff = await T.put(0, 'Cliffside Lookout'); // {4}{W}: creatures you control get +1/+1
+  const n = await spent(cliff);
+  expect(n === 3, `Cliffside Lookout's {4}{W} costs {2}{W} (${n})`);
+  const pyro = await T.put(0, 'Prodigal Pyromancer'); // {T}: 1 damage
+  T.a.on('targets', () => ['p1']);
+  expect(await spent(pyro) === 0, 'a tap-only ability stays free');
+  const sol = await T.put(0, 'Sol Ring');
+  const ring = await T.put(0, 'Mind Stone'); // {1}, {T}, sacrifice: draw — not a creature
+  expect(await spent(ring, a => a.parsed.api === 'Draw') === 1, 'a noncreature\'s ability is unchanged');
+});
+test('Ability cost raises: Kopala, Warden of Waves taxes abilities that target a Merfolk', async T => {
+  const g = T.game;
+  await T.put(0, 'Kopala, Warden of Waves');
+  const merfolk = await T.put(0, 'Merfolk Looter');
+  const bear = await T.put(0, 'Grizzly Bears');
+  const pyro = await T.put(1, 'Prodigal Pyromancer');
+  const spent = async (target) => { T.mana(1); const b = poolSum(T.B); T.b.on('targets', () => [refOf(target)]); await T.activate(pyro, 1, 0); pyro.tapped = false; return b - poolSum(T.B); };
+  expect(await spent(bear) === 0, 'targeting a non-Merfolk: free');
+  expect(await spent(merfolk) === 2, 'targeting a Merfolk: {2} more');
+});
+test('Mana conversion: Chromatic Orrery pays colored costs with colorless; Vizier of the Menagerie for creature spells', async T => {
+  const g = T.game;
+  const { canAfford } = await import('../src/engine/abilities.js');
+  const { parseMana } = await import('../src/engine/mana.js');
+  T.noMana(0); T.A.pool.C = 2;
+  const angel = await T.put(0, 'Serra Angel', 'hand');
+  T.A.pool.C = 5;
+  const ok0 = castableOptions(g, 0, angel).length > 0;
+  expect(!ok0, 'without it, {C}{C}{C}{C}{C} can\'t cast Serra Angel');
+  await T.put(0, 'Vizier of the Menagerie');
+  expect(castableOptions(g, 0, angel).length > 0, 'Vizier: colorless mana casts a creature spell');
+  const bolt = await T.put(0, 'Lightning Bolt', 'hand');
+  expect(castableOptions(g, 0, bolt).length === 0, 'but not a noncreature spell');
+  await T.put(0, 'Chromatic Orrery');
+  expect(castableOptions(g, 0, bolt).length > 0, 'Chromatic Orrery: any spell');
+  g.priority = 0;
+  const ok = await castSpell(g, 0, bolt, {});
+  expect(ok && T.A.pool.C === 4, `cast with {C} (${T.A.pool.C} left)`);
+});
+test('Drought: spells cost an additional "sacrifice a Swamp" per black symbol', async T => {
+  const g = T.game;
+  await T.put(1, 'Drought');
+  const s1 = await T.put(0, 'Swamp'), s2 = await T.put(0, 'Swamp');
+  const bear = await T.put(1, 'Grizzly Bears');
+  T.a.on('targets', () => [refOf(bear)]);
+  await T.cast('Doom Blade');
+  expect([s1, s2].filter(s => s.zone === 'graveyard').length === 1 && bear.zone === 'graveyard', `one Swamp sacrificed for {1}{B} (${s1.zone}, ${s2.zone})`);
+  const elf = await T.put(1, 'Llanowar Elves');
+  T.a.on('targets', () => [refOf(elf)]);
+  await T.cast('Lightning Bolt');
+  expect(s2.zone === 'battlefield' || s1.zone === 'battlefield', 'a red spell needs no Swamp');
+});
+test('OptionalCost on other permanents: Defiler of Vigor — pay 2 life, the green permanent spell costs {G} less', async T => {
+  const g = T.game;
+  await T.put(0, 'Defiler of Vigor');
+  T.a.on('optionalCost', () => true);
+  const life = T.A.life;
+  const r = await spentOn(T, 'Grizzly Bears');
+  expect(r.spent === 1 && T.A.life === life - 2, `{1}{G} less {G}, and 2 life (${r.spent} mana, ${life - T.A.life} life)`);
+  const r2 = await spentOn(T, 'Lightning Bolt', 0, { resolve: true });
+  expect(T.A.life === life - 2, 'not offered for a red spell');
+});
+
+// ------------------------------------------------------------ casting permissions
+test('MayPlayAltManaCost: Bolas\'s Citadel casts the top card for life, not mana', async T => {
+  const g = T.game;
+  await T.put(0, "Bolas's Citadel");
+  const top = await T.put(0, 'Serra Angel', 'library');
+  T.noMana(0);
+  g.priority = 0;
+  const acts = getActions(g, 0).filter(a => a.cardId === top.id);
+  expect(acts.length === 1 && /pay 5 life/.test(acts[0].label), `one way, paying 5 life (${acts.map(a => a.label)})`);
+  const life = T.A.life;
+  await g.performAction(0, acts[0]);
+  await T.resolve();
+  expect(top.zone === 'battlefield' && T.A.life === life - 5, `cast for 5 life (${top.zone}, ${life - T.A.life})`);
+  const land = await T.put(0, 'Forest', 'library');
+  expect(getActions(g, 0).some(a => a.cardId === land.id && a.type === 'land'), 'a land on top can still be played');
+});
+test('MayPlay in hand: Omniscience casts spells from your hand without paying their mana costs', async T => {
+  const g = T.game;
+  await T.put(0, 'Omniscience');
+  const angel = await T.put(0, 'Serra Angel', 'hand');
+  T.noMana(0);
+  g.priority = 0;
+  const act = getActions(g, 0).find(a => a.cardId === angel.id);
+  expect(act && /without paying/.test(act.label), `offered free (${act && act.label})`);
+  await g.performAction(0, act);
+  await T.resolve();
+  expect(angel.zone === 'battlefield', 'cast for free');
+});
+test('MayPlayDontGrantZonePermissions: As Foretold\'s {0} works once a turn and doesn\'t let you cast from your graveyard', async T => {
+  const g = T.game;
+  const af = await T.put(0, 'As Foretold');
+  af.counters.TIME = 3;
+  const gy = await T.put(0, 'Grizzly Bears', 'graveyard');
+  const a = await T.put(0, 'Grizzly Bears', 'hand'), b = await T.put(0, 'Llanowar Elves', 'hand');
+  T.noMana(0);
+  g.priority = 0;
+  expect(!getActions(g, 0).some(x => x.cardId === gy.id), 'nothing from the graveyard');
+  const act = getActions(g, 0).find(x => x.cardId === a.id);
+  expect(act && /\{0\}/.test(act.label), `the Bears for {0} (${act && act.label})`);
+  await g.performAction(0, act);
+  await T.resolve();
+  expect(a.zone === 'battlefield', 'cast for {0}');
+  expect(!getActions(g, 0).some(x => x.cardId === b.id), 'only once each turn');
+  g.turnState = g.freshTurnState();
+  expect(getActions(g, 0).some(x => x.cardId === b.id), 'again next turn');
+});
+test('MayPlayWithFlash and MayPlayPlayer: Aluren lets any player cast small creatures free, as though they had flash', async T => {
+  const g = T.game;
+  await T.put(0, 'Aluren');
+  const elf = await T.put(1, 'Llanowar Elves', 'hand');
+  const angel = await T.put(1, 'Serra Angel', 'hand');
+  T.noMana(1);
+  g.priority = 1; // on A's turn
+  const acts = getActions(g, 1);
+  expect(acts.some(x => x.cardId === elf.id) && !acts.some(x => x.cardId === angel.id), 'B may cast the Elves on A\'s turn, not the Angel');
+  await g.performAction(1, acts.find(x => x.cardId === elf.id));
+  await T.resolve();
+  expect(elf.zone === 'battlefield', 'cast for free at instant speed');
+});
+test('MayPlayLimit counts per static and per turn: Muldrotha plays a land and casts a creature from the graveyard', async T => {
+  const g = T.game;
+  await T.put(0, 'Muldrotha, the Gravetide');
+  const land = await T.put(0, 'Forest', 'graveyard');
+  const c1 = await T.put(0, 'Grizzly Bears', 'graveyard'), c2 = await T.put(0, 'Llanowar Elves', 'graveyard');
+  T.mana(0);
+  g.priority = 0;
+  await g.performAction(0, getActions(g, 0).find(x => x.cardId === c1.id));
+  await T.resolve();
+  expect(c1.zone === 'battlefield', 'a creature from the graveyard');
+  T.mana(0);
+  expect(!getActions(g, 0).some(x => x.cardId === c2.id), 'not a second creature this turn');
+  expect(getActions(g, 0).some(x => x.cardId === land.id), 'but still a land');
+  g.turnState = g.freshTurnState();
+  expect(getActions(g, 0).some(x => x.cardId === c2.id), 'another creature next turn');
+});
+test('TopCardOfLibraryIs: Vampire Nocturnus gets +2/+1 and flying only while the top card is black', async T => {
+  const g = T.game;
+  const vn = await T.put(0, 'Vampire Nocturnus');
+  await T.put(0, 'Forest', 'library');
+  g.touch();
+  expect(g.chars(vn).power === 3 && !g.chars(vn).keywords.includes('Flying'), `a land on top: 3/3 (${g.chars(vn).power})`);
+  await T.put(0, 'Doom Blade', 'library');
+  g.touch();
+  expect(g.chars(vn).power === 5 && g.chars(vn).keywords.includes('Flying'), `a black card on top: 5/4 flying (${g.chars(vn).power})`);
+});
+
 process.exit(await run(tests) ? 1 : 0);
