@@ -482,4 +482,105 @@ test('TopCardOfLibraryIs: Vampire Nocturnus gets +2/+1 and flying only while the
   expect(g.chars(vn).power === 5 && g.chars(vn).keywords.includes('Flying'), `a black card on top: 5/4 flying (${g.chars(vn).power})`);
 });
 
+// ------------------------------------------------------------ characteristics
+test('GainsAbilitiesOfZones: Necrotic Ooze has the activated abilities of creature cards in graveyards, not on the battlefield', async T => {
+  const g = T.game;
+  const ooze = await T.put(0, 'Necrotic Ooze');
+  await T.put(0, 'Frozen Shade'); // on the battlefield: not gained
+  await T.put(1, 'Prodigal Pyromancer', 'graveyard');
+  g.touch();
+  const abil = activatedAbilities(g, 0, ooze);
+  expect(abil.some(a => a.parsed.api === 'DealDamage') && !abil.some(a => a.parsed.api === 'Pump'), `the Pyromancer's ping, not the Shade's pump (${abil.map(a => a.parsed.api)})`);
+  T.a.on('targets', () => ['p1']);
+  const life = T.B.life;
+  await T.activate(ooze, 0, a => a.parsed.api === 'DealDamage');
+  expect(T.B.life === life - 1, 'and it works');
+});
+test('GainsAbilitiesOf exiled cards + ManaConvert: Agatha\'s Soul Cauldron', async T => {
+  const g = T.game;
+  const pot = await T.put(0, "Agatha's Soul Cauldron");
+  const shade = await T.put(0, 'Frozen Shade', 'graveyard');
+  const bear = await T.put(0, 'Grizzly Bears');
+  T.a.on('targets', req => req.cands.includes(refOf(shade)) ? [refOf(shade)] : [refOf(bear)]);
+  await T.activate(pot, 0, a => a.parsed.api === 'ChangeZone');
+  expect(shade.zone === 'exile' && bear.counters.P1P1 === 1, `exiled, and a +1/+1 counter on the Bears (${shade.zone}, ${bear.counters.P1P1})`);
+  g.touch();
+  const abil = activatedAbilities(g, 0, bear);
+  expect(abil.some(a => a.parsed.api === 'Pump'), 'the Bears have the Shade\'s {B}: +1/+1');
+  // any color of mana pays it
+  T.noMana(0); T.A.pool.G = 1;
+  bear.sick = false; g.priority = 0;
+  const act = getActions(g, 0).find(x => x.cardId === bear.id && x.api === 'Pump');
+  expect(act, '{G} pays the {B} ability');
+  await g.performAction(0, act); await T.resolve();
+  expect(g.chars(bear).power === 4, `pumped (${g.chars(bear).power})`);
+  const elf = await T.put(0, 'Llanowar Elves');
+  expect(!activatedAbilities(g, 0, elf).some(a => a.parsed.api === 'Pump'), 'a creature without a counter doesn\'t');
+});
+test('SharedKeywordsZone: Cairn Wanderer has only the keywords creature cards in graveyards have', async T => {
+  const g = T.game;
+  const cw = await T.put(0, 'Cairn Wanderer');
+  g.touch();
+  expect(!g.chars(cw).keywords.some(k => /Flying|Trample|Lifelink/.test(k)), `nothing yet (${g.chars(cw).keywords})`);
+  await T.put(1, 'Serra Angel', 'graveyard');
+  g.touch();
+  const kws = g.chars(cw).keywords;
+  expect(kws.includes('Flying') && kws.includes('Vigilance') && !kws.includes('Trample'), `flying and vigilance from Serra Angel (${kws})`);
+});
+test('SharedKeywordsZone on an effect: Odric, Lunarch Marshal shares only keywords your creatures have', async T => {
+  const g = T.game;
+  await T.put(0, 'Odric, Lunarch Marshal');
+  const bear = await T.put(0, 'Grizzly Bears');
+  await T.put(0, 'Serra Angel');
+  g.fire('Phase', { Phase: 'BeginCombat', Player: 0 });
+  await T.resolve();
+  const kws = g.chars(bear).keywords;
+  expect(kws.includes('Flying') && kws.includes('Vigilance') && !kws.includes('Trample') && !kws.includes('Deathtouch'), `flying and vigilance only (${kws})`);
+});
+test('CantHaveKeyword: Archetype of Courage — opponents\' creatures lose first strike and can\'t gain it', async T => {
+  const g = T.game;
+  await T.put(0, 'Archetype of Courage');
+  const knight = await T.put(1, 'White Knight');
+  g.touch();
+  expect(!g.chars(knight).keywords.includes('First Strike'), 'loses first strike');
+  T.b.on('targets', () => [refOf(knight)]);
+  await T.cast('Brute Force', 1);
+  const elite = await T.put(1, 'Grizzly Bears');
+  T.b.on('targets', () => [refOf(elite)]);
+  g.activePlayer = 1;
+  await T.cast('Bladed Pinions', 1).catch(() => {});
+  g.activePlayer = 0;
+  knight.counters.FIRSTSTRIKE = 1;
+  g.touch();
+  expect(!g.chars(knight).keywords.includes('First Strike'), `not from a counter either (${g.chars(knight).keywords})`);
+  const mine = await T.put(0, 'White Knight');
+  expect(g.chars(mine).keywords.includes('First Strike'), 'its controller\'s own creatures keep it');
+});
+test('RemoveNonManaAbilities: under Blood Sun, lands keep only their mana abilities', async T => {
+  const g = T.game;
+  await T.put(1, 'Blood Sun');
+  const fetch = await T.put(0, 'Polluted Delta');
+  const mine = await T.put(0, 'Mutavault');
+  g.touch();
+  expect(!activatedAbilities(g, 0, fetch).length, 'the fetchland has no ability');
+  const ab = g.chars(mine).abilities;
+  expect(ab.length > 0 && ab.every(a => a.parsed.api === 'Mana'), `Mutavault keeps only {T}: Add {C} (${ab.map(a => a.parsed.api)})`);
+  const forest = await T.put(0, 'Forest');
+  expect(g.chars(forest).abilities.some(a => a.parsed.api === 'Mana'), 'basic lands still tap for mana');
+});
+test('SetName and AddReplacementEffect: Witness Protection renames; Cloudsteel Kirin\'s player can\'t lose', async T => {
+  const g = T.game;
+  const angel = await T.put(1, 'Serra Angel');
+  await T.put(0, 'Witness Protection', 'battlefield', { attachTo: angel.id });
+  g.touch();
+  expect(g.chars(angel).name === 'Legitimate Businessperson' && g.chars(angel).power === 1 && !g.chars(angel).keywords.includes('Flying'), `a 1/1 Legitimate Businessperson (${g.chars(angel).name})`);
+  const kirin = await T.put(0, 'Cloudsteel Kirin');
+  const bear = await T.put(0, 'Grizzly Bears');
+  kirin.attachedTo = bear.id;
+  g.touch();
+  T.A.life = 0;
+  await g.processTriggersAndSBA();
+  expect(!T.A.lost, 'with the Kirin attached, A doesn\'t lose at 0 life');
+});
+
 process.exit(await run(tests) ? 1 : 0);

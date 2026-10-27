@@ -4,6 +4,7 @@ import { parseAbility } from './forge.js';
 import { cmc } from './mana.js';
 import { BASIC_LAND_TYPES, NAME_TO_COLOR, COLORS } from './util.js';
 import { matchValid, resolveDefined, calcCtx, checkPresence, zoneMap } from './filters.js';
+import { addKeywordList, paramAbilitiesLayer, paramFinalLayer } from './mech-params.js';
 
 const FACE_DOWN = { name: '', manaCost: null, supertypes: [], types: ['Creature'], subtypes: [], colors: [], power: '2', toughness: '2', loyalty: null, keywords: [], abilities: [], triggers: [], statics: [], replacements: [], svars: {}, oracle: '' };
 
@@ -338,7 +339,7 @@ export function computeAll(game) {
       if (p.RemoveAllAbilities) { ch.abilities = []; ch.triggers = []; ch.statics = []; ch.replacements = []; ch.keywords = []; }
       // a spell that was cast keeps what it was given as it was cast (castGrants, below), not what's true now
       const locked = toSpells && c.zone === 'stack' && c.castGrants;
-      if (p.AddKeyword && !locked) for (const k of p.AddKeyword.split(' & ')) ch.keywords.push(k.replace('ChosenColor', (st.host.chosen && st.host.chosen.colors || ['W']).map(x => ({ W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' })[x]).join('')));
+      if (p.AddKeyword && !locked) for (const k of addKeywordList(game, st, ctx, p.AddKeyword)) ch.keywords.push(k.replace('ChosenColor', (st.host.chosen && st.host.chosen.colors || ['W']).map(x => ({ W: 'white', U: 'blue', B: 'black', R: 'red', G: 'green' })[x]).join('')));
       if (p.AddHiddenKeyword) for (const k of p.AddHiddenKeyword.split(' & ')) ch.keywords.push(k);
       if (p.RemoveKeyword) { const rm = p.RemoveKeyword.split(' & '); ch.keywords = ch.keywords.filter(k => !rm.includes(k)); }
       if (p.AddAbility) grantAbilities(ch, p.AddAbility, st.svars, st.host, 'A', 's' + st.host.id + st.key);
@@ -347,7 +348,7 @@ export function computeAll(game) {
       if (p.AddReplacementEffects) grantAbilities(ch, p.AddReplacementEffects, st.svars, st.host, 'R', 's' + st.host.id + st.key);
       if (p.AddSVar) for (const n of p.AddSVar.split(' & ')) if (st.svars[n]) ch.svars = { ...ch.svars, [n]: st.svars[n] };
       // "CARDNAME has all activated abilities of all lands on the battlefield"
-      if (p.GainsAbilitiesOf) {
+      if (p.GainsAbilitiesOf && !p.GainsAbilitiesOfZones) {
         const types = p.GainsAbilitiesOf.split(',').map(x => x.trim());
         for (const x of bf) {
           if (x.id === c.id || x.phasedOut) continue;
@@ -358,6 +359,7 @@ export function computeAll(game) {
       }
     }
   }
+  paramAbilitiesLayer(game, active, map, (st, ctx) => affectedCards(game, st, ctx, map), c => map.get(c.id) || lazy(game, c)); // gained from other cards, Blood Sun (mech-params.js)
   // continuous statics granted in layer 6 (AddStaticAbility, granted by other statics) apply from layer 7 on
   const known = new Set(statics.map(st => st.raw + '|' + st.host.id));
   for (const c of bf) {
@@ -381,6 +383,7 @@ export function computeAll(game) {
     if (ch.keywords.includes('Changeling')) ch.allCreatureTypes = true;
     if (ch.keywords.includes('Devoid')) ch.colors = new Set();
   }
+  paramFinalLayer(game, active, map, (st, ctx) => affectedCards(game, st, ctx, map), c => map.get(c.id) || lazy(game, c)); // can't-have keywords, names (mech-params.js)
   // layer 7a/7b: base & set P/T
   for (const c of all) { const ch = map.get(c.id); applyOwnMods(game, c, ch, 7); }
   for (const { st, ctx } of active) {

@@ -5,6 +5,7 @@
 import { matchValid, resolveDefined, calcCtx, compareSpec, ctxOf, zoneMap, matchCastSA } from './filters.js';
 import { parseMana, cloneCost, addCosts, cmc } from './mana.js';
 import { parseAbility } from './forge.js';
+import { abilityList } from './cards.js';
 
 const engine = () => import('./abilities.js');
 const effectsModule = () => import('./effects.js');
@@ -120,6 +121,8 @@ export async function beforeEffect(game, sa) {
       over = { ...over, Destination: p.DestinationAlternative, LibraryPosition: p.LibraryPositionAlternative ?? '0' };
     }
   }
+  // "creatures you control gain each of those keywords that a creature you control has" (Odric, Majestic Myriarch)
+  if (p.SharedKeywordsZone && p.KW && (sa.api === 'Pump' || sa.api === 'PumpAll')) over = { ...over, KW: sharedKeywords(game, p.KW.split(' & '), p.SharedKeywordsZone, p.SharedRestrictions, ctxOf(game, sa)).join(' & ') };
   if (p.PersistentMana === 'True' && sa.api === 'Mana') sa._poolBefore = { ...game.players[sa.controller].pool };
   if (p.RememberDrawn && sa.api === 'Draw') sa._handsBefore = game.players.map(pl => new Set(pl.hand.map(c => c.id)));
   if (p.RememberDamaged === 'True' && sa.api === 'DamageAll') sa._damageFrom = game.turnState.damageLog.length;
@@ -750,3 +753,157 @@ export function mayPlayOptions(game, pid, card, opts, mayPlay) {
   }
   return opts;
 }
+
+// ---------------------------------------------------------------- characteristics (chars.js computeAll)
+// AddKeyword lists: SharedKeywordsZone$ keeps only the keywords cards there have (Soulflayer, Cairn Wanderer, Eater of
+// Virtue, Urborg Scavengers), CalcKeywordN$ fills in N (Kodama of the Center Tree), KeywordDefined$ for "protection
+// from each mana value among" (Rebbec)
+export function addKeywordList(game, st, ctx, addKeyword) {
+  let list = String(addKeyword).split(' & ');
+  const p = st.parsed ? st.parsed.p : st.p;
+  if (p.CalcKeywordN) { const n = calcCtx(game, p.CalcKeywordN, ctx); list = list.map(k => k.replace(/\bN\b/, String(n))); }
+  if (p.KeywordDefined) {
+    const out = [];
+    for (const k of list) {
+      if (!/EachCMCAmongDefined/.test(k)) { out.push(k); continue; }
+      const mvs = new Set(game.battlefield.filter(c => matchValid(game, c, p.KeywordDefined, ctx)).map(c => game.chars(c).cmc));
+      for (const mv of mvs) out.push(`Protection:Card.cmcEQ${mv}:Protection from mana value ${mv}`);
+    }
+    list = out;
+  }
+  if (p.SharedKeywordsZone) list = sharedKeywords(game, list, p.SharedKeywordsZone, p.SharedRestrictions, ctx);
+  return list;
+}
+
+// the keywords in a list that cards in those zones (matching the restrictions) have (CardFactoryUtil.sharedKeywords)
+function sharedKeywords(game, list, zonesSpec, restrictions, ctx) {
+  const zones = zonesSpec.split(',').map(Z);
+  const cards = [];
+  for (const z of zones) cards.push(...(z === 'battlefield' ? game.battlefield : game.cardsInZone(z)));
+  const pool = cards.filter(c => matchValid(game, c, restrictions || 'Card', ctx));
+  const have = new Set(), prot = new Set(), protColor = new Set(), walk = new Set(), hexproof = new Set(), trample = new Set();
+  for (const c of pool) {
+    const ch = game.chars(c);
+    for (const k of ch.keywords || []) {
+      const name = k.split(':')[0];
+      if (/walk$/.test(name) || name === 'Landwalk') walk.add(k);
+      else if (/^Protection/.test(k)) {
+        prot.add(k);
+        for (const col of ['white', 'blue', 'black', 'red', 'green']) if (k === `Protection from ${col}` || k.includes(`${col[0].toUpperCase() + col.slice(1)}:${col}`)) protColor.add(`Protection from ${col}`);
+      } else if (/^Hexproof/.test(k)) hexproof.add(k);
+      else if (name === 'Trample') trample.add(k);
+      else have.add(k.toLowerCase());
+    }
+  }
+  const out = [];
+  for (const k of list) {
+    if (k === 'Protection') out.push(...prot);
+    else if (k === 'ProtectionColor') out.push(...protColor);
+    else if (k === 'Landwalk') out.push(...walk);
+    else if (k === 'Hexproof') out.push(...hexproof);
+    else if (k === 'Trample') out.push(...trample);
+    else if (have.has(k.toLowerCase())) out.push(k);
+  }
+  return [...new Set(out)];
+}
+
+// is this ability entry one of these ("Activated", "Activated.Loyalty", "Activated.!ManaAbility")?
+function entryIs(entry, spec) {
+  return String(spec).split(',').some(alt => {
+    const [type, ...rest] = alt.trim().split('.');
+    if (type !== 'Activated' && type !== 'SpellAbility') return false;
+    if (entry.parsed.kind !== 'AB') return false;
+    const p = entry.parsed.p;
+    return rest.join('.').split('+').filter(Boolean).every(pr => {
+      const neg = pr.startsWith('!'); const q = neg ? pr.slice(1) : pr;
+      const r = q === 'Loyalty' ? p.Planeswalker === 'True' : q === 'ManaAbility' ? entry.parsed.api === 'Mana' : false;
+      return neg ? !r : r;
+    });
+  });
+}
+
+// Layer 6, after the statics' own grants: abilities gained from other cards (GainsAbilitiesOf$ with
+// GainsAbilitiesOfZones$, GainsAbilitiesOfDefined$, GainsValidAbilities$, GainsAbilitiesLimitPerTurn$,
+// GainsTriggerAbsOf$, ManaConversion$: Necrotic Ooze, Agatha's Soul Cauldron, Drana and Linvala, Mairsil, Koh),
+// AddReplacementEffect$ (Master Chef, Cloudsteel Kirin), RemoveNonManaAbilities$ (Blood Sun)
+export function paramAbilitiesLayer(game, active, map, affected, chOf) {
+  for (const { st, ctx } of active) {
+    const p = st.parsed.p;
+    if (!(p.GainsAbilitiesOf || p.GainsAbilitiesOfDefined || p.GainsTriggerAbsOf || p.AddReplacementEffect || p.RemoveNonManaAbilities)) continue;
+    const targets = affected(st, ctx);
+    if (!targets.length) continue;
+    const sources = spec => {
+      if (!spec) return [];
+      if (spec === p.GainsAbilitiesOfDefined) return resolveDefined(game, spec, ctx).map(o => (o && o.lki ? game.cardById(o.id) || o : o)).filter(o => o && (o.isCard || o.lki));
+      const zones = (p.GainsAbilitiesOfZones || 'Battlefield').split(',').map(Z);
+      const out = [];
+      for (const z of zones) for (const c of z === 'battlefield' ? game.battlefield : game.cardsInZone(z)) if (!c.phasedOut && matchValid(game, c, spec, ctx)) out.push(c);
+      return out;
+    };
+    const abilitiesOf = (c, kind) => {
+      if (c.zone === 'battlefield' && map.get(c.id)) return map.get(c.id)[kind];
+      const f = c.lki ? null : c.faceDef;
+      if (!f) return (c.chars && c.chars[kind]) || [];
+      return abilityList(kind === 'abilities' ? f.abilities : f.triggers, f.svars, c, `${c.face}${kind === 'abilities' ? 'A' : 'T'}`);
+    };
+    const gainFrom = [...sources(p.GainsAbilitiesOf), ...sources(p.GainsAbilitiesOfDefined)];
+    const trigFrom = sources(p.GainsTriggerAbsOf);
+    for (const c of targets) {
+      const ch = chOf(c);
+      for (const src of gainFrom) {
+        if (src.id === c.id) continue;
+        for (const a of abilitiesOf(src, 'abilities')) {
+          if (a.gainedFrom != null || a.parsed.kind !== 'AB') continue;
+          if (p.GainsValidAbilities && !entryIs(a, p.GainsValidAbilities)) continue;
+          if (ch.abilities.some(b => b.raw === a.raw && b.gainedFrom === src.id)) continue;
+          if (ch.abilities.some(b => b.raw === a.raw && b.gainedFrom == null && a.src === c)) continue;
+          let entry = { ...a, key: `ga${src.id}:${a.key}`, gainedFrom: src.id };
+          // "you can activate each of those abilities only once each turn" (Mairsil, the Pretender)
+          if (p.GainsAbilitiesLimitPerTurn) { const raw = `${a.raw} | ActivationLimit$ ${p.GainsAbilitiesLimitPerTurn}`; entry = { ...entry, raw, parsed: parseAbility(raw) }; }
+          // "you may spend mana as though it were mana of any type to activate those abilities"
+          if (p.ManaConversion) entry.manaConversion = p.ManaConversion;
+          ch.abilities.push(entry);
+        }
+      }
+      for (const src of trigFrom) {
+        if (src.id === c.id) continue;
+        for (const t of abilitiesOf(src, 'triggers')) if (!ch.triggers.some(b => b.raw === t.raw && b.gainedFrom === src.id)) ch.triggers.push({ ...t, key: `gt${src.id}:${t.key}`, gainedFrom: src.id });
+      }
+      if (p.AddReplacementEffect) {
+        for (const n of p.AddReplacementEffect.split(' & ').map(x => x.trim())) {
+          const raw = st.svars[n];
+          if (raw && /\$/.test(raw) && !ch.replacements.some(r => r.key === `sr${st.host.id}${st.key}:${n}`)) ch.replacements.push({ raw, parsed: parseAbility(raw), svars: st.svars, src: st.host, key: `sr${st.host.id}${st.key}:${n}` });
+        }
+      }
+      // "All lands lose all abilities except mana abilities." (Blood Sun: shocklands enter untapped, fetchlands do nothing)
+      if (p.RemoveNonManaAbilities) {
+        ch.abilities = ch.abilities.filter(a => a.parsed.api === 'Mana');
+        ch.triggers = []; ch.statics = []; ch.replacements = [];
+      }
+    }
+  }
+}
+
+// After every layer-6 grant (including keyword counters): "can't have or gain" (the Archetypes, Arcane Lighthouse),
+// names set by effects (Witness Protection, Psychic Paper), artifact subtypes removed (Swift Reconfiguration)
+export function paramFinalLayer(game, active, map, affected, chOf) {
+  for (const { st, ctx } of active) {
+    const p = st.parsed.p;
+    if (!(p.CantHaveKeyword || p.SetName || p.RemoveArtifactTypes)) continue;
+    for (const c of affected(st, ctx)) {
+      const ch = chOf(c);
+      if (p.CantHaveKeyword) {
+        const no = p.CantHaveKeyword.split(' & ').map(k => k.trim());
+        ch.keywords = ch.keywords.filter(k => !no.some(n => k === n || k.startsWith(n + ':') || (n === 'Hexproof' && /^Hexproof/.test(k)) || (n === 'Protection' && /^Protection/.test(k))));
+        (ch.cantHave = ch.cantHave || []).push(...no);
+      }
+      if (p.SetName) ch.name = p.SetName === 'ChosenName' ? ((st.host.chosen && st.host.chosen.name) || ch.name) : p.SetName;
+      if (p.RemoveArtifactTypes) {
+        const keep = new Set(String(p.AddType || '').split(' & ').map(x => x.trim()));
+        for (const t of [...ch.subtypes]) if (ARTIFACT_TYPES.has(t) && !keep.has(t)) ch.subtypes.delete(t);
+      }
+    }
+  }
+}
+const ARTIFACT_TYPES = new Set(['Attraction', 'Blood', 'Bobblehead', 'Clue', 'Contraption', 'Equipment', 'Food', 'Fortification', 'Gold', 'Incubator', 'Infinity', 'Junk', 'Lander', 'Map', 'Powerstone', 'Shard', 'Spacecraft', 'Stone', 'Treasure', 'Vehicle']);
+
