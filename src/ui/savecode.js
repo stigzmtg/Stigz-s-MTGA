@@ -16,6 +16,8 @@ const OURS = /^(pa|pk|op)-/;
 const LOCAL = /^pa-(cid|savecode|account|device|open-replay|home-join|uisize|motion)$|^pa-room(cfg)?-/;
 const REPLAY = /^pa-replay-(.+)$/;
 const DECKS = 'pa-custom-decks', GONE = 'pa-deleted-decks', SEEN = 'pa-deck-cache';
+// your own decks, the ones you deleted and others' you met, for each game that keeps them (One Piece: optcg/ui/mydecks.js)
+const DECK_SETS = [[DECKS, GONE, SEEN], ['op-custom-decks', 'op-deleted-decks', 'op-deck-cache']];
 const MAX_PACKED = 2_400_000;               // the server takes up to 2,500,000 characters
 export const TEXT_PREFIX = 'TCGSAVE:';
 export const CODE_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -76,21 +78,23 @@ export function mergeSaves(a, b, winner = 'b') {
     return r.replay ? { ...r, replay: false } : r;
   });
   if (games.length) out[REC_KEY] = JSON.stringify(games); else delete out[REC_KEY];
-  // your own decks: the latest version of each, except ones deleted on either side
-  const gone = [...new Set([...list(lose[GONE]), ...list(win[GONE])].filter(x => typeof x === 'string'))].slice(-300);
-  const decks = new Map();
-  for (const d of [...list(win[DECKS]), ...list(lose[DECKS])]) {
-    if (!d || typeof d.id !== 'string' || gone.includes(d.id)) continue;
-    const had = decks.get(d.id);
-    if (!had || (d.updated || 0) > (had.updated || 0)) decks.set(d.id, d);
+  for (const [DECKS, GONE, SEEN] of DECK_SETS) {
+    // your own decks: the latest version of each, except ones deleted on either side
+    const gone = [...new Set([...list(lose[GONE]), ...list(win[GONE])].filter(x => typeof x === 'string'))].slice(-300);
+    const decks = new Map();
+    for (const d of [...list(win[DECKS]), ...list(lose[DECKS])]) {
+      if (!d || typeof d.id !== 'string' || gone.includes(d.id)) continue;
+      const had = decks.get(d.id);
+      if (!had || (d.updated || 0) > (had.updated || 0)) decks.set(d.id, d);
+    }
+    if (decks.size) out[DECKS] = JSON.stringify([...decks.values()].sort((x, y) => (y.updated || 0) - (x.updated || 0)));
+    else delete out[DECKS];
+    if (gone.length) out[GONE] = JSON.stringify(gone);
+    // others' decks met in rooms and replays
+    const seen = new Map();
+    for (const d of [...list(win[SEEN]), ...list(lose[SEEN])]) if (d && typeof d.id === 'string' && !seen.has(d.id)) seen.set(d.id, d);
+    if (seen.size) out[SEEN] = JSON.stringify([...seen.values()].slice(0, 40));
   }
-  if (decks.size) out[DECKS] = JSON.stringify([...decks.values()].sort((x, y) => (y.updated || 0) - (x.updated || 0)));
-  else delete out[DECKS];
-  if (gone.length) out[GONE] = JSON.stringify(gone);
-  // others' decks met in rooms and replays
-  const seen = new Map();
-  for (const d of [...list(win[SEEN]), ...list(lose[SEEN])]) if (d && typeof d.id === 'string' && !seen.has(d.id)) seen.set(d.id, d);
-  if (seen.size) out[SEEN] = JSON.stringify([...seen.values()].slice(0, 40));
   return out;
 }
 
@@ -105,7 +109,7 @@ export function summarize(items) {
     games: recs.length, mtg: n('mtg'), pk: n('pk'), op: n('op'),
     wins: recs.filter(r => r.result === 'win').length,
     replays: Object.keys(items).filter(k => REPLAY.test(k)).length,
-    decks: list(items[DECKS]).length,
+    decks: DECK_SETS.reduce((n, [k]) => n + list(items[k]).length, 0),
     name: typeof items['pa-nick'] === 'string' ? items['pa-nick'].slice(0, 40) : null,
     avatar: typeof items['pa-avatar'] === 'string' ? items['pa-avatar'] : null,
     sleeves: !!items['pa-deckstyle'],
