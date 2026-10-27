@@ -8,7 +8,7 @@ import { SA, castSpell, activateAbility, resolveStackItem, chooseTargetsForSA, g
 import { triggerMatches } from './triggers.js';
 import * as combat from './combat.js';
 import { parseAbility } from './forge.js';
-import { untapPrevented as paramUntapPrevented, noteTurnEnd, noteTargeted, applyStaticEffect, heldPersistentMana, damageRedirect, dealRedirected, loseManaColor } from './mech-params.js';
+import { untapPrevented as paramUntapPrevented, noteTurnEnd, noteTargeted, applyStaticEffect, heldPersistentMana, damageRedirect, dealRedirected, loseManaColor, triggerController, replacementPhaseOk } from './mech-params.js';
 
 export const STEPS = ['untap', 'upkeep', 'draw', 'main1', 'beginCombat', 'declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage', 'endCombat', 'main2', 'end', 'cleanup'];
 export const STEP_NAMES = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main 1', beginCombat: 'Beginning of Combat', declareAttackers: 'Declare Attackers', declareBlockers: 'Declare Blockers', firstStrikeDamage: 'First-Strike Damage', combatDamage: 'Combat Damage', endCombat: 'End of Combat', main2: 'Main 2', end: 'End Step', cleanup: 'Cleanup' };
@@ -679,7 +679,7 @@ export class Game {
       const lk = `${host.id}:${t.key}`;
       const lc = (this.turnState.loopCounts[lk] = (this.turnState.loopCounts[lk] || 0) + 1);
       if (lc > 80) { if (lc === 81) this.log(`Stopped a possible infinite loop from ${this.name(host)}.`, { type: 'info' }); continue; }
-      this.pendingTriggers.push({ host, t, rp: { ...rp }, controller, delayed: t.delayed });
+      this.pendingTriggers.push({ host, t, rp: { ...rp }, controller: triggerController(this, p, host, rp, controller), delayed: t.delayed });
       // Panharmonicon-style doubling
       if (mode === 'ChangesZone' && rp.Destination === 'Battlefield') {
         for (const s of this.activeStatics('Panharmonicon')) {
@@ -1470,6 +1470,7 @@ export class Game {
         if (p.ValidPlayer && !(rp.Affected && matchValid(this, rp.Affected, p.ValidPlayer, ctx))) continue;
         if (p.ValidCard && !(rp.Card && matchValid(this, rp.Card, p.ValidCard, ctx))) continue;
         if (p.NotFirstCardInDrawStep === 'True' && rp.TurnDraw) continue; // Notion Thief leaves the draw-step draw alone
+        if (!replacementPhaseOk(this, p)) continue; // "during your draw step" (mech-params.js)
         if (!checkPresence(this, p, ctx)) continue;
         if (rp._applied && rp._applied.has(h.id + r.key)) continue;
         if (this.activeRepl.has(h.id + r.key)) continue;

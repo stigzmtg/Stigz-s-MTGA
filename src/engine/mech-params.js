@@ -178,6 +178,8 @@ export async function afterEffect(game, sa) {
     pl.persistentManaTurn = game.turnNumber;
     sa._poolBefore = null;
   }
+  // ResultSVar$ other than "Result" (Bucknard's Everfull Purse, Maddening Hex: "create X Treasures")
+  if (sa.api === 'RollDice' && p.ResultSVar && p.ResultSVar !== 'Result' && sa.host && sa.host.chosen && sa.host.chosen.number != null) storeHostSVar(sa.host, p.ResultSVar, String(sa.host.chosen.number));
   // RememberDrawn: the cards drawn (Fa'adiyah Seer "if it isn't a land, discard it", Cut a Deal, Truce, Kwain)
   if (sa._handsBefore) {
     const drawn = [];
@@ -1042,4 +1044,58 @@ export function loseManaColor(game, pl) {
     if (t && SHORT[t]) return SHORT[t];
   }
   return 'C';
+}
+
+// ---------------------------------------------------------------- trigger controller, replacement phases
+// TriggerController$: "under its owner's control" style triggers controlled by someone other than the host's controller
+// (Calix's and Oubliette's effects: the exiled card's controller; Yuan-Ti Malison: the source's controller)
+export function triggerController(game, p, host, rp, controller) {
+  if (!p.TriggerController) return controller;
+  const ctx = { host, you: controller, trig: rp, sa: { host, controller, trig: rp, svars: {}, root() { return { x: 0, paid: {} }; } } };
+  const who = resolveDefined(game, p.TriggerController, ctx).map(o => (o && o.isPlayer ? o.id : o && (o.isCard || o.lki) ? o.controller : null)).find(x => x != null);
+  return who != null ? who : controller;
+}
+
+// ActivePhases$ on a replacement: "if you would draw a card during your draw step" (Island Sanctuary)
+const PHASE = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main1', beginCombat: 'BeginCombat', declareAttackers: 'Declare Attackers', declareBlockers: 'Declare Blockers', firstStrikeDamage: 'First Strike Damage', combatDamage: 'Combat Damage', endCombat: 'EndCombat', main2: 'Main2', end: 'End of Turn', cleanup: 'Cleanup' };
+export function replacementPhaseOk(game, p) {
+  if (!p.ActivePhases) return true;
+  return p.ActivePhases.split(',').map(s => s.trim()).includes(PHASE[game.step]);
+}
+
+// a value kept on the object for as long as it stays the same object (as StoreSVar keeps them)
+function storeHostSVar(h, name, value) {
+  if (!h || !h.isCard) return;
+  if (!h.storedSVars || h.storedSVars.zcc !== h.zcc) h.storedSVars = { zcc: h.zcc, v: {} };
+  h.storedSVars.v[name] = value;
+}
+
+// ---------------------------------------------------------------- not automated: what support.js reports
+// Parameters left out on purpose, so cards that use them don't look fully supported.
+const UNSUPPORTED_STATIC = {
+  IgnoreEffectCost: 'paying to ignore an effect',
+  ControlOpponentsSearchingLibrary: 'controlling an opponent\'s search',
+  AdditionalVote: 'extra votes', AdditionalOptionalVote: 'extra votes', ControlVote: 'controlling votes', AdditionalVillainousChoice: 'extra villainous choices',
+  LockInText: 'locked-in text', GainTextOf: 'gaining another card\'s text', ChangeColorWordsTo: 'changing color words', AddNames: 'extra names',
+  FromDraftNotes: 'draft notes', LethalDamageByPower: 'lethal damage by power', SourceCanOnlyTarget: 'targeting only its source',
+  MayPlaySnowIgnoreColor: 'snow mana of any color', ValidTurned: 'turning face up triggers twice', XAlternative: 'an X alternative cost',
+  ManaRestriction: 'an alternative cost with a mana restriction',
+};
+const UNSUPPORTED_REPLACEMENT = { FoundSearchingLibrary: 'controlling an opponent\'s search' };
+export function paramIssues(faces) {
+  const out = new Set();
+  for (const f of faces) {
+    const sv = Object.values(f.svars);
+    for (const s of [...f.S, ...sv.filter(v => /^Mode\$/.test(v) && !/Execute\$/.test(v))]) {
+      const p = parseAbility(s).p;
+      for (const k of Object.keys(p)) if (UNSUPPORTED_STATIC[k]) out.add(UNSUPPORTED_STATIC[k]);
+      // "exile a blue card with mana value X from your hand rather than pay this spell's mana cost" (the Shoals)
+      if (p.Mode === 'AlternativeCost' && p.Announce) out.add('an alternative cost with a chosen X');
+    }
+    for (const s of [...f.R, ...sv.filter(v => /^Event\$/.test(v))]) {
+      const p = parseAbility(s).p;
+      for (const k of Object.keys(p)) if (UNSUPPORTED_REPLACEMENT[k]) out.add(UNSUPPORTED_REPLACEMENT[k]);
+    }
+  }
+  return [...out];
 }

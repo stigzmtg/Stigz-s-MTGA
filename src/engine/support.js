@@ -3,6 +3,7 @@ import { parseCardScript, parseAbility } from './forge.js';
 import { SUPPORTED_APIS } from './effects.js';
 import { SUPPORTED_TRIGGER_MODES } from './triggers.js';
 import { SUPPORTED_KEYWORDS } from './keywords.js';
+import { paramIssues } from './mech-params.js';
 
 export const STATIC_MODES = new Set(['Continuous', 'ReduceCost', 'RaiseCost', 'CantBlockBy', 'CantAttack', 'CantAttackUnless', 'CastWithFlash', 'CantBlock', 'Panharmonicon', 'CantBeCast', 'CantSacrifice', 'MinMaxBlocker', 'CantGainLife', 'IgnoreLegendRule', 'CanAttackDefender', 'CombatDamageToughness', 'CantTarget', 'ActivateAbilityAsIfHaste', 'CantPreventDamage', 'CantBeActivated', 'AssignCombatDamageAsUnblocked', 'CantPutCounter', 'NumLoyaltyAct', 'CantBeCountered', 'MustAttack', 'AlternativeCost', 'UntapOtherPlayer', 'CantChangeLife', 'WitherDamage', 'MustBlock', 'AttackRestrict', 'BlockRestrict', 'CantBlockUnless', 'OptionalCost', 'OptionalAttackCost', 'UnspentMana', 'PlayerMustAttack', 'CountersRemain', 'Devotion', 'SurveilNum', 'DisableTriggers', 'FlipCoinDoubler', 'CantDraw', 'GainLifeRadiation', 'CantLoseLife', 'DrawFromBottom', 'CantExile', 'CantPhaseIn', 'ManaConvert']);
 export const REPLACEMENT_EVENTS = new Set(['Moved', 'DamageDone', 'AddCounter', 'CreateToken', 'Draw', 'GainLife', 'Counter', 'Untap', 'GameLoss', 'GameWin', 'BeginPhase', 'BeginTurn', 'TurnFaceUp', 'LoseMana', 'ProduceMana', 'CopySpell', 'DrawCards', 'LifeReduced', 'RollDice', 'Transform', 'Attached', 'Proliferate', 'Explore', 'RollPlanarDice', 'RemoveCounter', 'Planeswalk']);
@@ -29,5 +30,6 @@ export function analyzeCard(text) {
     for (const s of [...f.S, ...Object.entries(f.svars).filter(([n, v]) => /^Mode\$/.test(v) && !/Execute\$/.test(v) && !delayedNames.has(n)).map(([, v]) => v)]) { const p = parseAbility(s); for (const m of (p.p.Mode || '').split(',')) if (!STATIC_MODES.has(m)) issues.add(m); }
     for (const r of [...f.R, ...Object.values(f.svars).filter(v => /^Event\$/.test(v))]) { const p = parseAbility(r); if (!REPLACEMENT_EVENTS.has(p.p.Event)) issues.add(p.p.Event + ' replacement'); }
   }
+  for (const i of paramIssues(faces)) issues.add(i); // card-script parameters left out on purpose (mech-params.js)
   return [...issues].map(x => x.replace(/([a-z])([A-Z])/g, '$1 $2'));
 }

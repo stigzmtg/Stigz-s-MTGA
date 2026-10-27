@@ -694,4 +694,43 @@ test('LoseMana replacements: under Omnath, Locus of All unspent mana becomes bla
   expect(T.A.pool.B === 3 && T.A.pool.G === 0, `three black mana (${JSON.stringify(T.A.pool)})`);
 });
 
+// ------------------------------------------------------------ misc
+test('RollDice ResultSVar: Bucknard\'s Everfull Purse makes as many Treasures as the roll', async T => {
+  const g = T.game;
+  const purse = await T.put(0, "Bucknard's Everfull Purse");
+  const before = T.tokens(0).length;
+  await T.activate(purse, 0, a => a.parsed.api === 'RollDice');
+  const made = T.tokens(0).length - before;
+  const rolled = purse.chosen && purse.chosen.number;
+  expect(made >= 1 && made === rolled, `Treasures = the d4 roll (${made} for ${rolled})`);
+});
+test('Replacement ActivePhases: Island Sanctuary replaces only the draw-step draw', async T => {
+  const g = T.game;
+  await T.put(0, 'Island Sanctuary');
+  T.a.on('replacement', () => true);
+  const hand = T.A.hand.length;
+  g.step = 'main1';
+  await g.drawCards(T.A, 1);
+  expect(T.A.hand.length === hand + 1, 'a draw in the main phase is just a draw');
+  g.step = 'draw';
+  await g.drawCards(T.A, 1);
+  expect(T.A.hand.length === hand + 1, 'the draw-step draw is skipped');
+});
+test('TriggerController: Yuan-Ti Malison\'s trigger is controlled by the creature\'s controller', async T => {
+  const g = T.game;
+  const yt = await T.put(1, 'Yuan-Ti Malison');
+  g.fire('DamageDone', { Source: yt, DamageSource: yt, Target: T.A, DamageTarget: T.A, DamageAmount: 2, IsCombatDamage: true, CombatDamage: true });
+  const pt = g.pendingTriggers.find(x => x.host === yt);
+  expect(pt && pt.controller === 1, `controlled by B (${pt && pt.controller})`);
+});
+test('support.js flags the parameters left out: Opposition Agent, Leonin Arbiter, the Shoals; not the cards fixed here', async T => {
+  const { allCardScripts } = await import('./lib/allcards.mjs');
+  const all = allCardScripts();
+  const issues = n => analyzeCard(all[n]);
+  expect(issues('Opposition Agent').some(i => /search/.test(i)), `Opposition Agent (${issues('Opposition Agent')})`);
+  expect(issues('Leonin Arbiter').some(i => /ignore/.test(i)), `Leonin Arbiter (${issues('Leonin Arbiter')})`);
+  expect(issues('Disrupting Shoal').some(i => /chosen X/.test(i)), `Disrupting Shoal (${issues('Disrupting Shoal')})`);
+  for (const n of ["Bolas's Citadel", 'Fact or Fiction', 'Cataclysmic Gearhulk', 'Enduring Vitality', 'Necrotic Ooze', 'Charmed Sleep', 'Pariah', 'Terror of the Peaks']) expect(!issues(n).length, `${n} looks supported (${issues(n)})`);
+});
+
 process.exit(await run(tests) ? 1 : 0);

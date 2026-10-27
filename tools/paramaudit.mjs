@@ -20,7 +20,9 @@ const arg = (k, d) => { const a = process.argv.find(x => x.startsWith(`--${k}=`)
 const SECTION = arg('section', null), MIN = +arg('min', 1), NEX = +arg('examples', 4), JSON_OUT = arg('json', false), FORGE = arg('forge', false), ALL = arg('all', false);
 
 // parameters that only describe the ability, steer the AI or prompt the player
-const IGNORE = /^(Description|SpellDescription|TriggerDescription|StackDescription|PrecostDesc|CostDesc|TgtPrompt|AILogic|AI[A-Z].*|AITgts.*|IsCurse|ChoiceTitle|ChoicePrompt|SelectPrompt|Prompt|PromptIfHasRight|SpellDescriptionPrefix|.*Desc|.*Description|Secondary|ActivationLimitDesc|DescriptionStack|AnnounceTitle|ListTitle|OptionPrompt|MenuText|ShowCardInChatPanel|StaticAbilityDescription|InfoText|ToolTip)$/;
+const IGNORE = /^(Description|SpellDescription|TriggerDescription|StackDescription|PrecostDesc|CostDesc|TgtPrompt|AILogic|AI[A-Z].*|AITgts.*|IsCurse|ChoiceTitle|ChoicePrompt|SelectPrompt|Prompt|PromptIfHasRight|SpellDescriptionPrefix|.*Desc|.*Description|Secondary|ActivationLimitDesc|DescriptionStack|AnnounceTitle|ListTitle|OptionPrompt|MenuText|ShowCardInChatPanel|StaticAbilityDescription|InfoText|ToolTip|Ultimate|Image|ShowChoice|ForceRevealToController|ShowCurrentCard|ShowCardToActivator|PromptToSkipOptionalAbility|PrimaryPrompt|OptionalAbilityPrompt|ChoiceTitleAppend|RevealTitle|VoteMessage|RepeatOptionalMessage|MayPlayText|NoLooking|NoPeek)$/;
+// (Ultimate: the AI's hint for a planeswalker's last ability; Image, MayPlayText and the prompts: what the UI shows;
+// NoLooking / NoPeek: whether the searcher looks first, which the engine doesn't model)
 
 // every identifier src/engine mentions as .Name, 'Name' or "Name"
 const ENGINE_DIR = 'src/engine';
