@@ -456,7 +456,8 @@ function candidates(game, sa, part, exclude = new Set()) {
     case 'PutCardToLibFromHand': return p.hand.filter(c => c !== hostOf(sa) && ok(c) && matchValid(game, c, validOf(part, 2), ctx));
     case 'PutCardToLibFromGrave': return gyPool(game, sa).filter(c => ok(c) && matchValid(game, c, validOf(part, 2), ctx));
     case 'PutCardToLibFromSameGrave': return game.cardsInZone('graveyard').filter(c => c !== hostOf(sa) && ok(c) && matchValid(game, c, validOf(part, 2), ctx));
-    case 'ExileFromStack': return game.stack.filter(s => s.kind === 'spell' && s.card && s.controller === pid && ok(s.card) && matchValid(game, s.card, validOf(part).replace(/^Spell\b/, 'Card').replace(/,Spell\b/g, ',Card'), ctx)).map(s => s.card);
+    // (the resolving spell too: "you may exile [this spell] ..." — Dragon's Approach)
+    case 'ExileFromStack': return game.cardsInZone('stack').filter(c => c.controller === pid && ok(c) && matchValid(game, c, validOf(part).replace(/^Spell\b/, 'Card').replace(/,Spell\b/g, ',Card'), ctx));
     case 'RevealFromExile': return p.exile.filter(c => ok(c) && matchValid(game, c, validOf(part), ctx));
     case 'RevealOrChoose': { const v = validOf(part); return [...p.hand.filter(c => c !== hostOf(sa)), ...game.battlefield.filter(c => c.controller === pid)].filter(c => ok(c) && matchValid(game, c, v, ctx)); }
     case 'ExileCtrlOrGrave': { const v = craftValid(part); return [...game.battlefield.filter(c => c.controller === pid), ...p.graveyard].filter(c => c !== hostOf(sa) && ok(c) && matchValid(game, c, v, ctx)); }
@@ -524,7 +525,7 @@ export async function castingChooseCostPart(game, sa, part, n, used) {
       const pool = candidates(game, sa, part, ex);
       if (totalMV(game, pool) < n) return null;
       const cards = await pickCards(game, sa, pool, 1, `Collect evidence ${n}: exile cards with total mana value ${n} or more from your graveyard`, 'collectEvidence',
-        cs => totalMV(game, cs) >= n ? null : `Those cards' total mana value is ${totalMV(game, cs)}, less than ${n}.`, { min: 1, max: pool.length, need: n });
+        cs => totalMV(game, cs) >= n ? null : `Those cards' total mana value is ${totalMV(game, cs)}, less than ${n}.`, { min: 1, max: pool.length, needMV: n });
       return { part, cards, n };
     }
     case 'Forage': {
@@ -692,6 +693,8 @@ export const CASTING_EFFECTS = {
   async Recover(game, sa) {
     const c = sa.host;
     if (!c || !c.isCard || c.zone !== 'graveyard') return;
+    // "pay half your life, rounded up" (Garza's Assassin: X is the card's own SVar)
+    if (/<X\b|\bX\b/.test(sa.p.Cost || '') && sa.svars.X && sa.root().x == null) sa.x = calcCtx(game, 'X', ctxOf(game, sa));
     const paid = await payTriggerCost(game, sa, sa.stackItem);
     if (c.zone !== 'graveyard') return;
     if (paid) { await game.moveCard(c, 'hand', { cause: sa }); game.log(`${game.name(c)} returns to its owner's hand (recover).`); }
@@ -808,8 +811,46 @@ export function castingManaRestriction(game, card) {
   });
 }
 
-// "spend only colored mana on X; no more than one mana of each color may be spent this way" (Emblazoned Golem)
-export function castingColoredX(card) {
-  return !!card && card.faceDef.keywords.some(k => /^Spend only colored mana on X/.test(k));
+// "spend only colored mana on X; no more than one mana of each color may be spent this way" (Emblazoned Golem): X is
+// paid with X different colors — the first set of colors (in WUBRG order) that can be paid
+function coloredX(card) { return !!card && card.faceDef.keywords.some(k => /^Spend only colored mana on X/.test(k)); }
+function colorSets(n) {
+  const out = [];
+  const rec = (i, cur) => { if (cur.length === n) { out.push(cur.slice()); return; } for (let j = i; j < COLORS.length; j++) { cur.push(COLORS[j]); rec(j + 1, cur); cur.pop(); } };
+  rec(0, []);
+  return out;
+}
+function withColors(mana, colors) { const m = cloneCost(mana); m.x = 0; for (const c of colors) m.colored[c] = (m.colored[c] || 0) + 1; return m; }
+export function castingXCost(game, pid, card, mana, x) {
+  if (!coloredX(card)) return null;
+  for (const set of colorSets(Math.min(5, x))) { const m = withColors(mana, set); if (canAfford(game, pid, m, { spellCard: card, exclude: new Set([card.id]) })) return m; }
+  return withColors(mana, COLORS.slice(0, Math.min(5, x)));
+}
+export function castingMaxX(game, pid, card, mana, max) {
+  if (!coloredX(card)) return max;
+  let best = 0;
+  for (let x = 1; x <= Math.min(5, max); x++) if (colorSets(x).some(set => canAfford(game, pid, withColors(mana, set), { spellCard: card, exclude: new Set([card.id]) }))) best = x;
+  return best;
+}
+
+// abilities of the top card of your library: "you may plot nonland cards from the top of your library" (Fblthp)
+export function castingLibraryActivation(game, pid, card, abil) {
+  if (abil.parsed.api !== 'Plot' || card.owner !== pid) return false;
+  const top = game.players[pid].library[0];
+  if (top !== card) return false;
+  return game.activeStatics('PlotZone').some(s => s.ctx.you === pid && matchValid(game, card, s.p.ValidCard || 'Card.TopLibrary+YouCtrl', s.ctx));
+}
+
+// "while you're searching your library, you may cast CARDNAME from your library" (Panglacial Wurm)
+export async function castingWhileSearching(game, sa, pid) {
+  const pl = game.players[pid];
+  for (const c of pl.library.filter(x => x.faceDef.keywords.includes("While you're searching your library, you may cast CARDNAME from your library."))) {
+    if (c.zone !== 'library') continue;
+    const cost = c.faceDef.manaCost;
+    if (!cost || !canAfford(game, pid, cost, { spellCard: c, exclude: new Set([c.id]) })) continue;
+    const yes = await game.ask(pid, { type: 'confirm', prompt: `While you're searching your library, cast ${game.name(c)} from it?`, purpose: 'castFromSearch', sa, cards: [c.id] });
+    if (!yes) continue;
+    try { await castSpell(game, pid, c, {}, { fromEffect: true, effectSA: sa }); } catch (e) { if (!e.cancelled) throw e; }
+  }
 }
 

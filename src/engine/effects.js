@@ -7,7 +7,7 @@ const counterLabel = k => `${counterName(k)} counter`;
 import { COLORS, COLOR_NAMES, NAME_TO_COLOR, BASIC_LAND_TYPES } from './util.js';
 import { cmc, parseMana, addCosts } from './mana.js';
 import { canAttack, defendersFor, playerInDirection } from './combat.js';
-import { CASTING_EFFECTS, castingAlterAttribute, castingCascadeReplacement, castingCanAdapt, castingCantBeCopied } from './mech-casting.js';
+import { CASTING_EFFECTS, castingAlterAttribute, castingCascadeReplacement, castingCanAdapt, castingCantBeCopied, castingWhileSearching } from './mech-casting.js';
 
 const Z = z => (z ? (zoneMap[z] || z.toLowerCase()) : z);
 
@@ -301,6 +301,7 @@ export const E = {
       const chooserP = p.Chooser ? playersOf(resolveDefined(game, p.Chooser, { ...ctx, you: sa.controller }))[0] : pl;
       const chooser = chooserP ? chooserP.id : pl.id;
       const fctx = { ...ctx, you: pl.id };
+      if (origins.includes('library') && chooser === pl.id) await castingWhileSearching(game, sa, pl.id); // (Panglacial Wurm)
       let pool = [];
       for (const o of origins) {
         if (o === 'battlefield') pool.push(...game.battlefield.filter(c => c.controller === pl.id));
@@ -2202,7 +2203,7 @@ export const E = {
   // plot: exile it from your hand; cast it as a sorcery on a later turn without paying its mana cost
   async Plot(game, sa) {
     const c = sa.host;
-    if (!c || c.zone !== 'hand') return;
+    if (!c || (c.zone !== 'hand' && c.zone !== 'library')) return; // (Fblthp: from the top of your library)
     await game.moveCard(c, 'exile', { silent: true });
     c.plotted = { turn: game.turnNumber, zcc: c.zcc };
     game.log(`${game.players[sa.controller].name} plots ${game.name(c)}.`);

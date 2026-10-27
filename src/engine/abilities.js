@@ -4,7 +4,7 @@ import { parseMana, emptyCost, addCosts, cmc, isManaToken, planPayment, payFromP
 import { matchValid, resolveDefined, calcCtx, checkConditions, checkPresence, ctxOf, findTargets, zoneMap, ctrlOf } from './filters.js';
 import { COLORS } from './util.js';
 import { runEffect } from './effects.js';
-import { CASTING_COST_TYPES, castingBareCost, castingCanPayPart, castingCostMax, castingChooseCostPart, castingApplyCostPart, castingCostLabel, castingAltOptions, castingExileFrom, castingExileOptions, castingFilterOptions, castingEarlyCosts, castingAdditionalCosts, castingSetCost, castingAssist, castingOnCast, castingPermanentResolved, castingSpellResolved, castingManaRestriction } from './mech-casting.js';
+import { CASTING_COST_TYPES, castingBareCost, castingCanPayPart, castingCostMax, castingChooseCostPart, castingApplyCostPart, castingCostLabel, castingAltOptions, castingExileFrom, castingExileOptions, castingFilterOptions, castingEarlyCosts, castingAdditionalCosts, castingSetCost, castingAssist, castingOnCast, castingPermanentResolved, castingSpellResolved, castingManaRestriction, castingMaxX, castingXCost, castingLibraryActivation } from './mech-casting.js';
 
 export class Cancelled extends Error { constructor() { super('cancelled'); this.cancelled = true; } }
 
@@ -620,8 +620,10 @@ function restrictionAllows(game, host, restrict, pid, { spellCard = null, abilit
 
 export function manaSourcesFor(game, pid, { exclude = new Set(), spellCard = null, abilityHost = null, costHasX = false } = {}) {
   const out = [];
+  const restrict = spellCard ? castingManaRestriction(game, spellCard) : null; // "spend only mana produced by basic lands"
   for (const card of game.battlefield) {
     if (card.controller !== pid || exclude.has(card.id) || card.phasedOut) continue;
+    if (restrict && !restrict(card)) continue;
     const ch = game.chars(card);
     const isCreature = ch.types.has('Creature');
     for (const abil of manaAbilitiesOf(game, card)) {
@@ -838,7 +840,14 @@ function reserveFor(manaCost, seq, i) {
 }
 
 // Plan + pay a mana cost for player pid. Returns true when paid. No state change when it fails.
-export async function payManaCost(game, pid, manaCost, { exclude = new Set(), spellCard = null, abilityHost = null, costHasX = false, sa = null, dryRun = false } = {}) {
+export async function payManaCost(game, pid, manaCost, opts = {}) {
+  // "spend only mana produced by ...": mana already floating can't be told apart, so it stays aside
+  if (!opts.spellCard || !castingManaRestriction(game, opts.spellCard)) return payManaCostFrom(game, pid, manaCost, opts);
+  const p = game.players[pid], stash = p.pool;
+  p.pool = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
+  try { return await payManaCostFrom(game, pid, manaCost, opts); } finally { for (const k of Object.keys(stash)) p.pool[k] = (p.pool[k] || 0) + stash[k]; }
+}
+async function payManaCostFrom(game, pid, manaCost, { exclude = new Set(), spellCard = null, abilityHost = null, costHasX = false, sa = null, dryRun = false } = {}) {
   const p = game.players[pid];
   if (cmc(manaCost) === 0 && !manaCost.x) return true;
   let sources = manaSourcesFor(game, pid, { exclude, spellCard, abilityHost, costHasX }).filter(s => !s.manualOnly);
@@ -910,7 +919,8 @@ export function canAfford(game, pid, manaCost, opts = {}) {
   if (cmc(manaCost) === 0) return true;
   let sources = manaSourcesFor(game, pid, opts).filter(s => !s.manualOnly);
   if (opts.spellCard) sources = sources.concat(alternativeSources(game, pid, opts.spellCard, opts.exclude || new Set()));
-  return !!planPayment(manaCost, p.pool, sources, { lifeAvailable: p.life - 1, maxNodes: 8000 });
+  const pool = opts.spellCard && castingManaRestriction(game, opts.spellCard) ? { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 } : p.pool;
+  return !!planPayment(manaCost, pool, sources, { lifeAvailable: p.life - 1, maxNodes: 8000 });
 }
 
 export function availableManaCount(game, pid, spellCard = null, opts = {}) {
@@ -1808,7 +1818,7 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
   // X
   if (mana.x) {
     const fixed = sa.p.XChoice || null;
-    const max = Math.min(maxX(game, pid, mana, card), xCap(game, sa, extra.parts));
+    const max = castingMaxX(game, pid, card, mana, Math.min(maxX(game, pid, mana, card), xCap(game, sa, extra.parts)));
     if (max < 0) return false;
     const minX = /XMin1/.test(sa.p.Cost || '') ? 1 : 0;
     let x = null;
@@ -1819,7 +1829,7 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
       sa.x = x;
       if (targetsPossible(game, sa)) break;
     }
-    const m2 = cloneCost(mana); m2.generic += m2.x * x; m2.x = 0; mana = m2;
+    const m2 = cloneCost(mana); m2.generic += m2.x * x; m2.x = 0; mana = castingXCost(game, pid, card, mana, x) || m2;
   } else if (sa.x == null) sa.x = 0;
   if (sa.x && extra.parts.length && !canPayNonMana(game, sa, { ...extra, tap: false, untap: false })) return false;
   // strive: no more targets than can be paid for
@@ -2151,6 +2161,7 @@ export function activatedAbilities(game, pid, card) {
     if (abil.parsed.api === 'Mana' || abil.parsed.api === 'ManaReflected') continue;
     const zones = p.ActivationZone ? p.ActivationZone.split(',').map(z => zoneMap[z.trim()] || z.trim().toLowerCase()) : ['battlefield'];
     if (!zones.includes(card.zone)) continue;
+    if (card.zone === 'library' && !castingLibraryActivation(game, pid, card, abil)) continue;
     const controller = card.zone === 'battlefield' ? card.controller : card.owner;
     if (controller !== pid && !(p.AnyPlayer === 'True' || /Player|Opponent/.test(p.Activator || ''))) continue;
     out.push(abil);
@@ -2491,7 +2502,7 @@ export function getActions(game, pid) {
   if (p.library.length) consider(p.library[0]);
   for (const q of game.players) if (q.id !== pid) for (const c of q.exile) if (mayPlayFrom(game, pid, c)) consider(c);
   // activated abilities
-  const abilityCards = [...game.battlefield, ...p.hand, ...p.graveyard, ...p.exile, ...p.command];
+  const abilityCards = [...game.battlefield, ...p.hand, ...p.graveyard, ...p.exile, ...p.command, ...p.library.slice(0, 1)];
   for (const c of abilityCards) {
     for (const abil of activatedAbilities(game, pid, c)) {
       if (!canActivate(game, pid, c, abil)) continue;

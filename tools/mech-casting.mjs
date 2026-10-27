@@ -510,4 +510,204 @@ test('An opponent gains life as a cost: Invigorate, Roar of Jukai spliced', asyn
   expect(T.B.life === life + 3 && g.chars(bear).power === 6, 'the opponent gained 3 life; pumped');
 });
 
+// ------------------------------------------------------------ mana and cost rules
+test('Mana restriction: Imperiosaur only with mana from basic lands; Hogaak only by convoke and delve', async T => {
+  const g = T.game;
+  for (const c of [...g.battlefield]) if (c.controller === 0) await g.moveCard(c, 'graveyard', { silent: true });
+  const imp = await T.put(0, 'Imperiosaur', 'hand');
+  T.noMana(0); T.A.pool.G = 4;
+  expect(!castableOptions(g, 0, imp).length, 'floating mana of unknown origin can’t pay for it');
+  for (let i = 0; i < 2; i++) await T.put(0, 'Forest');
+  await T.put(0, 'Llanowar Elves'); await T.put(0, 'Llanowar Elves');
+  expect(!castableOptions(g, 0, imp).length, 'two Forests and two Elves: not enough basic-land mana');
+  await T.put(0, 'Forest'); await T.put(0, 'Forest');
+  await castWith(T, imp, /./);
+  expect(T.A.pool.G === 4, 'the floating mana is untouched');
+  const elves = g.battlefield.filter(c => c.def.name === 'Llanowar Elves');
+  expect(elves.every(e => !e.tapped), 'the Elves weren’t tapped');
+  await T.resolve();
+  expect(imp.zone === 'battlefield', 'cast with the Forests');
+  const hog = await T.put(0, 'Hogaak, Arisen Necropolis', 'hand');
+  expect(!castableOptions(g, 0, hog).length, 'Hogaak: no mana at all');
+});
+test('Trinisphere: spells cost at least three', async T => {
+  const g = T.game;
+  await T.put(1, 'Trinisphere');
+  const bolt = await T.put(0, 'Lightning Bolt', 'hand');
+  T.noMana(0); T.A.pool.R = 2;
+  expect(!castableOptions(g, 0, bolt).length, 'Lightning Bolt costs three now');
+  T.A.pool.R = 3;
+  await castWith(T, bolt, /./);
+  expect(T.A.pool.R === 0, 'paid three');
+});
+test('Emblazoned Golem: kicker X is paid with X different colors', async T => {
+  const g = T.game;
+  for (const c of [...g.battlefield]) if (c.controller === 0) await g.moveCard(c, 'graveyard', { silent: true });
+  const c = await T.put(0, 'Emblazoned Golem', 'hand');
+  T.noMana(0); T.A.pool.C = 2; T.A.pool.R = 3; T.A.pool.G = 1;
+  T.a.on('kicker', () => true);
+  T.a.on('xValue', req => req.max);
+  await castWith(T, c, /./);
+  expect(T.A.pool.R === 2 && T.A.pool.G === 0, `X = 2 paid with red and green (R ${T.A.pool.R} G ${T.A.pool.G})`);
+  await T.resolve();
+  expect(c.counters.P1P1 === 2, `two counters (${c.counters.P1P1})`);
+});
+test('Panglacial Wurm: cast it while searching your library', async T => {
+  const g = T.game;
+  const wurm = await T.put(0, 'Panglacial Wurm', 'library');
+  T.a.on('castFromSearch', () => true);
+  T.a.on('searchHand', req => []);
+  await T.cast('Diabolic Tutor', 0, { resolve: false });
+  T.mana(0);
+  await T.resolve();
+  expect(wurm.zone === 'battlefield', `cast during the search (${wurm.zone})`);
+});
+
+// ------------------------------------------------------------ plot, foretell, cascade, learn, copies
+test('Becomes plotted: Aloe Alchemist triggers when plotted; Kellan Joins Up plots a card from hand', async T => {
+  const g = T.game;
+  const bear = await T.put(0, 'Grizzly Bears');
+  const aloe = await T.put(0, 'Aloe Alchemist', 'hand');
+  T.a.on('targets', req => req.cands.includes(refOf(bear)) ? [refOf(bear)] : undefined);
+  await T.activate(aloe, 0, a => a.parsed.api === 'Plot');
+  await T.resolve();
+  expect(aloe.zone === 'exile' && g.chars(bear).power === 5, `plotted and triggered (${g.chars(bear).power})`);
+  const bolt = await T.put(0, 'Lightning Bolt', 'hand');
+  T.a.on('searchHand', req => req.cards.includes(bolt.id) ? [bolt.id] : undefined);
+  T.a.on('optionalSearch', () => true);
+  await T.cast('Kellan Joins Up');
+  expect(bolt.zone === 'exile' && bolt.plotted && bolt.plotted.zcc === bolt.zcc, `plotted from hand (${bolt.zone})`);
+});
+test('Fblthp: plot the top card of your library', async T => {
+  const g = T.game;
+  await T.put(0, 'Fblthp, Lost on the Range');
+  const top = await T.put(0, 'Grizzly Bears', 'library');
+  T.mana(0);
+  const act = getActions(g, 0).find(a => a.cardId === top.id && a.type === 'activate');
+  expect(act, 'the top card can be plotted');
+  await g.performAction(0, act);
+  expect(top.zone === 'exile' && top.plotted, 'plotted from the library');
+  await T.put(0, 'Forest', 'library');
+  expect(!getActions(g, 0).some(a => a.type === 'activate' && a.cardId === T.A.library[0].id), 'not a land');
+});
+test("Foretell trigger and given foretell: Dream Devourer", async T => {
+  const g = T.game;
+  const dd = await T.put(0, 'Dream Devourer');
+  const angel = await T.put(0, 'Serra Angel', 'hand');
+  T.mana(0);
+  await T.activate(angel, 0, a => a.parsed.api === 'Foretell');
+  await T.resolve();
+  expect(angel.zone === 'exile' && angel.foretold && g.chars(dd).power === 2, `foretold; +2/+0 (${g.chars(dd).power})`);
+  await nextTurn(T);
+  T.noMana(0); T.A.pool.W = 2; T.A.pool.C = 1;
+  for (const x of g.battlefield) if (T.isLand(x)) x.tapped = true;
+  const act = getActions(g, 0).find(a => a.cardId === angel.id);
+  expect(act, 'castable for its mana cost reduced by {2}');
+  await g.performAction(0, act); await T.resolve();
+  expect(angel.zone === 'battlefield', 'cast from exile');
+});
+test('Cascade replacement: Averna puts a land from among the exiled cards onto the battlefield', async T => {
+  const g = T.game;
+  await T.put(0, 'Averna, the Chaos Bloom');
+  await T.put(0, 'Lightning Bolt', 'library');
+  await T.put(0, 'Serra Angel', 'library');
+  const land = await T.put(0, 'Forest', 'library');
+  T.a.on('castFree', () => false);
+  T.a.on('searchBattlefield', req => req.cards.includes(land.id) ? [land.id] : undefined);
+  await T.cast('Bloodbraid Elf');
+  expect(land.zone === 'battlefield' && land.tapped, `the land entered tapped (${land.zone})`);
+});
+test('Learn replacement: Retriever Phoenix returns instead; otherwise learn rummages', async T => {
+  const g = T.game;
+  const ph = await T.put(0, 'Retriever Phoenix', 'graveyard');
+  T.a.on('replacement', () => true);
+  await T.cast('Retriever Phoenix');
+  expect(ph.zone === 'battlefield', `the one in the graveyard returned instead of learning (${ph.zone})`);
+});
+test('Grip of Chaos: copies get their single target reselected at random; Display of Power can’t be copied', async T => {
+  const g = T.game;
+  await T.put(0, 'Grip of Chaos');
+  await T.put(0, 'Goblin Guide'); await T.put(0, 'Goblin Guide');
+  T.a.on('conspire', req => req.cards.slice(0, 2));
+  T.a.on('newTargets', () => false);
+  const before = g.logs.length;
+  await T.cast('Burn Trail');
+  expect(g.logs.slice(before).filter(l => /changes the targets/.test(l.text)).length >= 1 || g.logs.slice(before).some(l => /Grip of Chaos triggers/.test(l.text)), 'Grip of Chaos saw the copy');
+  const dop = await T.cast('Display of Power', 0, { resolve: false });
+  const copyIt = await T.put(0, 'Twincast', 'hand');
+  T.a.on('targets', req => { const it = g.stack.find(s => s.card === dop); return it && req.cands.includes(refOf(it)) ? [refOf(it)] : undefined; });
+  await castWith(T, copyIt, /./);
+  await T.resolve();
+  expect(T.logged(/Display of Power can't be copied/), 'not copied');
+});
+
+// ------------------------------------------------------------ more variants
+test("Dragon's Approach: exile it from the stack with four more from the graveyard to find a Dragon", async T => {
+  const g = T.game;
+  for (let i = 0; i < 4; i++) await T.put(0, "Dragon's Approach", 'graveyard');
+  const dragon = await T.put(0, 'Shivan Dragon', 'library');
+  T.a.on('unlessCost', () => true);
+  T.a.on('searchBattlefield', req => req.cards.includes(dragon.id) ? [dragon.id] : undefined);
+  const c = await T.cast("Dragon's Approach");
+  expect(c.zone === 'exile' && T.A.graveyard.filter(x => x.def.name === "Dragon's Approach").length === 0, `the spell and four more exiled (${c.zone})`);
+  expect(dragon.zone === 'battlefield', 'found the Dragon');
+});
+test('Quantum Reduction: with teamwork it can be cast as though it had flash', async T => {
+  const g = T.game;
+  await T.put(0, 'Grizzly Bears');
+  const foe = await T.put(1, 'Hill Giant');
+  const qr = await T.put(0, 'Quantum Reduction', 'hand');
+  T.mana(0);
+  g.activePlayer = 1;
+  const os = castableOptions(g, 0, qr);
+  expect(os.length === 1 && os[0].forceTeamwork, `only the teamwork option on an opponent's turn (${os.map(o => o.label)})`);
+  T.a.on('targets', req => req.cands.includes(refOf(foe)) ? [refOf(foe)] : undefined);
+  await castWith(T, qr, /teamwork/);
+  await T.resolve();
+  expect(qr.zone === 'battlefield' && qr.attachedTo === foe.id && g.chars(foe).power < 0, 'attached');
+  expect(g.battlefield.some(c => c.def.name === 'Grizzly Bears' && c.tapped), 'the Bears were tapped for teamwork');
+  g.activePlayer = 0;
+  const qr2 = await T.put(0, 'Quantum Reduction', 'hand');
+  expect(castableOptions(g, 0, qr2).every(o => !o.forceTeamwork), 'at sorcery speed it’s cast normally');
+});
+test("Recover with a life cost: Garza's Assassin (pay half your life)", async T => {
+  const g = T.game;
+  const ga = await T.put(0, "Garza's Assassin", 'graveyard');
+  const bear = await T.put(0, 'Grizzly Bears');
+  T.a.on('triggerCost', () => true);
+  T.A.life = 21;
+  await g.destroy(bear, null); await T.resolve();
+  expect(ga.zone === 'hand' && T.A.life === 10, `returned for 11 life (${ga.zone}, ${T.A.life})`);
+});
+test('Warp during the end step: exiled at the next end step (the next turn’s)', async T => {
+  const g = T.game;
+  const c = await T.put(0, 'Sinister Cryologist', 'hand');
+  T.mana(0);
+  g.step = 'main2';
+  await castWith(T, c, /^Warp/);
+  g.step = 'end'; // (it resolves in the end step, after "at the beginning of the end step" has passed)
+  await T.resolve();
+  expect(c.zone === 'battlefield', 'entered');
+  await endStep(T);
+  expect(c.zone === 'battlefield', 'not this end step');
+  await nextTurn(T, 1);
+  await endStep(T, 1);
+  expect(c.zone === 'exile', `exiled at the next end step (${c.zone})`);
+});
+test('Sneak on a sorcery: Splinter’s Technique in the declare blockers step', async T => {
+  const g = T.game;
+  const bear = await T.put(0, 'Grizzly Bears');
+  const tech = await T.put(0, "Splinter's Technique", 'hand');
+  T.mana(0);
+  T.combatWith([[bear, 1]]);
+  g.step = 'declareBlockers';
+  const o = opt(T, tech, /Sneak/);
+  expect(o && o.mayFlash, 'castable at instant speed during the declare blockers step with sneak');
+  T.a.on('searchHand', req => [req.cards[0]]);
+  await castWith(T, tech, /Sneak/);
+  expect(bear.zone === 'hand', 'returned the attacker');
+  await T.resolve();
+  expect(tech.zone === 'graveyard', 'resolved');
+});
+
 process.exit(await run(tests) ? 1 : 0);
