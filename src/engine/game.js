@@ -8,6 +8,7 @@ import { SA, castSpell, activateAbility, resolveStackItem, chooseTargetsForSA, g
 import { triggerMatches } from './triggers.js';
 import * as combat from './combat.js';
 import { parseAbility } from './forge.js';
+import { untapPrevented as paramUntapPrevented, noteTurnEnd, noteTargeted, applyStaticEffect, heldPersistentMana } from './mech-params.js';
 
 export const STEPS = ['untap', 'upkeep', 'draw', 'main1', 'beginCombat', 'declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage', 'endCombat', 'main2', 'end', 'cleanup'];
 export const STEP_NAMES = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main 1', beginCombat: 'Beginning of Combat', declareAttackers: 'Declare Attackers', declareBlockers: 'Declare Blockers', firstStrikeDamage: 'First-Strike Damage', combatDamage: 'Combat Damage', endCombat: 'End of Combat', main2: 'Main 2', end: 'End Step', cleanup: 'Cleanup' };
@@ -324,6 +325,7 @@ export class Game {
       else if (this.dayNight === 'Night' && cast >= 2) this.setDayNight('Day');
     }
     this.lastActive = ap;
+    noteTurnEnd(this);
     this.turnState = this.freshTurnState();
     this.turnState.turnsTaken[ap] = (this.turnState.turnsTaken[ap] || 0) + 1;
     for (const pl of this.players) { pl.landsPlayed = 0; pl.lifeGainedThisTurn = 0; pl.lifeLostThisTurn = 0; pl.cardsDrawnThisTurn = 0; pl.spellsCastThisTurn = []; pl.manaExpended = 0; pl.handAtTurnStart = pl.hand.length; }
@@ -428,8 +430,8 @@ export class Game {
             c.sick = false;
             if (c.skipNextUntap) { c.skipNextUntap = false; continue; } // exerted
             if (c.tapped && this.hasKeyword(c, 'You may choose not to untap CARDNAME during your untap step.') && await this.ask(ap, { type: 'confirm', prompt: `Keep ${this.name(c)} tapped?`, purpose: 'keepTapped', cardId: c.id })) continue;
-            if (c.tapped && !this.hasKeyword(c, "CARDNAME doesn't untap during your untap step.") && !c.doesntUntap && !this.untapPrevented(c)) await this.untap(c);
-          } else if (c.tapped && this.activeStatics('UntapOtherPlayer').some(s => s.ctx.you === c.controller && matchValid(this, c, s.p.ValidCard || 'Permanent.YouCtrl', s.ctx))) await this.untap(c);
+            if (c.tapped && !this.hasKeyword(c, "CARDNAME doesn't untap during your untap step.") && !c.doesntUntap && !(await this.untapPrevented(c))) await this.untap(c);
+          } else if (c.tapped && this.activeStatics('UntapOtherPlayer').some(s => s.ctx.you === c.controller && matchValid(this, c, s.p.ValidCard || 'Permanent.YouCtrl', s.ctx)) && !(await this.untapPrevented(c))) await this.untap(c);
         }
         // goad wears off at goader's next turn
         for (const c of this.battlefield) if (c.goadedBy.includes(ap)) c.goadedBy = c.goadedBy.filter(x => x !== ap);
@@ -518,6 +520,7 @@ export class Game {
   // mana empties between steps, except what "you don't lose unspent mana" keeps; Omnath turns lost mana colorless
   emptyPools() {
     for (const pl of this.players) {
+      const held = heldPersistentMana(this, pl); // "you don't lose this mana as steps and phases end" (mech-params.js)
       const keep = {};
       for (const s of this.activeStatics('UnspentMana')) {
         if (!matchValid(this, pl, s.p.ValidPlayer || 'You', s.ctx)) continue;
@@ -528,6 +531,7 @@ export class Game {
       const np = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
       for (const k of Object.keys(np)) if (keep[k]) np[k] = pl.pool[k] || 0;
       if (lost > 0 && this.replacementsFor('LoseMana').some(({ p, ctx }) => !p.ValidPlayer || matchValid(this, pl, p.ValidPlayer, ctx))) np.C += lost;
+      if (held) for (const k of Object.keys(held)) np[k] += held[k];
       pl.pool = np;
     }
     this.touch();
@@ -875,9 +879,9 @@ export class Game {
   notifyTargets(sa, item) {
     for (let s = sa; s; s = s.sub) {
       for (const t of s.targets || []) {
-        if (t.isCard || t.isPlayer) this.fire('BecomesTarget', { Target: t, Source: sa.host, SourceSA: item, StackItem: item, Player: item.controller });
+        if (t.isCard || t.isPlayer) { this.fire('BecomesTarget', { Target: t, Source: sa.host, SourceSA: item, StackItem: item, Player: item.controller }); noteTargeted(this, t, item.controller); }
       }
-      for (const m of s.modes || []) for (const t of m.targets || []) this.fire('BecomesTarget', { Target: t, Source: sa.host, SourceSA: item, StackItem: item, Player: item.controller });
+      for (const m of s.modes || []) for (const t of m.targets || []) { this.fire('BecomesTarget', { Target: t, Source: sa.host, SourceSA: item, StackItem: item, Player: item.controller }); noteTargeted(this, t, item.controller); }
     }
   }
 
@@ -1169,6 +1173,7 @@ export class Game {
       if (opts.cast) { card.castFrom = opts.cast.from; card.xPaid = opts.cast.x || 0; card.kicked = opts.cast.kicked || 0; card.castSA = opts.cast.sa || null; card.manaSpent = opts.cast.manaSpent || null; card.optionalCosts = opts.cast.optionalCosts || []; card.altCost = opts.cast.altCost || null; card.convokedBy = opts.cast.convokedBy || []; card.squad = opts.cast.squad || 0; card.evoked = card.altCost === 'Evoke'; card.blitzed = card.altCost === 'Blitz'; card.promisedGift = opts.cast.sa && opts.cast.sa.promisedGift != null ? opts.cast.sa.promisedGift : null; card.offspring = opts.cast.offspring || 0; if (opts.cast.grants && opts.cast.grants.length) card.temp.push({ keywords: opts.cast.grants, until: 'Permanent' }); }
       if (keepCounters) card.counters = keepCounters;
       if (opts.attachTo != null) card.attachedTo = opts.attachTo;
+      if (opts.cause && opts.cause.p && opts.cause.p.StaticEffect) await applyStaticEffect(this, card, opts.cause); // "it's an enchantment" (mech-params.js)
       this.touch();
       await this.applyETB(card, opts);
       if (this.chars(card).types.has('Land')) this.turnState.landsEntered[card.controller] = (this.turnState.landsEntered[card.controller] || 0) + 1;
@@ -1617,6 +1622,7 @@ export class Game {
   }
   async untap(card) {
     if (!card.tapped) return false;
+    if (this.step !== 'untap' && await paramUntapPrevented(this, card, null)) return false; // "can't become untapped"
     // stun counters: "if it would become untapped, instead remove a stun counter from it"
     if ((card.counters.STUN || 0) > 0) {
       const r = await this.removeCounters(card, 'STUN', 1);
@@ -1632,13 +1638,8 @@ export class Game {
     return true;
   }
 
-  untapPrevented(c) {
-    for (const r of this.chars(c).replacements) {
-      const p = r.parsed.p;
-      if (p.Event === 'Untap' && p.Layer === 'CantHappen') return true;
-    }
-    return false;
-  }
+  // during the untap step: Untap replacements on any permanent or effect (mech-params.js)
+  async untapPrevented(c) { return paramUntapPrevented(this, c, this.activePlayer); }
 
   lifeLocked(p) { return this.activeStatics('CantChangeLife').some(s => matchValid(this, p, s.p.ValidPlayer || 'You', s.ctx)); }
 

@@ -4,6 +4,7 @@ import { parseMana, emptyCost, addCosts, cmc, isManaToken, planPayment, payFromP
 import { matchValid, resolveDefined, calcCtx, checkConditions, checkPresence, ctxOf, findTargets, zoneMap, ctrlOf } from './filters.js';
 import { COLORS } from './util.js';
 import { runEffect } from './effects.js';
+import { charmModeAllowed, noteCharmModes } from './mech-params.js';
 
 export class Cancelled extends Error { constructor() { super('cancelled'); this.cancelled = true; } }
 
@@ -2051,6 +2052,7 @@ export async function chooseModes(game, sa, { mana = null, card = null, cancella
     return { label, value: n, ...(mc ? { cost: mc.mana } : {}) };
   }).filter(o => sa.svars[o.value]);
   const usable = options.filter(o => {
+    if (!charmModeAllowed(game, sa, o.value)) return false; // "choose one that hasn't been chosen this turn"
     const m = makeSA(game, sa.svars[o.value], sa.svars, sa.host, sa.controller, { parent: sa });
     if (!targetsPossible(game, m)) return false;
     if (o.cost && mana && !canAfford(game, sa.controller, addCosts(mana.x ? { ...mana, x: 0 } : mana, o.cost), { spellCard: card, exclude: card ? new Set([card.id]) : new Set() })) return false;
@@ -2100,6 +2102,7 @@ export async function chooseModes(game, sa, { mana = null, card = null, cancella
     const m = new SA(game, { raw: sa.svars[n], parsed: parseAbility(sa.svars[n]), svars: sa.svars, src: sa.abil.src, key: sa.key + '#' + n }, sa.host, sa.controller, { parent: sa, trig: sa.trig });
     return m;
   });
+  noteCharmModes(game, sa, ans);
   return true;
 }
 

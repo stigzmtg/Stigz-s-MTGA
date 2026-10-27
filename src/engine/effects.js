@@ -7,6 +7,7 @@ const counterLabel = k => `${counterName(k)} counter`;
 import { COLORS, COLOR_NAMES, NAME_TO_COLOR, BASIC_LAND_TYPES } from './util.js';
 import { cmc, parseMana, addCosts } from './mana.js';
 import { canAttack, defendersFor, playerInDirection } from './combat.js';
+import { PARAMS_EFFECTS, beforeEffect, afterEffect } from './mech-params.js';
 
 const Z = z => (z ? (zoneMap[z] || z.toLowerCase()) : z);
 
@@ -2593,6 +2594,7 @@ async function copyStackItem(game, item, controller, mayChooseTargets) {
   if (card) game.fire('SpellCopy', { Card: card, Player: controller, IsSpell: true, StackItem: copy });
 }
 
+Object.assign(E, PARAMS_EFFECTS);
 export const SUPPORTED_APIS = new Set(Object.keys(E).concat(['Charm']));
 
 export async function runEffect(game, sa) {
@@ -2601,7 +2603,9 @@ export async function runEffect(game, sa) {
     if (sa.api) game.log(`Not automated: ${desc(game, sa)} [${sa.api}]`, { type: 'unsupported', cardId: sa.host && sa.host.id });
     return;
   }
+  sa = await beforeEffect(game, sa); // card-script params settled before it runs (mech-params.js)
   await f(game, sa);
+  await afterEffect(game, sa);
   const p = sa.p;
   if (p.RememberObjects && !['Effect', 'DelayedTrigger', 'ImmediateTrigger', 'Token'].includes(sa.api)) remember(sa, resolveDefined(game, p.RememberObjects, ctxOf(game, sa)));
   if (p.RememberTargets === 'True') remember(sa, findTargets(sa));

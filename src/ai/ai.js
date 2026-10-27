@@ -621,6 +621,12 @@ export class AIAgent {
       return pick(cards.slice().sort((a, b) => score(b) - score(a)), 1);
     }
     if (purpose === 'pair') return pick(cards.slice().sort((a, b) => v(b) - v(a)), 1);
+    // two piles (Fact or Fiction): the other player picks one, so even them out by value
+    if (purpose === 'separatePiles') {
+      const piles = [[], []], sum = [0, 0];
+      for (const c of cards.slice().sort((a, b) => v(b) - v(a))) { const i = sum[0] <= sum[1] ? 0 : 1; piles[i].push(c.id); sum[i] += Math.max(0.5, v(c)); }
+      return piles[0];
+    }
     if (purpose === 'pile') {
       // spread value evenly over the piles: one of them is lost at random
       const left = (req.piles || 3) - (req.pile || 1) + 1;
@@ -675,6 +681,19 @@ export class AIAgent {
   option(game, pid, req) {
     const opts = req.options || [];
     if (!opts.length) return null;
+    // two piles: the more valuable one when the chosen pile is kept, else the less valuable one
+    if (req.purpose === 'choosePile' && req.piles) {
+      const worth = ids => ids.reduce((a, id) => a + Math.max(0.5, this.value(game.cardById(id))), 0);
+      const [a, b] = req.piles.map(worth);
+      return (req.good === false ? a <= b : a >= b) ? opts[0].value : opts[1].value;
+    }
+    // where a card goes: ours to the battlefield, else the hand, else the top of the library; someone else's the other way
+    if (req.purpose === 'altDestination' && req.dests) {
+      const rank = d => ({ battlefield: 5, hand: 4, top: 3, library: 2, graveyard: 1, exile: 0, bottom: 0 })[d] ?? 1;
+      const mine = !(req.cards || []).some(id => { const c = game.cardById(id); return c && c.owner !== pid; });
+      const better = rank(req.dests[1]) > rank(req.dests[0]);
+      return better === mine ? opts[1].value : opts[0].value;
+    }
     if (req.purpose === 'chooseType') {
       const counts = {};
       for (const c of game.allCards()) if (c.owner === pid) { const ch = game.chars(c); if (ch.types.has('Creature')) for (const t of ch.subtypes) counts[t] = (counts[t] || 0) + 1; }

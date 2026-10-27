@@ -294,6 +294,7 @@ function cardProp(game, card, ch, prop, ctx) {
     case 'ChosenColor': return !!host && !!host.chosen && (host.chosen.colors || []).some(c => ch.colors.has(c));
     case 'ChosenType': return !!host && !!host.chosen && !!host.chosen.type && hasType(game, ch, host.chosen.type, card);
     case 'ChosenCard': case 'ChosenCardStrict': return !!host && !!host.chosen && (host.chosen.cards || []).includes(card.id);
+    case 'nonChosenCard': return !(host && host.chosen && (host.chosen.cards || []).includes(card.id)); // ("sacrifice the rest": not a type)
     case 'Defending': return !!(game.combat && game.combat.attackers.some(a => a.defenderCard === card.id));
     case 'Historic': return hasType(game, ch, 'Historic', card);
     case 'Modified': return Object.values(card.counters || {}).some(n => n > 0) || game.attachmentsOf(card).some(a => game.chars(a).subtypes.has('Equipment') || (game.chars(a).subtypes.has('Aura') && a.controller === ctrl));
