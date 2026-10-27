@@ -628,6 +628,11 @@ export async function paramCostAfterTargets(game, kind, pid, card, opt, sa, mana
   const applied = sa._paCostApplied;
   if (!applied) return { mana, extra };
   const { parseCost, canPayNonMana, Cancelled } = await engine();
+  const st = opt && opt.mayPlay && opt.mayPlay.st;
+  if (kind === 'spell' && st && st.parsed.p.ValidAfterStack && !validAfterStack(game, sa, card, st)) {
+    game.log(`${game.name(card)} can't be cast this way with that X (${game.name(st.host)}).`, { type: 'info' });
+    throw new Cancelled();
+  }
   // announced numbers the handled cost statics depend on
   if (kind === 'spell' && sa.p.Announce) {
     for (const name of sa.p.Announce.split(',').map(s => s.trim()).filter(Boolean)) {
@@ -949,4 +954,92 @@ export async function dealRedirected(game, source, rp, opts) {
   for (const { target, n } of rp.splitTo || []) dealt += (await game.dealDamage(source, target, n, o2)) || 0;
   if (rp.redirectTo) return dealt + ((await game.dealDamage(source, rp.redirectTo, rp.DamageAmount, o2)) || 0);
   return rp.DamageAmount > 0 ? null : dealt;
+}
+
+// ---------------------------------------------------------------- targeting (abilities.js targetCandidates)
+// TargetsWithDefinedController$: "target creature card in your graveyard" (Mortuary Mire), "target creature that player
+// controls" (Grenzo, Chandra's Incinerator); TargetValidTargeting$: "counter target spell or ability that targets you or
+// a creature you control" (Siren Stormtamer, Rebuff the Wicked, Dawn Charm)
+export function paramTargetFilter(game, sa, cands) {
+  const p = sa.p;
+  if (!p.TargetsWithDefinedController && !p.TargetValidTargeting) return cands;
+  const ctx = ctxOf(game, sa);
+  let out = cands;
+  if (p.TargetsWithDefinedController) {
+    const ids = new Set(resolveDefined(game, p.TargetsWithDefinedController, ctx).map(o => (!o ? null : o.isPlayer ? o.id : o.stackItem ? o.controller : o.zone === 'battlefield' || o.lki ? o.controller : o.owner)).filter(x => x != null));
+    out = out.filter(o => !o || o.isPlayer || o.stackItem || ids.has(o.zone === 'battlefield' ? o.controller : o.owner));
+  }
+  if (p.TargetValidTargeting) {
+    const spec = p.TargetValidTargeting.replace(/inRealZoneBattlefield/g, 'inZoneBattlefield');
+    out = out.filter(o => {
+      if (!o || !o.stackItem) return true;
+      const ts = o.sa ? o.sa.chain().flatMap(s => [...(s.targets || []), ...(s.modes || []).flatMap(m => m.targets || [])]) : [];
+      return ts.some(t => t && matchValid(game, t.lki ? game.cardById(t.id) || t : t, spec, ctx));
+    });
+  }
+  return out;
+}
+
+// ValidAfterStack$ on a may-play permission, checked once the spell's X and targets are known ("cast a permanent spell
+// with mana value 2 or less from your graveyard": Lurrus; Serra Paragon)
+export function validAfterStack(game, sa, card, st) {
+  const spec = st.parsed.p.ValidAfterStack;
+  const face = card.def.faces[sa.face || 0] || card.faceDef;
+  const mc = face.manaCost;
+  const mv = (mc ? cmc(mc) + (mc.x || 0) * (sa.x || 0) : 0);
+  return spec.split(',').some(alt => {
+    const [type, ...rest] = alt.trim().split('.');
+    if (type !== 'Spell') return true; // abilities: not checked here
+    const props = rest.join('.').split('+').filter(Boolean);
+    return props.every(pr => {
+      const m = pr.match(/^cmc(LE|LT|EQ|GE|GT|NE)(\d+)$/);
+      if (m) return compareSpec(game, mv, m[1] + m[2], ctxOf(game, sa));
+      return matchCastSA(game, sa, card, 'Spell.' + pr, ctxOf(game, sa));
+    });
+  });
+}
+
+// ---------------------------------------------------------------- mana produced (abilities.js producedUnits)
+// ProduceMana replacements that change the mana a permanent is tapped for, not just its amount: Contamination,
+// Infernal Darkness, Pale Moon, Chaos Moon, Naked Singularity (ReplaceType), Damping Sphere ("two or more mana: {C}
+// instead", ManaAmount$), Harvest Mage (ReplaceMana$ Any), Hall of Gemstone (ReplaceColor$ Chosen), Quarum Trench
+// Gnomes (ReplaceOnly$). Each unit is the list of colors one mana can be; the planner and the tapping both use this.
+const SHORT = { White: 'W', Blue: 'U', Black: 'B', Red: 'R', Green: 'G', Colorless: 'C', W: 'W', U: 'U', B: 'B', R: 'R', G: 'G', C: 'C' };
+export function replaceProducedUnits(game, card, units) {
+  if (!units.length || !card || !card.isCard) return units;
+  let out = units;
+  // (asked for every source the payment planner considers: the replacements are looked up once per game state)
+  if (!game._paProduce || game._paProduce.v !== game.version) game._paProduce = { v: game.version, list: game.replacementsFor('ProduceMana') };
+  for (const { h, r, p, ctx } of game._paProduce.list) {
+    if (p.ValidActivator && !matchValid(game, game.players[card.controller], p.ValidActivator, ctx)) continue;
+    if (p.ValidCard && !matchValid(game, card, p.ValidCard, ctx)) continue;
+    if (p.ValidSA) continue; // (spells and abilities that add mana: False Dawn)
+    if (p.ManaAmount && !compareSpec(game, out.length, p.ManaAmount, ctx)) continue;
+    const w = p.ReplaceWith && r.svars[p.ReplaceWith];
+    const q = w ? parseAbility(w) : null;
+    if (!q || q.api !== 'ReplaceMana' || q.p.ReplaceAmount) continue; // (amounts are multiplied as the mana is made)
+    const any = ['W', 'U', 'B', 'R', 'G'];
+    if (q.p.ReplaceMana) out = [q.p.ReplaceMana === 'Any' ? any : [SHORT[q.p.ReplaceMana] || 'C']];
+    else if (q.p.ReplaceType) { const t = q.p.ReplaceType === 'Any' ? any : [SHORT[q.p.ReplaceType] || 'C']; out = out.map(() => t.slice()); }
+    else if (q.p.ReplaceColor) {
+      const to = q.p.ReplaceColor === 'Chosen' ? ((h.chosen && h.chosen.colors) || []).slice(0, 1) : [SHORT[q.p.ReplaceColor]].filter(Boolean);
+      if (!to.length) continue;
+      const only = q.p.ReplaceOnly ? SHORT[q.p.ReplaceOnly] : null;
+      out = out.map(u => [...new Set(u.map(c => (only ? c === only : c !== 'C') ? to[0] : c))]);
+    }
+  }
+  return out;
+}
+
+// "If you would lose unspent mana, that mana becomes black / red / colorless instead" (Omnath, Locus of All; Ozai;
+// Kruphix): the color lost mana turns into (game.js emptyPools)
+export function loseManaColor(game, pl) {
+  for (const { r, p, ctx } of game.replacementsFor('LoseMana')) {
+    if (p.ValidPlayer && !matchValid(game, pl, p.ValidPlayer, ctx)) continue;
+    const w = p.ReplaceWith && r.svars[p.ReplaceWith];
+    const q = w ? parseAbility(w) : null;
+    const t = q && (q.p.ReplaceType || q.p.ReplaceMana);
+    if (t && SHORT[t]) return SHORT[t];
+  }
+  return 'C';
 }

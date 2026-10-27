@@ -8,7 +8,7 @@ import { SA, castSpell, activateAbility, resolveStackItem, chooseTargetsForSA, g
 import { triggerMatches } from './triggers.js';
 import * as combat from './combat.js';
 import { parseAbility } from './forge.js';
-import { untapPrevented as paramUntapPrevented, noteTurnEnd, noteTargeted, applyStaticEffect, heldPersistentMana, damageRedirect, dealRedirected } from './mech-params.js';
+import { untapPrevented as paramUntapPrevented, noteTurnEnd, noteTargeted, applyStaticEffect, heldPersistentMana, damageRedirect, dealRedirected, loseManaColor } from './mech-params.js';
 
 export const STEPS = ['untap', 'upkeep', 'draw', 'main1', 'beginCombat', 'declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage', 'endCombat', 'main2', 'end', 'cleanup'];
 export const STEP_NAMES = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main 1', beginCombat: 'Beginning of Combat', declareAttackers: 'Declare Attackers', declareBlockers: 'Declare Blockers', firstStrikeDamage: 'First-Strike Damage', combatDamage: 'Combat Damage', endCombat: 'End of Combat', main2: 'Main 2', end: 'End Step', cleanup: 'Cleanup' };
@@ -530,7 +530,7 @@ export class Game {
       const lost = Object.keys(pl.pool).filter(k => !keep[k]).reduce((a, k) => a + (pl.pool[k] || 0), 0);
       const np = { W: 0, U: 0, B: 0, R: 0, G: 0, C: 0 };
       for (const k of Object.keys(np)) if (keep[k]) np[k] = pl.pool[k] || 0;
-      if (lost > 0 && this.replacementsFor('LoseMana').some(({ p, ctx }) => !p.ValidPlayer || matchValid(this, pl, p.ValidPlayer, ctx))) np.C += lost;
+      if (lost > 0 && this.replacementsFor('LoseMana').some(({ p, ctx }) => !p.ValidPlayer || matchValid(this, pl, p.ValidPlayer, ctx))) np[loseManaColor(this, pl)] += lost;
       if (held) for (const k of Object.keys(held)) np[k] += held[k];
       pl.pool = np;
     }

@@ -1500,6 +1500,7 @@ export function checkPresence(game, p, ctx) {
     const v = calcCtx(game, p.CheckSecondSVar, ctx);
     if (!compareSpec(game, v, p.SecondSVarCompare || 'GE1', ctx)) return false;
   }
+  if (p.CheckThirdSVar && !compareSpec(game, calcCtx(game, p.CheckThirdSVar, ctx), p.ThirdSVarCompare || 'GE1', ctx)) return false;
   // "as long as the top card of your library is black" (Vampire Nocturnus, Conspicuous Snoop)
   if (p.TopCardOfLibraryIs) { const top = game.players[ctx.you] && game.players[ctx.you].library[0]; if (!top || !matchValid(game, top, p.TopCardOfLibraryIs, ctx)) return false; }
   if (p.PlayerTurn === 'True' && game.activePlayer !== ctx.you) return false;

@@ -4,7 +4,7 @@ import { parseMana, emptyCost, addCosts, cmc, isManaToken, planPayment, payFromP
 import { matchValid, resolveDefined, calcCtx, checkConditions, checkPresence, ctxOf, findTargets, zoneMap, ctrlOf } from './filters.js';
 import { COLORS } from './util.js';
 import { runEffect } from './effects.js';
-import { charmModeAllowed, noteCharmModes, paramCostStatic, paramSpellCost, paramAbilityCost, paramCostAfterTargets, otherOptionalCosts, mayPlayUsed, noteMayPlayUse, mayPlayOptions } from './mech-params.js';
+import { charmModeAllowed, noteCharmModes, paramCostStatic, paramSpellCost, paramAbilityCost, paramCostAfterTargets, otherOptionalCosts, mayPlayUsed, noteMayPlayUse, mayPlayOptions, paramTargetFilter, replaceProducedUnits } from './mech-params.js';
 
 export class Cancelled extends Error { constructor() { super('cancelled'); this.cancelled = true; } }
 
@@ -580,7 +580,7 @@ export function producedUnits(game, card, abil, noReflect = false) {
     if (units.length === 1) units = Array.from({ length: Math.max(0, n) }, () => units[0]);
     else { const base = units; units = []; for (let i = 0; i < n; i++) units.push(...base); }
   }
-  return units;
+  return replaceProducedUnits(game, card, units); // Contamination, Damping Sphere (mech-params.js)
 }
 
 // can mana from `host` be spent here? RestrictValid says what it can pay for: spells ("Spell.Creature",
@@ -998,7 +998,7 @@ export function targetCandidates(game, sa, spec) {
       if (card && (valid === 'Card' || matchValid(game, card, valid, { ...ctx, stackController: item.controller }))) out.push(item);
       else if (!card) out.push(item);
     }
-    return out;
+    return paramTargetFilter(game, sa, out); // "that targets you or a creature you control" (mech-params.js)
   }
   const hasPlayers = /(^|,)(Player|Opponent|You)/.test(spec.valid);
   for (const z of spec.zone) {
@@ -1009,7 +1009,7 @@ export function targetCandidates(game, sa, spec) {
     }
   }
   if (hasPlayers) for (const pl of game.livingPlayers()) if (matchValid(game, pl, spec.valid, ctx) && canBeTargetedBy(game, pl, sa)) out.push(pl);
-  return out;
+  return paramTargetFilter(game, sa, out); // "target creature that player controls" (mech-params.js)
 }
 
 export async function chooseTargetsForSA(game, root, { optional = false, aiHint = null } = {}) {

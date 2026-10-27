@@ -621,4 +621,77 @@ test('Damage redirection: Harm\'s Way moves the next 2 damage from a source to a
   expect(T.A.life === life - 3, 'used up: the next damage is dealt as usual');
 });
 
+// ------------------------------------------------------------ targeting
+test('TargetsWithDefinedController: Mortuary Mire only targets creature cards in your own graveyard', async T => {
+  const g = T.game;
+  const mine = await T.put(0, 'Grizzly Bears', 'graveyard');
+  const theirs = await T.put(1, 'Serra Angel', 'graveyard');
+  let cands = null;
+  T.a.on('targets', req => { cands = req.cands; return [refOf(mine)]; }).on('optionalTrigger', () => true);
+  await T.put(0, 'Mortuary Mire');
+  await T.resolve();
+  expect(cands && cands.includes(refOf(mine)) && !cands.includes(refOf(theirs)), `only A's graveyard (${cands})`);
+  expect(T.A.library[0] === mine, 'the Bears go on top of A\'s library');
+});
+test('TargetValidTargeting: Siren Stormtamer counters only what targets you or a creature you control', async T => {
+  const g = T.game;
+  const siren = await T.put(0, 'Siren Stormtamer');
+  const bear = await T.put(0, 'Grizzly Bears');
+  g.activePlayer = 1;
+  T.b.on('targets', () => ['p0']);
+  const bolt1 = await T.cast('Lightning Bolt', 1, { resolve: false });
+  const opp = await T.put(1, 'Hill Giant');
+  T.b.on('targets', () => [refOf(opp)]);
+  const bolt2 = await T.cast('Giant Growth', 1, { resolve: false });
+  g.priority = 0;
+  const abil = activatedAbilities(g, 0, siren).find(a => a.parsed.api === 'Counter');
+  const { targetSpec, targetCandidates, SA } = await import('../src/engine/abilities.js');
+  const sa = new SA(g, abil, siren, 0);
+  const cands = targetCandidates(g, sa, targetSpec(g, sa));
+  expect(cands.some(i => i.card === bolt1) && !cands.some(i => i.card === bolt2), `the Bolt at A, not the Giant Growth on B's creature (${cands.map(i => i.description)})`);
+});
+test('ValidAfterStack: Lurrus casts a permanent spell from the graveyard only if its mana value on the stack is 2 or less', async T => {
+  const g = T.game;
+  await T.put(0, 'Lurrus of the Dream-Den');
+  const hw = await T.put(0, 'Hangarback Walker', 'graveyard');
+  T.mana(0);
+  g.priority = 0;
+  T.a.on('xValue', () => 2);
+  const act = getActions(g, 0).find(a => a.cardId === hw.id);
+  expect(act, 'offered from the graveyard');
+  const ok = await g.performAction(0, act);
+  expect(!ok && hw.zone === 'graveyard', `X=2 makes it mana value 4: not allowed (${hw.zone})`);
+  T.a.on('xValue', () => 1);
+  await g.performAction(0, getActions(g, 0).find(a => a.cardId === hw.id));
+  await T.resolve();
+  expect(hw.zone === 'battlefield', `X=1 is fine (${hw.zone})`);
+});
+
+// ------------------------------------------------------------ mana
+test('ProduceMana replacements: Contamination makes lands tap for {B}; Damping Sphere turns two or more into {C}', async T => {
+  const g = T.game;
+  const { producedUnits, manaAbilitiesOf, activateManaAbility } = await import('../src/engine/abilities.js');
+  const forest = await T.put(0, 'Forest');
+  const tomb = await T.put(0, 'Ancient Tomb');
+  const units = c => producedUnits(g, c, manaAbilitiesOf(g, c)[0]).map(u => u.join('/')).join(' ');
+  expect(units(forest) === 'G' && units(tomb) === 'C C', `normally G and CC (${units(forest)}, ${units(tomb)})`);
+  const sphere = await T.put(1, 'Damping Sphere');
+  g.touch();
+  expect(units(forest) === 'G' && units(tomb) === 'C', `Damping Sphere: Ancient Tomb makes one {C} (${units(tomb)})`);
+  await g.moveCard(sphere, 'graveyard', { silent: true });
+  await T.put(1, 'Contamination');
+  g.touch();
+  expect(units(forest) === 'B', `Contamination: the Forest makes {B} (${units(forest)})`);
+  T.noMana(0);
+  await activateManaAbility(g, 0, forest, manaAbilitiesOf(g, forest)[0].key);
+  expect(T.A.pool.B === 1 && T.A.pool.G === 0, `tapped for {B} (${JSON.stringify(T.A.pool)})`);
+});
+test('LoseMana replacements: under Omnath, Locus of All unspent mana becomes black', async T => {
+  const g = T.game;
+  await T.put(0, 'Omnath, Locus of All');
+  T.noMana(0); T.A.pool.G = 2; T.A.pool.U = 1;
+  g.emptyPools();
+  expect(T.A.pool.B === 3 && T.A.pool.G === 0, `three black mana (${JSON.stringify(T.A.pool)})`);
+});
+
 process.exit(await run(tests) ? 1 : 0);
