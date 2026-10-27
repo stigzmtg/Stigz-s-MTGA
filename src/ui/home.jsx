@@ -365,9 +365,9 @@ export function Home({ onPick, onJoin }) {
           <Gate game="mtg" title="Magic: The Gathering" kind="Commander" keystone="✦"
             pips={['W', 'U', 'B', 'R', 'G'].map(s => <Pip key={s} s={s} />)}
             fan={MTG_FAN.map(mtg)} fanLabel="Commanders: Kaalia, Atraxa, The Ur-Dragon, Edgar Markov, Arahbo"
-            blurb="Every preconstructed Commander deck from Commander 2013 to today, 100 cards each, played with full rules automation."
-            facts={[['194', 'precon decks'], ['2–4', 'players a table'], ['6,422', 'cards scripted']]}
-            points={['1v1 or a 4-player free-for-all', 'Commander damage, tax and the command zone tracked', 'Lands, mana and triggers handled for you', 'Every card’s rules handled, down to the last trigger']}
+            blurb="Every preconstructed Commander deck from Commander 2013 to today, popular decks from EDHREC and Archidekt, and your own built from every Commander card, played with full rules automation."
+            facts={[['234', 'ready-made decks'], ['2–4', 'players a table'], ['32,000+', 'cards to build with']]}
+            points={['1v1 or a 4-player free-for-all', 'Build your own deck, paste a list or a link, share it with a link', 'Commander damage, tax and the command zone tracked', 'Every card’s rules handled, down to the last trigger']}
             onPlay={mode => open('mtg', mode)} />
           <Gate game="pk" title="Pokémon TCG" kind="Tournament decks" keystone={<span className="ball" />}
             pips={PK_TYPES.map(t => <Energy key={t} type={t} size={19} />)}
@@ -387,7 +387,7 @@ export function Home({ onPick, onJoin }) {
       </section>
 
       <section className="home-sec decks" aria-labelledby="decks">
-        <SectionHead id="decks" eyebrow="Jump straight in" title="Pick a deck">Choose any deck below and it is waiting for you in the lobby. These are a few favorites; the Commander lobby has all 194.</SectionHead>
+        <SectionHead id="decks" eyebrow="Jump straight in" title="Pick a deck">Choose any deck below and it is waiting for you in the lobby. These are a few favorites; the Commander lobby has all 194 precons and 40 community decks.</SectionHead>
         <div className="shelf-head mtg">
           <h3><span className="sh-pips" aria-hidden="true"><Pip s="W" /><Pip s="U" /><Pip s="B" /><Pip s="R" /><Pip s="G" /></span>Commander favorites</h3>
           <button className="linkbtn" onClick={() => open('mtg')}>Browse all 194 precons</button>
@@ -441,11 +441,11 @@ export function Home({ onPick, onJoin }) {
 
       <footer className="home-foot">
         <div className="foot-grid">
-          <div className="foot-brand"><span className="brandmark"><Logo size={28} />Lotus Goats</span><p>A free fan-made arena for playing preconstructed decks by the rules.</p></div>
+          <div className="foot-brand"><span className="brandmark"><Logo size={28} />Lotus Goats</span><p>A free fan-made arena for playing card games by the rules, with ready-made decks or your own.</p></div>
           <div><h4>Play</h4><button className="linkbtn" onClick={() => open('mtg')}>Commander</button><button className="linkbtn" onClick={() => open('pokemon')}>Pokémon TCG</button><button className="linkbtn" onClick={() => open('onepiece')}>One Piece Card Game</button><button className="linkbtn" onClick={() => scrollTo('friends')}>Join a room</button><button className="linkbtn" onClick={() => setAcctOpen(login ? 'account' : 'login')}>{login ? 'Your account' : 'Log in'}</button><button className="linkbtn" onClick={() => setSaveOpen(true)}>Save code</button></div>
           <div><h4>Credits</h4>
             <span>Commander rules from <a href="https://github.com/Card-Forge/forge" target="_blank" rel="noopener">Forge</a> (GPL-3.0)</span>
-            <span>Decklists from <a href="https://github.com/taw/magic-preconstructed-decks" target="_blank" rel="noopener">taw</a> and <a href="https://limitlesstcg.com" target="_blank" rel="noopener">Limitless</a></span>
+            <span>Decklists from <a href="https://github.com/taw/magic-preconstructed-decks" target="_blank" rel="noopener">taw</a>, <a href="https://edhrec.com" target="_blank" rel="noopener">EDHREC</a>, <a href="https://archidekt.com" target="_blank" rel="noopener">Archidekt</a> and <a href="https://limitlesstcg.com" target="_blank" rel="noopener">Limitless</a></span>
             <span>Card data from <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a>, <a href="https://tcgdex.dev" target="_blank" rel="noopener">TCGdex</a> and <a href="https://optcgapi.com" target="_blank" rel="noopener">optcgapi</a></span>
           </div>
         </div>
