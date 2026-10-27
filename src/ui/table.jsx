@@ -205,7 +205,7 @@ function mtgTips(game, me, req) {
 }
 
 // ------------------------------------------------------------------ main view
-export function GameView({ session, onExit, onRematch, onReplay, support, imagesOk }) {
+export function GameView({ session, onExit, onRematch, onReplay, onTakeBack, busy, support, imagesOk }) {
   useStore(session.store);
   useSyncExternalStore(subscribeImages, imagesVersion);
   const { game, human } = session;
@@ -464,6 +464,7 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
         <RoomStatus session={session} />
         {session.replay ? <ReplayBar ctl={session.replay} /> : null}
         <span className="spacer" />
+        {onTakeBack && !game.over ? <button className="btn sm" onClick={onTakeBack} disabled={busy || session.recorder.takeBackPoint(me) < 0} title="Take back your last move: the game goes back to just before it">{busy ? 'Taking back…' : 'Take back'}</button> : null}
         <EmoteButton emotes={emotes} />
         <SizeButton />
         <SoundToggle session={session} />

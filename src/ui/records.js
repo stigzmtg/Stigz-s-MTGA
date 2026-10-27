@@ -25,12 +25,13 @@ export function tally(kind, deckId = null) {
 
 // ---- recording a solo game: wrap every seat before the game starts
 export class Recorder {
-  constructor() { this.log = []; this.ops = []; }
+  constructor() { this.log = []; this.ops = []; this.types = []; }
   wrap(inner) {
     return {
       ask: async (game, pid, req) => {
         const i = this.log.length;
         this.log.push(null);
+        this.types[i] = req.type;   // (what kind of decision each was, for taking a move back; not saved)
         const v = await inner.ask(game, pid, req);
         const packed = packValue(v, req.type);
         const ops = this.ops.length ? this.ops.splice(0) : null;
@@ -41,6 +42,12 @@ export class Recorder {
     };
   }
   entries() { const out = []; for (const e of this.log) { if (!e) break; out.push(e); } return out; }
+  // how many decisions to keep to take back pid's last move (anything but passing priority), or -1 when there's none
+  takeBackPoint(pid) {
+    const log = this.entries();
+    for (let i = log.length - 1; i >= 0; i--) if (log[i][1] === pid && !(this.types[i] === 'priority' && log[i][2] === 0)) return i;
+    return -1;
+  }
 }
 
 function resultOf(game, me) {

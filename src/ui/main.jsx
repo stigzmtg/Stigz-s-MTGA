@@ -6,7 +6,7 @@ import { HumanAgent } from './human.js';
 import { Lobby } from './lobby.jsx';
 import { GameView } from './table.jsx';
 import { initImages, preloadDecks } from './images.js';
-import { Lockstep, LocalSeatAgent, RemoteSeatAgent, HostAIAgent } from '../net/lockstep.js';
+import { Lockstep, LocalSeatAgent, RemoteSeatAgent, HostAIAgent, unpackValue } from '../net/lockstep.js';
 import { RoomClient, roomApi, isRoomCode, onClaude } from '../net/roomclient.js';
 import { applyOp } from './manual.js';
 import { makePace, gamePacer } from './pacing.js';
@@ -31,7 +31,8 @@ const { useState, useEffect, useSyncExternalStore } = React;
 
 function shortName(n) { return n.split(',')[0].split(' // ')[0]; }
 
-function newSession(data, cfg) {
+// rewind: { seed, log } to play the game again from its start with these decisions (taking a move back), then on
+function newSession(data, cfg, rewind = null) {
   const store = createStore();
   const settings = loadSettings();
   const human = new HumanAgent(() => store.bump(), settings);
@@ -44,7 +45,7 @@ function newSession(data, cfg) {
     used.add(nm);
     return { name: nm, deck: d, agent: ais[i] };
   })];
-  const game = new Game({ db: data.db, players, onUpdate: () => store.bump(), maxTurns: 400 });
+  const game = new Game({ db: data.db, players, onUpdate: () => store.bump(), maxTurns: 400, seed: rewind ? rewind.seed : undefined });
   game.continueAfterHumanLoss = false;
   human.pid = 0;
   game.pace = gamePacer(game, pace, () => (window.__paAutoplay && game.turnNumber < window.__paAutoplay ? -1 : human.pid));
@@ -60,8 +61,29 @@ function newSession(data, cfg) {
   }
   // every decision is recorded so the game can be replayed (records.js)
   const recorder = new Recorder();
+  // taking a move back: the recorded decisions answer first, with no pauses, then the players carry on
+  let ready = Promise.resolve();
+  if (rewind && rewind.log.length) {
+    let pos = 0, caughtUp;
+    ready = new Promise(r => { caughtUp = r; });
+    const pacer = game.pace;
+    game.pace = async kind => (pos < rewind.log.length ? undefined : pacer(kind));
+    game.agents = game.agents.map(a => ({
+      ask: async (g, pid, req) => {
+        if (pos < rewind.log.length) {
+          const e = rewind.log[pos++];
+          if (e[3]) { recorder.ops.push(...e[3]); for (const op of e[3]) await applyOp(g, op); }
+          return unpackValue(e[2], req.type);
+        }
+        caughtUp();
+        return a.ask(g, pid, req);
+      },
+    }));
+  }
   game.agents = game.agents.map(a => recorder.wrap(a));
   session.recorder = recorder;
+  session.ready = ready;
+  session.rev = Math.random();
   preloadDecks([cfg.mine.id, ...cfg.opps.map(d => d.id)]);
   game.start().then(() => store.bump());
   return session;
@@ -295,7 +317,15 @@ function MtgApp({ onHome }) {
     <Lobby key={customVersion} data={all} imagesOk={imagesOk} onStart={cfg => begin([cfg.mine, ...cfg.opps], () => newSession(all, cfg))} online={onlineProps} onHome={onHome} onBuild={(id, from) => setBuilder({ id, from })} />
     {loadingCards ? <div className="toast" role="status">Loading the cards these decks play…</div> : toast ? <div className="toast" role="status">{toast}</div> : null}
   </>;
-  return <GameView key={`${session.game.seed}:${session.online ? session.online.game : ''}`} session={session} support={data.support} imagesOk={imagesOk}
+  // take back your last move (solo games): the same game again up to just before it
+  const takeBack = session.online || session.replay || session.spectator ? null : () => {
+    const cut = session.recorder.takeBackPoint(session.human.pid);
+    if (cut < 0) return;
+    const next = newSession(all, session.cfg, { seed: session.game.seed, log: session.recorder.entries().slice(0, cut) });
+    setLoadingCards('rewind');
+    next.ready.then(() => { endSession(session); setSession(next); setLoadingCards(false); });
+  };
+  return <GameView key={`${session.game.seed}:${session.online ? session.online.game : ''}:${session.rev || ''}`} session={session} support={data.support} imagesOk={imagesOk} onTakeBack={takeBack} busy={loadingCards === 'rewind'}
     onExit={() => {
       if (session.online && room && room.isHost && !session.game.over) room.stop();
       else if (session.online && room && room.isHost && session.game.over) room.stop();
