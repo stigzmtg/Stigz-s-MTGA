@@ -5,6 +5,7 @@ import { matchValid, calc, ctxOf, ctrlOf } from '../engine/filters.js';
 import { parseAbility } from '../engine/forge.js';
 import { sleep, COLORS, BASIC_LAND_TYPES } from '../engine/util.js';
 import { addCosts } from '../engine/mana.js';
+import { unsetsAI } from '../engine/mech-unsets.js';
 
 const HARMFUL = new Set(['Destroy', 'DestroyAll', 'DealDamage', 'DamageAll', 'Counter', 'Sacrifice', 'SacrificeAll', 'Discard', 'LoseLife', 'Mill', 'GainControl', 'Tap', 'TapAll', 'Goad', 'Fight', 'Phases', 'ExchangeControl', 'RemoveCounter']);
 const BENEFICIAL = new Set(['Pump', 'PumpAll', 'PutCounter', 'PutCounterAll', 'GainLife', 'Draw', 'Untap', 'UntapAll', 'Attach', 'Regenerate', 'Animate', 'Token', 'CopyPermanent', 'Clone', 'Investigate', 'Scry', 'Surveil', 'Proliferate', 'Dig', 'BecomeMonarch', 'Explore', 'Connive', 'Amass', 'MultiplyCounter', 'Mana']);
@@ -45,6 +46,7 @@ export class AIAgent {
 
   // every other choice: mulligans, targets, cards, modes, options, numbers, colors, players
   choose(game, pid, req) {
+    { const r = unsetsAI(this, game, pid, req); if (r !== undefined) return r; } // Un-sets: stickers, dice
     switch (req.type) {
       case 'mulligan': return this.mulligan(game, pid);
       case 'targets': return this.targets(game, pid, req);

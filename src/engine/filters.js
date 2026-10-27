@@ -1,6 +1,7 @@
 // Forge "Valid" filters, "Defined" references, numeric expressions and conditions.
 import { compare, CAP_COLOR, COLORS, BASIC_LAND_TYPES, NAME_TO_COLOR, PERMANENT_TYPES } from './util.js';
 import { cmc, manaColorsFromProduced } from './mana.js';
+import { stickerCardProp, stickerCount, unsetsPlayerProperty } from './mech-unsets-rules.js';
 
 export const unknownProps = new Set(); // collected for coverage diagnostics
 
@@ -609,6 +610,7 @@ function cardProp(game, card, ch, prop, ctx) {
   if (prop === 'otherAbility') { const r = ctx.sa && (ctx.sa.root ? ctx.sa.root() : ctx.sa); return !(r && r.stackItem === card); }
   // two-word creature types ("Time Lord")
   if (/^[A-Z][a-zA-Z'-]* [A-Z][a-zA-Z'-]*$/.test(prop)) return hasType(game, ch, prop, card);
+  if (prop.startsWith('stickered')) { const v = stickerCardProp(card, prop); if (v != null) return v; } // Un-sets: "stickered", "stickeredWith Art"
   unknownProps.add(prop);
   return false;
 }
@@ -1230,6 +1232,7 @@ function playerProperty(game, p, prop, ctx) {
     return n;
   }
   if (prop === 'DamageThisTurn' || prop === 'DamageDoneThisTurn') return game.turnState.damagedPlayers[p.id] || 0;
+  if (prop === 'AttractionsVisitedThisTurn') return unsetsPlayerProperty(game, p, prop);
   if (prop === 'OppsAtLifeTotal') return 0;
   return 0;
 }
@@ -1301,6 +1304,8 @@ function countExpr(game, rest, ctx, depth) {
     case 'Renowned': return host && host.renowned ? 1 : 0;
     case 'HighestCMC_Creature.YouCtrl': return Math.max(0, ...game.battlefield.filter(c => c.controller === youId && game.chars(c).types.has('Creature')).map(c => game.chars(c).cmc));
   }
+  // Un-sets: CardStickers.<kind>..., Valid <filter>$StickerPower / $StickerToughness
+  if (/^CardStickers|\$Sticker(Power|Toughness)$/.test(rest)) return stickerCount(game, rest, ctx, matchValid);
   if ((m = rest.match(/^CardCounters\.(\w+)$/))) return host ? ((host.counters || {})[m[1]] || 0) : 0;
   if ((m = rest.match(/^Initiative\.(\d+)\.(\d+)$/))) return game.initiative === youId ? +m[1] : +m[2];
   // Urza's Mine / Power-Plant / Tower: more mana with the full set

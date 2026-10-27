@@ -7,6 +7,7 @@ const counterLabel = k => `${counterName(k)} counter`;
 import { COLORS, COLOR_NAMES, NAME_TO_COLOR, BASIC_LAND_TYPES } from './util.js';
 import { cmc, parseMana, addCosts } from './mana.js';
 import { canAttack, defendersFor, playerInDirection } from './combat.js';
+import { UNSETS_EFFECTS } from './mech-unsets.js';
 
 const Z = z => (z ? (zoneMap[z] || z.toLowerCase()) : z);
 
@@ -2593,6 +2594,7 @@ async function copyStackItem(game, item, controller, mayChooseTargets) {
   if (card) game.fire('SpellCopy', { Card: card, Player: controller, IsSpell: true, StackItem: copy });
 }
 
+Object.assign(E, UNSETS_EFFECTS);
 export const SUPPORTED_APIS = new Set(Object.keys(E).concat(['Charm']));
 
 export async function runEffect(game, sa) {
