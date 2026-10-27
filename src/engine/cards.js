@@ -178,6 +178,9 @@ export class Card {
     this.textSwap = null; // exchanged text boxes (Exchange of Words)
     this.sector = null; // Space sculptor: 'Alpha' | 'Beta' | 'Gamma'
     this.attackedPlayers = null; // { turn, pids } players this creature attacked this turn
+    this.attackTurns = []; // the last few turn numbers it attacked in
+    this.untappedTurn = null; // the turn number it started untapped ("if it started the turn untapped")
+    this.damageHistory = null; // { players, combat }: who it has dealt damage to, and whether combat damage
     this.hadToAttack = null; // { turn, combat } it was required to attack
     this.surveilledTurn = null;
     this.enteredController = null;
@@ -218,6 +221,7 @@ export class Player {
     this.lifeLostThisTurn = 0;
     this.cardsDrawnThisTurn = 0;
     this.spellsCastThisTurn = [];
+    this.turns = []; // the last few turn numbers this player took
     this.remembered = [];
     this.deckName = '';
     this.maxHandSize = 7;

@@ -785,14 +785,16 @@ export class AIAgent {
 
   modes(game, pid, req) {
     const sa = req.sa;
+    // choosing for an opponent's spell ("an opponent chooses one"): what's worst for its caster
+    const caster = sa.controller != null ? sa.controller : pid;
     const scored = req.options.map(o => {
       const raw = sa.svars[o.value];
       const parsed = parseAbility(raw);
-      const fake = buildDummySA(game, { raw, parsed, svars: sa.svars, src: sa.host, key: 'm' }, sa.host, pid);
+      const fake = buildDummySA(game, { raw, parsed, svars: sa.svars, src: sa.host, key: 'm' }, sa.host, caster);
       let s = 0;
-      for (const sub of fake.chain()) s += this.scoreApi(game, pid, sub, { main: true });
-      if (parsed.api === 'Counter') s = game.stack.some(x => x.controller !== pid) ? 5 : -5;
-      return { v: o.value, s };
+      for (const sub of fake.chain()) s += this.scoreApi(game, caster, sub, { main: true });
+      if (parsed.api === 'Counter') s = game.stack.some(x => x.controller !== caster) ? 5 : -5;
+      return { v: o.value, s: caster === pid ? s : -s };
     }).sort((a, b) => b.s - a.s);
     const n = Math.max(req.min, Math.min(req.max, scored.filter(x => x.s > 0).length || req.min));
     if (req.baseMana && req.options.some(o => o.cost)) {
@@ -847,6 +849,8 @@ export class AIAgent {
       case 'optionalCost': {
         const c = String(req.cost || '');
         if (/^Blight/.test(c)) return game.battlefield.some(x => x.controller === pid && game.chars(x).types.has('Creature') && (x.token || game.chars(x).toughness > 1));
+        // bargain: only with a token to spare
+        if (req.bargain) return game.battlefield.some(x => x.controller === pid && x.token && !game.chars(x).types.has('Creature'));
         return true;
       }
       case 'triggerCost': {

@@ -274,7 +274,8 @@ export const E = {
     if (!hidden) {
       const rawList = objs(game, sa, 'Self');
       for (const e of rawList.filter(o => o && o.isEffect)) { game.effects = game.effects.filter(x => x !== e); game.touch(); }
-      let list = cardsOf(rawList);
+      // (a targeted spell is its card: "exile target spell" — Spell Queller)
+      let list = cardsOf(rawList.map(o => o && o.stackItem && o.card ? o.card : o));
       if (p.Origin) list = list.filter(c => origins.includes(c.zone) || (p.Origin === 'Any'));
       if (sa.p.Optional === 'True' && list.length) {
         const yes = await game.ask(sa.controller, { type: 'confirm', prompt: `${desc(game, sa)}?`, purpose: 'optional', sa });
@@ -501,8 +502,17 @@ export const E = {
     const d0 = p.NumDef != null && !dblD ? calc(game, p.NumDef, sa) : 0;
     let kws = kwList(p.KW);
     if (p.KWChoice || p.Choices && p.KWChoice !== undefined) { /* ignore */ }
+    // "Landwalk:ChosenType", "Hexproof:ChosenColor" with DefinedKW$ ChosenType / ChosenColor: what the source chose
+    const chosen = sa.host && sa.host.chosen;
+    if (p.DefinedKW === 'ChosenType') kws = chosen && chosen.type ? kws.map(k => k.replace(/ChosenType/g, chosen.type)) : [];
+    else if (p.DefinedKW === 'ChosenColor') {
+      const name = chosen && chosen.colors && chosen.colors.length ? COLOR_NAMES[chosen.colors[0]] : null;
+      const Name = name && name[0].toUpperCase() + name.slice(1);
+      // (hexproof from a color is "Hexproof:Card.Blue:blue" here)
+      kws = name ? kws.map(k => k === 'Hexproof:ChosenColor' ? `Hexproof:Card.${Name}:${name}` : k.replace(/ChosenColor/g, Name)) : [];
+    }
     // "Protection:Player.PlayerUID_ChosenPlayerUID:ChosenPlayerName" with DefinedKW$ <player>: fill in that player
-    if (p.DefinedKW) {
+    else if (p.DefinedKW) {
       const who = playersOf(resolveDefined(game, p.DefinedKW, ctxOf(game, sa)))[0];
       kws = who ? kws.map(k => k.replace(/ChosenPlayerUID/g, String(who.id)).replace(/ChosenPlayerName/g, who.name)) : kws.filter(k => !/ChosenPlayer/.test(k));
     }
@@ -512,9 +522,11 @@ export const E = {
         if (kws.length) { const rec = { keywords: kws }; applyDuration(game, sa, o, rec); o.temp = (o.temp || []).concat([rec]); game.touch(); game.log(`${o.name} gains ${kws.join(', ')}.`); }
         continue;
       }
-      if (o.zone !== 'battlefield' && !o.lki) continue;
+      // ("PumpZone$ Exile": a card in another zone, Jhoira of the Ghitu giving an exiled card suspend)
+      const zones = p.PumpZone ? p.PumpZone.split(',').map(z => zoneMap[z] || z.toLowerCase()) : ['battlefield'];
+      if (!zones.includes(o.zone) && !o.lki) continue;
       const c = o.lki ? o.card : o;
-      if (!c || c.zone !== 'battlefield') continue;
+      if (!c || !zones.includes(c.zone)) continue;
       const cch = game.chars(c);
       const a = dblA ? cch.power : a0, d = dblD ? cch.toughness : d0;
       const rec = { power: a, toughness: d, keywords: kws.filter(k => k !== 'HIDDEN'), removeKeywords: p.KWRemove ? kwList(p.KWRemove) : null };
@@ -648,13 +660,18 @@ export const E = {
       return;
     }
     const valid = (p.SacValid || 'Card.Self').replace(/CARDNAME/g, 'Card.Self').replace(/^Self$/, 'Card.Self'); // "SacValid$ Self" (Uro)
+    // "SacEachValid$ True": one of each kind ("an artifact creature and a nonartifact creature")
+    const kinds = p.SacEachValid === 'True' ? valid.split(' & ') : [valid];
     for (const pl of playersOf(def.length ? def : [game.players[sa.controller]])) {
-      const pool = game.battlefield.filter(c => c.controller === pl.id && matchValid(game, c, valid, { ...ctx, you: pl.id }) && !game.cantSacrifice(c, sa));
-      const n = p.Amount === 'All' ? pool.length : num(game, sa, 'Amount', 1);
-      if (!pool.length) continue;
-      let chosen;
-      if (valid === 'Card.Self') chosen = pool.filter(c => c.id === sa.host.id);
-      else chosen = await chooseCards(game, pl.id, pool, p.Optional === 'True' ? 0 : Math.min(n, pool.length), n, `Sacrifice ${n}: ${p.SacMessage || valid}`, sa, 'sacrifice');
+      const chosen = [];
+      for (const kind of kinds) {
+        const pool = game.battlefield.filter(c => c.controller === pl.id && !chosen.includes(c) && matchValid(game, c, kind, { ...ctx, you: pl.id }) && !game.cantSacrifice(c, sa));
+        const n = p.Amount === 'All' ? pool.length : num(game, sa, 'Amount', 1);
+        if (!pool.length) continue;
+        if (kind === 'Card.Self') chosen.push(...pool.filter(c => c.id === sa.host.id));
+        else chosen.push(...await chooseCards(game, pl.id, pool, p.Optional === 'True' ? 0 : Math.min(n, pool.length), n, `Sacrifice ${n}: ${p.SacMessage || kind}`, sa, 'sacrifice'));
+      }
+      if (!chosen.length) continue;
       game.beginBatch();
       for (const c of chosen) {
         const lki = game.makeLKI(c);
@@ -1029,7 +1046,8 @@ export const E = {
     const p = { ...sa.p };
     const ctx = ctxOf(game, sa);
     const rem = p.RememberObjects ? resolveDefined(game, p.RememberObjects, ctx).map(o => o.lki ? liveOrLki(game, o) : o) : [];
-    const d = { id: game.uid++, p, svars: sa.svars, host: sa.host, controller: sa.controller, remembered: rem, turn: game.turnNumber, thisTurnOnly: p.ThisTurn === 'True', nextTurn: p.NextTurn === 'True' || p.UpcomingTurn === 'True' };
+    // (spawner: what set it up, for "Spawner>TriggeredCard" when it fires)
+    const d = { id: game.uid++, p, svars: sa.svars, host: sa.host, controller: sa.controller, remembered: rem, turn: game.turnNumber, thisTurnOnly: p.ThisTurn === 'True', nextTurn: p.NextTurn === 'True' || p.UpcomingTurn === 'True', spawner: sa.root() };
     if (p.Mode === 'Phase' && p.Phase === 'End of Turn' && !p.NextTurn && game.step === 'end') d.nextTurn = true;
     if (p.Mode === 'Phase' && p.Phase === 'Upkeep' && !p.ValidPlayer) d.p.ValidPlayer = 'Player';
     if (p.DelayedTriggerDefinedPlayer) { const pl = playersOf(resolveDefined(game, p.DelayedTriggerDefinedPlayer, ctx))[0]; if (pl) d.p.ValidPlayer = 'Player.IsTriggerRemembered'; d.playerFilter = pl ? pl.id : null; }
@@ -1047,6 +1065,7 @@ export const E = {
     sub.isTrigger = true;
     sub.trigRemembered = rem;
     sub.delayRemembered = rem;
+    sub.spawner = sa.root();
     // "when you pay this cost one or more times, put that many ..." (Count$TriggerRememberAmount)
     if (p.RememberSVarAmount) sub.triggerRememberAmount = sa.svars[p.RememberSVarAmount] ? calc(game, sa.svars[p.RememberSVarAmount], sa) : 0;
     sub.description = (p.TriggerDescription || parseAbility(raw).p.SpellDescription || '').replace(/CARDNAME/g, game.name(sa.host));
@@ -1162,6 +1181,12 @@ export const E = {
     const p = sa.p;
     const ctx = ctxOf(game, sa);
     let list = objs(game, sa, 'Self').filter(o => o && (o.isCard || o.lki));
+    // "create a Mutavault token": a copy of the card with that name (not of this one)
+    if (p.DefinedName) {
+      const def = game.db.get(p.DefinedName);
+      if (!def) { game.log(`${p.DefinedName} isn't available to copy.`, { type: 'unsupported' }); return; }
+      list = [{ lki: true, def, face: 0, chars: { name: def.name } }];
+    }
     if (p.Populate === 'True') {
       const pool = game.battlefield.filter(c => c.controller === sa.controller && c.token && game.chars(c).types.has('Creature'));
       list = pool.length ? await chooseCards(game, sa.controller, pool, 1, 1, 'Populate: choose a creature token to copy', sa, 'copy') : [];
@@ -1363,14 +1388,35 @@ export const E = {
   },
 
   async FlipCoin(game, sa) {
+    const p = sa.p;
+    const run = async (name) => {
+      if (!name || !sa.svars[name]) return;
+      const sub = makeSA(game, sa.svars[name], sa.svars, sa.host, sa.controller, { parent: sa });
+      if (await chooseTargetsForSA(game, sub, { optional: true })) await resolveChain(game, sub);
+    };
+    // "each player flips a coin; each player whose coin comes up tails ..." (Goblin Assassin): heads or tails, no call;
+    // the results stay on the source for "FlippedTails" until a Cleanup clears them
+    if (p.NoCall === 'True' || p.Flipper) {
+      const flippers = p.Flipper ? playersOf(resolveDefined(game, p.Flipper, ctxOf(game, sa))) : [game.players[sa.controller]];
+      for (const pl of flippers) {
+        const heads = game.rng.int(2) === 0;
+        if (p.NoCall !== 'True') {
+          game.log(`${pl.name} flips a coin: ${heads ? 'wins' : 'loses'}.`);
+          await run(heads ? p.WinSubAbility : p.LoseSubAbility);
+          game.fire('FlippedCoin', { Player: pl.id, Result: heads });
+          continue;
+        }
+        game.log(`${pl.name} flips a coin: ${heads ? 'heads' : 'tails'}.`);
+        if (p.RememberResult === 'True') sa.host.flipResults = { ...sa.host.flipResults, [pl.id]: heads ? 'Heads' : 'Tails' };
+        await run(heads ? p.HeadsSubAbility : p.TailsSubAbility);
+        game.fire('FlippedCoin', { Player: pl.id, Result: heads });
+      }
+      return;
+    }
     let win = game.rng.int(2) === 0;
     if (game.activeStatics('FlipCoinDoubler').some(s => matchValid(game, game.players[sa.controller], s.p.ValidPlayer || 'You', s.ctx))) win = (game.rng.int(2) === 0) || win;
     game.log(`${game.players[sa.controller].name} flips a coin: ${win ? 'wins' : 'loses'}.`);
-    const name = win ? sa.p.WinSubAbility : sa.p.LoseSubAbility;
-    if (name && sa.svars[name]) {
-      const sub = makeSA(game, sa.svars[name], sa.svars, sa.host, sa.controller, { parent: sa });
-      if (await chooseTargetsForSA(game, sub, { optional: true })) await resolveChain(game, sub);
-    }
+    await run(win ? p.WinSubAbility : p.LoseSubAbility);
     game.fire('FlippedCoin', { Player: sa.controller, Result: win });
   },
 
@@ -1563,6 +1609,7 @@ export const E = {
     if (p.ClearImprinted === 'True') h.imprinted = [];
     if (p.ClearChosenCard === 'True' && h.chosen) delete h.chosen.cards;
     if (p.ClearChosenType === 'True' && h.chosen) delete h.chosen.type;
+    if (p.ClearCoinFlips === 'True') h.flipResults = null;
     if (p.ClearChosenPlayer === 'True' && h.chosen) delete h.chosen.player;
     if (p.ClearNamedCard === 'True' && h.chosen) delete h.chosen.name;
     if (p.ForgetDefined) { const f = resolveDefined(game, p.ForgetDefined, ctxOf(game, sa)); h.remembered = (h.remembered || []).filter(x => !f.includes(x)); }

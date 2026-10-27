@@ -1,5 +1,5 @@
 // Mode-specific trigger matching against event run-params.
-import { matchValid, ctrlOf, resolveDefined } from './filters.js';
+import { matchValid, ctrlOf, resolveDefined, matchCastSA } from './filters.js';
 import { normalizeCounter } from './game.js';
 
 function vc(game, obj, valid, ctx) {
@@ -90,6 +90,7 @@ export function triggerMatches(game, p, host, rp, ctx) {
       if (p.ValidCard && !vc(game, rp.Card, p.ValidCard, ctx)) return false;
       if (p.ValidActivatingPlayer && !vc(game, playerObj(game, rp.Player), p.ValidActivatingPlayer, ctx)) return false;
       if (p.ValidSA && !validSA(game, rp, p.ValidSA, ctx)) return false;
+      if (p.ValidSAonCard && !validSA(game, rp, p.ValidSAonCard, ctx)) return false;
       // "a spell with {X} in its mana cost" (Brass Infiniscope, Unbound Flourishing)
       if (p.HasXManaCost === 'True' && !(rp.Card && rp.Card.def && game.chars(rp.Card).manaCost && game.chars(rp.Card).manaCost.x)) return false;
       if (p.ActivatorThisTurnCast) {
@@ -258,14 +259,17 @@ function validSA(game, rp, spec, ctx) {
     if (/^(Spell|SpellAbility)\.MayPlaySource$/.test(s)) { if ((rp.IsSpell || s.startsWith('SpellAbility')) && rp.MayPlay && (rp.MayPlayHost == null || !ctx.host || rp.MayPlayHost === ctx.host.id)) return true; continue; }
     if (s.startsWith('Spell.') && rp.IsSpell) {
       const prop = s.slice(6);
-      if (prop === 'Flashback' && rp.AltCost === 'Flashback') return true;
       if (prop === 'castFromHand' || prop === 'wasCastFromHand') { if (rp.CastFrom === 'hand') return true; continue; }
       if (prop === 'notCastFromHand') { if (rp.CastFrom !== 'hand') return true; continue; }
-      if (prop === 'MayPlaySource') continue;
       if (prop === 'isCastFromCommandZone') { if (rp.CastFrom === 'command') return true; continue; }
-      return true;
+      // how it was cast ("if no mana was spent to cast it", "using mana from a Treasure") or what it is
+      const sa = rp.SpellAbility || (rp.Card && rp.Card.castSA);
+      if (sa && rp.Card && matchCastSA(game, sa, rp.Card, s, ctx)) return true;
+      continue;
     }
     if (s.startsWith('Activated.') && !rp.IsSpell) return true;
+    // "SpellAbility.!ManaAbility+ManaSpent GE4": a spell or activated ability, as it was paid for
+    if (s.startsWith('SpellAbility.') && rp.SpellAbility && rp.Card && matchCastSA(game, rp.SpellAbility, rp.Card, s, ctx)) return true;
     if (s === 'SpellAbility') return true;
   }
   return false;

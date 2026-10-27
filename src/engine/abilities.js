@@ -692,6 +692,7 @@ export async function produceMana(game, card, abil, colors, pid, reserve = null,
   let np = null;
   if (cost.hasMana) { np = surplusPay(player.pool, cost.mana, reserve, colors); if (!np) return false; }
   if (cost.tap) { card.tapped = true; game.touch(); }
+  if (cost.tap && game.chars(card).types.has('Land')) player.landManaTurn = game.turnNumber; // (Desolation)
   if (np) player.pool = np;
   for (const part of cost.parts) {
     if (part.type === 'Sac') {
@@ -867,6 +868,8 @@ export async function payManaCost(game, pid, manaCost, { exclude = new Set(), sp
       continue;
     }
     if (spellCard && sa && game.chars(s.card).subtypes.has('Treasure')) sa.root().manaFromTreasure = true; // (Rain of Riches)
+    // where the mana came from: "if mana from an artifact was spent to cast it", "spent mana from this to cast"
+    if (sa) { const sch = game.chars(s.card); (sa.root().manaFrom = sa.root().manaFrom || []).push({ id: s.card.id, n: a.colors.length, artifact: sch.types.has('Artifact'), creature: sch.types.has('Creature') }); }
     await produceMana(game, s.card, s.abil, a.colors, pid, s.extraCost ? reserveAt(i) : manaCost);
     tapped.push(s.card);
     // the table can pace a computer player's taps one at a time (never changes the game)
@@ -1608,6 +1611,13 @@ export async function castSpell(game, pid, card, action = {}, { free = false, fr
     sa.optionalCostPaid = true;
     if (reveal) (sa.castPresence = sa.castPresence || []).push(reveal[1]);
   }
+  // bargain: "you may sacrifice an artifact, enchantment, or token as you cast this spell"
+  const bargain = 'Sac<1/Artifact;Enchantment;Card.token/artifact, enchantment, or token>';
+  if (kws.includes('Bargain') && affordable(bargain)) {
+    const yes = await game.ask(pid, { type: 'confirm', prompt: `${face.name}: bargain (sacrifice an artifact, enchantment, or token as you cast it)?`, purpose: 'optionalCost', bargain: true, sa, cost: bargain, cancellable: true, cardId: card.id });
+    if (yes == null) throw new Cancelled();
+    if (yes) { addCost(bargain); sa.optionalCostPaid = true; sa.bargained = true; }
+  }
   // Chorus of the Conclave: "as an additional cost to cast creature spells, you may pay any amount of mana"
   if (face.types.includes('Creature') && game.battlefield.some(c => c.controller === pid && game.chars(c).keywords.some(k => /^As an additional cost to cast creature spells, you may pay any amount of mana/.test(k)))) {
     let max = 0;
@@ -2043,8 +2053,16 @@ export async function chooseModes(game, sa, { mana = null, card = null, cancella
     return canAfford(game, sa.controller, m, { spellCard: card, exclude: card ? new Set([card.id]) : new Set() });
   };
   while (max > Math.max(1, lo) && !escalateOk(max)) max--;
+  // "an opponent chooses one" (Fatal Lore, Misfortune): you pick the opponent, they pick the mode
+  let chooser = sa.controller;
+  if (p.Chooser) {
+    const ids = resolveDefined(game, p.Chooser, ctx).filter(x => x && x.isPlayer).map(x => x.id);
+    const pick = ids.length > 1 ? await game.ask(sa.controller, { type: 'player', prompt: 'Choose who chooses the mode', players: ids, purpose: 'modeChooser', sa }) : ids[0];
+    chooser = ids.includes(pick) ? pick : ids.length ? ids[0] : sa.controller;
+  }
+  sa.choosingPlayer = chooser;
   for (let tries = 0; tries < 4; tries++) {
-    ans = await game.ask(sa.controller, { type: 'modes', prompt, options: usable, min: lo, max, repeat, sa, cancellable: !!cancellable && !sa.isTrigger, baseMana: mana });
+    ans = await game.ask(chooser, { type: 'modes', prompt, options: usable, min: lo, max, repeat, sa, cancellable: !!cancellable && !sa.isTrigger && chooser === sa.controller, baseMana: mana });
     if (!ans) return false;
     // spree: the chosen modes' costs must be payable together
     const extra = ans.map(n => (usable.find(o => o.value === n) || {}).cost).filter(Boolean);
