@@ -68,8 +68,12 @@ for (let i = 0; i < STEPS; i++) {
     continue;
   }
   if (/Choose targets/i.test(state.prompt || '')) {
-    const t = await page.$('.card.targetable, .mat.targetable .plate');
-    if (t) await t.click();
+    // (the first one you can see the middle of: an Aura under its creature shows only its top)
+    const all = await page.$$('.card.targetable, .mat.targetable .plate');
+    let t = null;
+    for (const e of all) if (await e.evaluate(el => { const r = el.getBoundingClientRect(); const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return !!at && el.contains(at); })) { t = e; break; }
+    if (t) await t.click({ timeout: 5000 }).catch(() => {});
+    else if (all.length) await all[0].click({ timeout: 5000, position: { x: 20, y: 6 } }).catch(() => {});
     await page.waitForTimeout(100);
     const c = await page.$('.prompt .btn.primary:not([disabled])');
     if (c) await c.click();

@@ -51,6 +51,8 @@ function rulesFromText(name, text) {
     shadow: kws.has('shadow'), horsemanship: kws.has('horsemanship'), skulk: kws.has('skulk'),
     walk: [...kws].map(k => /^(forest|island|swamp|mountain|plains)walk$/.exec(k)).filter(Boolean).map(m => m[1][0].toUpperCase() + m[1].slice(1))[0] || null,
     pro: [...kws].map(k => /^protection from (white|blue|black|red|green)$/.exec(k)).filter(Boolean).map(m => COLOR[m[1]]),
+    // protection from a card type (artifacts, creatures, ...) or from everything
+    proType: [...kws].map(k => /^protection from (artifacts|creatures|enchantments|everything|multicolored|monocolored)$/.exec(k)).filter(Boolean).map(m => m[1]),
     unblockable: lines.some(l => /^this (?:creature )?can't be blocked\.$/.test(l)),
     cantBlock: lines.some(l => /^this (?:creature )?can't block\.$/.test(l)) || lines.some(l => /^this (?:creature )?can't attack or block\.$/.test(l)),
     onlyFlyers: lines.some(l => /^this (?:creature )?can block only creatures with flying\.$/.test(l)),
@@ -72,7 +74,7 @@ for (const name of all) {
   if (/^AlternateMode:/m.test(raw)) continue;   // double-faced, split, adventurers: the front face's words are mixed in
   const oracle = ((/^Oracle:(.*)$/m.exec(raw) || [])[1] || '').replace(/\\n/g, '\n');
   const r = rulesFromText(name, oracle);
-  const evasive = r.flying || r.menace || r.fear || r.intimidate || r.shadow || r.horsemanship || r.skulk || r.walk || r.pro.length || r.unblockable;
+  const evasive = r.flying || r.menace || r.fear || r.intimidate || r.shadow || r.horsemanship || r.skulk || r.walk || r.pro.length || r.proType.length || r.unblockable;
   if (r.murky || !(evasive || r.cantBlock || r.onlyFlyers)) continue;
   cards++;
   try {
@@ -99,6 +101,10 @@ for (const name of all) {
         if (r.skulk && bch.power > apow) want = false;
         if (r.walk) want = false;
         if (r.pro.some(c => bch.colors.has(c))) want = false;
+        for (const p of r.proType) {
+          if (p === 'everything' || (p === 'artifacts' && bch.types.has('Artifact')) || (p === 'creatures' && bch.types.has('Creature')) || (p === 'enchantments' && bch.types.has('Enchantment'))) want = false;
+          if ((p === 'multicolored' && bch.colors.size > 1) || (p === 'monocolored' && bch.colors.size === 1)) want = false;
+        }
         const got = canBlock(g, b, a);
         ok(got === want, `${name} vs ${k}: the engine says ${got ? 'can' : 'can’t'} block, its words say ${want ? 'can' : 'can’t'}${got ? '' : ` (${blockProblem(g, b, a)})`}`);
         if (!got) ok(typeof blockProblem(g, b, a) === 'string' && blockProblem(g, b, a).length > 10, `${name} vs ${k}: a reason is given`);

@@ -462,6 +462,9 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .cardwrap:hover { z-index: 5; }
 .cardwrap .under { position: absolute; left: 0; top: calc(var(--cw) * -0.2 * var(--i)); width: var(--cw); height: calc(var(--cw) * 1.4); z-index: calc(-1 * var(--i)); }
 .cardwrap.tapped .under { top: calc(var(--cw) * -0.2 * var(--i)); }
+/* an Aura or Equipment you can target slides further out from under its creature, so it's easy to click */
+.cardwrap .under { transition: transform 0.18s ease; }
+.cardwrap .under:has(> .card.targetable), .cardwrap .under:has(> .card.selected) { transform: translateY(calc(var(--cw) * -0.22)); }
 .frame-W { --frame: linear-gradient(160deg, #f6eed3, #d9cba0); --frame-ink: #2b261b; }
 .frame-U { --frame: linear-gradient(160deg, #3e7cc4, #234f86); }
 .frame-B { --frame: linear-gradient(160deg, #57494d, #2a2426); }
