@@ -569,6 +569,7 @@ export function applyCostMods(mana, mods) {
   let m = cloneCost(mana);
   const applied = { addMana: mods.addMana, generic: 0, colors: {}, other: otherCostFields(mana) };
   if (mods.addMana) m = addCosts(m, mods.addMana);
+  applied.otherAfter = otherCostFields(m);
   m.generic += mods.raise;
   applied.raise = mods.raise;
   for (const { color, n, strict } of mods.colorReduce) {
@@ -585,8 +586,9 @@ export function applyCostMods(mana, mods) {
   }
   return { mana: m, applied };
 }
-// fields other code keeps on a mana cost (how much of it is a waterbend cost: mech-newsets.js); undoCostMods puts
-// them back as they were, since adding costs merges them
+// fields other code keeps on a mana cost (how much of it is a waterbend cost: mech-newsets.js), which adding costs
+// merges: undoCostMods takes back only what applyCostMods added to them, and leaves what was added since (an optional
+// waterbend cost) alone
 const COST_FIELDS = new Set(['generic', 'colored', 'hybrid', 'twobrid', 'phyrexian', 'x', 'snow']);
 function otherCostFields(mana) {
   const o = {};
@@ -595,9 +597,11 @@ function otherCostFields(mana) {
 }
 function undoCostMods(mana, applied) {
   const m = cloneCost(mana);
-  if (applied.other) {
-    for (const k of Object.keys(m)) if (!COST_FIELDS.has(k)) delete m[k];
-    Object.assign(m, applied.other);
+  const num = v => /^\d+$/.test(String(v));
+  for (const k of new Set([...Object.keys(applied.other || {}), ...Object.keys(applied.otherAfter || {})])) {
+    const before = applied.other[k], after = applied.otherAfter[k], now = m[k];
+    if (now === after) { if (before === undefined) delete m[k]; else m[k] = before; }
+    else if (num(now) && num(after)) m[k] = +now - (+after - (num(before) ? +before : 0));
   }
   m.generic += applied.generic;
   for (const [k, n] of Object.entries(applied.colors)) m.colored[k] += n;
