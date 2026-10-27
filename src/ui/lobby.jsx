@@ -3,7 +3,7 @@ import { CardFace, viewOfDef, Pip } from './cardview.jsx';
 import { DeckRecord } from './replaybar.jsx';
 import { HelpDialog, SizeButton } from './dialogs.jsx';
 import { FriendsPanel } from './online.jsx';
-import { lobbyImages, subscribeImages, imagesVersion, cardImage } from './images.js';
+import { lobbyImages, subscribeImages, imagesVersion, cardImage, scryfallArt, scryfallCard } from './images.js';
 import { DeckStyleButton, subscribeDeckStyles, deckStylesVersion } from './deckstyle.jsx';
 import { identityStyle } from './board.jsx';
 
@@ -26,6 +26,7 @@ function Identity({ colors }) {
 const NO_SYMBOL = new Set(['frc']);
 function SetMark({ set, name }) {
   if (set === 'YOU') return <span className="mine-mark" title="Your deck" aria-label="Your deck">★</span>;
+  if (set === 'EDHREC' || set === 'ARCHIDEKT') return <span className="setcode community" title={name}>{set === 'EDHREC' ? 'EDHREC' : 'Archidekt'}</span>;
   const code = set.toLowerCase();
   if (NO_SYMBOL.has(code)) return <span className="setcode" title={name}>{set}</span>;
   return <i className={`ss ss-${code} setsym`} title={`${name} (${set})`} aria-label={name} />;
@@ -33,7 +34,7 @@ function SetMark({ set, name }) {
 
 // the commander's art, cropped, in front of each deck's name (its colors until the pictures load)
 function DeckArt({ deck, imagesOk }) {
-  const img = imagesOk ? (deck.custom ? cardImage(deck.commanders[0]) : lobbyImages(deck.id)[0]) : null;
+  const img = deck.community ? scryfallArt(deck.art && deck.art[0]) : imagesOk ? (deck.custom ? cardImage(deck.commanders[0]) : lobbyImages(deck.id)[0]) : null;
   return <span className={`art ${img ? 'img' : ''}`} style={img ? { backgroundImage: `url(${img})` } : undefined} aria-hidden="true" />;
 }
 
@@ -59,7 +60,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
   const saved = storageGet('pa-lobby', {});
   const [q, setQ] = useState('');
   const [colors, setColors] = useState([]);
-  const [mine, setMine] = useState(saved.mine && decks.find(d => d.id === saved.mine) ? saved.mine : decks[0].id);
+  const [mine, setMine] = useState(saved.mine && decks.find(d => d.id === saved.mine) ? saved.mine : (decks.find(d => !d.custom && !d.community) || decks[0]).id);
   const [numOpp, setNumOpp] = useState(saved.numOpp || 1);
   const [opps, setOpps] = useState(saved.opps || ['random', 'random', 'random']);
   const [help, setHelp] = useState(false);
@@ -100,12 +101,12 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
 
   return (
     <div className="app">
-      <header className="topbar">{onHome ? <button className="brand linklike" onClick={onHome} title="Choose a game">Lotus Goats<small>Commander</small></button> : <span className="brand">Lotus Goats<small>Commander vs AI</small></span>}<span className="spacer" /><span className="chip">{decks.length} preconstructed decks</span>{onHome ? <button className="btn sm" onClick={onHome}>Switch game</button> : null}<SizeButton /><button className="btn sm" onClick={() => setHelp(true)}>How to play</button></header>
+      <header className="topbar">{onHome ? <button className="brand linklike" onClick={onHome} title="Choose a game">Lotus Goats<small>Commander</small></button> : <span className="brand">Lotus Goats<small>Commander vs AI</small></span>}<span className="spacer" /><span className="chip">{decks.length} decks</span>{onHome ? <button className="btn sm" onClick={onHome}>Switch game</button> : null}<SizeButton /><button className="btn sm" onClick={() => setHelp(true)}>How to play</button></header>
       {help ? <HelpDialog onClose={() => setHelp(false)} /> : null}
       <div className="lobby">
         <div className="intro" data-eyebrow="Magic: The Gathering · Commander">
-          <h1>Pick a precon, take a seat</h1>
-          <p>Every Commander precon from Commander 2013 to today, played with full rules automation. Face computer opponents, or open a room and play with friends. Choose your deck and shuffle up.</p>
+          <h1>Pick a deck, take a seat</h1>
+          <p>Every Commander precon from Commander 2013 to today, popular decks from EDHREC and Archidekt, and your own, played with full rules automation. Face computer opponents, or open a room and play with friends. Choose your deck and shuffle up.</p>
         </div>
         <section className="panel" aria-label="Your deck">
           <div className="panel-head"><h2>Your deck</h2>{onBuild ? <button className="btn sm" onClick={() => onBuild(null)}>+ Build a deck</button> : null}</div>
@@ -148,7 +149,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
                 <div className="oppslot" key={i}>
                   <span className="label">AI {i + 1}</span>
                   <select id={`opp-${i}`} className="input" value={opps[i]} onChange={e => setOpps(o => { const n = o.slice(); n[i] = e.target.value; return n; })}>
-                    <option value="random">Random precon</option>
+                    <option value="random">Random deck</option>
                     {sortedDecks.filter(d => !d.custom).map(d => <option key={d.id} value={d.id}>{d.name} — {d.commanders.join(' & ')}</option>)}
                   </select>
                 </div>
@@ -164,20 +165,21 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
             <div className="panel-head"><h2>{deck.name}</h2>{onBuild ? (deck.custom ? <button className="btn sm" onClick={() => onBuild(deck.id)}>Edit this deck</button> : <button className="btn sm" onClick={() => onBuild(null, deck.id)} title="Open a copy of this precon in the deck builder to change it">Edit a copy</button>) : null}</div>
             <div className="commander-showcase bigcard" style={{ '--cw': deck.commanders.length > 1 ? 'calc(190px * var(--s))' : 'calc(250px * var(--s))' }}>
               {(() => {
-                const imgs = imagesOk ? (deck.custom ? deck.commanders.map(n => cardImage(n)) : lobbyImages(deck.id)) : [];
+                const imgs = deck.community ? (deck.art || []).map(scryfallCard) : imagesOk ? (deck.custom ? deck.commanders.map(n => cardImage(n)) : lobbyImages(deck.id)) : [];
                 return deck.commanders.map((n, i) => { const d = db.get(n); return d ? <div className="cardwrap" key={n}><CardFace v={{ ...viewOfDef(d), img: imgs[i] || null }} size="big" /></div> : null; });
               })()}
             </div>
             <DeckStyleButton kind="mtg" deck={deck} colors={identities[deck.id] || []} />
             <div className="deckstats" style={{ marginTop: 10 }}>
               <span className="chip">{deck.setName}</span>
+              {deck.community ? <a className="chip" href={deck.url} target="_blank" rel="noopener" title={`See this deck on ${deck.source}`}>{deck.author ? `by ${deck.author} on ${deck.source}` : `on ${deck.source}`} ↗</a> : null}
               {Object.entries(stats.counts).filter(([, n]) => n).map(([t, n]) => <span key={t} className="chip">{n} {t === 'Sorcery' ? 'Sorceries' : t + 's'}</span>)}
               <span className="chip">Avg MV {stats.avgMV}</span>
             </div>
             <p className="coverage">Rules automation: <b>{stats.coverage}%</b> of cards fully automated.</p>
             <DeckRecord kind="mtg" id={deck.id} />
           </section>
-          <p className="fineprint">Unofficial fan project, not affiliated with Wizards of the Coast. Magic: The Gathering and its card names are trademarks of Wizards of the Coast. Card rules come from the open-source <a href="https://github.com/Card-Forge/forge" target="_blank" rel="noopener">Forge</a> project (GPL-3.0); decklists from <a href="https://github.com/taw/magic-preconstructed-decks" target="_blank" rel="noopener">taw/magic-preconstructed-decks</a>; card images from <a href="https://www.tcgplayer.com" target="_blank" rel="noopener">TCGplayer</a> and <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a>; mana and set symbols from Andrew Gioia's <a href="https://github.com/andrewgioia/mana" target="_blank" rel="noopener">Mana</a> and <a href="https://github.com/andrewgioia/keyrune" target="_blank" rel="noopener">Keyrune</a> fonts.</p>
+          <p className="fineprint">Unofficial fan project, not affiliated with Wizards of the Coast. Magic: The Gathering and its card names are trademarks of Wizards of the Coast. Card rules come from the open-source <a href="https://github.com/Card-Forge/forge" target="_blank" rel="noopener">Forge</a> project (GPL-3.0); decklists from <a href="https://github.com/taw/magic-preconstructed-decks" target="_blank" rel="noopener">taw/magic-preconstructed-decks</a>, <a href="https://edhrec.com" target="_blank" rel="noopener">EDHREC</a> (average decks) and <a href="https://archidekt.com" target="_blank" rel="noopener">Archidekt</a> (each deck's builder is named with it); card images from <a href="https://www.tcgplayer.com" target="_blank" rel="noopener">TCGplayer</a> and <a href="https://scryfall.com" target="_blank" rel="noopener">Scryfall</a>; mana and set symbols from Andrew Gioia's <a href="https://github.com/andrewgioia/mana" target="_blank" rel="noopener">Mana</a> and <a href="https://github.com/andrewgioia/keyrune" target="_blank" rel="noopener">Keyrune</a> fonts.</p>
         </div>
       </div>
     </div>

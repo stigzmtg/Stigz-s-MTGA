@@ -1,7 +1,21 @@
-// Card images: packed AVIF files published next to the page (built by tools/pack-images.mjs).
-// Packs load on demand and are sliced into object URLs; anything without an image falls back to the drawn frame.
-import { dataUrl, packUrl } from './common.js';
-const state = { index: null, packs: new Map(), urls: new Map(), version: 0, listeners: new Set(), failed: false };
+// Card images: packed AVIF files published next to the page (built by tools/pack-images.mjs) for the precons' cards,
+// and Scryfall's pictures for every other card (their ids come with the full card pool: allcards.js). Packs load on
+// demand and are sliced into object URLs; anything without an image falls back to the drawn frame.
+import { dataUrl, packUrl, onClaudePage } from './common.js';
+const state = { index: null, packs: new Map(), urls: new Map(), version: 0, listeners: new Set(), failed: false, meta: null };
+
+// Scryfall's picture of a card: its id, plus "b" when it has a back face (cardmeta.json). Not on the claude.ai page,
+// which can't load pictures from other sites.
+const scryfall = (id, face = 0, size = 'normal') => (id && !onClaudePage() ? `https://cards.scryfall.io/${size}/${face && id.endsWith('b') ? 'back' : 'front'}/${id[0]}/${id[1]}/${id.replace(/b$/, '')}.jpg` : null);
+export function setCardMeta(meta) { state.meta = meta; bump(); }
+// a picture that didn't load (Scryfall blocked on a school network, say): the card is drawn instead
+const failed = new Set();
+export function imageFailed(url) { if (!url || failed.has(url)) return; failed.add(url); bump(); }
+export const imageBroken = url => failed.has(url);
+const metaImage = (name, face, size) => { const m = state.meta && name && (state.meta[name] || (name.includes(' // ') && state.meta[name.split(' // ')[0]])); return m ? scryfall(m[0], face, size) : null; };
+// a deck's picture by Scryfall id (community decks carry their commander's)
+export const scryfallArt = id => scryfall(id, 0, 'art_crop');
+export const scryfallCard = id => scryfall(id, 0);
 
 export async function initImages() {
   try {
@@ -14,7 +28,7 @@ export async function initImages() {
   return !!state.index;
 }
 
-export function imagesAvailable() { return !!state.index; }
+export function imagesAvailable() { return !!state.index || !!state.meta; }
 
 function bump() { state.version++; for (const f of state.listeners) f(); }
 export function subscribeImages(f) { state.listeners.add(f); return () => state.listeners.delete(f); }
@@ -63,7 +77,7 @@ function lookup(ix, name, deckId) {
 // URL for a card face (0 = front), or null while loading / when there is no image
 export function cardImage(name, deckId, face = 0) {
   const es = entriesFor(name, deckId);
-  if (!es) return null;
+  if (!es) return metaImage(name, face);
   return urlFor(es[Math.min(face, es.length - 1)]);
 }
 
@@ -85,12 +99,12 @@ export function preloadDecks(deckIds) {
 
 // image for a live card in a game: its owner's deck printing, the shown face for transformed cards
 export function imageOf(game, card) {
-  if (!state.index || card.faceDown) return null;
+  if ((!state.index && !state.meta) || card.faceDown) return null;
   // copies (clones, token copies) show the copied card; tokens made from a script show that token
   const def = card.copyOf && card.copyOf.def ? card.copyOf.def : card.def;
   const face = card.copyOf ? card.copyOf.face || 0 : card.face || 0;
   if (def.token) {
-    const e = state.index.tokens && def.scriptName && state.index.tokens[def.scriptName];
+    const e = state.index && state.index.tokens && def.scriptName && state.index.tokens[def.scriptName];
     return e ? urlFor(e) : null;
   }
   const owner = game.players[card.owner];

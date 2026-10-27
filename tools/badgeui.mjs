@@ -34,7 +34,7 @@ ok(made && made.token, 'host account made');
 await host.evaluate(m => localStorage.setItem('pa-account', JSON.stringify({ token: m.token, user: m.user })), made);
 await host.reload();
 const guest = await browserFor('guest');
-for (const p of [host, guest]) { await p.goto(BASE + '#mtg'); await p.waitForSelector('text=Pick a precon', { timeout: 60000 }); }
+for (const p of [host, guest]) { await p.goto(BASE + '#mtg'); await p.waitForSelector('text=Pick a deck, take a seat', { timeout: 60000 }); }
 
 await host.click('button:has-text("Play with friends")');
 ok(await host.inputValue('#nick') === username && await host.$eval('#nick', e => e.readOnly), 'the host\'s room name is the account name, fixed');

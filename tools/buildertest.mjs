@@ -8,17 +8,36 @@ import { buildIndex, deckProblems, BASICS } from '../src/ui/customdecks.js';
 import { createDeckGuide } from '../src/ui/deckguide.js';
 import { parseDeckText, findCardName, deckToText, countCards } from '../src/ui/decktext.js';
 
-const raw = JSON.parse(fs.readFileSync('data/cards.json', 'utf8'));
-const decks = JSON.parse(fs.readFileSync('data/decks.json', 'utf8'));
+// the whole card pool, as the builder has it once everything has loaded (tools/build-allcards.mjs)
+const more = JSON.parse(fs.readFileSync('data/more.json', 'utf8'));
+const raw = Object.assign(JSON.parse(fs.readFileSync('data/cards.json', 'utf8')), ...Array.from({ length: more.shards }, (_, i) => JSON.parse(fs.readFileSync(`data/more/cards-${i}.json`, 'utf8'))));
+const meta = JSON.parse(fs.readFileSync('data/cardmeta.json', 'utf8'));
+const precons = JSON.parse(fs.readFileSync('data/decks.json', 'utf8'));
+const community = JSON.parse(fs.readFileSync('data/community.json', 'utf8'));
+const decks = [...community, ...precons];
 const support = JSON.parse(fs.readFileSync('data/support.json', 'utf8'));
+const t0 = performance.now();
 const index = buildIndex(raw);
 const byName = new Map(index.map(c => [c.name, c]));
-const H = createDeckGuide(index, decks, support);
+const H = createDeckGuide(index, decks, support, n => meta[n] || null);
+const setupMs = performance.now() - t0;
 let pass = 0, fail = 0;
 const ok = (c, msg) => { if (c) pass++; else { fail++; console.log('FAIL', msg); } };
 const toMap = cards => { const m = new Map(); for (const [n, k] of cards) m.set(n, (m.get(n) || 0) + k); return m; };
 
-// ---- every precon through the guide
+ok(index.length > 30000, `the whole card pool is there (${index.length} cards)`);
+ok(setupMs < 8000, `reading every card takes ${setupMs.toFixed(0)} ms`);
+// ranking a deck (every change in the builder does it) stays quick with the whole pool
+{
+  const d = precons[0], cards = toMap(d.cards), state = { commanders: d.commanders, cards };
+  const t = performance.now(); H.rank(state); const ms = performance.now() - t;
+  ok(ms < 400, `ranking the pool for a deck takes ${ms.toFixed(0)} ms`);
+}
+ok(!H.feats.get('Dockside Extortionist').legal && H.feats.get('Sol Ring').legal, 'the banned list comes from Scryfall');
+ok(H.feats.get('Sol Ring').popular > 0.9, 'Sol Ring is among the most played cards');
+ok(community.length >= 30 && community.every(d => d.community && d.url && d.source), `community decks with credit (${community.length})`);
+
+// ---- every precon and community deck through the guide
 let landsGood = 0, shortColors = 0;
 for (const d of decks) {
   const cards = toMap(d.cards);
@@ -26,6 +45,7 @@ for (const d of decks) {
   const identity = [...new Set(d.commanders.flatMap(n => (byName.get(n) || { ci: [] }).ci))];
   const problems = deckProblems({ commanders: d.commanders, cards: [...cards] }, byName, identity).filter(p => !/can’t fully play/.test(p));
   // (Upgrades Unleashed lists Mossfire Valley twice in the precon data)
+  ok(d.community ? !problems.length && !deckProblems({ commanders: d.commanders, cards: [...cards] }, byName, identity).length : true, `${d.name}: a community deck is fully legal`);
   ok(!problems.filter(p => !(d.name === 'Upgrades Unleashed' && /Mossfire Valley/.test(p))).length, `${d.name}: ${problems.join(' ')}`);
   const rec = H.recipe(state);
   ok(rec.rows.length >= 6 && rec.rows.every(r => r.have >= 0 && r.want > 0), `${d.name}: a checklist`);
@@ -46,7 +66,8 @@ name('sol ring', 'Sol Ring');
 name('SOL RING', 'Sol Ring');
 name('Lim-Dul’s Vault', "Lim-Dûl's Vault");
 name('Gilraen, Dunedain Protector', 'Gilraen, Dúnedain Protector');
-name('Atraxa', "Atraxa, Praetors' Voice");
+name('Muldrotha', 'Muldrotha, the Gravetide');
+ok(findCardName('Atraxa', byName).suggestions.includes("Atraxa, Praetors' Voice"), 'a first name two cards share gets both as suggestions');
 name('Esika, God of the Tree // The Prismatic Bridge', 'Esika, God of the Tree');
 name('Esika, God of the Tree / The Prismatic Bridge', 'Esika, God of the Tree');
 name('Sol Rnig', 'Sol Ring', true);
@@ -139,5 +160,5 @@ const has = (r, n, k = 1) => r.cards.get(n) === k;
   const ms = performance.now() - t0;
   ok(ms < 1500, `120 unknown names read in ${ms.toFixed(0)} ms`);
 }
-console.log(`${decks.length} precons checked\n${pass} passed, ${fail} failed`);
+console.log(`${decks.length} decks checked\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

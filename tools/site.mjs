@@ -6,14 +6,14 @@ import path from 'node:path';
 const DIST = path.resolve('dist'), OUT = path.resolve('docs');
 if (!fs.existsSync(path.join(DIST, 'img'))) { console.error('dist/img is missing: run tools/pack-images.mjs first'); process.exit(1); }
 fs.rmSync(OUT, { recursive: true, force: true });
-for (const dir of ['', 'data', 'data/ptcg', 'data/optcg', 'img']) fs.mkdirSync(path.join(OUT, dir), { recursive: true });
+for (const dir of ['', 'data', 'data/ptcg', 'data/optcg', 'data/more', 'img']) fs.mkdirSync(path.join(OUT, dir), { recursive: true });
 let bytes = 0, files = 0;
 const copy = rel => { fs.copyFileSync(path.join(DIST, rel), path.join(OUT, rel)); bytes += fs.statSync(path.join(OUT, rel)).size; files++; };
 copy('index.html');
 copy('app.js');
 for (const f of ['manifest.webmanifest', 'sw.js', 'favicon.ico']) if (fs.existsSync(path.join(DIST, f))) copy(f);
 for (const f of fs.readdirSync(path.join(DIST, 'data'))) if (fs.statSync(path.join(DIST, 'data', f)).isFile()) copy(path.join('data', f));
-for (const side of ['ptcg', 'optcg']) for (const f of fs.readdirSync(path.join(DIST, 'data', side))) copy(path.join('data', side, f));
+for (const side of ['ptcg', 'optcg', 'more']) for (const f of fs.readdirSync(path.join(DIST, 'data', side))) copy(path.join('data', side, f));
 for (const f of fs.readdirSync(path.join(DIST, 'img'))) copy(path.join('img', f));
 // serve files as they are (no Jekyll processing on GitHub Pages)
 fs.writeFileSync(path.join(OUT, '.nojekyll'), '');

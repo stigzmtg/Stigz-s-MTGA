@@ -7,8 +7,10 @@ import { Pip } from './cardview.jsx';
 import { subscribeImages, imagesVersion } from './images.js';
 import { buildIndex, BASICS, deckProblems, canPair, loadCustomDecks, saveCustomDeck, deleteCustomDeck, newDeckId } from './customdecks.js';
 import { Modal } from './dialogs.jsx';
+import { onClaude } from '../net/roomclient.js';
 import { createDeckGuide } from './deckguide.js';
 import { parseDeckText, countCards, deckToText } from './decktext.js';
+import { loadAllCards, subscribeAllCards, allCardsVersion, allCardsLoaded, allCardsProgress, cardMeta } from './allcards.js';
 import { CardSheet, HoverCard, useHoverPreview, CardTile } from './buildercard.jsx';
 import { CardSearch, CommanderPicker, PreconPicker } from './builderfind.jsx';
 import { Checklist, DeckList, DeckStats, TestHand, QuickAdd } from './builderdeck.jsx';
@@ -23,17 +25,33 @@ const toMap = cards => { const m = new Map(); for (const [n, k] of cards) m.set(
 
 // ---- pasting a list: what it holds shows as you paste, with a commander to pick if none is marked, near-miss
 // names read as the card they're closest to, and suggestions for names the game doesn't know
+// a deck's address on Archidekt, Moxfield, EDHREC or TappedOut: the site's server reads it (worker/decklink.js)
+const DECK_LINK = /^\s*https?:\/\/(?:www\.)?(?:archidekt\.com\/(?:api\/)?decks\/\d+|moxfield\.com\/decks\/[\w-]+|edhrec\.com\/average-decks\/[\w-]+|tappedout\.net\/mtg-decks\/[\w-]+)\S*\s*$/i;
+
 function ImportDialog({ byName, hasDeck, initial = '', initialMode = 'replace', onImport, onClose }) {
   const [text, setText] = useState(initial);
+  const [link, setLink] = useState({ busy: false, error: null, from: null });
+  const isLink = DECK_LINK.test(text);
+  const getLink = async () => {
+    if (onClaude()) { setLink({ busy: false, error: 'Deck links work on lotusgoats.com. Here, copy the list from the site and paste it instead.', from: null }); return; }
+    setLink({ busy: true, error: null, from: null });
+    try {
+      const r = await fetch(`/decklink?url=${encodeURIComponent(text.trim())}`);
+      const j = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+      if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+      setText(`About\nName ${j.name}\n\n${j.text}`);
+      setLink({ busy: false, error: null, from: `${j.source}${j.author ? ` · by ${j.author}` : ''}` });
+    } catch (e) { setLink({ busy: false, error: e.message, from: null }); }
+  };
   const [mode, setMode] = useState(hasDeck ? initialMode : 'replace');
   const [pick, setPick] = useState(null);           // the commander chosen from the list, when none was marked
   const [swaps, setSwaps] = useState(() => new Map());   // a name the game doesn't know -> the suggestion used instead
-  const parsed = useMemo(() => (text.trim() ? parseDeckText(text, byName) : null), [text]);
+  const parsed = useMemo(() => (text.trim() && !DECK_LINK.test(text) ? parseDeckText(text, byName) : null), [text]);
   useEffect(() => { setPick(parsed ? parsed.guess : null); }, [parsed && parsed.guess, parsed && parsed.candidates.join('|')]);
   const result = useMemo(() => {
     if (!parsed) return null;
     const cards = new Map(parsed.cards);
-    for (const m of parsed.missing) { const to = swaps.get(m.name); if (to && !cards.has(to)) cards.set(to, (byName.get(to) || {}).anyNumber ? m.n : 1); }
+    for (const m of parsed.missing) { const to = swaps.get(m.name); if (to && !cards.has(to)) cards.set(to, Math.min(m.n, (byName.get(to) || {}).maxCopies || 1)); }
     let commanders = parsed.commanders;
     if (!commanders.length && pick && cards.has(pick)) { commanders = [pick]; cards.delete(pick); }
     return { name: parsed.name, commanders, cards, mode };
@@ -49,14 +67,21 @@ function ImportDialog({ byName, hasDeck, initial = '', initialMode = 'replace', 
   return (
     <Modal label="Paste a decklist" onClose={onClose}>
       <h2>Paste a decklist</h2>
-      <p className="sub">Copy a list from Moxfield, Archidekt, MTG Arena, EDHREC or anywhere and paste it here, one card per line. Set codes, foil marks and categories are fine.</p>
+      <p className="sub">Copy a list from Moxfield, Archidekt, MTG Arena, EDHREC or anywhere and paste it here, one card per line, or paste the deck’s link (Archidekt, EDHREC, TappedOut). Set codes, foil marks and categories are fine.</p>
       <div className="imp-grid">
         <div className="imp-in">
           <textarea className="input builder-import" value={text} onChange={e => setText(e.target.value)} placeholder={'Commander\n1 Atraxa, Praetors\' Voice\n\nDeck\n1 Sol Ring\n1 Arcane Signet\n…'} aria-label="Decklist" autoFocus spellCheck={false} />
           <label className="btn sm ghost filebtn">Open a text file<input type="file" accept=".txt,.dec,.dek,text/plain" onChange={readFile} /></label>
         </div>
         <div className="imp-out" aria-live="polite">
-          {!parsed ? <p className="muted">What the list holds shows here as you paste.</p> : <>
+          {isLink ? (
+            <div className="imp-link">
+              <p>That’s a link to a deck. {link.busy ? 'Getting it…' : 'Get the deck from the site?'}</p>
+              <button type="button" className="btn primary" onClick={getLink} disabled={link.busy}>{link.busy ? 'Getting the deck…' : 'Get this deck'}</button>
+              {link.error ? <p className="imp-warn">{link.error}</p> : null}
+            </div>
+          ) : !parsed ? <p className="muted">What the list holds shows here as you paste.</p> : <>
+            {link.from ? <p className="imp-note">From {link.from}</p> : null}
             <p className="imp-sum"><b>{n}</b> card{n === 1 ? '' : 's'} read{parsed.name ? <> from <q>{parsed.name}</q></> : null}</p>
             {result.commanders.length && parsed.commanders.length ? <p className="imp-cmd">Commander: <b>{result.commanders.join(' & ')}</b></p>
               : parsed.candidates.length ? (
@@ -136,9 +161,14 @@ function StartPanel({ onPick, onPrecon, onImport, commanders, waiting }) {
 
 export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
   useSyncExternalStore(subscribeImages, imagesVersion);
-  const index = useMemo(() => buildIndex(data.db.raw), [data]);
+  // the whole card pool loads as the builder opens (the precons' cards are there at once)
+  useSyncExternalStore(subscribeAllCards, allCardsVersion);
+  const [loadError, setLoadError] = useState(null);
+  useEffect(() => { loadAllCards(data.db).catch(e => setLoadError(e.message)); }, []);
+  const full = allCardsLoaded();
+  const index = useMemo(() => buildIndex(data.db.raw), [data, full]);
   const byName = useMemo(() => new Map(index.map(c => [c.name, c])), [index]);
-  const H = useMemo(() => createDeckGuide(index, data.decks, data.support || {}), [index]);
+  const H = useMemo(() => createDeckGuide(index, data.decks, data.support || {}, full ? cardMeta : undefined), [index]);
   const commanderCount = useMemo(() => index.filter(c => c.commander && H.feats.get(c.name).legal).length, [index]);
   // where it starts: a saved deck, a copy of a precon, or nothing
   const [start] = useState(() => {
@@ -220,7 +250,7 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
     const c = byName.get(n);
     if (!c) return;
     if (!commanders.length) { flash('Choose a commander first.'); return; }
-    if (k > 0 && cards.get(n) && !c.anyNumber) { flash(`${n} is already in your deck: one copy of each card.`); return; }
+    if (k > 0 && (cards.get(n) || 0) >= c.maxCopies) { flash(c.maxCopies === 1 ? `${n} is already in your deck: one copy of each card.` : `A deck can have up to ${c.maxCopies} of ${n}.`); return; }
     if (k > 0 && c.ci.some(x => !identity.includes(x))) { flash(`${n} is outside your commander’s colors.`); return; }
     setCards(m => { const next = new Map(m); const v = (next.get(n) || 0) + k; if (v <= 0) next.delete(n); else next.set(n, v); return next; });
     if (k > 0 && total + 1 === 100) flash('That’s 100 cards: your deck is full.');
@@ -267,8 +297,9 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
     for (const [n, k] of r.cards) {
       if (cmds.includes(n)) continue;
       const have = m.get(n) || 0;
-      if (have && !(byName.get(n) || {}).anyNumber) { already++; continue; }
-      m.set(n, have + k); added += k;
+      const max = (byName.get(n) || {}).maxCopies || 1;
+      if (have >= max) { already++; continue; }
+      m.set(n, Math.min(max, have + k)); added += Math.min(max, have + k) - have;
     }
     for (const n of cmds) m.delete(n);
     commit(() => ({ commanders: cmds.slice(), cards: m }));
@@ -291,6 +322,7 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
   const counts = { have: total, over: total > 100 };
   const savedLine = savedAt && !dirty.current ? 'Saved on this device' : dirty.current && commanders.length ? 'Saving…' : commanders.length ? 'Saves on this device when you change something' : 'Not saved yet: choose a commander';
   const offColor = list.filter(([n]) => { const c = byName.get(n); return c && c.ci.some(x => !identity.includes(x)); }).map(([n]) => n);
+  const banned = list.filter(([n]) => { const f = H.feats.get(n); return f && !f.legal && f.c.main !== 'Other'; }).map(([n]) => n);
 
   return (
     <div className="app builder">
@@ -311,6 +343,7 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
       </div>
       <div className={`b-grid pane-${pane}`}>
         <section className="panel b-left" aria-label="Find cards">
+          {!full ? <div className="b-loading" role="status">{loadError ? <>Couldn’t load the rest of the cards ({loadError}). The precons’ cards are all here. <button className="linkish" onClick={() => { setLoadError(null); loadAllCards(data.db).catch(e => setLoadError(e.message)); }}>Try again</button></> : <><span>Loading every Magic card… the precons’ cards are ready now.</span><i className="bar"><b style={{ width: `${Math.round(allCardsProgress() * 100)}%` }} /></i></>}</div> : null}
           <div className="builder-tabs" role="tablist">
             {commanders.length ? <button role="tab" aria-selected={left === 'search'} className={left === 'search' ? 'on' : ''} onClick={() => setLeft('search')}>{ICONS.search}Find cards</button> : null}
             <button role="tab" aria-selected={left === 'commander'} className={left === 'commander' ? 'on' : ''} onClick={() => { setLeft('commander'); setPartnerMode(false); }}>{ICONS.crown}{commanders.length ? 'Commanders' : 'Choose a commander'}</button>
@@ -362,6 +395,7 @@ export function DeckBuilder({ data, editId, fromId, onDone, onPlay, onHome }) {
               <div className="b-foot">
                 <div className="b-status">
                   {offColor.length ? <p className="b-warn">Outside your commander’s colors: {offColor.slice(0, 3).join(', ')}{offColor.length > 3 ? ` and ${offColor.length - 3} more` : ''}. <button className="linkish" onClick={() => setCards(m => { const next = new Map(m); offColor.forEach(n => next.delete(n)); return next; })}>Remove them</button></p> : null}
+                  {banned.length ? <p className="b-warn">Banned in Commander: {banned.slice(0, 3).join(', ')}{banned.length > 3 ? ` and ${banned.length - 3} more` : ''}. Fine for a casual game if your friends agree.</p> : null}
                   {ready ? <p className="ready">✓ Ready to play</p> : <p className="todo">{total < 100 ? `${100 - total} more card${100 - total === 1 ? '' : 's'} to go` : total > 100 ? `${total - 100} card${total - 100 === 1 ? '' : 's'} too many: a Commander deck has exactly 100` : ''}{problems.filter(p => !/Outside your commander|exactly 100 cards/.test(p)).map(p => ` · ${p}`).join('')}</p>}
                   <span className="saved">{savedLine}</span>
                 </div>

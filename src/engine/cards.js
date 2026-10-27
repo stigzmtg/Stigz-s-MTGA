@@ -108,6 +108,9 @@ export class CardDB {
     return d;
   }
   names() { return Object.keys(this.raw); }
+  has(name) { return !!this.raw[name]; }
+  // more card scripts (the rest of the card pool, loaded later)
+  add(cards) { Object.assign(this.raw, cards); this.lower = null; }
 }
 
 // timestamps come from the game's own counter so two copies of a game (online play) order effects identically

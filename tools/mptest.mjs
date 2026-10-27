@@ -35,7 +35,7 @@ async function newPlayer(label) {
 }
 const host = await newPlayer('host');
 const guest = await newPlayer('guest');
-for (const p of [host, guest]) { await p.goto(BASE + '#mtg'); await p.waitForSelector('text=Pick a precon', { timeout: 60000 }); }
+for (const p of [host, guest]) { await p.goto(BASE + '#mtg'); await p.waitForSelector('text=Pick a deck, take a seat', { timeout: 60000 }); }
 
 await host.click('button:has-text("Play with friends")');
 await host.fill('#nick', 'Hana');
@@ -92,7 +92,7 @@ const nudge = async (p) => {
 };
 const watcher = await newPlayer('watcher');
 await watcher.goto(BASE + '#mtg');
-await watcher.waitForSelector('text=Pick a precon', { timeout: 60000 });
+await watcher.waitForSelector('text=Pick a deck, take a seat', { timeout: 60000 });
 await watcher.click('button:has-text("Play with friends")');
 await watcher.fill('#nick', 'Wren');
 await watcher.fill('#room-code', code);

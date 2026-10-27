@@ -1,7 +1,7 @@
 // The site's own server on Cloudflare. Static files come from docs/ (assets); /relay/<room> relays friends' rooms,
 // so rooms work on networks that block browser-to-browser connections (school Wi-Fi): if the site loads, the relay
-// is reachable on the same address. /save/<code> keeps save codes (see SaveSlot below), and /account/ accounts
-// (accounts.js).
+// is reachable on the same address. /save/<code> keeps save codes (see SaveSlot below), /account/ accounts
+// (accounts.js), and /decklink reads a deck from a deck site for the deck builder (decklink.js).
 //
 // Each room is one Durable Object holding every member's presence (a small JSON object, at most a few KB). Members
 // connect by WebSocket, or by plain HTTP polling where WebSockets are blocked too. A member sends its whole presence
@@ -9,6 +9,7 @@
 // from hibernation it asks every connected member to send theirs again.
 import { DurableObject } from 'cloudflare:workers';
 import { Accounts, accountRequest } from './accounts.js';
+import { deckLinkRequest } from './decklink.js';
 
 export { Accounts };
 
@@ -29,6 +30,7 @@ export default {
       return env.ROOMS.get(env.ROOMS.idFromName(m[1])).fetch(req);
     }
     if (/^\/account\/[a-z/]+$/.test(url.pathname)) return accountRequest(req, env);
+    if (url.pathname === '/decklink' && req.method === 'GET') return deckLinkRequest(req, env);
     const sv = SAVE.exec(url.pathname);
     if (sv) {
       if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });

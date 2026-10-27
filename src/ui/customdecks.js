@@ -83,6 +83,12 @@ export function canPair(a, b) {
   return !!((p.any && q.any) || p.with === b.name || q.with === a.name || (p.group && p.group === q.group)
     || (p.background && q.isBackground) || (q.background && p.isBackground) || (p.companion && q.isDoctor) || (q.companion && p.isDoctor));
 }
+const NUMBER_WORDS = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+function copiesAllowed(name, typeLine, text) {
+  if (BASICS.has(name) || (/\bBasic\b/.test(typeLine) && /\bLand\b/.test(typeLine)) || /A deck can have any number of cards named/i.test(text)) return Infinity;
+  const m = /A deck can have up to (\w+) cards named/i.exec(text);
+  return m ? NUMBER_WORDS[m[1].toLowerCase()] || +m[1] || 1 : 1;
+}
 export function buildIndex(raw) {
   const out = [];
   for (const name of Object.keys(raw)) {
@@ -107,7 +113,9 @@ export function buildIndex(raw) {
       // (legendary Vehicles and Spacecraft with power and toughness can lead too)
       commander: (/\bLegendary\b/.test(typeLine) && (/\bCreature\b/.test(typeLine) || (/\b(?:Vehicle|Spacecraft)\b/.test(typeLine) && /^PT:/m.test(s)))) || /can be your commander/i.test(text),
       pairing, partner: !!pairing,
-      anyNumber: BASICS.has(name) || /A deck can have any number of cards named/i.test(text),
+      // how many copies a deck may have: one, any number (basics, snow basics, Relentless Rats), or up to N (Nazgûl)
+      maxCopies: copiesAllowed(name, typeLine, text),
+      get anyNumber() { return this.maxCopies > 1; },
       lower: name.toLowerCase(),
     });
   }
@@ -124,7 +132,7 @@ export function deckProblems(deck, byName, identity) {
   if (total !== 100) out.push(`A Commander deck has exactly 100 cards (this one has ${total}).`);
   const off = deck.cards.filter(([n]) => { const c = byName.get(n); return c && c.ci.some(x => !identity.includes(x)); }).map(([n]) => n);
   if (off.length) out.push(`Outside your commander's colors: ${off.slice(0, 4).join(', ')}${off.length > 4 ? ` and ${off.length - 4} more` : ''}.`);
-  const dupes = deck.cards.filter(([n, k]) => k > 1 && !(byName.get(n) || {}).anyNumber).map(([n]) => n);
+  const dupes = deck.cards.filter(([n, k]) => k > ((byName.get(n) || {}).maxCopies || 1)).map(([n]) => n);
   if (dupes.length) out.push(`Only one copy of each card except basic lands: ${dupes.slice(0, 3).join(', ')}.`);
   return out;
 }

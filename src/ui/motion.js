@@ -172,15 +172,21 @@ export function runFlights(st, root, game, opts) {
   const now = new Map();
   const els = new Map();
   const lunging = new Set();
-  for (const el of root.querySelectorAll('[data-fly]')) {
+  // (all reads, then all writes, then all reads again: reading a card's place right after cancelling another's glide
+  // would make the browser lay the page out once per card)
+  const list = [...root.querySelectorAll('[data-fly]')];
+  const visuals = new Map();
+  for (const el of list) {
     if (el.matches(LEAN)) lunging.add(el);
     // a glide still going: carry on from where the card is drawn right now
     const running = st.flips.get(el);
-    let visual = null;
-    if (running) { if (running.playState === 'running') visual = rectOf(el); running.cancel(); st.flips.delete(el); }
+    if (running && running.playState === 'running') visuals.set(el, rectOf(el));
+  }
+  for (const el of list) { const running = st.flips.get(el); if (running) { running.cancel(); st.flips.delete(el); } }
+  for (const el of list) {
     const r = rectOf(el);
     if (r.width < 2) continue;
-    els.set(el, { r, visual });
+    els.set(el, { r, visual: visuals.get(el) || null });
     for (const id of el.dataset.fly.split(' ')) if (id && !now.has(id)) now.set(id, { el, r });
   }
   const zones = opts.zones;

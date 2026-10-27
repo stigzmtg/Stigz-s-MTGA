@@ -2,7 +2,7 @@
 import { costSymbols } from '../engine/mana.js';
 import { counterName } from '../engine/game.js';
 import { KEYWORD_COUNTERS } from '../engine/chars.js';
-import { imageOf, cardImage } from './images.js';
+import { imageOf, cardImage, imageFailed, imageBroken } from './images.js';
 import { Sleeve } from './deckstyle.jsx';
 
 const HYBRID = ['wu', 'wb', 'ub', 'ur', 'br', 'bg', 'rw', 'rg', 'gw', 'gu'];
@@ -159,7 +159,7 @@ export function CardBack({ cls = '', sleeve }) {
 
 export function CardFace({ v, size = 'mini', cls = '', onClick, onContextMenu, onEnter, onLeave, badges = null, title }) {
   if (!v) return null;
-  const img = v.img && !v.faceDown ? v.img : null;
+  const img = v.img && !v.faceDown && !imageBroken(v.img) ? v.img : null;
   const showText = size !== 'mini' && size !== 'stack';
   const frame = v.faceDown ? 'facedown' : frameFor(v.colors, v.types);
   const classes = ['card', img ? 'has-img' : frame, v.token ? 'token' : '', v.sick ? 'sick' : '', cls].filter(Boolean).join(' ');
@@ -173,7 +173,7 @@ export function CardFace({ v, size = 'mini', cls = '', onClick, onContextMenu, o
   const extraKw = img ? (v.granted || []) : (v.keywords || []);
   return (
     <div className={classes} {...handlers} aria-label={handlers.role ? v.name : undefined}>
-      {img ? <img className="cimg" src={img} alt={v.name} draggable="false" /> : (
+      {img ? <img className="cimg" src={img} alt={v.name} draggable="false" onError={() => imageFailed(img)} /> : (
         <div className="inner">
           <div className="cname"><span className="nm">{v.name}</span>{v.cost ? <ManaCost cost={v.cost} /> : null}</div>
           <div className="art" style={artStyle(v)}>{v.produces ? <LandArt v={v} /> : <TypeGlyph types={v.types} />}</div>

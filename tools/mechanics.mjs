@@ -10,6 +10,25 @@ const tests = [];
 const test = (name, fn, opts) => tests.push({ name, fn, opts });
 
 // ------------------------------------------------------------ keywords, statics, replacements
+test('Why a card can’t be played: mana, timing, the land drop, targets', async T => {
+  const { whyCantPlay } = await import('../src/engine/abilities.js');
+  T.noMana(0);
+  const g = T.game;
+  const bolt = await T.put(0, 'Lightning Bolt', 'hand'), angel = await T.put(0, 'Serra Angel', 'hand'), forest = await T.put(0, 'Forest', 'hand');
+  expect(/Not enough mana: Lightning Bolt costs \{R\}/.test(whyCantPlay(g, 0, bolt)), `mana (${whyCantPlay(g, 0, bolt)})`);
+  expect(whyCantPlay(g, 0, forest) === null, 'a land can be played');
+  g.players[0].landsPlayed = 1;
+  expect(/already played a land/.test(whyCantPlay(g, 0, forest)), 'one land a turn');
+  T.mana(0);
+  expect(whyCantPlay(g, 0, angel) === null, 'with mana it can be cast');
+  g.activePlayer = 1;
+  expect(/only be cast on your turn/.test(whyCantPlay(g, 0, angel)), `timing (${whyCantPlay(g, 0, angel)})`);
+  expect(whyCantPlay(g, 0, bolt) === null, 'an instant can be cast on their turn');
+  g.activePlayer = 0;
+  for (const c of [...g.battlefield]) if (g.chars(c).types.has('Creature')) await g.moveCard(c, 'graveyard', { silent: true });
+  const rancor = await T.put(0, 'Rancor', 'hand');
+  expect(/nothing it can target/.test(whyCantPlay(g, 0, rancor) || ''), `targets (${whyCantPlay(g, 0, rancor)})`);
+});
 test('Graft: enters with counters, may move one onto another creature you control', async T => {
   const spider = await T.cast('Aquastrand Spider');
   expect(spider.counters.P1P1 === 2, `two counters (${spider.counters.P1P1})`);

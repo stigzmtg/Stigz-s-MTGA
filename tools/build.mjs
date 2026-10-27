@@ -8,11 +8,17 @@ const DIST = path.resolve('dist');
 fs.mkdirSync(path.join(DIST, 'data'), { recursive: true });
 
 // per-card automation report used by the UI
-const cards = JSON.parse(fs.readFileSync('data/cards.json', 'utf8'));
+// (every card: the ones loaded with the page and the rest of the pool in data/more, from tools/build-allcards.mjs)
+const MORE = fs.existsSync('data/more.json') ? JSON.parse(fs.readFileSync('data/more.json', 'utf8')).shards : 0;
+const moreFiles = Array.from({ length: MORE }, (_, i) => `more/cards-${i}.json`);
+const cards = Object.assign({}, ...['cards.json', ...moreFiles].map(f => JSON.parse(fs.readFileSync(path.join('data', f), 'utf8'))));
 const support = {};
 for (const [name, text] of Object.entries(cards)) { const issues = analyzeCard(text); if (issues.length) support[name] = issues; }
 fs.writeFileSync('data/support.json', JSON.stringify(support));
-for (const f of ['cards.json', 'tokens.json', 'decks.json', 'support.json', 'images.json']) if (fs.existsSync(path.join('data', f))) fs.copyFileSync(path.join('data', f), path.join(DIST, 'data', f));
+fs.rmSync(path.join(DIST, 'data', 'more'), { recursive: true, force: true });
+fs.mkdirSync(path.join(DIST, 'data', 'more'), { recursive: true });
+const MTG_DATA = ['cards.json', 'tokens.json', 'decks.json', 'support.json', 'images.json', 'community.json', 'cardmeta.json', 'more.json', ...moreFiles];
+for (const f of MTG_DATA) if (fs.existsSync(path.join('data', f))) fs.copyFileSync(path.join('data', f), path.join(DIST, 'data', f));
 // the Pokémon and One Piece sides' data
 for (const side of ['ptcg', 'optcg']) {
   fs.mkdirSync(path.join(DIST, 'data', side), { recursive: true });
@@ -33,7 +39,7 @@ for (const f of ['images.json', 'ptcg/images.json', 'optcg/images.json']) {
   fs.writeFileSync(file, JSON.stringify(ix));
 }
 const dataHash = crypto.createHash('sha1');
-for (const f of ['cards.json', 'tokens.json', 'decks.json', 'support.json', 'images.json', 'ptcg/cards.json', 'ptcg/decks.json', 'ptcg/images.json', 'optcg/cards.json', 'optcg/decks.json', 'optcg/images.json']) if (fs.existsSync(path.join(DIST, 'data', f))) dataHash.update(fs.readFileSync(path.join(DIST, 'data', f)));
+for (const f of [...MTG_DATA, 'ptcg/cards.json', 'ptcg/decks.json', 'ptcg/images.json', 'optcg/cards.json', 'optcg/decks.json', 'optcg/images.json']) if (fs.existsSync(path.join(DIST, 'data', f))) dataHash.update(fs.readFileSync(path.join(DIST, 'data', f)));
 const DATA_VERSION = dataHash.digest('hex').slice(0, 10);
 
 await build({
@@ -158,4 +164,4 @@ fs.writeFileSync(path.join(DIST, 'manifest.webmanifest'), JSON.stringify({
   fs.writeFileSync(path.join(DIST, 'sw.js'), fs.readFileSync('src/sw.js', 'utf8').replace('__VERSION__', h.digest('hex').slice(0, 12)));
 }
 const kb = f => (fs.statSync(path.join(DIST, f)).size / 1024).toFixed(0) + 'KB';
-console.log('built', ['app.js', 'index.html', 'artifact.html', 'data/cards.json'].map(f => `${f} ${kb(f)}`).join(', '), `| ${Object.keys(support).length} cards flagged`);
+console.log('built', ['app.js', 'index.html', 'artifact.html', 'data/cards.json'].map(f => `${f} ${kb(f)}`).join(', '), `| ${Object.keys(cards).length} cards, ${Object.keys(support).length} flagged`);

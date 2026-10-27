@@ -23,7 +23,7 @@ await page.addInitScript(() => {
   try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'instant' })); localStorage.setItem('pa-tips', JSON.stringify({ mtg: { off: true, seen: [] } })); } catch { /* blocked */ }
 });
 await page.goto('http://localhost:8765/#mtg');
-await page.waitForSelector('text=Pick a precon', { timeout: 60000 });
+await page.waitForSelector('text=Pick a deck, take a seat', { timeout: 60000 });
 await page.click('.seg button:has-text("1 vs 1")');
 await page.click('button:has-text("Shuffle up")');
 // the line-up goes in while the game waits on your opening hand, so it's there from the first turn

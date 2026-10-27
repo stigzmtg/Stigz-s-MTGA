@@ -58,12 +58,12 @@ export function QuickAdd({ index, H, state, identity, onAdd, onOpen, onPasteList
       const r = n.startsWith(k) ? 0 : n.includes(' ' + k) || n.includes(',' + k) ? 1 : n.includes(k) ? 2 : -1;
       if (r >= 0) out.push([r, c]);
     }
-    const pop = c => (H.feats.get(c.name) || { pop: 0 }).pop;
+    const pop = c => (H.feats.get(c.name) || { popular: 0 }).popular;
     out.sort((a, b) => a[0] - b[0] || pop(b[1]) - pop(a[1]) || a[1].name.localeCompare(b[1].name));
     return out.slice(0, 8).map(([, c]) => c);
   }, [k, names, state.commanders]);
   const offColor = c => c.ci.some(x => !identity.includes(x));
-  const inDeck = c => !!state.cards.get(c.name) && !c.anyNumber;
+  const inDeck = c => (state.cards.get(c.name) || 0) >= c.maxCopies;
   const pickOne = c => {
     if (!c || offColor(c) || inDeck(c)) return;
     onAdd(c.name);

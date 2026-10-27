@@ -130,7 +130,7 @@ export function CardSheet({ name, H, db, byName, state, onClose, onOpen, onAdd, 
               : isCommander ? null
                 : have ? <>
                   <span className="cs-count">{have > 1 ? `${have} in your deck` : 'In your deck'}</span>
-                  {c.anyNumber ? <button className="btn" onClick={() => onAdd(name)}>+ One more</button> : null}
+                  {have < c.maxCopies ? <button className="btn" onClick={() => onAdd(name)}>+ One more</button> : null}
                   <button className="btn" onClick={() => onRemove(name)}>{have > 1 ? '− One fewer' : 'Remove from deck'}</button>
                 </>
                   : <button className="btn primary" disabled={!ready || blocked} onClick={() => onAdd(name)}>{ready ? 'Add to deck' : 'Choose a commander first'}</button>}

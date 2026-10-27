@@ -21,7 +21,7 @@ await page.addInitScript(speed => {
   try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: window.__speed || 'fast' })); localStorage.setItem('pa-tips', JSON.stringify({ mtg: { off: true, seen: [] } })); } catch { /* blocked */ }
 }, process.env.SPEED || 'normal');
 await page.goto('http://localhost:8765/#mtg');
-await page.waitForSelector('text=Pick a precon', { timeout: 60000 });
+await page.waitForSelector('text=Pick a deck, take a seat', { timeout: 60000 });
 await page.click(`.seg button:has-text("${PLAYERS === 2 ? '1 vs 1' : `${PLAYERS}-player`}")`);
 await page.click('button:has-text("Shuffle up")');
 await page.waitForFunction(() => window.__paSession && window.__paSession.game && window.__paSession.game.turnNumber >= 1, null, { timeout: 120000 });

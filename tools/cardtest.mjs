@@ -1,5 +1,5 @@
 // Per-card smoke test: cast / activate / play out each card in a live game with AI choices.
-// Usage: node tools/cardtest.mjs [--shard=i/n] [--card=Name] [--out=file.json] [--verbose]
+// Usage: node tools/cardtest.mjs [--shard=i/n] [--card=Name] [--out=file.json] [--verbose] [--extra | --all]
 import fs from 'node:fs';
 import { CardDB } from '../src/engine/cards.js';
 import { Game } from '../src/engine/game.js';
@@ -9,10 +9,15 @@ import { unknownProps, unknownDefined } from '../src/engine/filters.js';
 
 const flags = Object.fromEntries(process.argv.slice(2).filter(a => a.startsWith('--')).map(a => { const [k, v] = a.slice(2).split('='); return [k, v ?? true]; }));
 const cards = JSON.parse(fs.readFileSync('data/cards.json', 'utf8'));
+// --extra: the cards beyond the page's own (data/more, from tools/build-allcards.mjs); --all: every card
+const moreN = fs.existsSync('data/more.json') ? JSON.parse(fs.readFileSync('data/more.json', 'utf8')).shards : 0;
+const extra = Object.assign({}, ...Array.from({ length: moreN }, (_, i) => JSON.parse(fs.readFileSync(`data/more/cards-${i}.json`, 'utf8'))));
+const testing = flags.extra ? Object.keys(extra) : flags.all ? [...Object.keys(cards), ...Object.keys(extra)] : Object.keys(cards);
+Object.assign(cards, extra);
 const tokens = JSON.parse(fs.readFileSync('data/tokens.json', 'utf8'));
 const decks = JSON.parse(fs.readFileSync('data/decks.json', 'utf8'));
 const db = new CardDB(cards, tokens);
-let names = Object.keys(cards).sort();
+let names = testing.sort();
 if (flags.card) names = names.filter(n => n.toLowerCase().includes(String(flags.card).toLowerCase()));
 if (flags.shard) { const [i, n] = flags.shard.split('/').map(Number); names = names.filter((_, k) => k % n === i); }
 

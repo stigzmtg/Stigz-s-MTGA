@@ -9,7 +9,7 @@ page.on('pageerror', e => errors.push(e.message));
 page.on('console', m => { if (m.type() === 'error' && !/ERR_TUNNEL|Failed to load resource/.test(m.text())) errors.push(m.text()); });
 await page.addInitScript(t => { window.__paAutoplay = t; try { localStorage.setItem('pa-settings', JSON.stringify({ aiSpeed: 'instant' })); } catch {} }, +turns);
 await page.goto('http://localhost:8765/#mtg');
-await page.waitForSelector('text=Pick a precon', { timeout: 60000 });
+await page.waitForSelector('text=Pick a deck, take a seat', { timeout: 60000 });
 if (players) await page.click(`.seg button:has-text("${players}")`);
 await page.click('button:has-text("Shuffle up")');
 await page.waitForFunction(t => { const el = document.querySelector('.topbar .turninfo b'); return (el && +el.textContent >= t) || document.querySelector('.standings'); }, +turns, { timeout: 180000 });

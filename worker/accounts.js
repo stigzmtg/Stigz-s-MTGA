@@ -172,6 +172,8 @@ export class Accounts extends DurableObject {
     this.run('INSERT OR REPLACE INTO limits (key, n, until) VALUES (?, 1, ?)', key, now + ms);
     return false;
   }
+  // the deck builder's deck links (decklink.js): may this address read another deck? (20 a minute)
+  linkAllow(ip) { return !this.limited('link:' + ip, 20, 60e3); }
   tidy() {
     const now = Date.now();
     this.run('DELETE FROM limits WHERE until < ?', now);

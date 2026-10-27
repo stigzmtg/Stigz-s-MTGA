@@ -80,7 +80,7 @@ if (!ONLY || ONLY === 'op') {
 if (!ONLY || ONLY === 'mtg') {
   const p = await newPage({ turns: Math.max(3, TURNS - 2) });
   const t0 = Date.now();
-  await p.goto(BASE + '#mtg'); await p.waitForSelector('text=Pick a precon', { timeout: 120000 });
+  await p.goto(BASE + '#mtg'); await p.waitForSelector('text=Pick a deck, take a seat', { timeout: 120000 });
   console.log(`commander lobby ready in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
   await p.click('.seg[aria-label="Number of opponents"] button:has-text("4-player")');
   await start(p);

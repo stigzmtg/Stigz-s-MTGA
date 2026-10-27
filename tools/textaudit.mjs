@@ -117,7 +117,7 @@ for (const [w, h] of views) {
   await audit(page, `pk-battle-${w}`);
   }
   if (only === 'pk') { await ctx.close(); continue; }
-  await page.goto(BASE + '#mtg'); await page.reload(); await page.waitForSelector('text=Pick a precon', { timeout: 90000 });
+  await page.goto(BASE + '#mtg'); await page.reload(); await page.waitForSelector('text=Pick a deck, take a seat', { timeout: 90000 });
   await audit(page, `mtg-lobby-${w}`);
   await page.click('button:has-text("Shuffle up")'); await page.waitForSelector('.topbar .turninfo', { timeout: 60000 });
   await page.waitForFunction(() => /Turn\s*[3-9]/.test((document.querySelector('.topbar') || {}).textContent || ''), null, { timeout: 180000 }).catch(() => {});

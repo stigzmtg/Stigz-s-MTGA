@@ -1,11 +1,12 @@
 #!/bin/sh
 # Run the per-card smoke test across N parallel shards and merge results.
+# Usage: sh tools/cardtest-all.sh [shards=8] [out dir] [--extra | --all]
 N=${1:-8}
 OUT=${2:-/tmp/cardtest}
 mkdir -p "$OUT"
 i=0
 while [ $i -lt $N ]; do
-  node tools/cardtest.mjs --shard=$i/$N --out="$OUT/shard$i.json" > "$OUT/shard$i.log" 2>&1 &
+  node tools/cardtest.mjs --shard=$i/$N --out="$OUT/shard$i.json" $3 > "$OUT/shard$i.log" 2>&1 &
   i=$((i+1))
 done
 wait

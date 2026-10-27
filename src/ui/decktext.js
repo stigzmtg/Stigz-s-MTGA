@@ -53,9 +53,22 @@ function lookupFor(byName) {
     const s = k.split(',')[0];
     if (s !== k && s.length >= 4) short.set(s, short.has(s) ? null : name);
   }
-  L = { exact, short, all: [...exact] };
+  const all = [...exact];
+  // every name's three-letter pieces, so a misspelling is compared only with the names that share the most of them
+  const grams = new Map();
+  all.forEach(([n], i) => { for (const g of trigrams(n)) { let list = grams.get(g); if (!list) grams.set(g, list = []); list.push(i); } });
+  L = { exact, short, all, grams, counts: new Uint16Array(all.length) };
   lookups.set(byName, L);
   return L;
+}
+const trigrams = s => { const p = `  ${s} `, out = new Set(); for (let i = 0; i + 3 <= p.length; i++) out.add(p.slice(i, i + 3)); return out; };
+// the names sharing the most three-letter pieces with k
+function closeNames(L, k, n = 80) {
+  const touched = [];
+  for (const g of trigrams(k)) for (const i of L.grams.get(g) || []) { if (!L.counts[i]) touched.push(i); L.counts[i]++; }
+  const ranked = touched.map(i => [i, L.counts[i]]).sort((a, b) => b[1] - a[1]).slice(0, n).map(([i]) => L.all[i]);
+  for (const i of touched) L.counts[i] = 0;
+  return ranked;
 }
 
 // the card a name means: { name } (found), { name, fixed: true } (read through a typo), or { suggestions } (not found)
@@ -68,7 +81,7 @@ export function findCardName(raw, byName) {
   const max = typoAllowance(k);
   let best = [];
   const near = [];
-  for (const [n, name] of L.all) {
+  for (const [n, name] of closeNames(L, k)) {
     if (Math.abs(n.length - k.length) > max + 3) continue;
     const d = distance(k, n, max + 3);
     if (d <= max) { if (!best.length || d < best[0].d) best = [{ d, name }]; else if (d === best[0].d) best.push({ d, name }); }
@@ -157,8 +170,8 @@ export function parseDeckText(text, byName) {
     if (fits) { out.commanders.push(n); out.cards.delete(n); }
     else { if (c && !c.commander && !c.pairing) out.notCommander.push(n); out.cards.set(n, (out.cards.get(n) || 0) + 1); }
   }
-  // one copy of each card, except basics and the few cards that say otherwise
-  for (const [n, k] of out.cards) if (k > 1 && !(byName.get(n) || {}).anyNumber) { out.cards.set(n, 1); out.clamped.push(n); }
+  // one copy of each card, except basics and the few cards that say otherwise (any number, or up to N)
+  for (const [n, k] of out.cards) { const max = (byName.get(n) || {}).maxCopies || 1; if (k > max) { out.cards.set(n, max); out.clamped.push(n); } }
   // no commander marked: the cards that could be one, those whose colors cover the whole list first (then in list order)
   if (!out.commanders.length) {
     const colors = new Set();

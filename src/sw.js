@@ -24,7 +24,7 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
   const lib = /(^|\.)cdnjs\.cloudflare\.com$|^fonts\.(googleapis|gstatic)\.com$/.test(url.hostname);
   if (url.origin !== self.location.origin && !lib) return;
-  if (/\/(relay|save|account)\//.test(url.pathname)) return;   // friends' rooms, save codes and accounts are live (and private)
+  if (/\/(relay|save|account)\/|\/decklink$/.test(url.pathname)) return;   // friends' rooms, save codes, accounts and deck links are live (and private)
   if (lib) return e.respondWith(cacheFirst(LIB, req));
   if (/\/img\/[^/]+\.(avif|png)$/.test(url.pathname)) return e.respondWith(cacheFirst(IMG, req));
   e.respondWith(networkFirst(req, /\/data\/((pt|op)cg\/)?images\.json$/.test(url.pathname)));

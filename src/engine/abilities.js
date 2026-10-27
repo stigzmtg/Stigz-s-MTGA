@@ -1423,6 +1423,42 @@ export function castableOptions(game, pid, card, { ignoreTiming = false, freeCas
   return out;
 }
 
+// Why can't pid play this card right now? A sentence for the player, or null when it can be played (the same checks
+// as castableOptions, in the order a player would think of them).
+export function whyCantPlay(game, pid, card) {
+  if (!card || game.over) return null;
+  if (game.priority !== pid) return 'Wait until it’s your turn to act.';
+  const opts = spellOptions(game, pid, card);
+  const name = game.name(card);
+  if (!opts.length) return card.zone === 'hand' || card.zone === 'command' ? `${name} can’t be played right now.` : `${name} can’t be played from there.`;
+  if (castableOptions(game, pid, card).length) return null;
+  const why = [];
+  for (const opt of opts) {
+    if (opt.land) {
+      const p = game.players[pid];
+      if (game.activePlayer !== pid) why.push('Lands can only be played on your own turn.');
+      else if (!game.isMainPhase() || game.stack.length) why.push('Lands go down in your main phase, while nothing is waiting to resolve.');
+      else if (p.landsPlayed >= 1 + game.playerChars(pid).extraLands) why.push('You’ve already played a land this turn.');
+      continue;
+    }
+    if (!timingOk(game, pid, card, opt)) {
+      why.push(game.stack.some(s => s.splitSecond) ? 'A spell with split second is on the stack: nothing can be cast until it resolves.'
+        : game.activePlayer !== pid ? `${name} can only be cast on your turn (it isn’t an instant and doesn’t have flash).`
+          : game.stack.length ? `${name} has to wait until the stack is empty (it isn’t an instant and doesn’t have flash).`
+            : `${name} can only be cast in a main phase (it isn’t an instant and doesn’t have flash).`);
+      continue;
+    }
+    if (cantBeCast(game, pid, card)) { why.push(`Something on the battlefield stops ${name} being cast right now.`); continue; }
+    const sa = buildSpellSA(game, pid, card, opt);
+    const { mana, extra } = spellCost(game, pid, card, opt, sa);
+    if (!canPayNonMana(game, sa, extra)) { why.push(`You can’t pay the rest of ${name}’s cost (${extra.parts.map(pt => pt.type === 'Sac' ? 'something to sacrifice' : pt.type === 'Discard' ? 'a card to discard' : pt.type === 'Exile' ? 'a card to exile' : pt.type === 'PayLife' ? 'life to pay' : pt.type === 'tapXType' ? 'creatures to tap' : 'more').join(', ')}).`); continue; }
+    const xFree = mana.x ? { ...mana, x: 0 } : mana;
+    if (!canAfford(game, pid, xFree, { spellCard: card, exclude: new Set([card.id, ...costPartExclusions(game, sa, extra.parts)]) })) { why.push(`Not enough mana: ${name} costs ${costString(xFree) || '{0}'}${card.zone === 'command' && game.commanderTax(card) ? ` (with ${game.commanderTax(card)} commander tax)` : ''}.`); continue; }
+    if (!targetsPossible(game, sa)) { why.push(`${name} has nothing it can target right now.`); continue; }
+  }
+  return why[0] || `${name} can’t be played right now.`;
+}
+
 function targetsPossible(game, root) {
   // a modal spell needs enough modes it can actually choose (each with legal targets)
   if (root.api === 'Charm') {
@@ -2325,7 +2361,7 @@ export async function resolveChain(game, sa) {
       await runEffect(game, s);
     } catch (e) {
       if (e && (e.cancelled || e.message === 'game over')) throw e;
-      game.log(`Effect error (${s.api}): ${e.message}`, { type: 'error' });
+      game.log(`Effect error (${s.api}) on ${s.host ? game.name(s.host) : 'an ability'}: ${e.message}`, { type: 'error', detail: String((e && e.stack) || '').split('\n').slice(1, 3).join(' | ') });
       if (game.throwErrors) throw e;
       console.error(e);
     }

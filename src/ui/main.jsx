@@ -20,6 +20,7 @@ import { initUiScale } from './uisize.js';
 import { applyMotion } from './motion.js';
 import { loadCustomDecks, findDeck, registerDeck, unpackDeck, packDeck, customDeck } from './customdecks.js';
 import { DeckBuilder } from './builder.jsx';
+import { prepareDecks } from './allcards.js';
 import { myAvatar } from './avatar.jsx';
 import { savedStyle } from './deckstyle.jsx';
 import { initSaveCodes } from './savecode.js';
@@ -158,7 +159,7 @@ function Loading({ progress, error }) {
         {error ? <><h2>Couldn't load the card data</h2><p>{error}</p></> : <>
           <div className="label">Shuffling {progress < 1 ? 'card data' : 'decks'}</div>
           <div className="bar"><i style={{ width: `${Math.round(progress * 100)}%` }} /></div>
-          <div className="empty">Loading every Commander precon and 6,400 card scripts</div>
+          <div className="empty">Loading every Commander precon and the cards they play</div>
         </>}
       </div>
     </div>
@@ -177,12 +178,23 @@ function MtgApp({ onHome }) {
   const [toast, setToast] = useState(null);
   const [builder, setBuilder] = useState(null);       // { id } while the deck builder is open
   const [customVersion, setCustomVersion] = useState(0);
+  const [loadingCards, setLoadingCards] = useState(false);
+  // a game whose decks play cards beyond the precons' waits for them (and for their pictures) first
+  const begin = (decks, make) => {
+    const go = () => setSession(make());
+    const ready = prepareDecks(data.db, decks);
+    let waited = false;
+    const t = setTimeout(() => { waited = true; setLoadingCards(true); }, 60);
+    ready.then(() => { clearTimeout(t); if (waited) setLoadingCards(false); go(); }, e => { clearTimeout(t); setLoadingCards(false); setToast(`Couldn't load the cards: ${e.message}`); });
+  };
   useEffect(() => {
     (async () => {
       try {
-        const [decks, tokens, support] = await Promise.all([fetchJSON('data/decks.json'), fetchJSON('data/tokens.json'), fetchJSON('data/support.json').catch(() => ({}))]);
+        const [precons, community, tokens, support] = await Promise.all([fetchJSON('data/decks.json'), fetchJSON('data/community.json').catch(() => []), fetchJSON('data/tokens.json'), fetchJSON('data/support.json').catch(() => ({}))]);
         const cards = await fetchJSON('data/cards.json', setProgress);
         setProgress(1);
+        // (community decks from EDHREC and Archidekt list first, then the precons, newest first)
+        const decks = [...community.map(d => ({ ...d, date: '' })), ...precons];
         setData({ db: new CardDB(cards, tokens), decks, support, sortedDecks: decks.slice().sort((a, b) => a.name.localeCompare(b.name)) });
       } catch (e) { setError(e.message); }
     })();
@@ -230,7 +242,7 @@ function MtgApp({ onHome }) {
   useEffect(() => {
     if (!all || !room || !cfg) return;
     const cur = session && session.online;
-    if (cfg.started && !cur && decksKnown && room.mySeat() >= 0 && cfg.game !== room.lastAutoStart) { room.lastAutoStart = cfg.game; setSession(newOnlineSession(all, room, cfg)); }
+    if (cfg.started && !cur && decksKnown && room.mySeat() >= 0 && cfg.game !== room.lastAutoStart) { room.lastAutoStart = cfg.game; begin(cfg.seats.map(s => findDeck(all.decks, s.d)), () => newOnlineSession(all, room, cfg)); }
     if (cur && (cur.game !== cfg.game || !cfg.started) && !session.game.over) { endSession(session); setSession(null); setToast('The host ended the game.'); }
   }, [all, room, cfg && cfg.game, cfg && cfg.started, decksKnown]);
 
@@ -240,14 +252,14 @@ function MtgApp({ onHome }) {
     let id = null;
     try { id = sessionStorage.getItem('pa-open-replay'); sessionStorage.removeItem('pa-open-replay'); } catch { /* storage blocked */ }
     const rep = id && loadReplay(id);
-    if (rep && rep.kind === 'mtg') setSession(newReplaySession(all, { ...rep, id }));
+    if (rep && rep.kind === 'mtg') begin(rep.players.map(p => findDeck(all.decks, p.deckId)), () => newReplaySession(all, { ...rep, id }));
   }, [data]);
 
   if (!data) return <Loading progress={progress} error={error} />;
   const onlineProps = {
     api, room, mode, setMode, onCreate, onJoin, onLeave,
     onStart: () => { room.start({ seed: (Math.random() * 2 ** 32) >>> 0, seats: seatsForStart(all, room.cfg) }); },
-    onWatch: () => setSession(newOnlineSession(all, room, room.cfg)),
+    onWatch: () => begin(room.cfg.seats.map(s => findDeck(all.decks, s.d)), () => newOnlineSession(all, room, room.cfg)),
     onDeck: id => {
       if (!room) return;
       room.setDeck(id);
@@ -262,8 +274,8 @@ function MtgApp({ onHome }) {
     onDone={() => { setBuilder(null); setCustomVersion(v => v + 1); }}
     onPlay={deck => { try { const s = JSON.parse(safeStorage.getItem('pa-lobby') || '{}'); safeStorage.setItem('pa-lobby', JSON.stringify({ ...s, mine: deck.id })); } catch { /* storage blocked */ } setBuilder(null); setCustomVersion(v => v + 1); }} />;
   if (!session) return <>
-    <Lobby key={customVersion} data={all} imagesOk={imagesOk} onStart={cfg => setSession(newSession(all, cfg))} online={onlineProps} onHome={onHome} onBuild={(id, from) => setBuilder({ id, from })} />
-    {toast ? <div className="toast" role="status">{toast}</div> : null}
+    <Lobby key={customVersion} data={all} imagesOk={imagesOk} onStart={cfg => begin([cfg.mine, ...cfg.opps], () => newSession(all, cfg))} online={onlineProps} onHome={onHome} onBuild={(id, from) => setBuilder({ id, from })} />
+    {loadingCards ? <div className="toast" role="status">Loading the cards these decks play…</div> : toast ? <div className="toast" role="status">{toast}</div> : null}
   </>;
   return <GameView key={`${session.game.seed}:${session.online ? session.online.game : ''}`} session={session} support={data.support} imagesOk={imagesOk}
     onExit={() => {
@@ -272,7 +284,7 @@ function MtgApp({ onHome }) {
       endSession(session); setSession(null);
     }}
     onRematch={() => { endSession(session); setSession(newSession(all, session.cfg)); }}
-    onReplay={id => { const rep = loadReplay(id); if (!rep) return; endSession(session); setSession(newReplaySession(all, { ...rep, id })); }} />;
+    onReplay={id => { const rep = loadReplay(id); if (!rep) return; endSession(session); setSession(null); begin(rep.players.map(p => findDeck(all.decks, p.deckId)), () => newReplaySession(all, { ...rep, id })); }} />;
 }
 
 // which game: the address says (#pokemon, #onepiece, #mtg, or a room invite: #abc123 for Commander, #pk-abc123 for

@@ -72,7 +72,8 @@ function normalize(c) {
 }
 
 // ---- reads every card once, then answers questions about a deck
-export function createDeckGuide(index, decks, support = {}) {
+// metaOf(name): [Scryfall picture, EDHREC rank, banned] once the whole card pool is loaded (allcards.js), else null
+export function createDeckGuide(index, decks, support = {}, metaOf = () => null) {
   const pop = new Map(), leads = new Map();
   for (const d of decks) {
     if (d.custom) continue;
@@ -89,7 +90,11 @@ export function createDeckGuide(index, decks, support = {}) {
     for (const th of THEMES) { const d = test(th.does, t, c), k = test(th.cares, t, c); if (d || k) themes.set(th.id, d && k ? 'both' : k ? 'cares' : 'does'); }
     const types = subtypes(c.type);
     for (const ty of types) allTypes.add(ty);
-    const f = { c, t, roles, themes, types, pop: pop.get(c.name) || 0, flagged: !!support[c.name], legal: !BANNED.has(c.name) && c.main !== 'Other' };
+    const m = metaOf(c.name);
+    // how much it's played: in how many precons, and how high it ranks on EDHREC (1 is the most played card)
+    const rank = m ? m[1] || 0 : 0, p0 = pop.get(c.name) || 0;
+    const popular = Math.max(Math.sqrt(Math.min(p0, 50) / 50), rank ? Math.max(0, 1 - Math.log10(rank) / 4.3) : 0);
+    const f = { c, t, roles, themes, types, pop: p0, rank, popular, flagged: !!support[c.name], legal: !(m ? m[2] === 1 : BANNED.has(c.name)) && c.main !== 'Other' };
     if (c.main === 'Land') {
       f.produces = new Set();
       for (const m of t.matchAll(/add ((?:\{[wubrgc]\})+)/g)) for (const s of m[1].matchAll(/\{([wubrg])\}/g)) f.produces.add(s[1].toUpperCase());
@@ -181,7 +186,7 @@ const legalFor = (f, p, state) => f.legal && !state.commanders.includes(f.c.name
       else if (r === 'protect' || r === 'tutor' || r === 'recursion') s += 0.5;
       else s += 0.3;
     }
-    if (f.pop) { s += 2.4 * Math.sqrt(Math.min(f.pop, 50) / 50); if (f.pop >= 8) why.push(`In ${f.pop} precons`); }
+    if (f.popular) { s += 2.4 * f.popular; if (f.pop >= 8) why.push(`In ${f.pop} precons`); else if (f.rank && f.rank <= 500) why.push('One of the most played Commander cards'); }
     if (p.lead.has(f.c.name)) { s += 2; why.push('In your commander’s own precon'); }
     if (f.c.main !== 'Land') {
       // expensive cards cost more the more expensive they are; a full slot of the curve pushes toward other costs
@@ -225,7 +230,7 @@ const legalFor = (f, p, state) => f.legal && !state.commanders.includes(f.c.name
     const colors = [...f.produces].filter(x => p.identity.includes(x));
     const any = f.produces.has('*') || (f.produces.has('fetch') && p.identity.length > 1);
     const fixes = any ? p.identity.length : colors.length;
-    let s = 2.4 * Math.sqrt(Math.min(f.pop, 50) / 50);
+    let s = 2.4 * f.popular;
     if (p.identity.length > 1 && fixes >= 2) { s += 3 + fixes * 0.4; why.push(`Makes ${any ? 'any of your colors' : 'two of your colors'}`); }
     else if (fixes === 0) { s -= 1.5; }
     if (f.tapped) s -= 1;
@@ -248,7 +253,7 @@ const legalFor = (f, p, state) => f.legal && !state.commanders.includes(f.c.name
     const problems = [];
     const missing = f.c.ci.filter(x => !p.identity.includes(x));
     if (state.commanders.length && missing.length && !state.commanders.includes(name)) problems.push(`Needs ${missing.map(x => COLOR_NAMES[x]).join(' and ')} mana: outside your commander’s colors`);
-    if (BANNED.has(name)) problems.push('Banned in Commander');
+    if (!f.legal && f.c.main !== 'Other') problems.push('Banned in Commander (fine for a casual game if your friends agree)');
     if (f.c.main === 'Other') problems.push('Not a card you can put in a deck');
     if (f.flagged) problems.push('The game can’t fully play this card yet');
     let fit = null;

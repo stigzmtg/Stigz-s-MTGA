@@ -41,7 +41,7 @@ export const uiScale = () => (typeof document === 'undefined' ? 1 : parseFloat(g
 const DATA_VERSION = typeof __DATA_VERSION__ === 'string' ? __DATA_VERSION__ : '';
 
 // (the website only: the claude.ai page's files are replaced together on every publish)
-const onClaudePage = () => typeof window !== 'undefined' && !!(window.claude && window.claude.use);
+export const onClaudePage = () => typeof window !== 'undefined' && !!(window.claude && window.claude.use);
 export const dataUrl = url => (DATA_VERSION && /^data\//.test(url) && !onClaudePage() ? `${url}?v=${DATA_VERSION}` : url);
 // picture packs are listed with a hash of their contents (img/ptcg-6.avif?v=…); the claude.ai page asks for the bare file
 export const packUrl = url => (onClaudePage() ? String(url).split('?')[0] : url);

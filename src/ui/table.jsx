@@ -4,7 +4,7 @@ import { Mat, Hand, StackView, RecentPlays, useRecentPlays, ArrowLayer, TurnBann
 import { imagesAvailable, subscribeImages, imagesVersion, imageOf } from './images.js';
 import { createFlights, runFlights, strike } from './motion.js';
 import { Modal, CardsDialog, TargetsDialog, OptionDialog, ModesDialog, ConfirmDialog, NumberDialog, ColorDialog, PlayerDialog, MulliganDialog, ZoneDialog, SettingsDialog, TokenDialog, HelpDialog, Menu, SoundToggle, SizeButton, Confetti } from './dialogs.jsx';
-import { getActions, refOf, fromRef, manaAbilitiesOf, manaSourcesFor, activateManaAbility, parseCost } from '../engine/abilities.js';
+import { getActions, refOf, fromRef, manaAbilitiesOf, manaSourcesFor, activateManaAbility, parseCost, whyCantPlay } from '../engine/abilities.js';
 import { STEP_NAMES } from '../engine/game.js';
 import { blockRules, blockProblem, canBlock, canAttackDefender } from '../engine/combat.js';
 import { applyOp, cardMenuItems, playerMenuItems } from './manual.js';
@@ -412,6 +412,8 @@ export function GameView({ session, onExit, onRematch, onReplay, support, images
         items.push({ note: `${game.name(card)}'s mana can only pay for certain things, so it's spent for you when you pay for one of them.` });
       }
       if (items.length) { items.push({ label: 'Inspect card', run: () => setInspect(card.id) }); if (isMine && tools) items.push('-', ...cardMenuItems(game, card, me, use)); setMenu({ x: e ? e.clientX : 200, y: e ? e.clientY : 200, title: game.name(card), items }); return; }
+      // a card of yours that can't be played now: say why (mana, timing, a land already played, no targets)
+      if (isMine && (card.zone === 'hand' || card.zone === 'command')) { const why = whyCantPlay(game, me, card); if (why) setToast(why); }
     }
     if (touch) setInspect(card.id);
   };

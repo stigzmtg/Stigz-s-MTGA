@@ -60,7 +60,7 @@ export function CardSearch({ H, index, db, state, identity, rank, onAdd, onOpen,
     }
     const fit = c => { const r = rank && rank.get(c.name); return r ? r.s : -99; };
     if (sort === 'fit' && rank) out.sort((a, b) => fit(b) - fit(a));
-    else if (sort === 'popular') out.sort((a, b) => (H.feats.get(b.name).pop - H.feats.get(a.name).pop) || a.name.localeCompare(b.name));
+    else if (sort === 'popular') out.sort((a, b) => (H.feats.get(b.name).popular - H.feats.get(a.name).popular) || a.name.localeCompare(b.name));
     else if (sort === 'mv') out.sort((a, b) => (a.main === 'Land') - (b.main === 'Land') || a.cmc - b.cmc || a.name.localeCompare(b.name));
     return out;
   }, [qq, type, jobs, mv, planOnly, inColors, sort, rank, identity, state.commanders]);
@@ -70,7 +70,7 @@ export function CardSearch({ H, index, db, state, identity, rank, onAdd, onOpen,
   const addBtn = c => {
     const have = state.cards.get(c.name) || 0;
     const off = c.ci.some(x => !identity.includes(x));
-    if (have && !c.anyNumber) return <button className="btn sm in" onClick={() => onOpen(c.name)} title="In your deck">✓ In deck</button>;
+    if (have && have >= c.maxCopies) return <button className="btn sm in" onClick={() => onOpen(c.name)} title="In your deck">✓ In deck</button>;
     return <button className="btn sm" disabled={off} title={off ? 'Outside your commander’s colors' : 'Add to deck'} onClick={() => onAdd(c.name)}>{have ? `+ Add (${have})` : '+ Add'}</button>;
   };
   return (
@@ -151,7 +151,7 @@ export function CommanderPicker({ H, index, db, partnerOf, onOpen, onChoose, hv 
       }
       return !qq || c.lower.includes(qq) || c.type.toLowerCase().includes(qq) || (qq.length > 2 && c.text.toLowerCase().includes(qq));
     });
-    const score = c => (H.leadsPrecon(c.name) ? 1000 : 0) + H.feats.get(c.name).pop - (H.feats.get(c.name).flagged ? 5000 : 0);
+    const score = c => (H.leadsPrecon(c.name) ? 1000 : 0) + 100 * H.feats.get(c.name).popular - (H.feats.get(c.name).flagged ? 5000 : 0);
     if (sort === 'popular') out.sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name));
     else if (sort === 'mv') out.sort((a, b) => a.cmc - b.cmc || a.name.localeCompare(b.name));
     return out;

@@ -21,7 +21,7 @@ async function page(name, width, height) {
   p.on('pageerror', e => errors.push(`${name}: ${e.message}`));
   p.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(`${name} console: ${m.text()}`); });
   await p.goto(BASE + '#mtg');
-  await p.waitForSelector('text=Pick a precon', { timeout: 60000 });
+  await p.waitForSelector('text=Pick a deck, take a seat', { timeout: 60000 });
   return p;
 }
 const total = p => p.$eval('.b-total b', e => +e.textContent);
@@ -163,7 +163,7 @@ await D.waitForSelector('.b-status .saved:has-text("Saved on this device")', { t
 const saved = await D.evaluate(() => JSON.parse(localStorage.getItem('pa-custom-decks') || '[]'));
 ok(saved.length === 1 && saved[0].commanders[0] === 'Atarka, World Render' && saved[0].cards.reduce((a, [, n]) => a + n, 0) === 99, 'saved on this device without pressing save');
 await D.click('button:has-text("Back to decks")');
-await D.waitForSelector('text=Pick a precon');
+await D.waitForSelector('text=Pick a deck, take a seat');
 
 // ---- a copy of a precon, from the deck list
 const P = await page('precon', 1440, 900);
@@ -196,6 +196,16 @@ await I.click('.dialog .dlg-actions .btn.primary');
 await I.waitForSelector('.b-deck');
 ok(await total(I) === 100, 'the pasted deck has 100 cards');
 ok(await I.inputValue('.deckname') === 'Pasted Deck', 'and the list’s name');
+// a deck's link: the site's server reads it (answered here; worker/decklink.js reads the real sites)
+await I.route(/\/decklink\?/, r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ name: 'Linked Deck', author: 'someone', source: 'Archidekt', text: `Commander\n1 ${pre.commanders[0]}\n\nDeck\n1 Sol Ring\n1 Arcane Signet` }) }));
+await I.click('.topbar button:has-text("Paste a list")');
+await I.fill('.builder-import', 'https://archidekt.com/decks/123456/some_deck');
+await I.waitForSelector('.imp-link');
+await I.click('.imp-link button:has-text("Get this deck")');
+await I.waitForSelector('.imp-out .imp-sum');
+const linked = await I.textContent('.imp-out');
+ok(/3 cards read from/.test(linked) && /From Archidekt · by someone/.test(linked), `a deck link fills in the list (${linked.slice(0, 80)})`);
+await I.click('.dialog .dlg-actions button:has-text("Cancel")');
 // replace it with a list that marks no commander: the dialog asks which card leads
 await I.click('.topbar button:has-text("Paste a list")');
 await I.fill('.builder-import', ['1 Sol Ring', `1 ${pre.commanders[0]}`, '1 Arcane Signet', '1 Command Tower'].join('\n'));
