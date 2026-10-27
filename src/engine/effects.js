@@ -428,7 +428,8 @@ export const E = {
       for (const c of cardsOf(list)) { if (c.monstrous) continue; await game.addCounters(c, 'P1P1', mn, sa); c.monstrous = true; game.fire('BecomeMonstrous', { Card: c }); }
       return;
     }
-    if (p.Adapt === 'True') { for (const c of cardsOf(list)) if (!(c.counters.P1P1 > 0) || castingCanAdapt(game, c)) { await game.addCounters(c, 'P1P1', n, sa); game.fire('Adapt', { Card: c }); } return; }
+    // adapt N: N +1/+1 counters if it has none (or "as though it had no +1/+1 counters": Biomancer's Familiar)
+    if (p.Adapt) { const an = p.Adapt === 'True' ? n : calc(game, p.Adapt, sa); for (const c of cardsOf(list)) if (!(c.counters.P1P1 > 0) || castingCanAdapt(game, c)) { await game.addCounters(c, 'P1P1', an, sa); game.fire('Adapt', { Card: c }); } return; }
     for (let i = 0; i < list.length; i++) {
       const o = list[i];
       const amt = sa.division ? sa.division[i] : n;

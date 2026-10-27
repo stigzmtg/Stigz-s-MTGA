@@ -595,6 +595,7 @@ export async function castingApplyCostPart(game, sa, ch) {
   const exileAll = async (cards, opts = {}) => { for (const c of cards) { paid.Exiled.push(c); await game.moveCard(c, 'exile', { cause: sa, ...opts }); } };
   switch (part.type) {
     case 'CollectEvidence':
+      (paid.Collected = paid.Collected || []).push(...ch.cards);
       await exileAll(ch.cards);
       game.log(`${p.name} collects evidence ${ch.n} (${ch.cards.map(c => game.name(c)).join(', ') || 'nothing'}).`);
       sa.root().evidence = (sa.root().evidence || 0) + ch.n;

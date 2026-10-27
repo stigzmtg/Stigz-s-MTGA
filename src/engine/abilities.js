@@ -194,7 +194,10 @@ export function canPayNonMana(game, sa, cost, exclude = new Set()) {
     if (game.chars(host).types.has('Creature') && host.sick && !game.hasKeyword(host, 'Haste')) return false;
   }
   for (const part of cost.parts) {
-    const n = part.amount === 'X' ? (sa.root().x || 0) : amountOf(game, sa, part.amount);
+    // ("XMin4": before X is chosen, the cost must be payable with the smallest X)
+    const xNone = part.amount === 'X' && sa.root().x == null;
+    const n = part.amount === 'X' ? (xNone ? part.xMin || 0 : sa.root().x || 0) : amountOf(game, sa, part.amount);
+    if (part.xMin && n < part.xMin) return false;
     if (CASTING_COST_TYPES.has(part.type)) { if (!castingCanPayPart(game, sa, part, n, exclude)) return false; continue; }
     switch (part.type) {
       case 'PayLife': if (p.life < n) return false; break;
@@ -508,7 +511,7 @@ async function applyCostParts(game, sa, cost, choices) {
       case 'Behold': for (const c of ch.cards) paid.Revealed.push(c); game.log(`${p.name} beholds ${ch.cards.map(c => game.name(c)).join(', ')}.`); break;
       case 'PutCardToLibFromBattlefield': for (const c of ch.cards) await game.moveCard(c, 'library', { cause: sa, pos: part.libPos === '-1' ? 'bottom' : 'top' }); break;
       case 'RevealChosen': if (host.chosen && host.chosen.player != null) { host.chosenRevealed = true; game.log(`${p.name} reveals the chosen player: ${game.players[host.chosen.player].name}.`); } break;
-      case 'Return': for (const c of ch.cards) { (paid.Returned = paid.Returned || []).push(game.makeLKI(c)); const atk = game.combat && game.combat.attackers.find(a => a.card === c.id); if (atk) (paid.ReturnedAttack = paid.ReturnedAttack || []).push({ ...atk }); await game.moveCard(c, 'hand', { cause: sa }); } break;
+      case 'Return': for (const c of ch.cards) { (paid.Returned = paid.Returned || []).push(game.makeLKI(c)); sa.root().returned = paid.Returned; const atk = game.combat && game.combat.attackers.find(a => a.card === c.id); if (atk) (paid.ReturnedAttack = paid.ReturnedAttack || []).push({ ...atk }); await game.moveCard(c, 'hand', { cause: sa }); } break;
       case 'tapXType': case 'Crew': for (const c of ch.cards) { paid.Tapped.push(c); await game.tap(c); } if (part.type === 'Crew') game.fire('BecomesCrewed', { Card: host, Crew: ch.cards }); break;
       case 'untapYType': for (const c of ch.cards) await game.untap(c); break;
       case 'Reveal': for (const c of ch.cards) paid.Revealed.push(c); game.log(`${p.name} reveals ${ch.cards.map(c => game.name(c)).join(', ')}.`); break;
@@ -1187,7 +1190,9 @@ export function spellOptions(game, pid, card, { anyZone = false } = {}) {
     } else if (spAbils.length && face.subtypes.includes('Aura')) {
       opts.push({ key: `f${fi}a${spAbils[0].i}`, label: `Cast ${face.name}`, face: fi, abilIdx: spAbils[0].i, from, permanent: true, ...extra });
     } else {
-      opts.push({ key: `f${fi}`, label: `Cast ${face.name}`, face: fi, permanent: true, from, ...extra });
+      // "as an additional cost to cast this spell, ..." on a permanent (A:SP$ PermanentCreature | Cost$ 2 G ChooseCreatureType<1>)
+      const own = spAbils.find(a => /^SP\$ Permanent/.test(a.raw) && /\bCost\$/.test(a.raw));
+      opts.push({ key: `f${fi}`, label: `Cast ${face.name}`, face: fi, permanent: true, from, ...(own ? { abilIdx: own.i } : {}), ...extra });
     }
   };
   if (!from) {
@@ -1226,7 +1231,8 @@ export function spellOptions(game, pid, card, { anyZone = false } = {}) {
     if (from === 'hand') pushFace(0);
     return opts;
   }
-  if (def.altMode === 'Split' || def.altMode === 'Adventure' || def.altMode === 'Modal' || def.altMode === 'Omen' || def.altMode === 'Prepare') {
+  // (a prepare spell is only cast as a copy, while its creature is prepared)
+  if (def.altMode === 'Split' || def.altMode === 'Adventure' || def.altMode === 'Modal' || def.altMode === 'Omen') {
     pushFace(0);
     if (from !== 'command') pushFace(1, def.altMode === 'Adventure' ? { adventure: true } : {});
   } else {

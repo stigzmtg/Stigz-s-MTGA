@@ -1181,6 +1181,8 @@ export function evalExpr(game, expr, ctx, depth) {
       break;
     }
     case 'Imprinted': { const list = refList(game, ctx, 'Imprinted'); n = rest === 'Amount' ? list.length : list.reduce((a, c) => a + cardStat(game, c, rest, ctx), 0); break; }
+    // the cards exiled with it ("the total power of the exiled cards used to craft it")
+    case 'ExiledWith': { const list = resolveDefined(game, 'ExiledWith', ctx); n = rest === 'Amount' ? list.length : rest === 'Colors' ? new Set(list.flatMap(c => [...charsOf(game, c).colors])).size : list.reduce((a, c) => a + cardStat(game, c, rest, ctx), 0); break; }
     case 'Emerged': { const r = sa && sa.root ? sa.root() : null; const lki = (r && r.emerged) || (host && host.castSA && host.castSA.emerged); n = lki ? cardStat(game, lki, rest, ctx) : 0; break; }
     case 'Sacrificed': case 'Discarded': case 'Exiled': case 'Tapped': case 'Revealed': case 'Returned': {
       const list = sa ? (sa.root().paid[head] || []) : [];

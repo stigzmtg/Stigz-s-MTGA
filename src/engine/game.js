@@ -8,6 +8,7 @@ import { SA, castSpell, activateAbility, resolveStackItem, chooseTargetsForSA, g
 import { triggerMatches } from './triggers.js';
 import * as combat from './combat.js';
 import { parseAbility } from './forge.js';
+import { castingLeftBattlefield } from './mech-casting.js';
 
 export const STEPS = ['untap', 'upkeep', 'draw', 'main1', 'beginCombat', 'declareAttackers', 'declareBlockers', 'firstStrikeDamage', 'combatDamage', 'endCombat', 'main2', 'end', 'cleanup'];
 export const STEP_NAMES = { untap: 'Untap', upkeep: 'Upkeep', draw: 'Draw', main1: 'Main 1', beginCombat: 'Beginning of Combat', declareAttackers: 'Declare Attackers', declareBlockers: 'Declare Blockers', firstStrikeDamage: 'First-Strike Damage', combatDamage: 'Combat Damage', endCombat: 'End of Combat', main2: 'Main 2', end: 'End Step', cleanup: 'Cleanup' };
@@ -734,9 +735,10 @@ export class Game {
         for (const c of p[z]) {
           if (seen.has(c.id)) continue;
           const f = c.faceDef;
-          if (!f.triggers.length && !(c.def.faces.length > 1)) continue;
+          const zoneKw = f.keywords.some(k => k.startsWith('Recover:')); // (recover triggers from the graveyard)
+          if (!f.triggers.length && !(c.def.faces.length > 1) && !zoneKw) continue;
           const isSelf = rp.Card && rp.Card.id === c.id;
-          if (!isSelf && !f.triggers.some(t => /TriggerZones\$/.test(t))) continue;
+          if (!isSelf && !zoneKw && !f.triggers.some(t => /TriggerZones\$/.test(t))) continue;
           if (z === 'library' && !isSelf) continue;
           add(c, z, this.chars(c).triggers);
         }
@@ -1124,6 +1126,7 @@ export class Game {
       }
       this.lookback.push(lki);
       this.turnState.permanentLeft[card.controller] = true;
+      castingLeftBattlefield(this, card); // (a prepared creature's spell copy stops existing)
       if (lki.chars.types.has('Creature') && dest === 'graveyard') this.turnState.creaturesDied++;
       // attached things fall off
       for (const a of this.battlefield) if (a.attachedTo === card.id) { a.attachedTo = null; }
