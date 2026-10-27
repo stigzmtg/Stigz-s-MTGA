@@ -1572,6 +1572,12 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 .fav-btn.on { color: var(--brass-hi); border-color: rgba(243, 212, 136, 0.55); }
 .panel-head .spacer { flex: 1; }
 
+/* cards you can play from your graveyard, exile or the top of your library, after your hand */
+.handslot.elsewhere { position: relative; }
+.hand > .handslot + .handslot.elsewhere.first { margin-left: calc(14px * var(--s)); }
+.handslot.elsewhere::before { content: ""; position: absolute; inset: calc(-4px * var(--s)); border-radius: calc(10px * var(--s)); border: 1.5px dashed rgba(243, 212, 136, 0.45); pointer-events: none; }
+.handslot.elsewhere .from { position: absolute; z-index: 3; left: 50%; top: calc(-11px * var(--s)); transform: translateX(-50%); padding: 1px calc(7px * var(--s)); border-radius: calc(999px * var(--s)); background: #1c3628; border: 1px solid rgba(243, 212, 136, 0.55); color: var(--brass-hi); font: 700 calc(10.5px * var(--s))/1.5 var(--font-ui); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; pointer-events: none; }
+
 /* ================================================================ Pokémon: shared */
 .app.pk {
   --pk-grass: #4fae4a; --pk-fire: #e8572c; --pk-water: #2b8fd6; --pk-lightning: #f3c21b; --pk-psychic: #9c5bbd; --pk-fighting: #c0652d;
@@ -2914,6 +2920,6 @@ html[data-motion="off"] .confetti, html[data-motion="reduced"] .confetti { displ
 <div id="root"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
-<script src="app.js?v=30202222e1"></script>
+<script src="app.js?v=f5a36c2527"></script>
 </body>
 </html>
