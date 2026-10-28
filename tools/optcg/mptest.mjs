@@ -28,7 +28,7 @@ const ownDeck = (id, name, from, swap) => { const d = starters.find(x => x.id ==
 const OWN = { host: ownDeck('opd-hanadeck1', 'Hana’s Red Crew', 'st01', ['ST01-007', 'OP01-016']), guest: ownDeck('opd-gusdeck22', 'Gus’s Green Wall', 'st02') };
 async function newPlayer(label, deck) {
   const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 } });
-  await ctx.addInitScript(([p2p, relay]) => { if (p2p) window.__paTransport = 'p2p'; if (relay) window.__paTransport = 'relay'; if (relay === 'poll') window.__paRelayPoll = true; }, [P2P, RELAY]);
+  await ctx.addInitScript(([p2p, relay]) => { window.__paExpose = true; if (p2p) window.__paTransport = 'p2p'; if (relay) window.__paTransport = 'relay'; if (relay === 'poll') window.__paRelayPoll = true; }, [P2P, RELAY]);
   if (!P2P && !RELAY) {
     await ctx.exposeBinding('__relay', async (src, name, msg) => {
       for (const p of pages) if (p !== src.page) p.evaluate(([n, m]) => window.__relayIn && window.__relayIn(n, m), [name, msg]).catch(() => {});
@@ -221,6 +221,11 @@ await host.waitForTimeout(1500);
 await guest.screenshot({ path: `${OUT}/7-second-battle.png` });
 check(JSON.stringify(sa) === JSON.stringify(sb) && ts.every(t => t >= 1), `second battle in the same room matches (turns ${ts.join(', ')})`);
 
+// no copy of the battle drifted from the host's along the way (each would have rebuilt itself: ui/online.jsx watchDesync)
+const drift = (await Promise.all(pages.map(p => p.evaluate(() => window.__paDrift || []).catch(() => [])))).flat();
+check(!drift.length, `no copy drifted${drift.length ? ': ' + JSON.stringify(drift) : ''}`);
+// the largest presence each browser sent (rooms cap them: 4 KiB on claude.ai, 9,000 characters on the site's relay)
+console.log('largest presence per browser:', (await Promise.all(pages.map(p => p.evaluate(() => [window.__maxPresence || 0, window.__presenceRejected || 0]).catch(() => [-1, 0])))).map(([m, r]) => m + (r ? ` (${r} refused)` : '')).join(', '));
 check(!errors.length, errors.length ? 'page errors:\n' + errors.slice(0, 10).join('\n') : 'no page errors');
 await browser.close();
 process.exit(failed ? 1 : 0);

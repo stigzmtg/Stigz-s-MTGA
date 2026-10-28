@@ -1,5 +1,6 @@
 // Bridges engine prompts ("asks") for the human player to the React UI.
 import { getActions } from '../engine/abilities.js';
+import { pageHidden } from '../net/soon.js';
 
 let uid = 1;
 
@@ -32,7 +33,7 @@ export class HumanAgent {
       const top = req.type === 'priority' && game.stack[game.stack.length - 1];
       const wait = top && top.controller !== pid && !this.shown.has(top.id) ? this.showFor(top) : 0;
       if (top) this.shown.add(top.id);
-      if (wait > 0) return new Promise(r => setTimeout(() => r(auto), wait));
+      if (wait > 0 && !pageHidden()) return new Promise(r => setTimeout(() => r(auto), wait)); // (nobody sees a hidden page)
       return Promise.resolve(auto);
     }
     return new Promise(resolve => {

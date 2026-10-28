@@ -2,6 +2,7 @@
 // talk directly over WebRTC, so no accounts and no game server. Mirrors the claude.ai room's presence API that
 // the lobby and lockstep layers use: every peer publishes one small state object and sees everyone else's.
 import { joinRoom, selfId } from 'trystero';
+import { soon } from './soon.js';
 
 const APP_ID = 'precon-arena-v1';
 
@@ -17,7 +18,7 @@ function p2pRoom(name) {
     snapshot = null;
     if (scheduled) return;
     scheduled = true;
-    setTimeout(() => { scheduled = false; const s = snap(); for (const f of listeners) f({ peers: s }); }, 16);
+    soon(() => { scheduled = false; const s = snap(); for (const f of listeners) f({ peers: s }); }, 16);
   };
   // a newcomer gets our state right away; afterwards every change is broadcast (latest state wins, so sends coalesce)
   room.onPeerJoin = id => { state.send(mine(), { target: id }).catch(() => {}); };
@@ -35,7 +36,7 @@ function p2pRoom(name) {
       for (const [k, v] of Object.entries(patch)) { if (v === null) delete next[k]; else next[k] = v; }
       peers.set(selfId, { presence: Object.freeze(next), updatedAt: Date.now() });
       notify();
-      if (!pending) { pending = true; setTimeout(flush, 30); }
+      if (!pending) { pending = true; soon(flush, 30); }
       return Promise.resolve();
     },
     peers: () => snap(),

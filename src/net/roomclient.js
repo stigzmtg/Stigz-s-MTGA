@@ -1,6 +1,7 @@
 // A friends' room: who is here, who sits where, which decks, and the host's game config.
 // Everything travels in presence (any admitted viewer may set it); the host's presence carries `cfg`.
 import { PROTOCOL } from './lockstep.js';
+import { GAME_VERSION, BUILD_TIME } from './version.js';
 
 const CODE_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789';
 export function newRoomCode() { let s = ''; for (let i = 0; i < 6; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]; return s; }
@@ -70,6 +71,7 @@ export class RoomClient {
     }
     this.code = code;
     this.key = (this.kind ? this.kind : 'pa') + '-' + code;   // the room as badges name it
+    this.address(`${this.kind ? this.kind + '-' : ''}${code}`);
     if (asHost) this.cfg = { code, kind: this.kind, game: 0, seed: 0, host: this.cid, started: false, subs: {}, seats: [{ k: 'h', c: this.cid, n: this.nick, d: this.deck, ...lookOf(this.extra) }, { k: 'h', c: null, n: '', d: null }] };
     // a host coming back to its own room (a reload): pick its config up again, games and seats included
     else { const saved = this.savedCfg(code); if (saved && saved.host === this.cid) this.cfg = saved; }
@@ -91,7 +93,14 @@ export class RoomClient {
     if (this.room) { try { await this.room.leave(); } catch { /* already gone */ } }
     this.room = null; this.code = null; this.key = null; this.cfg = null; this.want = null;
     if (this.extra.vb) { const { vb, ...rest } = this.extra; this.extra = rest; }
+    this.address(this.kind === 'pk' ? 'pokemon' : this.kind === 'op' ? 'onepiece' : 'mtg');
     this.bump();
+  }
+  // while you're in a room, the address is its invite link: a reload (say, of a game that seems stuck) comes straight
+  // back to the room and its game instead of the game's menu
+  address(hash) {
+    if (typeof location === 'undefined' || location.hash === '#' + hash) return;
+    try { history.replaceState(null, '', '#' + hash); } catch { /* sandboxed frame */ }
   }
 
   cfgKey(code) { return `pa-roomcfg-${this.kind ? this.kind + '-' : ''}${code}`; }
@@ -100,7 +109,7 @@ export class RoomClient {
   announce(extra = {}) {
     if (!this.room) return Promise.resolve();
     if (this.isHost && this.storage) { try { this.storage.setItem(this.cfgKey(this.code), JSON.stringify(this.cfg)); } catch { /* storage blocked */ } }
-    const patch = { pa: PROTOCOL, code: this.code, cid: this.cid, nick: this.nick, deck: this.deck, want: this.want, ...this.extra, ...extra };
+    const patch = { pa: PROTOCOL, code: this.code, cid: this.cid, nick: this.nick, deck: this.deck, want: this.want, gv: GAME_VERSION, bt: BUILD_TIME, ...this.extra, ...extra };
     if (this.isHost) patch.cfg = this.cfg;
     return Promise.resolve(this.room.presence(patch)).catch(() => {});
   }
@@ -115,6 +124,16 @@ export class RoomClient {
       out.set(pr.cid, { cid: pr.cid, nick: String(pr.nick || 'Player').slice(0, 24), deck: pr.deck || null, want: typeof pr.want === 'number' ? pr.want : null, av: isAvatar(pr.av) ? pr.av : null, vb: badgeOf(pr.vb) || null, look: lookOf(pr), me: pr.cid === this.cid, presence: pr });
     }
     return out;
+  }
+
+  // someone here runs another version of the game rules (a page opened before an update): games between the two
+  // would drift apart, so the one with the older version reloads first. { nick, newer } or null
+  versionClash() {
+    for (const m of this.members().values()) {
+      const pr = m.presence;
+      if (!m.me && pr.gv && pr.gv !== GAME_VERSION) return { cid: m.cid, nick: m.nick, newer: (pr.bt || 0) > BUILD_TIME };
+    }
+    return null;
   }
 
   sync() {

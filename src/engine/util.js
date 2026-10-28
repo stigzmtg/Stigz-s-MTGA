@@ -41,6 +41,13 @@ export function compare(a, op, b) {
 }
 
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
+// let the page breathe during a long run of decisions (a message to ourselves: unlike a timer, not slowed in a hidden tab)
+export const yieldTask = () => new Promise(r => {
+  if (typeof MessageChannel === 'undefined') { setTimeout(r, 0); return; }
+  const c = new MessageChannel();
+  c.port1.onmessage = () => { c.port1.close(); r(); };
+  c.port2.postMessage(0);
+});
 
 export function uniq(arr) { return [...new Set(arr)]; }
 

@@ -1,7 +1,7 @@
 // Pokémon "Play with friends": make or join a room, send the invite link, the friend takes the second seat, each
 // player brings the deck picked on the left (a deck of their own travels with them), and the host starts the battle
 // once everyone's deck has arrived. Others in the room watch.
-import { CopyLink } from '../../ui/online.jsx';
+import { CopyLink, VersionNote } from '../../ui/online.jsx';
 import { isRoomCode, onClaude } from '../../net/roomclient.js';
 import { Energy } from './energy.jsx';
 import { AnimalAvatar, Lineup, Watchers, MyAvatarRow, AvatarButton, myAvatar } from '../../ui/avatar.jsx';
@@ -93,7 +93,8 @@ export function PkFriendsPanel({ data, online, deck, problems = [] }) {
   const mySeat = room.mySeat();
   const seated = new Set(cfg.seats.filter(s => s.c).map(s => s.c));
   const watchers = [...members.values()].filter(m => !seated.has(m.cid));
-  const ready = cfg.seats.every(s => s.c && members.has(s.c) && s.d) && decksKnown;
+  const clash = room.versionClash();
+  const ready = cfg.seats.every(s => s.c && members.has(s.c) && s.d) && decksKnown && !clash;
   const hostNick = (members.get(cfg.host) || {}).nick || 'the host';
   const inGame = cfg.started;
   const friend = cfg.seats[1];
@@ -131,6 +132,7 @@ export function PkFriendsPanel({ data, online, deck, problems = [] }) {
       </ol>
       <Watchers list={watchers} room={room.key} />
       <MyAvatarRow code={av} onChange={changeAv} />
+      <VersionNote clash={clash} code={room.code} kind="pk" />
       {mySeat >= 0 || (!inGame && !isHost) ? <p className="note">Your deck: <b>{deck.name}</b>. Tap another deck to switch{inGame ? ' for the next battle' : ''}.</p> : null}
       {deck.custom && problems.length ? <p className="note warnline">{deck.name} isn’t finished, so it can’t come to the battle: {problems[0]}</p>
         : deck.custom && onClaude() ? <p className="note warnline">Decks you build can only be played in rooms on the website, not on claude.ai. Pick a tournament deck here.</p> : null}
@@ -139,7 +141,7 @@ export function PkFriendsPanel({ data, online, deck, problems = [] }) {
         {inGame ? (
           <button className="btn primary" onClick={onWatch} disabled={!decksKnown} title={decksKnown ? '' : 'Getting the players’ decks…'}>{mySeat >= 0 ? 'Rejoin the battle' : 'Watch the battle'}</button>
         ) : isHost ? (
-          <button className="btn primary" disabled={!ready} onClick={onStart} title={ready ? '' : 'Your friend needs to take seat 2'}>{ready ? 'Start battle' : !cfg.seats[0].d ? 'Pick a deck to start' : !friend.c ? 'Waiting for a friend…' : friend.d && !decksKnown ? `Getting ${friend.n || 'your friend'}’s deck…` : `Waiting for ${friend.n || 'your friend'}…`}</button>
+          <button className="btn primary" disabled={!ready} onClick={onStart} title={ready ? '' : 'Your friend needs to take seat 2'}>{ready ? 'Start battle' : clash ? 'Same version needed' : !cfg.seats[0].d ? 'Pick a deck to start' : !friend.c ? 'Waiting for a friend…' : friend.d && !decksKnown ? `Getting ${friend.n || 'your friend'}’s deck…` : `Waiting for ${friend.n || 'your friend'}…`}</button>
         ) : (
           <span className="note">{mySeat >= 0 ? `Waiting for ${hostNick} to start…` : friend.c ? 'Both seats are taken. Stay to watch the battle.' : 'Take the open seat to play, or stay to watch.'}</span>
         )}

@@ -41,6 +41,13 @@ for (const f of ['images.json', 'ptcg/images.json', 'optcg/images.json']) {
 const dataHash = crypto.createHash('sha1');
 for (const f of [...MTG_DATA, 'ptcg/cards.json', 'ptcg/decks.json', 'ptcg/images.json', 'optcg/cards.json', 'optcg/decks.json', 'optcg/images.json']) if (fs.existsSync(path.join(DIST, 'data', f))) dataHash.update(fs.readFileSync(path.join(DIST, 'data', f)));
 const DATA_VERSION = dataHash.digest('hex').slice(0, 10);
+// the version of the game rules: the engines, the AIs and the card and deck lists (not the screens or pictures).
+// Friends' browsers must run the same one, or their games drift apart (src/net/version.js)
+const rulesHash = crypto.createHash('sha1');
+const sources = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => (e.isDirectory() ? (e.name === 'ui' ? [] : sources(path.join(dir, e.name))) : /\.jsx?$/.test(e.name) ? [path.join(dir, e.name)] : []));
+for (const f of sources('src').sort()) rulesHash.update(fs.readFileSync(f));
+for (const f of ['cards.json', 'tokens.json', 'decks.json', 'community.json', ...moreFiles, 'ptcg/cards.json', 'ptcg/decks.json', 'optcg/cards.json', 'optcg/decks.json']) if (fs.existsSync(path.join(DIST, 'data', f))) rulesHash.update(fs.readFileSync(path.join(DIST, 'data', f)));
+const GAME_VERSION = rulesHash.digest('hex').slice(0, 10);
 
 await build({
   entryPoints: ['src/ui/main.jsx'],
@@ -53,7 +60,7 @@ await build({
   loader: { '.jsx': 'jsx' },
   outfile: path.join(DIST, 'app.js'),
   legalComments: 'none',
-  define: { __DATA_VERSION__: JSON.stringify(DATA_VERSION) },
+  define: { __DATA_VERSION__: JSON.stringify(DATA_VERSION), __GAME_VERSION__: JSON.stringify(GAME_VERSION), __BUILD_TIME__: String(Date.now()) },
 });
 const APP_VERSION = hashOf(fs.readFileSync(path.join(DIST, 'app.js')));
 

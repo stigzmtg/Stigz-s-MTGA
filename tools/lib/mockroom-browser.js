@@ -37,7 +37,9 @@
       presence(patch) {
         const next = { ...peers.get(me).presence };
         for (const [k, v] of Object.entries(patch)) { if (v === null) delete next[k]; else next[k] = v; }
-        if (JSON.stringify(next).length > 4096) return Promise.reject({ code: 'invalid_argument', message: 'presence over 4 KiB' });
+        const size = JSON.stringify(next).length;
+        window.__maxPresence = Math.max(window.__maxPresence || 0, size); // (tests read the largest presence sent)
+        if (size > 4096) { window.__presenceRejected = (window.__presenceRejected || 0) + 1; return Promise.reject({ code: 'invalid_argument', message: 'presence over 4 KiB' }); }
         peers.set(me, { presence: Object.freeze(next), updatedAt: Date.now() });
         send(); notify();
         return Promise.resolve();

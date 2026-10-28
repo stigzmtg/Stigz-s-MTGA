@@ -3,6 +3,8 @@
 // browser-to-browser connections. A WebSocket where possible, plain HTTP polling where even that is blocked.
 // Same presence API as p2proom.js and the claude.ai room: presence(patch), peers(), onPeers(fn), leave().
 
+import { soon } from './soon.js';
+
 export const RELAY_HOST = 'stigz-s-mtga.stigzrblx.workers.dev';
 const OPEN_TIMEOUT = 6000;   // a WebSocket that hasn't opened by then means polling
 const POLL_EVERY = 700;
@@ -40,7 +42,7 @@ export function relayRoom(origin, name) {
     snapshot = null;
     if (scheduled) return;
     scheduled = true;
-    setTimeout(() => { scheduled = false; const s = snap(); for (const f of listeners) f({ peers: s }); }, 16);
+    soon(() => { scheduled = false; const s = snap(); for (const f of listeners) f({ peers: s }); }, 16);
   };
   const setOther = (peer, p) => { if (peer === myId || !p || typeof p !== 'object') return; others.set(peer, { presence: Object.freeze(p), updatedAt: Date.now() }); };
 
@@ -110,7 +112,7 @@ export function relayRoom(origin, name) {
       for (const [k, v] of Object.entries(patch)) { if (v === null) delete next[k]; else next[k] = v; }
       mine = Object.freeze(next);
       notify();
-      if (mode === 'ws') { if (!sendTimer) sendTimer = setTimeout(sendWs, 30); } else dirty = true;
+      if (mode === 'ws') { if (!sendTimer) { sendTimer = true; soon(sendWs, 30); } } else dirty = true;
       return Promise.resolve();
     },
     peers: () => snap(),

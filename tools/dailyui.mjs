@@ -104,7 +104,14 @@ for (const [kind, where, sess] of [['Pokémon', ['#pokemon', 'text=Pick a deck, 
     const p = await profile(null, undefined, where);
     const names = await p.$$eval('.dseat .dsn b', bs => bs.map(b => b.textContent));
     await p.click('.daily button.btn.primary');
-    await p.waitForFunction(k => window[k] && window[k].game && window[k].game.players.every(q => q.hand.length > 0), sess, { timeout: 60000 });
+    // (One Piece: on a day you win the coin flip, you choose who goes first before the hands are dealt)
+    const dealt = k => p.evaluate(s => window[s] && window[s].game && window[s].game.players.every(q => q.hand.length > 0), k).catch(() => false);
+    for (let t0 = Date.now(); !(await dealt(sess)) && Date.now() - t0 < 60000;) {
+      const first = await p.$('button:has-text("Go first")');
+      if (first) await first.click().catch(() => {});
+      await p.waitForTimeout(200);
+    }
+    await p.waitForFunction(k => window[k] && window[k].game && window[k].game.players.every(q => q.hand.length > 0), sess, { timeout: 5000 });
     const got = await p.evaluate(k => { const g = window[k].game; return { seed: g.seed, hands: g.players.map(q => q.hand.map(c => c.def.name || c.def.id).sort().join('|')).join(' / '), deck: g.players.map(q => (q.deck || []).slice(0, 6).map(c => c.def.name || c.def.id).join('|')).join(' / ') }; }, sess);
     await p.close();
     return { names, ...got };

@@ -9,6 +9,7 @@ import { initPkImages, preloadPk } from './images.js';
 import { createStore, loadSettings, fetchJSON, safeStorage } from '../../ui/common.js';
 import { makePace } from '../../ui/pacing.js';
 import { Modal } from '../../ui/dialogs.jsx';
+import { watchDesync } from '../../ui/online.jsx';
 import { Lockstep, LocalSeatAgent, RemoteSeatAgent } from '../../net/lockstep.js';
 import { RoomClient, roomApi, isRoomCode, onClaude } from '../../net/roomclient.js';
 import { Recorder, ReplayControl, ReplayAgent, pkDelay, loadReplay } from '../../ui/records.js';
@@ -212,6 +213,8 @@ export function PokemonApp({ onHome }) {
     }
     if (cfg.started && decksKnown && (room.mySeat() >= 0 || cur) && (cfg.game !== room.lastAutoStart || cur)) { room.lastAutoStart = cfg.game; setBuilder(null); setSession(newOnlineBattle(all, room, cfg)); }
   }, [all, room, cfg && cfg.game, cfg && cfg.started, decksKnown]);
+  // a copy of the battle that drifted from the host's rebuilds itself from the host's history
+  useEffect(() => watchDesync(session, room, () => { endBattle(session); setSession(newOnlineBattle(all, room, room.cfg)); }), [session]);
 
   if (error) return <div className="app pk"><div className="loading"><h2>Couldn't load the Pokémon cards</h2><p>{error}</p><button className="btn" onClick={onHome}>Back</button></div></div>;
   if (!data) return <div className="app pk"><div className="loading"><div className="label">Shuffling decks</div><div className="bar"><i style={{ width: '60%' }} /></div></div></div>;

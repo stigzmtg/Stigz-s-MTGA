@@ -4,6 +4,7 @@ import { Game } from '../engine/game.js';
 import { AIAgent } from '../ai/ai.js';
 import { HumanAgent } from './human.js';
 import { Lobby } from './lobby.jsx';
+import { watchDesync } from './online.jsx';
 import { GameView } from './table.jsx';
 import { initImages, preloadDecks } from './images.js';
 import { Lockstep, LocalSeatAgent, RemoteSeatAgent, HostAIAgent, unpackValue } from '../net/lockstep.js';
@@ -269,6 +270,9 @@ function MtgApp({ onHome }) {
     if (cur && (cur.game !== cfg.game || !cfg.started) && !session.game.over) { endSession(session); setSession(null); setToast('The host ended the game.'); }
   }, [all, room, cfg && cfg.game, cfg && cfg.started, decksKnown]);
 
+  // a copy of the game that drifted from the host's rebuilds itself from the host's history
+  useEffect(() => watchDesync(session, room, () => { endSession(session); begin(room.cfg.seats.map(s => findDeck(all.decks, s.d)), () => newOnlineSession(all, room, room.cfg)); }), [session]);
+
   // a shared deck (#deck-…): opens in the builder's paste dialog, to keep as one of your decks
   useEffect(() => {
     if (!data) return;
@@ -299,7 +303,9 @@ function MtgApp({ onHome }) {
   const onlineProps = {
     api, room, mode, setMode, onCreate, onJoin, onLeave,
     onStart: () => { room.start({ seed: (Math.random() * 2 ** 32) >>> 0, seats: seatsForStart(all, room.cfg) }); },
-    onWatch: () => begin(room.cfg.seats.map(s => findDeck(all.decks, s.d)), () => newOnlineSession(all, room, room.cfg)),
+    // (only once every seat's deck has reached this browser: a game started with a stand-in deck would be another game)
+    decksKnown,
+    onWatch: () => { if (decksKnown) begin(room.cfg.seats.map(s => findDeck(all.decks, s.d)), () => newOnlineSession(all, room, room.cfg)); },
     onDeck: id => {
       if (!room) return;
       room.setDeck(id);

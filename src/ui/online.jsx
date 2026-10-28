@@ -43,7 +43,7 @@ function DeckName({ data, id, bx }) {
   return <span className="seat-deck" title={d.commanders.join(' & ')}><DeckBox code={bx || defaultBox(d.id, ['W', 'U', 'B', 'R', 'G'].filter(x => colors.has(x)))} size={22} />{d.name}</span>;
 }
 
-export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave, onStart, onWatch, session }) {
+export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave, onStart, onWatch, session, decksKnown = true }) {
   const { decks } = data;
   // an invite link (or a code typed on the home screen) puts the room code in the address
   const [code, setCode] = useState(() => (isRoomCode(location.hash.slice(1)) ? location.hash.slice(1) : ''));
@@ -108,7 +108,8 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
   const seated = new Set(cfg.seats.filter(s => s.c).map(s => s.c));
   const watchers = [...members.values()].filter(m => !seated.has(m.cid));
   const humanSeats = cfg.seats.filter(s => s.k === 'h');
-  const ready = cfg.seats.length >= 2 && humanSeats.every(s => s.c && members.has(s.c) && s.d && findDeck(decks, s.d));
+  const clash = room.versionClash();
+  const ready = cfg.seats.length >= 2 && humanSeats.every(s => s.c && members.has(s.c) && s.d && findDeck(decks, s.d)) && !clash;
   const hostNick = (members.get(cfg.host) || {}).nick || 'the host';
   const inGame = cfg.started;
 
@@ -159,19 +160,56 @@ export function FriendsPanel({ data, api, room, deck, onCreate, onJoin, onLeave,
       </ol>
       <Watchers list={watchers} room={room.key} />
       <MyAvatarRow code={av} onChange={changeAv} />
+      <VersionNote clash={clash} code={room.code} />
       <p className="note">Your deck: <b>{deck.name}</b> — pick another from the list.{deck.custom && onClaude() ? ' Custom decks can only be used in rooms on the website, not on claude.ai.' : ''}</p>
       <div className="dlg-actions">
         <button className="btn ghost" onClick={onLeave}>Leave room</button>
         {inGame ? (
-          session ? null : <button className="btn primary" onClick={onWatch}>{mySeat >= 0 ? 'Rejoin the game' : 'Watch the game'}</button>
+          session ? null : <button className="btn primary" onClick={onWatch} disabled={!decksKnown} title={decksKnown ? '' : 'Getting the players’ decks…'}>{mySeat >= 0 ? 'Rejoin the game' : 'Watch the game'}</button>
         ) : isHost ? (
-          <button className="btn primary" disabled={!ready} onClick={onStart} title={ready ? '' : 'Every friend seat needs a player who is here'}>Start game</button>
+          <button className="btn primary" disabled={!ready} onClick={onStart} title={ready ? '' : clash ? 'Everyone needs the same version of the game' : 'Every friend seat needs a player who is here'}>Start game</button>
         ) : (
           <span className="note">{mySeat >= 0 ? `Waiting for ${hostNick} to start…` : 'Take an open seat, or stay to watch.'}</span>
         )}
       </div>
     </section>
   );
+}
+
+// reload the page into this room (its invite link), wherever the address was: the room and its game come back
+export function reloadInto(code, kind = '') {
+  try { history.replaceState(null, '', `#${kind ? kind + '-' : ''}${code}`); } catch { /* sandboxed frame */ }
+  location.reload();
+}
+
+// a friend here runs another version of the game (one of the pages was opened before an update): whoever has the
+// older one reloads
+export function VersionNote({ clash, code, kind = '' }) {
+  if (!clash) return null;
+  return clash.newer
+    ? <p className="note warnline" role="status">There’s a newer version of the game: {clash.nick} has it. <button className="btn sm" onClick={() => reloadInto(code, kind)}>Reload to update</button></p>
+    : <p className="note warnline" role="status">{clash.nick} has an older version of the game open, so your games wouldn’t match. They need to reload the page.</p>;
+}
+
+// A copy of an online game that drifted from the host's (a decision arrived that doesn't fit it) rebuilds itself
+// from the host's history: `rebuild` makes a fresh copy of the game. Twice in two minutes at most: a game that
+// keeps drifting needs a reload on every screen (RoomStatus says so). The host's copy is the reference.
+export function watchDesync(session, room, rebuild) {
+  const on = session && session.online;
+  if (!on || !room) return;
+  const handle = () => {
+    if (on.net.isHost || on.resyncing || on.outOfStep) return;
+    const recent = (room.resyncs || []).filter(t => Date.now() - t < 120000);
+    if (recent.length >= 2) { on.outOfStep = true; on.net.onChange(); return; }
+    room.resyncs = [...recent, Date.now()];
+    on.resyncing = true;
+    on.net.onChange();
+    setTimeout(() => { on.net.forget(); rebuild(); }, 1200);
+  };
+  // (browser tests read every drift noticed: window.__paExpose)
+  const record = () => { if (typeof window !== 'undefined' && window.__paExpose) (window.__paDrift = window.__paDrift || []).push({ ...on.net.desync, host: on.net.isHost }); };
+  on.net.onDesync = () => { record(); handle(); };
+  if (on.net.desync) { record(); handle(); }
 }
 
 // in-game: room status and who we're waiting on
@@ -182,13 +220,22 @@ export function RoomStatus({ session }) {
   const w = net.waitingOn();
   const seat = w ? session.game.players[w.pid] : null;
   const catching = net.catchingUp();
+  const clash = net.clash;
+  const reload = () => reloadInto(on.code, session.cfg && session.cfg.kind);
+  const drifted = net.desync && net.isHost && Date.now() - net.desync.at < 10000 ? session.game.players[net.desync.pid] : null;
   return (
     <span className="roomstatus">
       <span className="chip" title={`Room ${on.code}`}>Room {on.code}</span>
+      {on.outOfStep ? <><span className="chip danger">Out of step with the others</span><button className="btn sm" onClick={reload} title="Everyone in the game should reload">Reload</button></>
+        : on.resyncing ? <span className="chip">Getting back in step…</span>
+        : drifted ? <span className="chip">{drifted.name}’s screen is catching up</span> : null}
+      {clash ? (clash.newer
+        ? <><span className="chip danger">{clash.nick} has a newer version</span><button className="btn sm" onClick={reload}>Reload to update</button></>
+        : <span className="chip danger">{clash.nick} needs to reload (older version)</span>) : null}
       {catching ? <span className="chip">Catching up…</span> : null}
       {session.spectator ? <span className="chip">Watching</span> : null}
       {w && w.seconds >= 2 && seat ? <span className={`chip ${w.present ? '' : 'danger'}`}>{w.present ? `Waiting for ${seat.name}` : `${seat.name} is away`}</span> : null}
-      {w && !w.present && w.seconds >= 8 && net.isHost && seat ? <button className="btn sm" onClick={() => net.setSubstitute(w.pid, w.seq)}>Let the AI play for {seat.name}</button> : null}
+      {w && (w.present ? w.seconds >= 90 : w.seconds >= 8) && net.isHost && seat ? <button className="btn sm" onClick={() => net.setSubstitute(w.pid, w.seq)} title={w.present ? `${seat.name} hasn’t moved for a while (their screen may be locked)` : ''}>Let the AI play for {seat.name}</button> : null}
     </span>
   );
 }

@@ -1,7 +1,7 @@
 // Core game state and flow: zones, turns, priority, the stack, state-based actions and triggers.
 import { Card, Player, newTimestamp } from './cards.js';
 import { untapPrevented as paramUntapPrevented, untapLocked, noteTurnEnd, noteTargeted, applyStaticEffect, poolBeforeEmptying, settleEmptiedPool, damageRedirect, dealRedirected, triggerController, replacementPhaseOk } from './mech-params.js';
-import { RNG, COLORS, BASIC_LAND_TYPES, NAME_TO_COLOR, sleep, compare } from './util.js';
+import { RNG, COLORS, BASIC_LAND_TYPES, NAME_TO_COLOR, sleep, yieldTask, compare } from './util.js';
 import { computeAll, charsOutside, isRoom } from './chars.js';
 import { matchValid, resolveDefined, calcCtx, checkPresence, ctrlOf, zoneMap, findTargets } from './filters.js';
 import { synthesizeKeywords, keywordInfo } from './keywords.js';
@@ -264,7 +264,7 @@ export class Game {
 
   async ask(pid, req) {
     if (this.over) throw new GameOver();
-    if (++this.askCount % 100 === 0) await new Promise(r => setTimeout(r, 0));
+    if (++this.askCount % 100 === 0) await yieldTask();
     // (mech-classic: while someone controls this player's turn, that player's seat decides for them)
     const via = lastDecider(this, pid) ?? deciderFor(this, pid); // (mech-last.js: Opposition Agent, while they search)
     const agent = this.agents[via];

@@ -1,3 +1,5 @@
+import { pageHidden } from '../net/soon.js';
+
 // Human-like timing for computer players at the table: a moment to "think" before each play, a land drop,
 // lands tapped one at a time, a pause before attacking or blocking. Ranges in milliseconds by AI speed setting.
 const TEMPO = {
@@ -6,9 +8,11 @@ const TEMPO = {
   fast: { think: [300, 550], land: [250, 400], tap: 100, attack: [400, 650], block: [350, 550], choose: [180, 320], respond: [120, 250] },
 };
 
-// pace(kind) -> ms; reads the live settings so changing the speed applies at once
+// pace(kind) -> ms; reads the live settings so changing the speed applies at once. Nobody watches a hidden page, and its
+// timers run late (net/soon.js): there the computer players move at once, so a friend never waits on a background tab
 export function makePace(settings) {
   return kind => {
+    if (pageHidden()) return 0;
     const t = TEMPO[settings.aiSpeed];
     const v = t && t[kind];
     if (v == null) return 0;

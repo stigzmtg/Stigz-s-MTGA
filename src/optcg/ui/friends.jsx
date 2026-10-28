@@ -1,7 +1,7 @@
 // One Piece "Play with friends": make or join a room, send the invite link, the friend takes the second seat, each
 // player brings the deck picked on the left (a starter deck or their own: its list travels with them, mydecks.js),
 // and the host starts the battle. Others in the room watch.
-import { CopyLink } from '../../ui/online.jsx';
+import { CopyLink, VersionNote } from '../../ui/online.jsx';
 import { deckById, baseDeckId, deckLabel } from './decks.js';
 import { deckReady } from './mydecks.js';
 import { isRoomCode, onClaude } from '../../net/roomclient.js';
@@ -95,7 +95,8 @@ export function OpFriendsPanel({ data, online, deck, playable = true }) {
   const mySeat = room.mySeat();
   const seated = new Set(cfg.seats.filter(s => s.c).map(s => s.c));
   const watchers = [...members.values()].filter(m => !seated.has(m.cid));
-  const ready = cfg.seats.every(s => s.c && members.has(s.c) && s.d && seatDeckReady(data, s.d));
+  const clash = room.versionClash();
+  const ready = cfg.seats.every(s => s.c && members.has(s.c) && s.d && seatDeckReady(data, s.d)) && !clash;
   const unfinished = cfg.seats.find(s => s.c && s.d && deckById(data, s.d) && !seatDeckReady(data, s.d));
   const hostNick = (members.get(cfg.host) || {}).nick || 'the host';
   const inGame = cfg.started;
@@ -134,6 +135,7 @@ export function OpFriendsPanel({ data, online, deck, playable = true }) {
       </ol>
       <Watchers list={watchers} room={room.key} />
       <MyAvatarRow code={av} onChange={changeAv} />
+      <VersionNote clash={clash} code={room.code} kind="op" />
       {mySeat >= 0 || (!inGame && !isHost) ? <p className="note">Your deck: <b>{deck.name}</b>. Tap another deck to switch{inGame ? ' for the next battle' : ''}.</p> : null}
       {!playable && !inGame ? <p className="warnline">Your deck isn’t finished yet: finish it in the deck builder, or pick another one.</p> : null}
       <div className="dlg-actions">
@@ -141,7 +143,7 @@ export function OpFriendsPanel({ data, online, deck, playable = true }) {
         {inGame ? (
           <button className="btn primary" onClick={onWatch}>{mySeat >= 0 ? 'Rejoin the battle' : 'Watch the battle'}</button>
         ) : isHost ? (
-          <button className="btn primary" disabled={!ready} onClick={onStart} title={ready ? '' : unfinished ? 'Every deck needs a Leader and 50 cards' : 'Your friend needs to take seat 2'}>{ready ? 'Start battle' : unfinished ? `${unfinished.c === room.cid ? 'Your' : `${unfinished.n || 'Your friend'}’s`} deck isn’t finished` : friend.c ? `Waiting for ${friend.n || 'your friend'}…` : 'Waiting for a friend…'}</button>
+          <button className="btn primary" disabled={!ready} onClick={onStart} title={ready ? '' : unfinished ? 'Every deck needs a Leader and 50 cards' : 'Your friend needs to take seat 2'}>{ready ? 'Start battle' : clash ? 'Same version needed' : unfinished ? `${unfinished.c === room.cid ? 'Your' : `${unfinished.n || 'Your friend'}’s`} deck isn’t finished` : friend.c ? `Waiting for ${friend.n || 'your friend'}…` : 'Waiting for a friend…'}</button>
         ) : (
           <span className="note">{mySeat >= 0 ? `Waiting for ${hostNick} to start…` : friend.c ? 'Both seats are taken. Stay to watch the battle.' : 'Take the open seat to play, or stay to watch.'}</span>
         )}

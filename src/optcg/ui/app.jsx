@@ -11,6 +11,7 @@ import { baseDeckId, deckOfSeat } from './decks.js';
 import { isCustomId, customDeck, packDeck, unpackDeck, rememberDeck } from './mydecks.js';
 import { createStore, loadSettings, fetchJSON, safeStorage } from '../../ui/common.js';
 import { makePace } from '../../ui/pacing.js';
+import { watchDesync } from '../../ui/online.jsx';
 import { Lockstep, LocalSeatAgent, RemoteSeatAgent } from '../../net/lockstep.js';
 import { RoomClient, roomApi, isRoomCode } from '../../net/roomclient.js';
 import { Recorder, ReplayControl, ReplayAgent, opDelay, loadReplay } from '../../ui/records.js';
@@ -204,6 +205,8 @@ export function OnePieceApp({ onHome }) {
     }
     if (cfg.started && (room.mySeat() >= 0 || cur) && (cfg.game !== room.lastAutoStart || cur)) { room.lastAutoStart = cfg.game; setSession(newOnlineBattle(data, room, cfg)); }
   }, [data, room, cfg && cfg.game, cfg && cfg.started]);
+  // a copy of the battle that drifted from the host's rebuilds itself from the host's history
+  useEffect(() => watchDesync(session, room, () => { endBattle(session); setSession(newOnlineBattle(data, room, room.cfg)); }), [session]);
 
   if (error) return <div className="app op"><div className="loading"><h2>Couldn't load the One Piece cards</h2><p>{error}</p><button className="btn" onClick={onHome}>Back</button></div></div>;
   if (!data) return <div className="app op"><div className="loading"><div className="label">Raising the sails</div><div className="bar"><i style={{ width: '60%' }} /></div></div></div>;

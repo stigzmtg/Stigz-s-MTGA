@@ -133,5 +133,10 @@ await guest.screenshot({ path: `${OUT}/6-guest-after-reload.png` });
 console.log('after reload + watcher:');
 for (const [n, v] of [['host', views[0]], ['guest', views[1]], ['watch', views[2]]]) console.log(' ', n.padEnd(6), JSON.stringify(v));
 console.log(views.every(v => JSON.stringify(v) === JSON.stringify(views[0])) ? 'all three boards match' : 'BOARDS DIFFER');
+// the largest presence each browser sent (rooms cap them: 4 KiB on claude.ai, 9,000 characters on the site's relay)
+console.log('largest presence (host, guest, watcher):', (await Promise.all([host, guest, watcher].map(p => p.evaluate(() => [window.__maxPresence || 0, window.__presenceRejected || 0]).catch(() => [-1, 0])))).map(([m, r]) => m + (r ? ` (${r} refused)` : '')).join(', '));
+// no copy of the game drifted from the host's along the way (each would have rebuilt itself: ui/online.jsx watchDesync)
+const drift = (await Promise.all([host, guest, watcher].map(p => p.evaluate(() => window.__paDrift || []).catch(() => [])))).flat();
+console.log(drift.length ? `DRIFT NOTICED: ${JSON.stringify(drift)}` : 'no copy drifted');
 console.log(errors.length ? 'errors:\n' + errors.slice(0, 10).join('\n') : 'no page errors');
 await browser.close();

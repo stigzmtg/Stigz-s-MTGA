@@ -150,7 +150,7 @@ export function Lobby({ data, onStart, imagesOk, online, onHome, onBuild }) {
             <button role="tab" aria-selected={!friends} className={!friends ? 'on' : ''} onClick={() => online && online.setMode('solo')}>Solo vs AI</button>
             <button role="tab" aria-selected={friends} className={friends ? 'on' : ''} onClick={() => online && online.setMode('friends')}>Play with friends</button>
           </div>
-          {friends ? <FriendsPanel data={data} api={online.api} room={online.room} deck={deck} onCreate={online.onCreate} onJoin={online.onJoin} onLeave={online.onLeave} onStart={online.onStart} onWatch={online.onWatch} session={null} /> : (
+          {friends ? <FriendsPanel data={data} api={online.api} room={online.room} deck={deck} onCreate={online.onCreate} onJoin={online.onJoin} onLeave={online.onLeave} onStart={online.onStart} onWatch={online.onWatch} decksKnown={online.decksKnown} session={null} /> : (
           <section className="panel" aria-label="Opponents">
             <h2>Opponents</h2>
             <div className="filters"><span className="label">Players</span>
