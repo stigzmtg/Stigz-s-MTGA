@@ -510,9 +510,16 @@ export function OpBattle({ session, host, onExit, onRematch, onLobby, onReplay }
     // a question answered in a window of its own
     bar = <div className="msg"><div className="step">Choose</div><div className="txt">{youText(req.prompt)}</div></div>;
   } else {
-    const who = game.current === me && !watching ? 'You are' : `${game.players[game.current].name} is`;
-    const doing = game.battle ? `${cardName(game.battle.attacker)} attacks ${cardName(game.battle.blocker || game.battle.target)}` : `${who} ${game.phase === 'main' ? 'thinking' : 'getting ready'}`;
-    bar = <div className="msg waiting"><div className="step">{game.turn ? `${game.current === me && !watching ? 'Your' : `${game.players[game.current].name}'s`} turn` : 'Getting ready'}</div><div className="txt thinking">{doing}</div></div>;
+    // whom the battle waits on: the player it asked (the defender choosing a Blocker or Counter, an opponent answering a
+    // Trigger or an "your opponent chooses" effect), else the player whose turn it is
+    const asked = game.pendingAsk ? game.players[game.pendingAsk.pid] : null;
+    const waitOn = asked || game.players[game.current];
+    const you = waitOn.id === me && !watching;
+    const who = you ? 'You are' : `${waitOn.name} is`;
+    const verb = asked && asked.id !== game.current ? 'choosing' : game.phase === 'main' ? 'thinking' : 'getting ready';
+    const fightTxt = game.battle ? `${cardName(game.battle.attacker)} attacks ${cardName(game.battle.blocker || game.battle.target)}` : null;
+    const doing = fightTxt ? (asked && !you ? `${fightTxt} · ${asked.name} is choosing` : fightTxt) : `${who} ${verb}`;
+    bar = <div className="msg waiting"><div className="step">{game.turn ? `${game.current === me && !watching ? 'Your' : `${game.players[game.current].name}'s`} turn` : 'Getting ready'}</div><div className="txt thinking" data-waiting={asked && !you ? asked.id : ''}>{doing}</div></div>;
   }
 
   // the bar's content eases in when the question changes (not on every action of your Main Phase)

@@ -57,8 +57,11 @@ export class Lockstep {
     this.unsub = channel.onPeers(() => this.ingest());
     this.flush();
     this.ingest();
-    // re-check while waiting: a stalled wait turns into a history request even if nobody else changes
-    this.timer = setInterval(() => { if (this.waiting) this.ingest(); }, 1000);
+    // while waiting, every second: re-check (a stalled wait turns into a history request even if nobody else changes)
+    // and send our presence again. Rooms can drop an update or deliver two out of order (the older one overwriting
+    // the newer), and a peer that's waiting sends nothing more on its own: without the resend each side could sit
+    // waiting on the other, the one holding the decision the other needs having last been seen before it made it.
+    this.timer = setInterval(() => { if (this.waiting) { this.ingest(); this.flush(); } }, 1000);
   }
 
   get isHost() { return this.cfg.host === this.cid; }

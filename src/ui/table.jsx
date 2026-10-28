@@ -133,11 +133,16 @@ function PromptBar({ game, human, me, mode, ctx, actions, onPass, onEndTurn, spe
   let msg = null, acts = null;
   if (game.over) msg = <><div className="step">Game over</div><div className="txt">{game.resultText}</div></>;
   else if (!pending) {
-    const pr = game.priority != null ? game.players[game.priority] : null;
     const top = game.stack[game.stack.length - 1];
     const who = top && (top.controller === me ? 'Your' : `${game.players[top.controller].name}’s`);
     const what = top && (top.kind === 'spell' ? game.name(top.card) : `${top.source ? game.name(top.source) : ''} ability`.trim());
-    msg = <><div className="step">{myTurn ? (ctl ? `${ctl.name}'s turn` : 'Your turn') : active.name} · {step}</div><div className="txt thinking">{top ? <>{who} <b>{what}</b> is about to resolve</> : pr && pr.id !== me ? `${pr.name} is thinking` : 'Resolving'}</div></>;
+    // whom the game is waiting on: the player it asked (or whoever decides for them: Mindslaver), not whoever last had
+    // priority, which can be the player waiting (blocks, "unless" payments and choices are asked of others)
+    const ask = game.pendingAsk;
+    const asked = ask ? game.players[ask.req.decider ?? ask.pid] : null;
+    const waitOn = asked && asked.id !== me ? asked : null;
+    const doing = ask && ask.req.type === 'priority' ? 'is thinking' : 'is choosing';
+    msg = <><div className="step">{myTurn ? (ctl ? `${ctl.name}'s turn` : 'Your turn') : active.name} · {step}</div><div className="txt thinking" data-waiting={waitOn ? waitOn.id : ''}>{waitOn ? (top && ask.req.type === 'priority' ? <>{who} <b>{what}</b> is on the stack · {waitOn.name} is thinking</> : `${waitOn.name} ${doing}`) : top ? <>{who} <b>{what}</b> is about to resolve</> : 'Resolving'}</div></>;
   } else if (mode === 'priority') {
     const top = game.stack[game.stack.length - 1];
     let txt;

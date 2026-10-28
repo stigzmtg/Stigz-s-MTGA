@@ -109,6 +109,8 @@ node tools/mech-combatui.mjs out/   # blocking several attackers, dividing damag
 node tools/newsetsui.mjs 8765 out/  # day/night, the Ring and bending at the table
 node tools/unsetsui.mjs out/ 8765   # sticker sheets, stickers and Attractions at the table
 node tools/mindslaverui.mjs 8765 out/  # controlling another player's turn, and bidding life
+node tools/waitingui.mjs out/       # in all three games, the prompt bar names exactly the player the game is waiting on
+node tools/waitingmp.mjs out/ 8     # the same with a friend in two browsers: both screens agree, the asked player sees the question, no stalls
 node tools/combatui.mjs out/ 12  # attacks and blocks in a browser: only legal blocks light up and are accepted (with the reason), menace needs two, what's confirmed is what the engine records
 node tools/displaycheck.mjs out/ 14 4   # a 4-player game checked again and again: life, cards in each zone, every permanent with its counters, damage and tapped state, the stack
 node tools/allcardsui.mjs out/   # the whole card pool in a browser: community decks with credit, the builder loading every card, a deck of cards no precon plays in a fresh page, Scryfall pictures

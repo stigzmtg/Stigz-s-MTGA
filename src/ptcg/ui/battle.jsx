@@ -482,9 +482,11 @@ export function Battle({ session, host, onExit, onRematch, onLobby, onReplay }) 
     </>;
   } else {
     // someone else decides: the player whose turn it is, or whoever an effect asked
+    // (named in games against the computer too, so it's never unclear whose move it is)
     const asked = game.players[game.pendingAsk ? game.pendingAsk.pid : game.current];
-    const doing = !game.turn ? 'Setting up' : online && asked && (watching || asked.id !== me) ? `${asked.name} ${asked.id === game.current ? 'is playing' : 'is choosing'}` : 'Thinking';
-    bar = <div className="msg waiting"><div className="step">{game.turn ? `${whose(game.players[game.current])} turn` : 'Getting ready'}</div><div className="txt thinking">{doing}</div></div>;
+    const named = asked && (watching || asked.id !== me);
+    const doing = !game.turn ? (named && game.pendingAsk ? `${asked.name} is setting up` : 'Setting up') : named ? `${asked.name} ${asked.id === game.current ? 'is playing' : 'is choosing'}` : 'Thinking';
+    bar = <div className="msg waiting"><div className="step">{game.turn ? `${whose(game.players[game.current])} turn` : 'Getting ready'}</div><div className="txt thinking" data-waiting={named && game.pendingAsk ? asked.id : ''}>{doing}</div></div>;
   }
 
   const handActs = new Set(actions.filter(a => a.card != null).map(a => a.card));
